@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "build:standalone": "node scripts/buildStandalone.mjs",
     "check:templates": "esbuild scripts/checkTemplates.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-templates.mjs --log-level=error && node node_modules/.cache/check-templates.mjs"
   },
   "dependencies": {
