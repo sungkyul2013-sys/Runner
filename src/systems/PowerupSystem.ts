@@ -161,6 +161,11 @@ export class PowerupSystem {
     this.onActivate(PowerupType.HOVERBOARD);
   }
 
+  /** Grant a window of invulnerability (used by Revive). */
+  grantInvuln(seconds: number): void {
+    this.invulnTimer = Math.max(this.invulnTimer, seconds);
+  }
+
   /** Consume the shield to survive a hit. Returns true if a hit was absorbed. */
   tryAbsorb(): boolean {
     if (!this.shieldActive) return false;

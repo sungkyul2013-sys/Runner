@@ -46,8 +46,12 @@ All IP is original; assets are assembled from Three.js primitives.
 - [x] HUD remaining-time rings + hoverboard charge badge
 - [x] Pooled pickup tokens, weighted spawns
 
-### ⬜ Phase 5 — Screens & Flow
-- [ ] Home menu, character carousel, pause overlay, game-over screen
+### ✅ Phase 5 — Screens & Flow
+- [x] GameStateManager flow: MENU (attract) / PLAYING / PAUSED / GAMEOVER
+- [x] Animated neon home menu (Play / Characters / Shop / Settings + stats)
+- [x] Character carousel with live attract-mode preview
+- [x] Pause sheet (Esc/P + button), Settings (mute/quality)
+- [x] Rich game-over (score/coins/best/NEW, Revive, Restart, Menu)
 
 ### ⬜ Phase 6 — Meta Systems
 - [ ] localStorage persistence

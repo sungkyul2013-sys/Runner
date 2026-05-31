@@ -1,8 +1,4 @@
-import {
-  BASE_SPEED,
-  MAX_SPEED,
-  SPEED_RAMP_PER_SEC,
-} from '../config/constants';
+import { BASE_SPEED, MAX_SPEED, SPEED_RAMP_PER_SEC } from '../config/constants';
 import { InputController, type Intent } from '../player/InputController';
 import { Player } from '../player/Player';
 import { Track } from '../world/Track';
@@ -10,28 +6,34 @@ import { CameraRig } from './CameraRig';
 import { Engine } from './Engine';
 import { GameState, GameStateManager } from './GameStateManager';
 
+/** Attract-mode (menu background) scroll fraction of base speed. */
+const ATTRACT_SPEED = BASE_SPEED * 0.55;
+
 /**
- * Top-level gameplay orchestrator. Owns the run state (speed, distance), the
- * player, the scrolling track and the camera rig, and routes input intents
- * according to the current {@link GameState}. Phase 2 extends this with the
- * segment/obstacle manager and collision system.
+ * Top-level gameplay orchestrator + flow controller. Owns the run state, the
+ * player, scrolling track and camera, and dispatches per-frame work by
+ * {@link GameState}: full simulation while PLAYING, a gentle "attract" scroll
+ * in the MENU (the character jogs on an empty track behind the home screen),
+ * and a frozen frame while PAUSED / GAMEOVER. Phase 2+ systems hook in via
+ * `stepWorld`.
  */
 export class Game {
-  readonly state = new GameStateManager(GameState.PLAYING);
+  readonly state: GameStateManager;
 
   protected readonly player = new Player();
   protected readonly track = new Track();
   protected readonly input = new InputController(document.body);
   private readonly cameraRig: CameraRig;
 
-  /** Current world scroll speed (units/sec). */
   protected speed = BASE_SPEED;
-  /** Distance travelled this run (world units ≈ metres). */
   protected distance = 0;
-  /** Time elapsed in the current run (seconds). */
   protected runTime = 0;
 
-  constructor(protected readonly engine: Engine) {
+  constructor(
+    protected readonly engine: Engine,
+    initial: GameState = GameState.MENU,
+  ) {
+    this.state = new GameStateManager(initial);
     this.cameraRig = new CameraRig(engine.camera);
 
     engine.add(this.track.group);
@@ -41,53 +43,75 @@ export class Game {
     engine.onUpdate(this.update);
   }
 
+  // ── Flow control (driven by the screen layer) ─────────────────────────────
+  startRun(): void {
+    this.resetRun();
+    this.state.set(GameState.PLAYING);
+  }
+  toMenu(): void {
+    this.resetRun();
+    this.state.set(GameState.MENU);
+  }
+  pause(): void {
+    if (this.state.is(GameState.PLAYING)) this.state.set(GameState.PAUSED);
+  }
+  resume(): void {
+    if (this.state.is(GameState.PAUSED)) this.state.set(GameState.PLAYING);
+  }
+
   private handleIntent = (intent: Intent): void => {
-    if (this.state.is(GameState.PLAYING)) {
-      switch (intent) {
-        case 'left':
-          this.player.moveLeft();
-          break;
-        case 'right':
-          this.player.moveRight();
-          break;
-        case 'jump':
-          this.player.jump();
-          break;
-        case 'slide':
-          this.player.slide();
-          break;
-        case 'deploy':
-          this.onDeploy();
-          break;
-      }
-    } else if (this.state.is(GameState.GAMEOVER) && intent === 'confirm') {
-      this.restart();
+    if (!this.state.is(GameState.PLAYING)) return;
+    switch (intent) {
+      case 'left':
+        this.player.moveLeft();
+        break;
+      case 'right':
+        this.player.moveRight();
+        break;
+      case 'jump':
+        this.player.jump();
+        break;
+      case 'slide':
+        this.player.slide();
+        break;
+      case 'deploy':
+        this.onDeploy();
+        break;
     }
   };
 
   /** Extension point for the double-tap "deploy" intent (Phase 4 hoverboard). */
   protected onDeploy(): void {}
 
-  /** Multiplier applied to the world speed (Phase 4 Rocket boost). */
+  /** Multiplier applied to the world speed (Phase 4 Rocket / headstart). */
   protected speedMultiplier(): number {
     return 1;
   }
 
-  /** Reset run state for a fresh run. Subclasses extend to clear obstacles. */
-  protected restart(): void {
+  /** Reset run state. Subclasses extend to clear obstacles/coins/score. */
+  protected resetRun(): void {
     this.speed = BASE_SPEED;
     this.distance = 0;
     this.runTime = 0;
     this.player.reset();
     this.cameraRig.reset();
-    this.state.set(GameState.PLAYING);
   }
 
   private update = (dt: number): void => {
-    if (!this.state.is(GameState.PLAYING)) return;
+    switch (this.state.state) {
+      case GameState.PLAYING:
+        this.stepPlaying(dt);
+        break;
+      case GameState.MENU:
+        this.stepAttract(dt);
+        break;
+      default:
+        break; // PAUSED / GAMEOVER → frozen
+    }
+  };
 
+  private stepPlaying(dt: number): void {
     this.runTime += dt;
-    // Gentle, capped speed ramp over time.
     this.speed = Math.min(MAX_SPEED, BASE_SPEED + SPEED_RAMP_PER_SEC * this.runTime);
 
     const effectiveSpeed = this.speed * this.speedMultiplier();
@@ -97,10 +121,19 @@ export class Game {
     this.player.setAnimSpeed(effectiveSpeed / BASE_SPEED);
     this.player.update(dt);
     this.track.update(scroll);
-    this.stepWorld(dt, scroll); // Phase 2+ hook
+    this.stepWorld(dt, scroll);
     this.cameraRig.update(dt, this.player.group.position.x, effectiveSpeed);
-  };
+  }
 
-  /** Extension point for Phase 2 (segment spawning + collision). No-op here. */
+  /** Menu background: the character jogs forward on an empty, looping track. */
+  private stepAttract(dt: number): void {
+    const scroll = ATTRACT_SPEED * dt;
+    this.player.setAnimSpeed(ATTRACT_SPEED / BASE_SPEED);
+    this.player.update(dt);
+    this.track.update(scroll);
+    this.cameraRig.update(dt, this.player.group.position.x, ATTRACT_SPEED);
+  }
+
+  /** Per-frame world advance while PLAYING (Phase 2+ systems). No-op here. */
   protected stepWorld(_dt: number, _scroll: number): void {}
 }

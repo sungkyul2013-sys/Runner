@@ -1,15 +1,19 @@
 import { Engine } from './core/Engine';
 import { RunnerGame } from './core/RunnerGame';
+import { SaveManager } from './data/SaveManager';
+import { ScreenManager } from './ui/ScreenManager';
 
 /**
- * Entry point. Boots the engine and the gameplay orchestrator, then starts the
- * render loop. The game auto-starts in PLAYING for now; the full menu flow
- * (MENU → PLAYING → PAUSED → GAMEOVER) lands in Phase 5.
+ * Entry point. Wires the engine, the persistent profile, the gameplay game and
+ * the screen/flow layer, then starts the render loop. The game boots into the
+ * MENU (attract mode); the ScreenManager drives MENU → PLAYING → PAUSED →
+ * GAMEOVER transitions.
  */
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const engine = new Engine(canvas);
 
-// The Game wires itself into the engine's update loop in its constructor.
-new RunnerGame(engine);
+const save = new SaveManager();
+const game = new RunnerGame(engine, save);
+new ScreenManager(game, save);
 
 engine.start();
