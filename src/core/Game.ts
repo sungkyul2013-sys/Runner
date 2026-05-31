@@ -94,6 +94,7 @@ export class Game {
     const scroll = effectiveSpeed * dt;
     this.distance += scroll;
 
+    this.player.setAnimSpeed(effectiveSpeed / BASE_SPEED);
     this.player.update(dt);
     this.track.update(scroll);
     this.stepWorld(dt, scroll); // Phase 2+ hook

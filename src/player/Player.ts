@@ -1,16 +1,16 @@
 import * as THREE from 'three';
 import {
-  COLORS,
   GRAVITY,
   JUMP_VELOCITY,
   LANE_LERP,
   laneToX,
   PLAYER_HALF_SLIDING,
   PLAYER_HALF_STANDING,
-  PLAYER_HEIGHT,
-  PLAYER_RADIUS,
   SLIDE_DURATION,
 } from '../config/constants';
+import { CHARACTERS, getCharacter, type CharacterDef } from '../data/characters';
+import type { EquippedCosmetics } from '../data/cosmetics';
+import { Character, type Pose } from './Character';
 
 /** Z position the player is anchored at; the world scrolls past in +Z. */
 export const PLAYER_Z = 0;
@@ -29,7 +29,9 @@ export class Player {
   readonly group = new THREE.Group();
   readonly aabb = new THREE.Box3();
 
-  private visual: THREE.Object3D;
+  private rig: Character;
+  /** Stride cadence (~1 at base speed); set by the game each frame. */
+  private animSpeed = 1;
 
   private currentLane = 0;
   private x = 0; // smoothed lateral position
@@ -50,39 +52,26 @@ export class Player {
   private readonly size = new THREE.Vector3();
 
   constructor() {
-    this.visual = this.buildCapsule();
-    this.group.add(this.visual);
+    this.rig = new Character(CHARACTERS[0], { hair: 'hair-none', outfit: 'outfit-classic' });
+    this.group.add(this.rig.group);
     this.reset();
   }
 
-  private buildCapsule(): THREE.Group {
-    const g = new THREE.Group();
-    const cylLength = PLAYER_HEIGHT - PLAYER_RADIUS * 2;
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(PLAYER_RADIUS, cylLength, 6, 12),
-      new THREE.MeshStandardMaterial({
-        color: COLORS.player,
-        emissive: COLORS.player,
-        emissiveIntensity: 0.35,
-        roughness: 0.4,
-        metalness: 0.1,
-      }),
-    );
-    g.add(body);
-    const core = new THREE.Mesh(
-      new THREE.SphereGeometry(PLAYER_RADIUS * 0.55, 12, 12),
-      new THREE.MeshBasicMaterial({ color: COLORS.playerGlow }),
-    );
-    core.position.y = 0.2;
-    body.add(core);
-    return g;
+  /** Swap in a different character/cosmetics without touching the physics. */
+  applyCharacter(def: CharacterDef, equipped: EquippedCosmetics): void {
+    this.group.remove(this.rig.group);
+    this.rig.dispose();
+    this.rig = new Character(def, equipped);
+    this.group.add(this.rig.group);
   }
 
-  /** Replace the visual rig (Phase 6 Character) while keeping physics intact. */
-  setVisual(obj: THREE.Object3D): void {
-    this.group.remove(this.visual);
-    this.visual = obj;
-    this.group.add(obj);
+  /** Convenience: apply by character id. */
+  applyCharacterId(id: string, equipped: EquippedCosmetics): void {
+    this.applyCharacter(getCharacter(id), equipped);
+  }
+
+  setAnimSpeed(s: number): void {
+    this.animSpeed = s;
   }
 
   /** Restore the player to the start-of-run state. */
@@ -97,7 +86,7 @@ export class Player {
     this.flying = false;
     this.sliding = false;
     this.slideTimer = 0;
-    this.visual.scale.set(1, 1, 1);
+    this.rig.group.scale.set(1, 1, 1);
     this.group.position.set(0, PLAYER_HALF_STANDING.y, PLAYER_Z);
     this.updateAABB();
   }
@@ -125,14 +114,14 @@ export class Player {
     }
     this.sliding = true;
     this.slideTimer = SLIDE_DURATION;
-    this.visual.scale.set(1, 0.5, 1);
+    this.rig.group.scale.set(1, 0.5, 1);
   }
 
   private endSlide(): void {
     if (!this.sliding) return;
     this.sliding = false;
     this.slideTimer = 0;
-    this.visual.scale.set(1, 1, 1);
+    this.rig.group.scale.set(1, 1, 1);
   }
 
   // ── State pushed in by systems (collision / power-ups) ───────────────────
@@ -179,6 +168,11 @@ export class Player {
     const half = this.sliding ? PLAYER_HALF_SLIDING : PLAYER_HALF_STANDING;
     this.group.position.set(this.x, this.feetY + half.y, PLAYER_Z);
     this.updateAABB();
+
+    // Drive the character animation from the current motion state.
+    const pose: Pose =
+      this.flying || !this.grounded ? 'air' : this.sliding ? 'slide' : 'run';
+    this.rig.update(dt, pose, this.animSpeed);
   }
 
   /** Directly set the player's feet height (jetpack/rocket flight control). */

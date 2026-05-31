@@ -9,6 +9,8 @@ export class ScoreSystem {
   private _score = 0;
   coins = 0;
   multiplier = 1;
+  /** Character "coin bonus" ability: extra fraction of coin value (0 = none). */
+  coinBonus = 0;
 
   /** Add the per-frame distance delta (world units ≈ metres). */
   addDistance(delta: number): void {
@@ -18,7 +20,7 @@ export class ScoreSystem {
   /** Register collected coins (updates both the counter and the score). */
   addCoins(n: number): void {
     this.coins += n;
-    this._score += n * COIN_VALUE * this.multiplier;
+    this._score += n * COIN_VALUE * (1 + this.coinBonus) * this.multiplier;
   }
 
   get score(): number {
@@ -29,5 +31,6 @@ export class ScoreSystem {
     this._score = 0;
     this.coins = 0;
     this.multiplier = 1;
+    // coinBonus persists across resets (set from the equipped character).
   }
 }
