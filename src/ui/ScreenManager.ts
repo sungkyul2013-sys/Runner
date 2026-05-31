@@ -166,6 +166,21 @@ export class ScreenManager {
         `Best ${Math.max(s.best ?? 0, s.score)}${isBest ? ' &nbsp;🏆 NEW!' : ''}`),
     );
 
+    // Mission completions + rank-up rewards earned this run.
+    const summary = this.game.getRunSummary();
+    if (summary.rank.leveledTo !== undefined) {
+      this.gameoverBody.append(
+        el('div', { color: NEON.cyan, font: '700 15px/1.4 system-ui' },
+          `⭐ Rank ${summary.rank.leveledTo}! +${summary.rank.reward} coins`),
+      );
+    }
+    for (const m of summary.completed) {
+      this.gameoverBody.append(
+        el('div', { color: NEON.gold, font: '700 14px/1.4 system-ui' },
+          `✓ Mission complete! +${m.reward} coins`),
+      );
+    }
+
     const btns = el('div', { display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap', justifyContent: 'center' });
     const canRevive = !this.reviveUsed && this.save.data.totalCoins >= REVIVE_COST;
     const revive = button(`Revive ${coinStr(REVIVE_COST)}`, () => {

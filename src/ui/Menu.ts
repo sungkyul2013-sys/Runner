@@ -1,5 +1,6 @@
+import { missionLabel } from '../data/missions';
 import type { SaveManager } from '../data/SaveManager';
-import { levelForXp } from '../data/SaveManager';
+import { levelForXp, xpIntoLevel } from '../data/SaveManager';
 import { button, coinStr, el, NEON, screen, show } from './uikit';
 
 export interface MenuCallbacks {
@@ -70,10 +71,37 @@ export class Menu {
 
   refresh(save: SaveManager): void {
     const d = save.data;
-    this.footer.innerHTML =
-      `Best <b style="color:${NEON.gold}">${d.bestScore}</b> &nbsp;·&nbsp; ` +
-      `${coinStr(d.totalCoins)} &nbsp;·&nbsp; ` +
-      `Rank <b style="color:${NEON.cyan}">${levelForXp(d.xp)}</b>`;
+    const lvl = levelForXp(d.xp);
+    const { into, need } = xpIntoLevel(d.xp);
+    const xpPct = Math.round((into / need) * 100);
+
+    const missions = d.missions
+      .map((m) => {
+        const pct = Math.min(100, Math.round((m.progress / m.target) * 100));
+        const cap = Math.min(m.progress, m.target);
+        return `<div style="margin:3px 0">
+          <div style="display:flex;justify-content:space-between;font-size:12px;opacity:.9">
+            <span>${missionLabel(m)}</span><span style="color:${NEON.gold}">+${m.reward}</span></div>
+          <div style="height:6px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${NEON.cyan}"></div></div>
+          <div style="font-size:10px;opacity:.6">${cap}/${m.target}</div>
+        </div>`;
+      })
+      .join('');
+
+    this.footer.innerHTML = `
+      <div style="display:flex;gap:18px;justify-content:center;margin-bottom:8px">
+        <span>Best <b style="color:${NEON.gold}">${d.bestScore}</b></span>
+        <span>${coinStr(d.totalCoins)}</span>
+        <span>Rank <b style="color:${NEON.cyan}">${lvl}</b></span>
+      </div>
+      <div style="width:min(420px,86vw);height:7px;border-radius:4px;background:rgba(255,255,255,.12);
+        overflow:hidden;margin:0 auto 12px"><div style="height:100%;width:${xpPct}%;
+        background:linear-gradient(90deg,${NEON.cyan},${NEON.pink})"></div></div>
+      <div style="width:min(420px,86vw);text-align:left;margin:0 auto">
+        <div style="font-size:12px;letter-spacing:1px;color:${NEON.cyan};margin-bottom:2px">MISSIONS</div>
+        ${missions}
+      </div>`;
   }
 
   show(on: boolean): void {

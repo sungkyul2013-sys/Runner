@@ -53,11 +53,13 @@ All IP is original; assets are assembled from Three.js primitives.
 - [x] Pause sheet (Esc/P + button), Settings (mute/quality)
 - [x] Rich game-over (score/coins/best/NEW, Revive, Restart, Menu)
 
-### ⬜ Phase 6 — Meta Systems
-- [ ] localStorage persistence
-- [ ] Shop (characters + power-up upgrades)
-- [ ] Missions (rotating 3)
-- [ ] Rank / level / XP unlocks
+### ✅ Phase 6 — Meta Systems
+- [x] localStorage persistence (SaveManager) — verified with `npm run check:meta`
+- [x] Shop: characters, cosmetics, ability potions, power-up duration upgrades
+- [x] Character abilities (magnet / headstart / coin bonus) + potions to upgrade
+- [x] Cosmetics: hair styles + outfits applied to the rig
+- [x] Missions: rotating 3 (coins / distance / jetpack) with rewards + rotation
+- [x] Rank: XP from runs → level-ups → coin rewards; XP bar on home
 
 ### ⬜ Phase 7 — Polish & Effects
 - [ ] Particles, UnrealBloom glow, screen shake + hit-stop

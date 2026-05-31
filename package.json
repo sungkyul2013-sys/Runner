@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "build:standalone": "node scripts/buildStandalone.mjs",
-    "check:templates": "esbuild scripts/checkTemplates.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-templates.mjs --log-level=error && node node_modules/.cache/check-templates.mjs"
+    "check:templates": "esbuild scripts/checkTemplates.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-templates.mjs --log-level=error && node node_modules/.cache/check-templates.mjs",
+    "check:meta": "esbuild scripts/checkMeta.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-meta.mjs --log-level=error && node node_modules/.cache/check-meta.mjs"
   },
   "dependencies": {
     "gsap": "^3.12.5",

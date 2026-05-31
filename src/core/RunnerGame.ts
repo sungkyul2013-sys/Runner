@@ -1,11 +1,14 @@
 import { POWERUPS, PowerupType } from '../config/powerups';
 import { abilityMagnitude, getCharacter } from '../data/characters';
+import type { Mission } from '../data/missions';
 import { powerupDurationMult } from '../data/potions';
 import { SaveManager } from '../data/SaveManager';
 import type { RunStats } from '../ui/HUD';
 import { CoinSystem } from '../systems/CoinSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
+import { MissionSystem } from '../systems/MissionSystem';
 import { PowerupSystem } from '../systems/PowerupSystem';
+import { RankSystem, type RankResult } from '../systems/RankSystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
 import { HUD } from '../ui/HUD';
 import { SegmentManager } from '../world/SegmentManager';
@@ -15,6 +18,11 @@ import { GameState } from './GameStateManager';
 
 const HEADSTART_SPEED = 1.4;
 const REVIVE_INVULN = 2.2;
+
+export interface RunSummary {
+  completed: Mission[];
+  rank: RankResult;
+}
 
 /**
  * Full in-run game: procedural track with rideable roofs, coins & scoring, the
@@ -35,6 +43,10 @@ export class RunnerGame extends Game {
   private headstartTimer = 0;
   jetpackUses = 0;
 
+  private missionSys!: MissionSystem;
+  private rankSys!: RankSystem;
+  private lastSummary: RunSummary = { completed: [], rank: { reward: 0 } };
+
   constructor(engine: Engine, save?: SaveManager) {
     super(engine, GameState.MENU);
     this.save = save ?? new SaveManager();
@@ -47,6 +59,8 @@ export class RunnerGame extends Game {
       },
       (t) => POWERUPS[t].duration * powerupDurationMult(this.save.powerupLevel(t)),
     );
+    this.missionSys = new MissionSystem(this.save);
+    this.rankSys = new RankSystem(this.save);
     engine.add(this.segments.group);
     engine.add(this.coins.group);
     engine.add(this.powerups.group);
@@ -130,8 +144,19 @@ export class RunnerGame extends Game {
   private endRun(): void {
     this.save.addCoins(this.score.coins);
     this.save.recordRun(this.score.score);
-    this.save.addXp(Math.floor(this.distance / 10) + this.score.coins);
+    const rank = this.rankSys.applyRun(this.distance, this.score.coins);
+    const completed = this.missionSys.applyRun(
+      this.score.coins,
+      this.distance,
+      this.jetpackUses,
+    );
+    this.lastSummary = { completed, rank };
     this.state.set(GameState.GAMEOVER);
+  }
+
+  /** Mission completions + rank changes from the last finished run (for UI). */
+  getRunSummary(): RunSummary {
+    return this.lastSummary;
   }
 
   /** Continue the current run after a crash (revive). Keeps score/distance. */
