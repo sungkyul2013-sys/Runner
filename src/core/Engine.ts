@@ -1,24 +1,29 @@
 import * as THREE from 'three';
-import {
-  CAMERA_FOV_BASE,
-  COLORS,
-  DEV,
-} from '../config/constants';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { CAMERA_FOV_BASE, COLORS, DEV } from '../config/constants';
 import { Stats } from './Stats';
 
 /** Per-frame update callback. `dt` is delta seconds, `elapsed` total seconds. */
 export type UpdateFn = (dt: number, elapsed: number) => void;
 
 /**
- * Low-level rendering engine: owns the Scene, Camera, Renderer and the
- * requestAnimationFrame loop. It is intentionally game-agnostic — gameplay is
- * driven through update callbacks registered via {@link onUpdate}. Handles DPR
- * clamping, window resize and an optional dev FPS overlay.
+ * Low-level engine: owns the Scene, Camera, Renderer and the rAF loop, plus an
+ * UnrealBloom post-processing chain (neon glow), a decaying camera shake and a
+ * brief hit-stop time-scale for juice. Game-agnostic — gameplay runs through
+ * update callbacks. Handles DPR clamping, resize, quality toggle and a dev FPS
+ * overlay.
  */
 export class Engine {
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
+
+  private readonly composer: EffectComposer;
+  private readonly bloom: UnrealBloomPass;
+  private bloomEnabled = true;
 
   private readonly clock = new THREE.Clock();
   private readonly updaters = new Set<UpdateFn>();
@@ -27,19 +32,18 @@ export class Engine {
   private running = false;
   private elapsed = 0;
 
+  private shakeAmt = 0;
+  private slowTimer = 0;
+  private readonly shakeOffset = new THREE.Vector3();
+
   constructor(canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      powerPreference: 'high-performance',
-    });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(this.clampedDpr());
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(COLORS.background);
-    // Distance fog hides the spawn horizon and reinforces the neon mood.
     this.scene.fog = new THREE.Fog(COLORS.fog, 40, 160);
 
     this.camera = new THREE.PerspectiveCamera(
@@ -53,43 +57,63 @@ export class Engine {
 
     this.setupLights();
 
-    window.addEventListener('resize', this.onResize);
+    // Post-processing: scene → bloom → output.
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.85, // strength
+      0.6, // radius
+      0.2, // threshold
+    );
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
+    this.composer.setPixelRatio(this.clampedDpr());
+    this.composer.setSize(window.innerWidth, window.innerHeight);
 
+    window.addEventListener('resize', this.onResize);
     if (DEV) this.stats = new Stats();
   }
 
-  /** Hemisphere fill + a key directional light with soft shadows disabled (perf). */
   private setupLights(): void {
-    const hemi = new THREE.HemisphereLight(0x9fd0ff, 0x202842, 1.1);
-    this.scene.add(hemi);
-
+    this.scene.add(new THREE.HemisphereLight(0x9fd0ff, 0x202842, 1.1));
     const key = new THREE.DirectionalLight(0xffffff, 1.4);
     key.position.set(6, 18, 8);
     this.scene.add(key);
-
-    // A cool rim light from behind for the neon silhouette feel.
     const rim = new THREE.DirectionalLight(0x2de2e6, 0.6);
     rim.position.set(-6, 6, -10);
     this.scene.add(rim);
   }
 
   private clampedDpr(): number {
-    // Clamp DPR so high-density mobile screens don't tank the fill rate.
     return Math.min(window.devicePixelRatio || 1, 2);
   }
 
-  /** Register a per-frame update callback. Returns an unsubscribe function. */
   onUpdate(fn: UpdateFn): () => void {
     this.updaters.add(fn);
     return () => this.updaters.delete(fn);
   }
-
   add(obj: THREE.Object3D): void {
     this.scene.add(obj);
   }
-
   remove(obj: THREE.Object3D): void {
     this.scene.remove(obj);
+  }
+
+  /** Kick a decaying camera shake (used on crashes / bombs). */
+  shake(amount: number): void {
+    this.shakeAmt = Math.max(this.shakeAmt, amount);
+  }
+  /** Brief slow-motion hit-stop. */
+  hitstop(seconds: number): void {
+    this.slowTimer = Math.max(this.slowTimer, seconds);
+  }
+  /** Quality toggle: bloom + DPR. */
+  setQuality(q: 'high' | 'low'): void {
+    this.bloomEnabled = q === 'high';
+    const dpr = q === 'low' ? Math.min(this.clampedDpr(), 1.25) : this.clampedDpr();
+    this.renderer.setPixelRatio(dpr);
+    this.composer.setPixelRatio(dpr);
   }
 
   start(): void {
@@ -98,7 +122,6 @@ export class Engine {
     this.clock.start();
     this.loop();
   }
-
   stop(): void {
     this.running = false;
     cancelAnimationFrame(this.rafId);
@@ -108,14 +131,29 @@ export class Engine {
     if (!this.running) return;
     this.rafId = requestAnimationFrame(this.loop);
 
-    // Clamp dt to avoid huge jumps after a tab regains focus.
-    const dt = Math.min(this.clock.getDelta(), 0.05);
-    this.elapsed += dt;
+    const rdt = Math.min(this.clock.getDelta(), 0.05);
+    // Hit-stop scales gameplay time but not the shake decay.
+    const scale = this.slowTimer > 0 ? 0.12 : 1;
+    if (this.slowTimer > 0) this.slowTimer -= rdt;
+    const gdt = rdt * scale;
+    this.elapsed += gdt;
 
-    for (const fn of this.updaters) fn(dt, this.elapsed);
+    for (const fn of this.updaters) fn(gdt, this.elapsed);
 
-    this.renderer.render(this.scene, this.camera);
-    this.stats?.update(dt);
+    // Apply decaying camera shake on top of whatever positioned the camera.
+    if (this.shakeAmt > 0.0001) {
+      this.shakeOffset.set(
+        (Math.random() - 0.5) * this.shakeAmt,
+        (Math.random() - 0.5) * this.shakeAmt,
+        0,
+      );
+      this.camera.position.add(this.shakeOffset);
+      this.shakeAmt = Math.max(0, this.shakeAmt - rdt * 1.6);
+    }
+
+    if (this.bloomEnabled) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
+    this.stats?.update(rdt);
   };
 
   private onResize = (): void => {
@@ -125,12 +163,16 @@ export class Engine {
     this.camera.updateProjectionMatrix();
     this.renderer.setPixelRatio(this.clampedDpr());
     this.renderer.setSize(w, h);
+    this.composer.setPixelRatio(this.clampedDpr());
+    this.composer.setSize(w, h);
+    this.bloom.setSize(w, h);
   };
 
   dispose(): void {
     this.stop();
     window.removeEventListener('resize', this.onResize);
     this.stats?.dispose();
+    this.composer.dispose();
     this.renderer.dispose();
   }
 }

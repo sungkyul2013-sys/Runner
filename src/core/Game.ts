@@ -69,9 +69,11 @@ export class Game {
         this.player.moveRight();
         break;
       case 'jump':
+        if (!this.player.isAirborne) this.onJump();
         this.player.jump();
         break;
       case 'slide':
+        if (!this.player.isSliding) this.onSlide();
         this.player.slide();
         break;
       case 'deploy':
@@ -80,8 +82,10 @@ export class Game {
     }
   };
 
-  /** Extension point for the double-tap "deploy" intent (Phase 4 hoverboard). */
+  /** Extension points for SFX / FX. Overridden by RunnerGame in Phase 7. */
   protected onDeploy(): void {}
+  protected onJump(): void {}
+  protected onSlide(): void {}
 
   /** Multiplier applied to the world speed (Phase 4 Rocket / headstart). */
   protected speedMultiplier(): number {

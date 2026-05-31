@@ -61,10 +61,13 @@ All IP is original; assets are assembled from Three.js primitives.
 - [x] Missions: rotating 3 (coins / distance / jetpack) with rewards + rotation
 - [x] Rank: XP from runs → level-ups → coin rewards; XP bar on home
 
-### ⬜ Phase 7 — Polish & Effects
-- [ ] Particles, UnrealBloom glow, screen shake + hit-stop
-- [ ] Biome / day-night transitions, score popups, near-miss bonus, combos
-- [ ] Music + SFX + mute toggle
+### ✅ Phase 7 — Polish & Effects
+- [x] Pooled particles (coin sparkle, crash debris, bomb blast, slide puff, aura)
+- [x] UnrealBloom neon glow (quality-toggleable)
+- [x] Screen shake + hit-stop on crashes/bombs
+- [x] Biome / day-night colour transitions over distance
+- [x] Score/combo popups + near-miss "CLOSE!" bonus
+- [x] Synthesised Web Audio SFX + BGM + mute toggle (no asset files)
 
 ### ⬜ Phase 8 — Performance & Build
 - [ ] InstancedMesh for coins / repeated props

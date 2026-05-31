@@ -34,7 +34,7 @@ export class CoinSystem {
 
   private readonly tmp = new THREE.Vector3();
 
-  constructor(private readonly onCollect: () => void) {
+  constructor(private readonly onCollect: (pos: THREE.Vector3) => void) {
     this.pool = new ObjectPool<Coin>(
       () => {
         const c = new Coin();
@@ -72,7 +72,7 @@ export class CoinSystem {
       this.tmp.set(px, py, PLAYER_Z);
       if (!c.collected && c.position.distanceTo(this.tmp) < COIN_PICKUP_RADIUS) {
         c.collected = true;
-        this.onCollect();
+        this.onCollect(c.position);
         this.release(i);
         continue;
       }

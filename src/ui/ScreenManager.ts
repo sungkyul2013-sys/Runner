@@ -1,3 +1,5 @@
+import type { AudioManager } from '../audio/AudioManager';
+import type { Engine } from '../core/Engine';
 import type { RunnerGame } from '../core/RunnerGame';
 import { GameState } from '../core/GameStateManager';
 import type { SaveManager } from '../data/SaveManager';
@@ -32,7 +34,15 @@ export class ScreenManager {
   constructor(
     private readonly game: RunnerGame,
     private readonly save: SaveManager,
+    private readonly audio: AudioManager,
+    private readonly engine: Engine,
   ) {
+    // Apply persisted settings up front.
+    this.engine.setQuality(save.data.settings.quality);
+    this.audio.setMuted(save.data.settings.muted);
+    // Unlock audio + click SFX on the first interaction anywhere.
+    window.addEventListener('pointerdown', () => this.audio.unlock(), { once: false });
+
     const refresh = () => this.game.refreshLoadout();
 
     this.menu = new Menu({
@@ -68,6 +78,9 @@ export class ScreenManager {
 
   private start(): void {
     this.reviveUsed = false;
+    this.audio.unlock();
+    this.audio.startBgm();
+    this.audio.ui();
     this.game.startRun();
   }
   private home(): void {
@@ -110,7 +123,9 @@ export class ScreenManager {
     root.append(el('div', { font: '800 28px/1 system-ui' }, 'SETTINGS'));
 
     const muteBtn = button('', () => {
-      this.save.setMuted(!this.save.data.settings.muted);
+      const next = !this.save.data.settings.muted;
+      this.save.setMuted(next);
+      this.audio.setMuted(next);
       syncMute();
     });
     const syncMute = () => {
@@ -119,7 +134,9 @@ export class ScreenManager {
     syncMute();
 
     const qBtn = button('', () => {
-      this.save.setQuality(this.save.data.settings.quality === 'high' ? 'low' : 'high');
+      const next = this.save.data.settings.quality === 'high' ? 'low' : 'high';
+      this.save.setQuality(next);
+      this.engine.setQuality(next);
       syncQ();
     }, 'ghost');
     const syncQ = () => {

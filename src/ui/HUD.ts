@@ -63,6 +63,36 @@ export class HUD {
     document.body.appendChild(this.overlayEl);
   }
 
+  /** Transient floating text (near-miss, combo, score pops). */
+  popup(text: string, color = '#e8f7ff'): void {
+    if (!HUD.popStyle) {
+      HUD.popStyle = true;
+      const s = document.createElement('style');
+      s.textContent =
+        '@keyframes nd-popup{0%{opacity:0;transform:translate(-50%,0) scale(.7)}' +
+        '20%{opacity:1;transform:translate(-50%,-18px) scale(1)}' +
+        '100%{opacity:0;transform:translate(-50%,-60px) scale(1)}}';
+      document.head.appendChild(s);
+    }
+    const e = document.createElement('div');
+    Object.assign(e.style, {
+      position: 'fixed',
+      top: '32%',
+      left: '50%',
+      color,
+      font: '800 26px/1 system-ui, sans-serif',
+      textShadow: `0 0 14px ${color}`,
+      pointerEvents: 'none',
+      zIndex: '70',
+      animation: 'nd-popup 0.9s ease-out forwards',
+    } as CSSStyleDeclaration);
+    e.textContent = text;
+    document.body.appendChild(e);
+    setTimeout(() => e.remove(), 950);
+  }
+
+  private static popStyle = false;
+
   private mk(style: Partial<CSSStyleDeclaration>): HTMLDivElement {
     const el = document.createElement('div');
     Object.assign(el.style, {
