@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:templates": "esbuild scripts/checkTemplates.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-templates.mjs --log-level=error && node node_modules/.cache/check-templates.mjs"
   },
   "dependencies": {
     "gsap": "^3.12.5",
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@types/howler": "^2.2.11",
     "@types/three": "^0.169.0",
+    "esbuild": "^0.21.5",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
   }
