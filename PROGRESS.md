@@ -69,11 +69,12 @@ All IP is original; assets are assembled from Three.js primitives.
 - [x] Score/combo popups + near-miss "CLOSE!" bonus
 - [x] Synthesised Web Audio SFX + BGM + mute toggle (no asset files)
 
-### ⬜ Phase 8 — Performance & Build
-- [ ] InstancedMesh for coins / repeated props
-- [ ] Frustum culling, dispose audit, pooling check
-- [ ] Mobile DPR clamp + quality settings, loading screen
-- [ ] Production build
+### ✅ Phase 8 — Performance & Build
+- [x] Coins rendered as a single InstancedMesh (one draw call)
+- [x] Object pooling everywhere (obstacles, coins, pickups, particles) — bounded
+- [x] Mobile DPR clamp + quality setting (bloom + DPR) in Settings
+- [x] Loading screen with progress bar
+- [x] Production build (`npm run build`) + standalone `play.html`
 
 ## Controls
 - **Move lanes:** ← / → or A / D, or swipe left/right
