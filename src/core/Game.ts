@@ -56,11 +56,22 @@ export class Game {
         case 'slide':
           this.player.slide();
           break;
+        case 'deploy':
+          this.onDeploy();
+          break;
       }
     } else if (this.state.is(GameState.GAMEOVER) && intent === 'confirm') {
       this.restart();
     }
   };
+
+  /** Extension point for the double-tap "deploy" intent (Phase 4 hoverboard). */
+  protected onDeploy(): void {}
+
+  /** Multiplier applied to the world speed (Phase 4 Rocket boost). */
+  protected speedMultiplier(): number {
+    return 1;
+  }
 
   /** Reset run state for a fresh run. Subclasses extend to clear obstacles. */
   protected restart(): void {
@@ -79,13 +90,14 @@ export class Game {
     // Gentle, capped speed ramp over time.
     this.speed = Math.min(MAX_SPEED, BASE_SPEED + SPEED_RAMP_PER_SEC * this.runTime);
 
-    const scroll = this.speed * dt;
+    const effectiveSpeed = this.speed * this.speedMultiplier();
+    const scroll = effectiveSpeed * dt;
     this.distance += scroll;
 
     this.player.update(dt);
     this.track.update(scroll);
-    this.stepWorld(dt, scroll); // Phase 2 hook
-    this.cameraRig.update(dt, this.player.group.position.x, this.speed);
+    this.stepWorld(dt, scroll); // Phase 2+ hook
+    this.cameraRig.update(dt, this.player.group.position.x, effectiveSpeed);
   };
 
   /** Extension point for Phase 2 (segment spawning + collision). No-op here. */

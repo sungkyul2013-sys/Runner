@@ -1,5 +1,5 @@
 /** Discrete movement intents emitted by the input layer. */
-export type Intent = 'left' | 'right' | 'jump' | 'slide' | 'confirm';
+export type Intent = 'left' | 'right' | 'jump' | 'slide' | 'confirm' | 'deploy';
 
 export type IntentListener = (intent: Intent) => void;
 
@@ -22,6 +22,9 @@ export class InputController {
   private startX = 0;
   private startY = 0;
   private startT = 0;
+  /** Timestamp of the last tap, for double-tap (→ deploy) detection. */
+  private lastTapT = 0;
+  private readonly doubleTapMs = 280;
 
   /** Minimum pointer travel (px) before a gesture counts as a swipe. */
   private readonly swipeThreshold = 28;
@@ -65,6 +68,11 @@ export class InputController {
       case 'KeyS':
         this.emit('slide');
         break;
+      case 'KeyE':
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        this.emit('deploy');
+        break;
       case 'Space':
       case 'Enter':
         // Space jumps during play but also confirms (restart). Emit both;
@@ -94,9 +102,16 @@ export class InputController {
     const dist = Math.hypot(dx, dy);
     const dt = performance.now() - this.startT;
 
-    // Short, near-stationary press → tap / confirm.
+    // Short, near-stationary press → tap. Two quick taps → deploy.
     if (dist < this.tapMaxDist && dt < this.tapMaxMs) {
-      this.emit('confirm');
+      const now = performance.now();
+      if (now - this.lastTapT < this.doubleTapMs) {
+        this.emit('deploy');
+        this.lastTapT = 0;
+      } else {
+        this.emit('confirm');
+        this.lastTapT = now;
+      }
       return;
     }
 

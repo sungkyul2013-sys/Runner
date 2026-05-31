@@ -102,6 +102,28 @@ export class SegmentManager {
     }
   }
 
+  /**
+   * Destroy (recycle) every destructible obstacle within `range` ahead of the
+   * player — used by the Bomb power-up. Returns the world positions cleared so
+   * the caller can spawn explosion FX. Walls (non-destructible) survive.
+   */
+  destroyAhead(range: number): THREE.Vector3[] {
+    const cleared: THREE.Vector3[] = [];
+    const minZ = PLAYER_Z - range;
+    const maxZ = PLAYER_Z + 2;
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      const o = this.active[i];
+      if (o.destructible && o.z >= minZ && o.z <= maxZ) {
+        cleared.push(o.mesh.position.clone());
+        this.pool.release(o);
+        const last = this.active.length - 1;
+        this.active[i] = this.active[last];
+        this.active.pop();
+      }
+    }
+    return cleared;
+  }
+
   /** Clear all obstacles and reset the spawn cursor for a fresh run. */
   reset(): void {
     for (const o of this.active) this.pool.release(o);

@@ -39,9 +39,12 @@ All IP is original; assets are assembled from Three.js primitives.
 - [x] More duck hazards (overhead signs) + player ground-height physics
 - [x] Collision resolves support (roof) vs fatal vs near-miss in one pass
 
-### ⬜ Phase 4 — Power-ups
-- [ ] Magnet, 2× score, Jetpack, Super Sneakers, Hoverboard
-- [ ] HUD remaining-time rings
+### ✅ Phase 4 — Power-ups (+ Rocket & Bomb)
+- [x] Magnet, 2× score, Super Sneakers, Jetpack (flight + coin vacuum)
+- [x] Rocket = speed + altitude boost; Bomb = destroys obstacles ahead
+- [x] Hoverboard = deployable (double-tap / Shift / E) 1-hit shield + invuln
+- [x] HUD remaining-time rings + hoverboard charge badge
+- [x] Pooled pickup tokens, weighted spawns
 
 ### ⬜ Phase 5 — Screens & Flow
 - [ ] Home menu, character carousel, pause overlay, game-over screen
