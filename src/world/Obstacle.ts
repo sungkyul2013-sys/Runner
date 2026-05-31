@@ -129,7 +129,7 @@ function resourcesFor(kind: ObstacleKind): {
     mat = new THREE.MeshStandardMaterial({
       color: s.color,
       emissive: s.emissive,
-      emissiveIntensity: 0.45,
+      emissiveIntensity: 0.28,
       roughness: 0.5,
       metalness: 0.1,
       transparent: s.opacity !== undefined,

@@ -44,7 +44,7 @@ export class Engine {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(COLORS.background);
-    this.scene.fog = new THREE.Fog(COLORS.fog, 40, 160);
+    this.scene.fog = new THREE.Fog(COLORS.fog, 55, 230);
 
     this.camera = new THREE.PerspectiveCamera(
       CAMERA_FOV_BASE,
@@ -62,9 +62,9 @@ export class Engine {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.85, // strength
-      0.6, // radius
-      0.2, // threshold
+      0.45, // strength — subtle glow, not a neon wash
+      0.5, // radius
+      0.35, // threshold — only the brightest highlights bloom
     );
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -76,11 +76,11 @@ export class Engine {
   }
 
   private setupLights(): void {
-    this.scene.add(new THREE.HemisphereLight(0x9fd0ff, 0x202842, 1.1));
-    const key = new THREE.DirectionalLight(0xffffff, 1.4);
+    this.scene.add(new THREE.HemisphereLight(0x9fd0ff, 0x141a2e, 0.85));
+    const key = new THREE.DirectionalLight(0xfff2e0, 1.05);
     key.position.set(6, 18, 8);
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x2de2e6, 0.6);
+    const rim = new THREE.DirectionalLight(0x2de2e6, 0.3);
     rim.position.set(-6, 6, -10);
     this.scene.add(rim);
   }

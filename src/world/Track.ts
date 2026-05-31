@@ -68,7 +68,7 @@ export class Track {
     const railMat = new THREE.MeshStandardMaterial({
       color: COLORS.laneStripe,
       emissive: COLORS.laneStripe,
-      emissiveIntensity: 0.5,
+      emissiveIntensity: 0.32,
       roughness: 0.4,
     });
     const railGeo = new THREE.BoxGeometry(0.15, 0.4, this.spanZ);

@@ -57,7 +57,7 @@ export class CoinSystem {
     this.mat = new THREE.MeshStandardMaterial({
       color: COLORS.coin,
       emissive: COLORS.coin,
-      emissiveIntensity: 0.6,
+      emissiveIntensity: 0.4,
       metalness: 0.7,
       roughness: 0.3,
     });

@@ -1,6 +1,7 @@
 import { BASE_SPEED, MAX_SPEED, SPEED_RAMP_PER_SEC } from '../config/constants';
 import { InputController, type Intent } from '../player/InputController';
 import { Player } from '../player/Player';
+import { Environment } from '../world/Environment';
 import { Track } from '../world/Track';
 import { CameraRig } from './CameraRig';
 import { Engine } from './Engine';
@@ -22,6 +23,7 @@ export class Game {
 
   protected readonly player = new Player();
   protected readonly track = new Track();
+  protected readonly environment = new Environment();
   protected readonly input = new InputController(document.body);
   private readonly cameraRig: CameraRig;
 
@@ -37,6 +39,7 @@ export class Game {
     this.cameraRig = new CameraRig(engine.camera);
 
     engine.add(this.track.group);
+    engine.add(this.environment.group);
     engine.add(this.player.group);
 
     this.input.onIntent(this.handleIntent);
@@ -125,6 +128,7 @@ export class Game {
     this.player.setAnimSpeed(effectiveSpeed / BASE_SPEED);
     this.player.update(dt);
     this.track.update(scroll);
+    this.environment.update(scroll);
     this.stepWorld(dt, scroll);
     this.cameraRig.update(dt, this.player.group.position.x, effectiveSpeed);
   }
@@ -135,6 +139,7 @@ export class Game {
     this.player.setAnimSpeed(ATTRACT_SPEED / BASE_SPEED);
     this.player.update(dt);
     this.track.update(scroll);
+    this.environment.update(scroll);
     this.cameraRig.update(dt, this.player.group.position.x, ATTRACT_SPEED);
   }
 

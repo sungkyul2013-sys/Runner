@@ -34,7 +34,7 @@ export class Character {
     this.group.add(this.inner);
   }
 
-  private mat(color: number, emissive: number, ei = 0.3): THREE.MeshStandardMaterial {
+  private mat(color: number, emissive: number, ei = 0.16): THREE.MeshStandardMaterial {
     const m = new THREE.MeshStandardMaterial({
       color,
       emissive,
@@ -78,9 +78,9 @@ export class Character {
     const p = def.palette;
     const outfit = getCosmetic(equipped.outfit);
     const bodyColor = outfit?.color ?? p.primary;
-    const bodyMat = this.mat(bodyColor, p.glow, 0.3);
-    const limbMat = this.mat(p.secondary, p.glow, 0.25);
-    const accentMat = this.mat(p.accent, p.glow, 0.4);
+    const bodyMat = this.mat(bodyColor, p.glow, 0.16);
+    const limbMat = this.mat(p.secondary, p.glow, 0.14);
+    const accentMat = this.mat(p.accent, p.glow, 0.22);
 
     const slim = def.archetype === 'sprite' ? 0.82 : 1;
 
@@ -126,7 +126,7 @@ export class Character {
       this.disposables.push(ringGeo);
       const ring = new THREE.Mesh(
         ringGeo,
-        this.mat(p.secondary, p.secondary, 0.8),
+        this.mat(p.secondary, p.secondary, 0.4),
       );
       ring.rotation.x = Math.PI / 2;
       ring.position.y = 0.1;
@@ -150,7 +150,7 @@ export class Character {
   ): void {
     const hair = getCosmetic(equipped.hair);
     if (!hair || hair.style === 'none') return;
-    const hairMat = this.mat(palette.secondary, palette.glow, 0.5);
+    const hairMat = this.mat(palette.secondary, palette.glow, 0.3);
 
     if (hair.style === 'spike') {
       for (let i = -1; i <= 1; i++) {

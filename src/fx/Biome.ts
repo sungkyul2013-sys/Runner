@@ -8,12 +8,12 @@ interface Palette {
   fog: number;
 }
 
-/** Original neon biome palettes, cycled as the run progresses. */
+/** Subtle, cohesive biome palettes (fog tints) cycled as the run progresses. */
 const PALETTES: Palette[] = [
-  { bg: 0x05060c, fog: 0x0a0e1f }, // midnight
-  { bg: 0x120a1e, fog: 0x241033 }, // dusk purple
-  { bg: 0x1a0e16, fog: 0x3a1430 }, // neon dawn
-  { bg: 0x081a1e, fog: 0x0e3038 }, // cyber teal
+  { bg: 0x0a0f20, fog: 0x10182e }, // night
+  { bg: 0x0e0f24, fog: 0x161a36 }, // deep indigo
+  { bg: 0x120e22, fog: 0x1c1734 }, // dusk
+  { bg: 0x081420, fog: 0x12202e }, // pre-dawn teal
 ];
 
 /**

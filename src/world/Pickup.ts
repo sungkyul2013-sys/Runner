@@ -16,7 +16,7 @@ function materialFor(type: PowerupType): THREE.MeshStandardMaterial {
     m = new THREE.MeshStandardMaterial({
       color: POWERUPS[type].color,
       emissive: POWERUPS[type].color,
-      emissiveIntensity: 0.7,
+      emissiveIntensity: 0.45,
       metalness: 0.3,
       roughness: 0.35,
     });
