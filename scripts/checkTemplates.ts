@@ -33,8 +33,11 @@ function survives(kind: ObstacleKind | null, vert: Vert): boolean {
     case null:
       return true;
     case ObstacleKind.BARRIER:
+    case ObstacleKind.LOW_TRAIN: // jump ONTO the roof
+    case ObstacleKind.CRATE: // jump onto the crate
       return vert === 'AIR';
     case ObstacleKind.TUNNEL:
+    case ObstacleKind.SIGN: // slide under
       return vert === 'DUCK';
     default: // TRAIN, TRAIN_MOVING, WALL
       return false;

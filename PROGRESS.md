@@ -31,10 +31,13 @@ All IP is original; assets are assembled from Three.js primitives.
 - [x] Difficulty ramp (density + speed scale with distance)
 - [x] No memory growth (pool reuse + dispose on discard)
 
-### ⬜ Phase 3 — Coins & Score
-- [ ] Coin patterns (line / arch / ramp curve)
-- [ ] Pickup particles + sound + counter
-- [ ] Score = distance + coins × value (multiplier)
+### ✅ Phase 3 — Coins & Score + mechanics expansion
+- [x] Coin patterns (line / jump-arch), pooled, with magnet hook
+- [x] Pickup + counter + score (particles/SFX hooked for Phase 7)
+- [x] Score = distance + coins × value × multiplier
+- [x] Rideable obstacles (low train / crate): jump onto the roof and ride
+- [x] More duck hazards (overhead signs) + player ground-height physics
+- [x] Collision resolves support (roof) vs fatal vs near-miss in one pass
 
 ### ⬜ Phase 4 — Power-ups
 - [ ] Magnet, 2× score, Jetpack, Super Sneakers, Hoverboard

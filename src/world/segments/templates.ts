@@ -142,4 +142,52 @@ export const TEMPLATES: SegmentTemplate[] = [
       { slot: 3, lane: 0, kind: K.BARRIER },
     ],
   },
+
+  // ── Rideable & duck variety (jump onto roofs, slide under signs) ────────
+  {
+    difficulty: 1,
+    safePath: 'jump onto the low train, or pass on a side lane',
+    placements: [{ slot: 2, lane: 0, kind: K.LOW_TRAIN }],
+  },
+  {
+    difficulty: 1,
+    safePath: 'lanes 0/1 empty, or hop onto the crate',
+    placements: [{ slot: 2, lane: -1, kind: K.CRATE }],
+  },
+  {
+    difficulty: 2,
+    safePath: 'centre empty, or jump onto either side crate',
+    placements: [
+      { slot: 2, lane: -1, kind: K.CRATE },
+      { slot: 2, lane: 1, kind: K.CRATE },
+    ],
+  },
+  {
+    difficulty: 2,
+    safePath: 'slide under any sign',
+    placements: [
+      { slot: 2, lane: -1, kind: K.SIGN },
+      { slot: 2, lane: 0, kind: K.SIGN },
+      { slot: 2, lane: 1, kind: K.SIGN },
+    ],
+  },
+  {
+    difficulty: 3,
+    safePath: 'centre: jump onto the low train (sides blocked by trains)',
+    placements: [
+      { slot: 2, lane: -1, kind: K.TRAIN },
+      { slot: 2, lane: 0, kind: K.LOW_TRAIN },
+      { slot: 2, lane: 1, kind: K.TRAIN },
+    ],
+  },
+  {
+    difficulty: 3,
+    safePath: 'lane 0: slide sign (slot1), then ride low train (slot3); sides walled',
+    placements: [
+      { slot: 1, lane: 0, kind: K.SIGN },
+      { slot: 2, lane: -1, kind: K.WALL },
+      { slot: 2, lane: 1, kind: K.WALL },
+      { slot: 3, lane: 0, kind: K.LOW_TRAIN },
+    ],
+  },
 ];

@@ -42,6 +42,8 @@ export const JUMP_VELOCITY = 11;
 export const GRAVITY = 34;
 /** Duration of a slide before auto-standing (seconds). */
 export const SLIDE_DURATION = 0.6;
+/** Vertical tolerance for landing on top of a rideable obstacle. */
+export const LAND_TOLERANCE = 0.35;
 
 /** Player capsule dimensions (standing). */
 export const PLAYER_RADIUS = 0.45;
@@ -72,6 +74,15 @@ export const SPAWN_AHEAD = SEGMENT_LENGTH * ACTIVE_SEGMENTS;
 /** Distance behind the player after which a segment is recycled. */
 export const RECYCLE_BEHIND = SEGMENT_LENGTH * 1.5;
 
+// ── Coins & score ──────────────────────────────────────────────────────────
+/** Score points awarded per coin (before any multiplier). */
+export const COIN_VALUE = 5;
+/** Coin token radius / pickup radius. */
+export const COIN_RADIUS = 0.32;
+export const COIN_PICKUP_RADIUS = 0.95;
+/** Height of ground-level coins above the track. */
+export const COIN_GROUND_Y = 1.0;
+
 // ── Colours (neon palette) ───────────────────────────────────────────────
 export const COLORS = {
   background: 0x05060c,
@@ -85,4 +96,9 @@ export const COLORS = {
   barrier: 0xff6b3d,
   tunnel: 0x3df5ff,
   wall: 0x586073,
+  lowTrain: 0x4be0a0,
+  crate: 0xd98a3a,
+  sign: 0xffd23f,
+  coin: 0xffd23f,
+  coinGlow: 0xfff3b0,
 } as const;

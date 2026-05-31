@@ -13,6 +13,12 @@ export enum ObstacleKind {
   TUNNEL = 'TUNNEL',
   /** Tall side wall blocking a lane — dodge by switching lanes. */
   WALL = 'WALL',
+  /** Low train — jump ONTO its roof and ride, or dodge. */
+  LOW_TRAIN = 'LOW_TRAIN',
+  /** Stacked crate — jump onto it / ride, or dodge. */
+  CRATE = 'CRATE',
+  /** Overhead sign/gantry — clear by sliding under (duck). */
+  SIGN = 'SIGN',
 }
 
 interface Half {
@@ -28,6 +34,10 @@ interface KindSpec {
   emissive: number;
   moving: boolean;
   opacity?: number;
+  /** Player can land on its roof instead of dying (top hit = safe). */
+  rideable?: boolean;
+  /** Can be cleared by a Bomb power-up. */
+  destructible?: boolean;
 }
 
 /**
@@ -43,6 +53,7 @@ const SPECS: Record<ObstacleKind, KindSpec> = {
     color: COLORS.trainBody,
     emissive: 0x2a1f6b,
     moving: false,
+    destructible: true,
   },
   [ObstacleKind.TRAIN_MOVING]: {
     half: { x: 1.0, y: 1.0, z: 3.0 },
@@ -50,6 +61,7 @@ const SPECS: Record<ObstacleKind, KindSpec> = {
     color: 0xff5cf0,
     emissive: 0x7a1f6b,
     moving: true,
+    destructible: true,
   },
   [ObstacleKind.BARRIER]: {
     half: { x: 1.0, y: 0.35, z: 0.5 },
@@ -57,6 +69,7 @@ const SPECS: Record<ObstacleKind, KindSpec> = {
     color: COLORS.barrier,
     emissive: 0x803012,
     moving: false,
+    destructible: true,
   },
   [ObstacleKind.TUNNEL]: {
     half: { x: 1.0, y: 0.6, z: 0.5 },
@@ -71,6 +84,31 @@ const SPECS: Record<ObstacleKind, KindSpec> = {
     yCenter: 1.2,
     color: COLORS.wall,
     emissive: 0x1a1f2b,
+    moving: false,
+  },
+  [ObstacleKind.LOW_TRAIN]: {
+    half: { x: 1.0, y: 0.7, z: 2.5 },
+    yCenter: 0.7, // roof at y=1.4 — reachable by a normal jump
+    color: COLORS.lowTrain,
+    emissive: 0x10704f,
+    moving: false,
+    rideable: true,
+    destructible: true,
+  },
+  [ObstacleKind.CRATE]: {
+    half: { x: 0.7, y: 0.45, z: 0.7 },
+    yCenter: 0.45, // roof at y=0.9
+    color: COLORS.crate,
+    emissive: 0x6b4218,
+    moving: false,
+    rideable: true,
+    destructible: true,
+  },
+  [ObstacleKind.SIGN]: {
+    half: { x: 1.0, y: 0.5, z: 0.3 },
+    yCenter: 1.7, // spans 1.2–2.2: stand=collide, slide=pass
+    color: COLORS.sign,
+    emissive: 0x806010,
     moving: false,
   },
 };
@@ -159,6 +197,21 @@ export class Obstacle {
 
   get z(): number {
     return this.mesh.position.z;
+  }
+
+  /** Height of this obstacle's roof (top surface). */
+  get topY(): number {
+    return this.mesh.position.y + this.spec.half.y;
+  }
+
+  /** Whether the player can land on top instead of dying. */
+  get rideable(): boolean {
+    return this.spec.rideable === true;
+  }
+
+  /** Whether a Bomb power-up can clear this obstacle. */
+  get destructible(): boolean {
+    return this.spec.destructible === true;
   }
 
   /** Hide when released to the pool. */
