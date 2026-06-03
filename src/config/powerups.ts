@@ -26,13 +26,13 @@ export interface PowerupDef {
  * PowerupSystem and the HUD rings.
  */
 export const POWERUPS: Record<PowerupType, PowerupDef> = {
-  [PowerupType.MAGNET]: { color: 0xff4d6d, icon: '🧲', label: 'Magnet', duration: 8, weight: 5 },
-  [PowerupType.DOUBLE]: { color: 0xffd23f, icon: '✦', label: '2× Score', duration: 10, weight: 4 },
-  [PowerupType.SNEAKERS]: { color: 0x6bff8c, icon: '⤒', label: 'Sneakers', duration: 8, weight: 4 },
-  [PowerupType.JETPACK]: { color: 0xff9f43, icon: '🚀', label: 'Jetpack', duration: 5, weight: 3 },
-  [PowerupType.ROCKET]: { color: 0x4dd2ff, icon: '➤', label: 'Rocket', duration: 2.6, weight: 2 },
-  [PowerupType.HOVERBOARD]: { color: 0xb15cff, icon: '◈', label: 'Hoverboard', duration: 16, weight: 3 },
-  [PowerupType.BOMB]: { color: 0xff5630, icon: '💣', label: 'Bomb', duration: 0, weight: 2 },
+  [PowerupType.MAGNET]: { color: 0x55aaff, icon: '🧲', label: '자석', duration: 5, weight: 5 },
+  [PowerupType.DOUBLE]: { color: 0xffd86b, icon: '✨', label: 'x2', duration: 6, weight: 4 },
+  [PowerupType.SNEAKERS]: { color: 0x66ff99, icon: '🥾', label: '부츠', duration: 5, weight: 4 },
+  [PowerupType.JETPACK]: { color: 0xff9f43, icon: '🪂', label: '글라이드', duration: 5, weight: 2 },
+  [PowerupType.ROCKET]: { color: 0xff5a2a, icon: '🚀', label: '로켓', duration: 5, weight: 2 },
+  [PowerupType.HOVERBOARD]: { color: 0x8a7bff, icon: '🛹', label: '호버보드', duration: 16, weight: 3 },
+  [PowerupType.BOMB]: { color: 0xff5630, icon: '💣', label: '폭탄', duration: 0, weight: 2 },
 };
 
 /** Power-ups that appear as collectible tokens on the track. */

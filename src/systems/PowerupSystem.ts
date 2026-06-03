@@ -151,6 +151,11 @@ export class PowerupSystem {
     this.onActivate(type);
   }
 
+  /** Trigger a power-up directly (consumable items: rocket, bomb). */
+  trigger(type: PowerupType): void {
+    this.activate(type);
+  }
+
   /** Double-tap → deploy a hoverboard shield if one is owned and none active. */
   deploy(): void {
     if (this.shieldActive || this.hoverCharges <= 0) return;

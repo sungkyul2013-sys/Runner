@@ -1,39 +1,41 @@
 import type * as THREE from 'three';
-import { BIOMES, COLORS, LEVEL_DIST } from '../config/constants';
+import { BIOMES, CHECKPOINT_DIST, COLORS, LEVEL_DIST, TIME_ATTACK_SECONDS } from '../config/constants';
 import { POWERUPS, PowerupType } from '../config/powerups';
 import { AudioManager } from '../audio/AudioManager';
-import { abilityMagnitude, getCharacter } from '../data/characters';
-import type { Mission } from '../data/missions';
-import { powerupDurationMult } from '../data/potions';
-import { SaveManager } from '../data/SaveManager';
+import { getCharacter } from '../data/characters';
+import { SaveManager, type GameMode } from '../data/SaveManager';
 import { ParticleSystem } from '../fx/ParticleSystem';
 import { CoinSystem } from '../systems/CoinSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
-import { MissionSystem } from '../systems/MissionSystem';
 import { PowerupSystem } from '../systems/PowerupSystem';
-import { RankSystem, type RankResult } from '../systems/RankSystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
-import type { RunStats } from '../ui/HUD';
 import { HUD } from '../ui/HUD';
 import { SegmentManager } from '../world/SegmentManager';
 import { Engine } from './Engine';
 import { Game } from './Game';
 import { GameState } from './GameStateManager';
 
-const HEADSTART_SPEED = 1.4;
+const HEADSTART_SPEED = 1.45;
 const REVIVE_INVULN = 2.2;
 const COMBO_WINDOW = 1.6;
+const CHECKPOINT_COINS = 25;
+const CHECKPOINT_TIME = 6;
 
-export interface RunSummary {
-  completed: Mission[];
-  rank: RankResult;
+/** Result of the last finished run, surfaced to the game-over screen. */
+export interface RunResult {
+  mode: GameMode;
+  score: number;
+  coins: number;
+  distance: number;
+  mileage: number;
+  isBest: boolean;
 }
 
 /**
- * The complete in-run game: procedural track with rideable roofs, coins &
- * scoring, the power-up suite, the meta layer (save/characters/abilities/
- * cosmetics/upgrades) and Phase-7 juice — particles, screen shake, hit-stop,
- * biome shifts, combos, near-miss bonuses and synthesised audio.
+ * The complete Sunset Runner in-run game: procedural track with rideable roofs,
+ * coins & scoring, the power-up suite, level/biome progression, checkpoints,
+ * two modes (Endless + Challenge time-attack), character abilities, consumable
+ * items (bomb/rocket), and juice (particles, shake, hit-stop, combos, audio).
  */
 export class RunnerGame extends Game {
   private readonly segments = new SegmentManager();
@@ -46,20 +48,29 @@ export class RunnerGame extends Game {
 
   private save!: SaveManager;
   private audio!: AudioManager;
-  private missionSys!: MissionSystem;
-  private rankSys!: RankSystem;
-  private lastSummary: RunSummary = { completed: [], rank: { reward: 0 } };
 
-  private abilityMagnet = 0;
+  // Loadout (from selected character + upgrades).
+  private magnetMult = 1;
+  private lowGravity = false;
+  private hasReviveAbility = false;
   private headstartDur = 0;
   private headstartTimer = 0;
-  jetpackUses = 0;
 
+  // Run state.
+  mode: GameMode = 'endless';
+  private level = 1;
+  private nextCheckpoint = CHECKPOINT_DIST;
+  private timeLeft = TIME_ATTACK_SECONDS;
   private comboCount = 0;
   private comboTimer = 0;
   private wasNearMiss = false;
-  /** Current level (1-based) — drives biome + difficulty. */
-  private level = 1;
+  private usedAbilityRevive = false;
+
+  // Consumable inventory carried into the run.
+  private bombs = 0;
+  private rockets = 0;
+
+  private lastResult: RunResult = { mode: 'endless', score: 0, coins: 0, distance: 0, mileage: 0, isBest: false };
 
   constructor(engine: Engine, save?: SaveManager, audio?: AudioManager) {
     super(engine, GameState.MENU);
@@ -71,10 +82,8 @@ export class RunnerGame extends Game {
       this.hud.powerupContainer,
       (range) => this.detonateBomb(range),
       (type) => this.onPowerup(type),
-      (t) => POWERUPS[t].duration * powerupDurationMult(this.save.powerupLevel(t)),
+      (t) => this.powerupDuration(t),
     );
-    this.missionSys = new MissionSystem(this.save);
-    this.rankSys = new RankSystem(this.save);
 
     engine.add(this.segments.group);
     engine.add(this.coins.group);
@@ -82,10 +91,28 @@ export class RunnerGame extends Game {
     engine.add(this.particles.group);
     engine.onUpdate((dt) => this.particles.update(dt)); // animate even when frozen
 
+    this.hud.bindControls(
+      () => this.pause(),
+      () => this.useBomb(),
+      () => this.useRocket(),
+    );
+
     this.state.onChange((next) => this.applyVisibility(next === GameState.PLAYING));
     this.applyVisibility(false);
     this.refreshLoadout();
-    this.headstartTimer = this.headstartDur;
+  }
+
+  /** Reference duration formula: magnet/boots = 5 + lvl*1.2, x2 = 6 + lvl*1.5. */
+  private powerupDuration(t: PowerupType): number {
+    const u = this.save.data.upgrades;
+    if (t === PowerupType.MAGNET) return (5 + (u.magnet ?? 0) * 1.2) * this.magnetMult;
+    if (t === PowerupType.SNEAKERS) return 5 + (u.boots ?? 0) * 1.2;
+    if (t === PowerupType.DOUBLE) return 6 + (u.x2 ?? 0) * 1.5;
+    return POWERUPS[t].duration;
+  }
+
+  setMode(mode: GameMode): void {
+    this.mode = mode;
   }
 
   private applyVisibility(playing: boolean): void {
@@ -95,51 +122,51 @@ export class RunnerGame extends Game {
     this.powerups.group.visible = playing;
   }
 
-  /** Apply equipped character, cosmetics and passive ability (public so the
-   * shop / character select can refresh the live attract preview). */
+  /** Apply the selected character's look + abilities and the coin-value upgrade. */
   refreshLoadout(): void {
-    const def = getCharacter(this.save.data.selectedCharacter);
-    const lvl = this.save.abilityLevel(def.id);
-    const mag = abilityMagnitude(def.ability, lvl);
-    this.abilityMagnet = def.ability.id === 'magnet' ? mag : 0;
-    this.headstartDur = def.ability.id === 'headstart' ? mag : 0;
-    this.score.coinBonus = def.ability.id === 'coinBonus' ? mag : 0;
-    this.player.applyCharacterId(def.id, this.save.data.equipped);
+    const c = getCharacter(this.save.data.selected);
+    const a = c.ability;
+    this.magnetMult = a.magnetMult ?? 1;
+    this.lowGravity = a.lowGravity ?? false;
+    this.hasReviveAbility = a.revive ?? false;
+    this.score.scoreBonus = (a.scoreMult ?? 1) - 1;
+    this.score.coinMult = a.coinMult ?? 1;
+    this.score.coinValueBonus = (this.save.upgradeLevel('multiplier')) * 1;
+    this.headstartDur = 1.5 + this.save.upgradeLevel('headstart') * 1.0;
+    this.player.setLaneSpeedMult(a.laneSpeedMult ?? 1);
+    this.player.setLowGravity(this.lowGravity);
+    this.player.applyCharacterId(c.id);
   }
 
-  getRunStats(): RunStats {
-    return {
-      score: this.score.score,
-      coins: this.score.coins,
-      distance: this.distance,
-      best: this.save.data.bestScore,
-    };
+  getRunResult(): RunResult {
+    return this.lastResult;
   }
-  getRunSummary(): RunSummary {
-    return this.lastSummary;
+  get currentScore(): number {
+    return this.score.score;
+  }
+  get currentCoins(): number {
+    return this.score.coins;
+  }
+  get challengeTime(): number {
+    return Math.max(0, Math.ceil(this.timeLeft));
   }
 
   // ── FX hooks ────────────────────────────────────────────────────────────
   private onCoin(pos: THREE.Vector3): void {
     this.score.addCoins(1);
-    this.particles.burst(pos, COLORS.coin, { count: 6, speed: 3, life: 0.5, size: 0.6 });
+    this.particles.burst(pos, COLORS.coin, { count: 5, speed: 3, life: 0.5, size: 0.6 });
     this.audio.coin();
     this.comboTimer = COMBO_WINDOW;
     this.comboCount++;
-    if (this.comboCount > 0 && this.comboCount % 10 === 0) {
-      this.hud.popup(`${this.comboCount} COMBO`, '#ffd23f');
-      this.score.addDistance(this.comboCount); // small combo bonus
-    }
+    if (this.comboCount >= 5) this.hud.setCombo(this.comboCount);
+    if (this.comboCount > 0 && this.comboCount % 10 === 0) this.score.addBonus(this.comboCount);
   }
 
   private onPowerup(type: PowerupType): void {
-    if (type === PowerupType.JETPACK) this.jetpackUses++;
     this.audio.power();
-    this.particles.burst(this.player.group.position, POWERUPS[type].color, {
-      count: 14, speed: 4, life: 0.7,
-    });
+    this.particles.burst(this.player.group.position, POWERUPS[type].color, { count: 14, speed: 4, life: 0.7 });
     if (type !== PowerupType.HOVERBOARD && type !== PowerupType.BOMB) {
-      this.hud.popup(POWERUPS[type].label, '#2de2e6');
+      this.hud.popup(POWERUPS[type].label, '#ffd86b');
     }
   }
 
@@ -148,10 +175,25 @@ export class RunnerGame extends Game {
   }
   protected override onSlide(): void {
     this.audio.slide();
-    this.particles.burst(this.player.group.position, 0xbfd8ff, { count: 6, speed: 2, life: 0.4, size: 0.5 });
+    this.particles.burst(this.player.group.position, 0xffe0c0, { count: 6, speed: 2, life: 0.4, size: 0.5 });
   }
   protected override onDeploy(): void {
     this.powerups.deploy();
+  }
+
+  // ── Consumable items (HUD buttons) ────────────────────────────────────────
+  useBomb(): void {
+    if (this.bombs <= 0 || !this.state.is(GameState.PLAYING)) return;
+    this.bombs--;
+    this.powerups.trigger(PowerupType.BOMB);
+    this.powerups.grantInvuln(1.5);
+    this.hud.setItems(this.bombs, this.rockets);
+  }
+  useRocket(): void {
+    if (this.rockets <= 0 || !this.state.is(GameState.PLAYING)) return;
+    this.rockets--;
+    this.powerups.trigger(PowerupType.ROCKET);
+    this.hud.setItems(this.bombs, this.rockets);
   }
 
   protected override speedMultiplier(): number {
@@ -173,7 +215,19 @@ export class RunnerGame extends Game {
     if (this.headstartTimer > 0) this.headstartTimer -= dt;
     if (this.comboTimer > 0) {
       this.comboTimer -= dt;
-      if (this.comboTimer <= 0) this.comboCount = 0;
+      if (this.comboTimer <= 0) {
+        this.comboCount = 0;
+        this.hud.setCombo(0);
+      }
+    }
+
+    // Challenge mode countdown.
+    if (this.mode === 'challenge') {
+      this.timeLeft -= dt;
+      if (this.timeLeft <= 0) {
+        this.endRun();
+        return;
+      }
     }
 
     // Level / biome progression every LEVEL_DIST metres.
@@ -186,6 +240,20 @@ export class RunnerGame extends Game {
     }
     this.environment.applyBiome(this.level - 1, this.engine.scene.fog!.color, dt);
 
+    // Checkpoint rewards.
+    if (this.distance >= this.nextCheckpoint) {
+      this.nextCheckpoint += CHECKPOINT_DIST;
+      this.particles.burst(this.player.group.position, COLORS.coin, { count: 18, speed: 6, life: 0.8 });
+      if (this.mode === 'challenge') {
+        this.timeLeft += CHECKPOINT_TIME;
+        this.hud.popup(`+${CHECKPOINT_TIME}s`, '#ffd86b');
+      } else {
+        this.score.addCoins(CHECKPOINT_COINS);
+        this.hud.popup('CHECKPOINT', '#ffd86b');
+      }
+      this.audio.power();
+    }
+
     this.segments.update(scroll, dt, this.distance);
     this.powerups.update(scroll, dt, this.player);
 
@@ -193,23 +261,39 @@ export class RunnerGame extends Game {
     this.player.setGroundY(result.supportY);
 
     if (result.fatal && !this.powerups.isInvulnerable() && !this.powerups.tryAbsorb()) {
-      this.endRun();
-      return;
+      // 피닉스 ability: one free revive per run.
+      if (this.hasReviveAbility && !this.usedAbilityRevive) {
+        this.usedAbilityRevive = true;
+        this.segments.destroyAhead(40);
+        this.powerups.grantInvuln(REVIVE_INVULN);
+        this.player.reset();
+        this.hud.popup('REVIVE!', '#ff6a2a');
+        this.audio.power();
+      } else {
+        this.endRun();
+        return;
+      }
     }
 
-    // Near-miss bonus (debounced on the rising edge).
+    // Near-miss bonus.
     if (result.nearMiss && !this.wasNearMiss) {
-      this.hud.popup('CLOSE!', '#2de2e6');
-      this.score.addDistance(25);
+      this.hud.popup('CLOSE!', '#6bffb0');
+      this.score.addBonus(25);
       this.audio.ui();
     }
     this.wasNearMiss = result.nearMiss;
 
-    const magnet = Math.max(this.powerups.magnetRadius(), this.abilityMagnet);
+    const magnet = this.powerups.magnetRadius();
     this.coins.update(scroll, dt, this.player, magnet);
     this.score.multiplier = this.powerups.scoreMultiplier();
     this.score.addDistance(scroll);
-    this.hud.setRun({ score: this.score.score, coins: this.score.coins, distance: this.distance });
+    this.hud.setRun({
+      score: this.score.score,
+      coins: this.score.coins,
+      distance: this.distance,
+      level: this.level,
+      time: this.mode === 'challenge' ? this.challengeTime : undefined,
+    });
   }
 
   private endRun(): void {
@@ -218,15 +302,24 @@ export class RunnerGame extends Game {
     this.engine.hitstop(0.12);
     this.audio.crash();
 
-    this.save.addCoins(this.score.coins);
-    this.save.recordRun(this.score.score);
-    const rank = this.rankSys.applyRun(this.distance, this.score.coins);
-    const completed = this.missionSys.applyRun(this.score.coins, this.distance, this.jetpackUses);
-    this.lastSummary = { completed, rank };
+    const { mileage, isBest } = this.save.recordRun(
+      this.mode,
+      this.score.score,
+      this.score.coins,
+      this.distance,
+    );
+    this.lastResult = {
+      mode: this.mode,
+      score: this.score.score,
+      coins: this.score.coins,
+      distance: this.distance,
+      mileage,
+      isBest,
+    };
     this.state.set(GameState.GAMEOVER);
   }
 
-  /** Continue the current run after a crash (revive). Keeps score/distance. */
+  /** Continue the current run after a crash (paid revive). */
   revive(): void {
     this.segments.destroyAhead(40);
     this.powerups.grantInvuln(REVIVE_INVULN);
@@ -242,14 +335,23 @@ export class RunnerGame extends Game {
     this.powerups.reset();
     this.particles.reset();
     this.level = 1;
+    this.nextCheckpoint = CHECKPOINT_DIST;
+    this.timeLeft = TIME_ATTACK_SECONDS;
     this.environment.setBiome(0, this.engine.scene.fog!.color);
     this.score.reset();
-    this.jetpackUses = 0;
     this.comboCount = 0;
     this.comboTimer = 0;
     this.wasNearMiss = false;
+    this.usedAbilityRevive = false;
     this.refreshLoadout();
     this.headstartTimer = this.headstartDur;
+    // Pull consumables from inventory into the run.
+    this.bombs = this.save.data.inventory.bomb;
+    this.rockets = this.save.data.inventory.rocket;
+    this.save.data.inventory.bomb = 0;
+    this.save.data.inventory.rocket = 0;
+    this.save.save();
+    this.hud.setItems(this.bombs, this.rockets);
     super.resetRun();
   }
 }

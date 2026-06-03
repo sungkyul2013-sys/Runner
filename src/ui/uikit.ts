@@ -20,21 +20,24 @@ function ensureStyles(): void {
   const s = document.createElement('style');
   s.textContent = `
     @keyframes nd-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-    @keyframes nd-pulse { 0%,100%{filter:drop-shadow(0 0 14px ${NEON.cyan})} 50%{filter:drop-shadow(0 0 28px ${NEON.pink})} }
+    @keyframes nd-breathe { 0%,100%{box-shadow:0 0 18px ${NEON.gold}88} 50%{box-shadow:0 0 34px ${NEON.cyan}cc} }
     @keyframes nd-fade { from{opacity:0} to{opacity:1} }
-    .nd-btn{cursor:pointer;border:none;border-radius:12px;font:700 18px/1 system-ui,sans-serif;
-      padding:14px 26px;color:${NEON.ink};background:${NEON.cyan};transition:transform .08s,box-shadow .2s;
-      box-shadow:0 0 16px ${NEON.cyan}aa;pointer-events:auto}
-    .nd-btn:hover{transform:translateY(-2px);box-shadow:0 0 26px ${NEON.cyan}}
-    .nd-btn.pink{background:${NEON.pink};box-shadow:0 0 16px ${NEON.pink}aa}
-    .nd-btn.pink:hover{box-shadow:0 0 26px ${NEON.pink}}
-    .nd-btn.ghost{background:transparent;color:${NEON.text};border:2px solid ${NEON.cyan}66;
-      box-shadow:none;font-size:15px;padding:10px 18px}
-    .nd-btn.ghost:hover{border-color:${NEON.cyan};box-shadow:0 0 14px ${NEON.cyan}66}
-    .nd-btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
-    .nd-card{background:rgba(12,16,32,.86);border:1px solid ${NEON.cyan}33;border-radius:16px;
-      padding:16px;display:flex;flex-direction:column;gap:8px;min-width:150px}
-    .nd-card.sel{border-color:${NEON.pink};box-shadow:0 0 18px ${NEON.pink}66}
+    @keyframes nd-pop { 0%{transform:scale(.6);opacity:0} 100%{transform:scale(1);opacity:1} }
+    .nd-btn{cursor:pointer;border:none;border-radius:14px;font:800 18px/1 'Trebuchet MS',system-ui,sans-serif;
+      padding:14px 28px;color:${NEON.ink};background:linear-gradient(120deg,${NEON.gold},${NEON.cyan});
+      transition:transform .08s,filter .2s,box-shadow .2s;box-shadow:0 6px 18px rgba(0,0,0,.35);pointer-events:auto}
+    .nd-btn:hover{transform:translateY(-2px);filter:brightness(1.06)}
+    .nd-btn.pink{background:linear-gradient(120deg,${NEON.pink},${NEON.cyan})}
+    .nd-btn.ghost{background:rgba(40,24,70,0.40);color:${NEON.text};border:1px solid rgba(255,210,180,0.30);
+      font-size:15px;padding:11px 18px;box-shadow:none}
+    .nd-btn.ghost:hover{background:rgba(60,36,90,0.55)}
+    .nd-btn:disabled{filter:grayscale(.7) brightness(.7);cursor:not-allowed;transform:none}
+    .nd-card{background:rgba(22,14,44,0.55);border:1px solid rgba(255,210,180,0.30);border-radius:16px;
+      padding:14px;display:flex;flex-direction:column;gap:8px;min-width:150px;backdrop-filter:blur(7px)}
+    .nd-card.sel{border-color:${NEON.gold};box-shadow:0 0 18px ${NEON.gold}66}
+    .nd-tab{cursor:pointer;border:none;border-radius:12px;font:700 14px/1 system-ui;padding:9px 12px;
+      background:rgba(40,24,70,0.40);color:${NEON.text};border:1px solid rgba(255,210,180,0.18);pointer-events:auto}
+    .nd-tab.on{background:linear-gradient(120deg,${NEON.gold},${NEON.pink});color:${NEON.ink}}
   `;
   document.head.appendChild(s);
 }
@@ -80,7 +83,7 @@ export function screen(opaque = true): HTMLDivElement {
     color: NEON.text,
     fontFamily: 'system-ui, sans-serif',
     background: opaque
-      ? 'radial-gradient(ellipse at 50% 30%, rgba(20,26,54,.9), rgba(5,6,12,.96))'
+      ? 'radial-gradient(ellipse at 50% 25%, rgba(60,30,80,.72), rgba(18,10,34,.94))'
       : 'transparent',
     animation: 'nd-fade .25s ease',
     pointerEvents: 'auto',
@@ -95,5 +98,19 @@ export function show(s: HTMLElement, on: boolean): void {
 
 /** Format a coin count with the coin glyph. */
 export function coinStr(n: number): string {
-  return `<span style="color:${NEON.gold}">◉</span> ${n}`;
+  return `🪙 ${n}`;
+}
+
+/** Format a gem/mileage count. */
+export function gemStr(n: number): string {
+  return `💎 ${n}`;
+}
+
+/** A small tab button. */
+export function tab(label: string, onClick: () => void): HTMLButtonElement {
+  const b = el('button');
+  b.className = 'nd-tab';
+  b.innerHTML = label;
+  b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+  return b;
 }

@@ -1,172 +1,228 @@
 /**
- * In-run HUD: live score (centre), coin count (top-left) and distance, plus a
- * container for power-up timer rings (filled by the PowerupSystem in Phase 4)
- * and a lightweight game-over overlay. The richer game-over / menu screens
- * arrive in Phase 5; this stays focused on the playing state. Pure DOM overlay.
+ * In-run HUD for Sunset Runner. Top-left shows Score / Level / (Challenge) Time
+ * in glass pills; top-right shows Coins + a Pause button; centre-top shows the
+ * coin-combo meter and slide-in level banners; bottom-left holds the consumable
+ * item buttons (💣 / 🚀) with count badges; the power-up chips float top-right.
+ * Pure DOM overlaying the WebGL canvas. The game-over / menu screens live in
+ * ScreenManager.
  */
 export interface RunStats {
   score: number;
   coins: number;
   distance: number;
-  best?: number;
+  level: number;
+  /** Remaining seconds in Challenge mode (undefined in Endless). */
+  time?: number;
 }
 
+const GLASS = 'rgba(22,14,44,0.55)';
+const BORDER = '1px solid rgba(255,210,180,0.30)';
+
 export class HUD {
-  private readonly scoreEl: HTMLDivElement;
+  private readonly scorePill: HTMLDivElement;
+  private readonly levelPill: HTMLDivElement;
+  private readonly timePill: HTMLDivElement;
   private readonly coinsEl: HTMLDivElement;
+  private readonly pauseBtn: HTMLButtonElement;
   private readonly powerupsEl: HTMLDivElement;
-  private readonly overlayEl: HTMLDivElement;
+  private readonly comboEl: HTMLDivElement;
+  private readonly itemsEl: HTMLDivElement;
+  private readonly all: HTMLElement[] = [];
+
+  private onPause: () => void = () => {};
+  private onBomb: () => void = () => {};
+  private onRocket: () => void = () => {};
 
   constructor() {
-    this.scoreEl = this.mk({
-      top: '10px',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      font: '700 30px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace',
-      color: '#e8f7ff',
-      textShadow: '0 0 14px rgba(45,226,230,0.85)',
-      textAlign: 'center',
-    });
-    this.scoreEl.innerHTML = `<div>0</div><div style="font-size:13px;opacity:0.7">0 m</div>`;
+    // Top-left stat pills.
+    const left = this.mk({ top: '14px', left: '14px', display: 'flex', gap: '8px', alignItems: 'flex-start' });
+    this.scorePill = this.pill('SCORE', '0', '#fff2e0', '34px');
+    this.levelPill = this.pill('LEVEL', '1', '#c9a8ff');
+    this.timePill = this.pill('TIME', '60', '#ffd86b');
+    this.timePill.style.display = 'none';
+    left.append(this.scorePill, this.levelPill, this.timePill);
 
-    this.coinsEl = this.mk({
-      top: '14px',
-      left: '16px',
-      font: '700 22px/1 ui-monospace, monospace',
-      color: '#ffd23f',
-      textShadow: '0 0 12px rgba(255,210,63,0.8)',
-    });
-    this.coinsEl.textContent = '◉ 0';
-
-    this.powerupsEl = this.mk({
-      top: '14px',
-      right: '16px',
-      display: 'flex',
-      gap: '8px',
-    });
-
-    this.overlayEl = document.createElement('div');
-    Object.assign(this.overlayEl.style, {
-      position: 'fixed',
-      inset: '0',
-      display: 'none',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '10px',
-      background: 'rgba(5,6,12,0.74)',
-      color: '#e8f7ff',
-      font: '16px/1.5 system-ui, sans-serif',
-      textAlign: 'center',
-      zIndex: '100',
+    // Top-right coins + pause.
+    const right = this.mk({ top: '14px', right: '14px', display: 'flex', gap: '10px', alignItems: 'center' });
+    right.style.pointerEvents = 'auto';
+    this.coinsEl = document.createElement('div');
+    Object.assign(this.coinsEl.style, {
+      font: `800 22px/1 'Trebuchet MS',system-ui`, color: '#ffd86b',
+      textShadow: '0 0 12px rgba(255,216,107,0.6)',
     } as CSSStyleDeclaration);
-    document.body.appendChild(this.overlayEl);
+    this.coinsEl.innerHTML = '🪙 0';
+    this.pauseBtn = document.createElement('button');
+    Object.assign(this.pauseBtn.style, {
+      width: '40px', height: '40px', borderRadius: '12px', border: BORDER,
+      background: GLASS, color: '#fff', font: '18px/1 system-ui', cursor: 'pointer',
+    } as CSSStyleDeclaration);
+    this.pauseBtn.textContent = '⏸';
+    this.pauseBtn.addEventListener('click', () => this.onPause());
+    right.append(this.coinsEl, this.pauseBtn);
+
+    // Power-up chips (below coins, top-right).
+    this.powerupsEl = this.mk({ top: '64px', right: '14px', display: 'flex', gap: '8px' });
+
+    // Combo meter (centre-top).
+    this.comboEl = this.mk({
+      top: '90px', left: '50%', transform: 'translateX(-50%)',
+      font: `900 26px/1 'Trebuchet MS',system-ui`, color: '#ffd86b',
+      textShadow: '0 2px 14px rgba(255,126,179,0.7)',
+    });
+    this.comboEl.style.display = 'none';
+
+    // Consumable item buttons (bottom-left).
+    this.itemsEl = this.mk({ bottom: '18px', left: '18px', display: 'flex', gap: '10px' });
+    this.itemsEl.style.pointerEvents = 'auto';
+    this.bombBtn = this.itemButton('💣', () => this.onBomb());
+    this.rocketBtn = this.itemButton('🚀', () => this.onRocket());
+    this.itemsEl.append(this.bombBtn, this.rocketBtn);
+
+    this.all.push(left, right, this.powerupsEl, this.comboEl, this.itemsEl);
+    this.setVisible(false);
   }
 
-  /** Transient floating text (near-miss, combo, score pops). */
-  popup(text: string, color = '#e8f7ff'): void {
-    if (!HUD.popStyle) {
-      HUD.popStyle = true;
-      const s = document.createElement('style');
-      s.textContent =
-        '@keyframes nd-popup{0%{opacity:0;transform:translate(-50%,0) scale(.7)}' +
-        '20%{opacity:1;transform:translate(-50%,-18px) scale(1)}' +
-        '100%{opacity:0;transform:translate(-50%,-60px) scale(1)}}';
-      document.head.appendChild(s);
+  private bombBtn: HTMLButtonElement;
+  private rocketBtn: HTMLButtonElement;
+
+  // ── Construction helpers ──────────────────────────────────────────────────
+  private mk(style: Partial<CSSStyleDeclaration>): HTMLDivElement {
+    const el = document.createElement('div');
+    Object.assign(el.style, { position: 'fixed', pointerEvents: 'none', zIndex: '50', ...style } as CSSStyleDeclaration);
+    document.body.appendChild(el);
+    return el;
+  }
+
+  private pill(label: string, value: string, color: string, valueSize = '24px'): HTMLDivElement {
+    const el = document.createElement('div');
+    Object.assign(el.style, {
+      background: GLASS, border: BORDER, borderRadius: '14px', padding: '6px 12px',
+      backdropFilter: 'blur(6px)', textAlign: 'center', minWidth: '54px',
+    } as CSSStyleDeclaration);
+    el.innerHTML =
+      `<div style="font:700 10px/1 system-ui;letter-spacing:2px;opacity:.7;color:#fff">${label}</div>` +
+      `<div data-v style="font:800 ${valueSize}/1.2 'Trebuchet MS',system-ui;color:${color}">${value}</div>`;
+    return el;
+  }
+
+  private setPill(el: HTMLElement, value: string): void {
+    const v = el.querySelector('[data-v]');
+    if (v) v.textContent = value;
+  }
+
+  private itemButton(emoji: string, onClick: () => void): HTMLButtonElement {
+    const b = document.createElement('button');
+    Object.assign(b.style, {
+      position: 'relative', width: '52px', height: '52px', borderRadius: '14px',
+      border: BORDER, background: GLASS, color: '#fff', font: '24px/1 system-ui',
+      cursor: 'pointer', backdropFilter: 'blur(6px)',
+    } as CSSStyleDeclaration);
+    b.textContent = emoji;
+    b.addEventListener('click', onClick);
+    const badge = document.createElement('span');
+    badge.dataset.badge = '1';
+    Object.assign(badge.style, {
+      position: 'absolute', bottom: '-4px', right: '-4px', background: '#ffd86b',
+      color: '#120a22', font: '700 11px/1 monospace', borderRadius: '8px', padding: '1px 5px',
+    } as CSSStyleDeclaration);
+    badge.textContent = '0';
+    b.append(badge);
+    return b;
+  }
+
+  // ── Wiring ──────────────────────────────────────────────────────────────
+  bindControls(onPause: () => void, onBomb: () => void, onRocket: () => void): void {
+    this.onPause = onPause;
+    this.onBomb = onBomb;
+    this.onRocket = onRocket;
+  }
+
+  get powerupContainer(): HTMLDivElement {
+    return this.powerupsEl;
+  }
+
+  // ── Live updates ──────────────────────────────────────────────────────────
+  setRun(s: RunStats): void {
+    this.setPill(this.scorePill, `${s.score}`);
+    this.setPill(this.levelPill, `${s.level}`);
+    if (s.time !== undefined) {
+      this.timePill.style.display = 'block';
+      this.setPill(this.timePill, `${s.time}`);
+    } else {
+      this.timePill.style.display = 'none';
     }
+    this.coinsEl.innerHTML = `🪙 ${s.coins}`;
+  }
+
+  setCombo(count: number): void {
+    if (count >= 5) {
+      this.comboEl.style.display = 'block';
+      this.comboEl.textContent = `x${count} COIN COMBO`;
+    } else {
+      this.comboEl.style.display = 'none';
+    }
+  }
+
+  setItems(bomb: number, rocket: number): void {
+    this.updateItem(this.bombBtn, bomb);
+    this.updateItem(this.rocketBtn, rocket);
+  }
+  private updateItem(b: HTMLButtonElement, n: number): void {
+    const badge = b.querySelector('[data-badge]') as HTMLElement;
+    if (badge) badge.textContent = `${n}`;
+    b.style.filter = n > 0 ? 'none' : 'grayscale(0.8) brightness(0.6)';
+    b.disabled = n <= 0;
+  }
+
+  setVisible(on: boolean): void {
+    for (const el of this.all) {
+      // Combo starts hidden; everything else shows as flex when the run is live.
+      el.style.display = on && el !== this.comboEl ? 'flex' : 'none';
+    }
+  }
+
+  // ── Transient popups / banners ──────────────────────────────────────────────
+  popup(text: string, color = '#fff2e0'): void {
+    HUD.ensureStyle('nd-popup',
+      '@keyframes nd-popup{0%{opacity:0;transform:translate(-50%,0) scale(.7)}' +
+      '20%{opacity:1;transform:translate(-50%,-18px) scale(1)}' +
+      '100%{opacity:0;transform:translate(-50%,-60px) scale(1)}}');
     const e = document.createElement('div');
     Object.assign(e.style, {
-      position: 'fixed',
-      top: '32%',
-      left: '50%',
-      color,
-      font: '800 26px/1 system-ui, sans-serif',
-      textShadow: `0 0 14px ${color}`,
-      pointerEvents: 'none',
-      zIndex: '70',
-      animation: 'nd-popup 0.9s ease-out forwards',
+      position: 'fixed', top: '34%', left: '50%', color,
+      font: `800 26px/1 'Trebuchet MS',system-ui`, textShadow: `0 0 14px ${color}`,
+      pointerEvents: 'none', zIndex: '70', animation: 'nd-popup 0.9s ease-out forwards',
     } as CSSStyleDeclaration);
     e.textContent = text;
     document.body.appendChild(e);
     setTimeout(() => e.remove(), 950);
   }
 
-  private static popStyle = false;
-
-  /** Slide-in banner for level / biome transitions. */
   banner(title: string, subtitle = ''): void {
-    if (!HUD.bannerStyle) {
-      HUD.bannerStyle = true;
-      const s = document.createElement('style');
-      s.textContent =
-        '@keyframes nd-banner{0%{opacity:0;transform:translate(-50%,-20px)}' +
-        '15%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-20px)}}';
-      document.head.appendChild(s);
-    }
+    HUD.ensureStyle('nd-banner',
+      '@keyframes nd-banner{0%{opacity:0;transform:translate(-50%,-20px)}' +
+      '15%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-20px)}}');
     const e = document.createElement('div');
     Object.assign(e.style, {
-      position: 'fixed',
-      top: '18%',
-      left: '50%',
-      textAlign: 'center',
-      pointerEvents: 'none',
-      zIndex: '72',
-      animation: 'nd-banner 2.2s ease-in-out forwards',
+      position: 'fixed', top: '20%', left: '50%', textAlign: 'center',
+      pointerEvents: 'none', zIndex: '72', animation: 'nd-banner 2.2s ease-in-out forwards',
     } as CSSStyleDeclaration);
     e.innerHTML =
-      `<div style="font:800 34px/1 'Trebuchet MS',system-ui;color:#ffd86b;text-shadow:0 2px 16px rgba(255,126,179,.7)">${title}</div>` +
+      `<div style="font:900 36px/1 'Trebuchet MS',system-ui;color:#ffd86b;text-shadow:0 2px 16px rgba(255,126,179,.7)">${title}</div>` +
       (subtitle ? `<div style="font:700 16px/1.4 system-ui;color:#fff;opacity:.9">${subtitle}</div>` : '');
     document.body.appendChild(e);
     setTimeout(() => e.remove(), 2250);
   }
 
-  private static bannerStyle = false;
+  /** Compatibility no-op (game-over now lives in ScreenManager). */
+  hideGameOver(): void {}
 
-  private mk(style: Partial<CSSStyleDeclaration>): HTMLDivElement {
-    const el = document.createElement('div');
-    Object.assign(el.style, {
-      position: 'fixed',
-      pointerEvents: 'none',
-      zIndex: '50',
-      ...style,
-    } as CSSStyleDeclaration);
-    document.body.appendChild(el);
-    return el;
-  }
-
-  /** Container the PowerupSystem renders its timer rings into. */
-  get powerupContainer(): HTMLDivElement {
-    return this.powerupsEl;
-  }
-
-  setRun(stats: RunStats): void {
-    this.scoreEl.innerHTML =
-      `<div>${stats.score}</div>` +
-      `<div style="font-size:13px;opacity:0.7">${Math.floor(stats.distance)} m</div>`;
-    this.coinsEl.textContent = `◉ ${stats.coins}`;
-  }
-
-  setVisible(on: boolean): void {
-    const d = on ? 'block' : 'none';
-    this.scoreEl.style.display = d;
-    this.coinsEl.style.display = d;
-    this.powerupsEl.style.display = on ? 'flex' : 'none';
-  }
-
-  showGameOver(stats: RunStats): void {
-    const best = stats.best ?? 0;
-    const isBest = stats.score >= best && stats.score > 0;
-    this.overlayEl.innerHTML = `
-      <div style="font:700 44px/1 system-ui,sans-serif;color:#ff3cac;text-shadow:0 0 20px rgba(255,60,172,0.7)">GAME OVER</div>
-      <div style="font:700 30px/1 ui-monospace,monospace">${stats.score}</div>
-      <div style="opacity:0.85">◉ ${stats.coins} &nbsp;·&nbsp; ${Math.floor(stats.distance)} m</div>
-      <div style="opacity:0.7;font-size:14px">Best ${Math.max(best, stats.score)}${isBest ? ' &nbsp;🏆 NEW!' : ''}</div>
-      <div style="margin-top:8px;opacity:0.85">Press <b>Space</b> / <b>Enter</b> or <b>tap</b> to run again</div>
-    `;
-    this.overlayEl.style.display = 'flex';
-  }
-
-  hideGameOver(): void {
-    this.overlayEl.style.display = 'none';
+  private static styles = new Set<string>();
+  private static ensureStyle(id: string, css: string): void {
+    if (HUD.styles.has(id)) return;
+    HUD.styles.add(id);
+    const s = document.createElement('style');
+    s.textContent = css;
+    document.head.appendChild(s);
   }
 }

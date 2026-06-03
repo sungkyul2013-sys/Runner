@@ -8,8 +8,7 @@ import {
   PLAYER_HALF_STANDING,
   SLIDE_DURATION,
 } from '../config/constants';
-import { CHARACTERS, getCharacter, type CharacterDef } from '../data/characters';
-import type { EquippedCosmetics } from '../data/cosmetics';
+import { CHARACTERS, getCharacter } from '../data/characters';
 import { Character, type Pose } from './Character';
 
 /** Z position the player is anchored at; the world scrolls past in +Z. */
@@ -42,6 +41,10 @@ export class Player {
   private groundY = 0;
   /** Jump strength multiplier (Super Sneakers raises this). */
   private jumpMult = 1;
+  /** Lane-change speed multiplier (섀도우 닌자 ability). */
+  private laneSpeedMult = 1;
+  /** Reduced-gravity flag (우주인 ability): higher, floatier jumps. */
+  private lowGravity = false;
   /** When flying (jetpack/rocket) gravity is suspended and Y is driven outside. */
   private flying = false;
 
@@ -52,22 +55,17 @@ export class Player {
   private readonly size = new THREE.Vector3();
 
   constructor() {
-    this.rig = new Character(CHARACTERS[0], { hair: 'hair-none', outfit: 'outfit-classic' });
+    this.rig = new Character(CHARACTERS[0].colors);
     this.group.add(this.rig.group);
     this.reset();
   }
 
-  /** Swap in a different character/cosmetics without touching the physics. */
-  applyCharacter(def: CharacterDef, equipped: EquippedCosmetics): void {
+  /** Swap in a different character look without touching the physics. */
+  applyCharacterId(id: string): void {
     this.group.remove(this.rig.group);
     this.rig.dispose();
-    this.rig = new Character(def, equipped);
+    this.rig = new Character(getCharacter(id).colors);
     this.group.add(this.rig.group);
-  }
-
-  /** Convenience: apply by character id. */
-  applyCharacterId(id: string, equipped: EquippedCosmetics): void {
-    this.applyCharacter(getCharacter(id), equipped);
   }
 
   setAnimSpeed(s: number): void {
@@ -101,7 +99,8 @@ export class Player {
 
   jump(): void {
     if (this.flying || !this.grounded) return; // single jump only
-    this.vy = JUMP_VELOCITY * this.jumpMult;
+    const low = this.lowGravity ? 1.18 : 1;
+    this.vy = JUMP_VELOCITY * this.jumpMult * low;
     this.grounded = false;
     this.endSlide(); // jumping cancels a slide
   }
@@ -132,6 +131,12 @@ export class Player {
   setJumpMult(m: number): void {
     this.jumpMult = m;
   }
+  setLaneSpeedMult(m: number): void {
+    this.laneSpeedMult = m;
+  }
+  setLowGravity(on: boolean): void {
+    this.lowGravity = on;
+  }
   setFlying(on: boolean): void {
     this.flying = on;
     if (on) {
@@ -143,12 +148,12 @@ export class Player {
   update(dt: number): void {
     // Lateral lerp toward the active lane (frame-rate independent).
     const targetX = laneToX(this.currentLane);
-    const t = 1 - Math.exp(-LANE_LERP * dt);
+    const t = 1 - Math.exp(-LANE_LERP * this.laneSpeedMult * dt);
     this.x += (targetX - this.x) * t;
 
     if (!this.flying) {
       // Vertical gravity integration resolving to the current support height.
-      this.vy -= GRAVITY * dt;
+      this.vy -= GRAVITY * (this.lowGravity ? 0.72 : 1) * dt;
       this.feetY += this.vy * dt;
       if (this.feetY <= this.groundY) {
         this.feetY = this.groundY;
