@@ -25,12 +25,12 @@ const html = `<!doctype html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>NeonDash</title>
+    <title>Sunset Runner — 석양 러너</title>
     <style>
       :root { color-scheme: dark; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body {
-        width: 100%; height: 100%; overflow: hidden; background: #05060c;
+        width: 100%; height: 100%; overflow: hidden; background: #120a22;
         font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
         touch-action: none; -webkit-user-select: none; user-select: none;
         overscroll-behavior: none;
