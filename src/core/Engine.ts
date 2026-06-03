@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { CAMERA_FOV_BASE, COLORS, DEV } from '../config/constants';
+import { BIOMES, CAMERA_FOV_BASE, DEV } from '../config/constants';
 import { Stats } from './Stats';
 
 /** Per-frame update callback. `dt` is delta seconds, `elapsed` total seconds. */
@@ -43,8 +43,8 @@ export class Engine {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(COLORS.background);
-    this.scene.fog = new THREE.Fog(COLORS.fog, 55, 230);
+    // Background is the Environment sky dome; fog colour is biome-driven.
+    this.scene.fog = new THREE.Fog(BIOMES[0].fog, 45, 240);
 
     this.camera = new THREE.PerspectiveCamera(
       CAMERA_FOV_BASE,
@@ -62,9 +62,9 @@ export class Engine {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.45, // strength — subtle glow, not a neon wash
-      0.5, // radius
-      0.35, // threshold — only the brightest highlights bloom
+      0.55, // strength — warm sunset glow on the sun + highlights
+      0.6, // radius
+      0.55, // threshold — only the brightest (sun, coins) bloom
     );
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -76,12 +76,13 @@ export class Engine {
   }
 
   private setupLights(): void {
-    this.scene.add(new THREE.HemisphereLight(0x9fd0ff, 0x141a2e, 0.85));
-    const key = new THREE.DirectionalLight(0xfff2e0, 1.05);
-    key.position.set(6, 18, 8);
+    // Warm sky fill + a low golden key from the sun direction + cool back-rim.
+    this.scene.add(new THREE.HemisphereLight(0xffd9b0, 0x3a2350, 0.9));
+    const key = new THREE.DirectionalLight(0xffcaa0, 1.15);
+    key.position.set(-12, 10, -16); // from the sun (left, low, far)
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x2de2e6, 0.3);
-    rim.position.set(-6, 6, -10);
+    const rim = new THREE.DirectionalLight(0xff7eb3, 0.35);
+    rim.position.set(8, 6, 10);
     this.scene.add(rim);
   }
 

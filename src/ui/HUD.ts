@@ -93,6 +93,35 @@ export class HUD {
 
   private static popStyle = false;
 
+  /** Slide-in banner for level / biome transitions. */
+  banner(title: string, subtitle = ''): void {
+    if (!HUD.bannerStyle) {
+      HUD.bannerStyle = true;
+      const s = document.createElement('style');
+      s.textContent =
+        '@keyframes nd-banner{0%{opacity:0;transform:translate(-50%,-20px)}' +
+        '15%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-20px)}}';
+      document.head.appendChild(s);
+    }
+    const e = document.createElement('div');
+    Object.assign(e.style, {
+      position: 'fixed',
+      top: '18%',
+      left: '50%',
+      textAlign: 'center',
+      pointerEvents: 'none',
+      zIndex: '72',
+      animation: 'nd-banner 2.2s ease-in-out forwards',
+    } as CSSStyleDeclaration);
+    e.innerHTML =
+      `<div style="font:800 34px/1 'Trebuchet MS',system-ui;color:#ffd86b;text-shadow:0 2px 16px rgba(255,126,179,.7)">${title}</div>` +
+      (subtitle ? `<div style="font:700 16px/1.4 system-ui;color:#fff;opacity:.9">${subtitle}</div>` : '');
+    document.body.appendChild(e);
+    setTimeout(() => e.remove(), 2250);
+  }
+
+  private static bannerStyle = false;
+
   private mk(style: Partial<CSSStyleDeclaration>): HTMLDivElement {
     const el = document.createElement('div');
     Object.assign(el.style, {

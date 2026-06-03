@@ -16,17 +16,18 @@ export class Loading {
     Object.assign(this.root.style, {
       position: 'fixed', inset: '0', zIndex: '200',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px',
-      background: 'radial-gradient(ellipse at 50% 40%, #141a36, #05060c)',
+      background: 'linear-gradient(180deg, #241a5e 0%, #ff7eb3 55%, #ffd36b 100%)',
       transition: 'opacity .5s ease',
     } as CSSStyleDeclaration);
 
     const title = document.createElement('div');
     Object.assign(title.style, {
-      font: '900 64px/1 system-ui,sans-serif', letterSpacing: '2px',
-      background: `linear-gradient(95deg, ${NEON.cyan}, ${NEON.pink})`,
+      font: `900 clamp(40px,9vw,72px)/1 'Trebuchet MS',system-ui,sans-serif`,
+      letterSpacing: '1px', textAlign: 'center',
+      background: `linear-gradient(120deg, ${NEON.gold}, ${NEON.cyan}, #8a7bff)`,
       webkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
     } as CSSStyleDeclaration);
-    title.textContent = 'NEONDASH';
+    title.textContent = 'SUNSET RUNNER';
 
     const track = document.createElement('div');
     Object.assign(track.style, {

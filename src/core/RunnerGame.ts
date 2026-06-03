@@ -1,12 +1,11 @@
-import * as THREE from 'three';
-import { COLORS } from '../config/constants';
+import type * as THREE from 'three';
+import { BIOMES, COLORS, LEVEL_DIST } from '../config/constants';
 import { POWERUPS, PowerupType } from '../config/powerups';
 import { AudioManager } from '../audio/AudioManager';
 import { abilityMagnitude, getCharacter } from '../data/characters';
 import type { Mission } from '../data/missions';
 import { powerupDurationMult } from '../data/potions';
 import { SaveManager } from '../data/SaveManager';
-import { Biome } from '../fx/Biome';
 import { ParticleSystem } from '../fx/ParticleSystem';
 import { CoinSystem } from '../systems/CoinSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
@@ -44,7 +43,6 @@ export class RunnerGame extends Game {
   private readonly powerups: PowerupSystem;
   private readonly particles = new ParticleSystem();
   private readonly hud = new HUD();
-  private readonly biome: Biome;
 
   private save!: SaveManager;
   private audio!: AudioManager;
@@ -60,6 +58,8 @@ export class RunnerGame extends Game {
   private comboCount = 0;
   private comboTimer = 0;
   private wasNearMiss = false;
+  /** Current level (1-based) — drives biome + difficulty. */
+  private level = 1;
 
   constructor(engine: Engine, save?: SaveManager, audio?: AudioManager) {
     super(engine, GameState.MENU);
@@ -75,7 +75,6 @@ export class RunnerGame extends Game {
     );
     this.missionSys = new MissionSystem(this.save);
     this.rankSys = new RankSystem(this.save);
-    this.biome = new Biome(engine.scene);
 
     engine.add(this.segments.group);
     engine.add(this.coins.group);
@@ -177,7 +176,16 @@ export class RunnerGame extends Game {
       if (this.comboTimer <= 0) this.comboCount = 0;
     }
 
-    this.biome.update(dt, this.distance);
+    // Level / biome progression every LEVEL_DIST metres.
+    const newLevel = Math.floor(this.distance / LEVEL_DIST) + 1;
+    if (newLevel > this.level) {
+      this.level = newLevel;
+      const biome = BIOMES[(this.level - 1) % BIOMES.length];
+      this.hud.banner(`LEVEL ${this.level}`, `${biome.name} 진입`);
+      this.audio.power();
+    }
+    this.environment.applyBiome(this.level - 1, this.engine.scene.fog!.color, dt);
+
     this.segments.update(scroll, dt, this.distance);
     this.powerups.update(scroll, dt, this.player);
 
@@ -233,7 +241,8 @@ export class RunnerGame extends Game {
     this.coins.reset();
     this.powerups.reset();
     this.particles.reset();
-    this.biome.reset();
+    this.level = 1;
+    this.environment.setBiome(0, this.engine.scene.fog!.color);
     this.score.reset();
     this.jetpackUses = 0;
     this.comboCount = 0;

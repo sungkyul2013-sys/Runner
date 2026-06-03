@@ -1,15 +1,16 @@
 /**
  * Tiny DOM UI kit shared by every screen (menu, shop, character select, pause,
- * game-over, settings). Keeps the neon styling consistent and injects the
- * keyframe animations once. Everything overlays the WebGL canvas.
+ * game-over, settings). Holds the Sunset Runner theme palette and injects the
+ * shared keyframe animations once. Everything overlays the WebGL canvas.
+ * (The export is named `NEON` for historical reasons but carries sunset tones.)
  */
 
 export const NEON = {
-  cyan: '#2de2e6',
-  pink: '#ff3cac',
-  gold: '#ffd23f',
-  ink: '#05060c',
-  text: '#e8f7ff',
+  cyan: '#ff7eb3', // accent2 — pink/magenta
+  pink: '#ffb27a', // accent — warm orange
+  gold: '#ffd86b', // bright gold
+  ink: '#120a22', // dark navy ink
+  text: '#fff2e0', // warm off-white text
 };
 
 let injected = false;
