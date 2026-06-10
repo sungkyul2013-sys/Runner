@@ -366,10 +366,11 @@ export class Obstacle {
       mats.set(stripeKey, stripeM);
     }
     this.add(barG, stripeM, 0, 0.72, 0);
-    const postG = geo('barrier:post', () => new THREE.BoxGeometry(0.1, 0.6, 0.1));
-    const postM = mat('barrier:post', 0x6a5560, { rough: 0.8 });
-    this.add(postG, postM, -0.85, 0.3, 0);
-    this.add(postG, postM, 0.85, 0.3, 0);
+    // Thicker, bright warning posts so the barrier reads clearly.
+    const postG = geo('barrier:post', () => new THREE.BoxGeometry(0.2, 0.74, 0.2));
+    const postM = mat('barrier:post', 0xffb13a, { e: 0.4, rough: 0.5 });
+    this.add(postG, postM, -0.9, 0.37, 0);
+    this.add(postG, postM, 0.9, 0.37, 0);
     // Gold cone tip — the "jump!" signal.
     const tipG = geo('barrier:tip', () => new THREE.ConeGeometry(0.12, 0.26, 8));
     const tipM = mat('barrier:tip', COLORS.trainRoof, { e: 0.5 });
@@ -382,10 +383,15 @@ export class Obstacle {
     const barG = geo(`over:bar:${tag}`, () => new THREE.BoxGeometry(2.1, h, 0.26));
     const barM = mat(`over:bar:${tag}`, color, { e: 0.2, rough: 0.5 });
     this.add(barG, barM, 0, bottom + h / 2, 0);
-    const legG = geo(`over:leg:${top}`, () => new THREE.BoxGeometry(0.14, top, 0.14));
-    const legM = mat('over:leg', 0x55406a, { rough: 0.8 });
-    this.add(legG, legM, -1.04, top / 2, 0);
-    this.add(legG, legM, 1.04, top / 2, 0);
+    // Thicker, brighter support legs + base plates → much more visible pillars.
+    const legG = geo(`over:leg:${top}`, () => new THREE.BoxGeometry(0.26, top, 0.26));
+    const legM = mat(`over:leg:${tag}`, color, { e: 0.28, rough: 0.5 });
+    this.add(legG, legM, -1.06, top / 2, 0);
+    this.add(legG, legM, 1.06, top / 2, 0);
+    const baseG = geo('over:base', () => new THREE.BoxGeometry(0.42, 0.12, 0.42));
+    const baseM = mat('over:base', 0xffd0a0, { e: 0.25, rough: 0.5 });
+    this.add(baseG, baseM, -1.06, 0.06, 0);
+    this.add(baseG, baseM, 1.06, 0.06, 0);
     // Down-arrow plate hinting "slide".
     const plateG = geo('over:plate', () => new THREE.PlaneGeometry(0.5, 0.3));
     const plateM = mat('over:plate', 0xfff2d0, { basic: true });

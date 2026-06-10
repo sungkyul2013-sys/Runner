@@ -123,8 +123,49 @@ export class Character {
     this.inner.add(this.leftArm, this.rightArm, this.leftLeg, this.rightLeg);
   }
 
+  /**
+   * Menu showcase: cycle through a variety of lively poses (jog → cheer → wave
+   * → hop → idle) so the character feels alive and shows personality on the
+   * home / character screens. `elapsed` drives the cycle.
+   */
+  showcase(dt: number, elapsed: number): void {
+    const cycle = 9; // seconds for a full set of poses
+    const phase = (elapsed % cycle) / cycle; // 0..1
+    const t = 1 - Math.exp(-10 * dt);
+    if (phase < 0.34) {
+      // Jog on the spot.
+      this.update(dt, 'run', 1);
+      return;
+    }
+    let arm = 0.05, armAsym = 0, leg = 0.05, lean = 0, yOff = 0, hop = 0;
+    if (phase < 0.5) {
+      // Cheer — both arms up.
+      arm = -2.6;
+    } else if (phase < 0.66) {
+      // Wave — one arm up, swaying.
+      armAsym = -2.4 + Math.sin(elapsed * 6) * 0.3;
+      arm = 0.1;
+    } else if (phase < 0.82) {
+      // Little hops.
+      hop = Math.max(0, Math.sin(elapsed * 7)) * 0.35;
+      arm = -0.5;
+      leg = -0.2;
+    } else {
+      // Relaxed idle bob.
+      yOff = Math.sin(elapsed * 2) * 0.03;
+    }
+    this.leftLeg.rotation.x += (leg - this.leftLeg.rotation.x) * t;
+    this.rightLeg.rotation.x += (leg - this.rightLeg.rotation.x) * t;
+    this.leftArm.rotation.x += (arm - this.leftArm.rotation.x) * t;
+    this.rightArm.rotation.x += ((arm + armAsym) - this.rightArm.rotation.x) * t;
+    this.inner.position.y += (this.baseY + yOff + hop - this.inner.position.y) * t;
+    this.inner.rotation.x += (lean - this.inner.rotation.x) * t;
+    this.inner.rotation.y += (Math.sin(elapsed * 0.6) * 0.25 - this.inner.rotation.y) * t;
+  }
+
   /** @param cadence ~1 at base speed, higher when faster (drives stride rate). */
   update(dt: number, pose: Pose, cadence: number): void {
+    if (pose !== 'run') this.inner.rotation.y += (0 - this.inner.rotation.y) * (1 - Math.exp(-10 * dt));
     if (pose === 'run') {
       this.phase += dt * (7 + cadence * 3);
       const s = Math.sin(this.phase);

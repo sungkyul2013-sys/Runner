@@ -169,6 +169,15 @@ export class Player {
     this.animSpeed = s;
   }
 
+  /** Drive the menu "showcase" poses (home / character screens). Keeps the
+   *  rig centred and upright while it performs a variety of lively poses. */
+  menuShowcase(dt: number, elapsed: number): void {
+    this.group.position.set(0, PLAYER_HALF_STANDING.y, PLAYER_Z);
+    this.rig.group.scale.set(1, 1, 1);
+    this.rig.group.rotation.z = 0;
+    this.rig.showcase(dt, elapsed);
+  }
+
   /** Restore the player to the start-of-run state. */
   reset(): void {
     this.currentLane = 0;

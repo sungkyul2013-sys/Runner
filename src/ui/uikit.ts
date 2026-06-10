@@ -20,8 +20,8 @@ function ensureStyles(): void {
   const s = document.createElement('style');
   s.textContent = `
     @keyframes nd-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-9px)} }
-    @keyframes nd-breathe { 0%,100%{box-shadow:0 10px 30px rgba(255,126,179,.45),0 0 0 0 ${NEON.gold}55}
-      50%{box-shadow:0 14px 40px rgba(255,126,179,.65),0 0 0 10px ${NEON.gold}00} }
+    @keyframes nd-breathe { 0%,100%{box-shadow:0 8px 22px rgba(255,126,179,.32),0 0 0 0 ${NEON.gold}40}
+      50%{box-shadow:0 10px 30px rgba(255,126,179,.45),0 0 0 8px ${NEON.gold}00} }
     @keyframes nd-fade { from{opacity:0} to{opacity:1} }
     @keyframes nd-slideup { from{opacity:0;transform:translateY(28px)} to{opacity:1;transform:translateY(0)} }
     @keyframes nd-pop { 0%{transform:scale(.5);opacity:0} 65%{transform:scale(1.12)} 100%{transform:scale(1);opacity:1} }
@@ -38,9 +38,9 @@ function ensureStyles(): void {
       transition:transform .14s cubic-bezier(.34,1.7,.5,1),filter .2s,box-shadow .25s;
       box-shadow:0 8px 0 rgba(120,60,30,.28),0 12px 26px rgba(0,0,0,.42);pointer-events:auto}
     .nd-btn::before{content:'';position:absolute;inset:0 0 50% 0;border-radius:18px 18px 40% 40%;
-      background:linear-gradient(180deg,rgba(255,255,255,.4),transparent);pointer-events:none}
+      background:linear-gradient(180deg,rgba(255,255,255,.26),transparent);pointer-events:none}
     .nd-btn::after{content:'';position:absolute;inset:0;background:linear-gradient(110deg,
-      transparent 30%,rgba(255,255,255,.5) 50%,transparent 70%);background-size:220% 100%;
+      transparent 35%,rgba(255,255,255,.28) 50%,transparent 65%);background-size:220% 100%;
       animation:nd-shine 3.8s linear infinite;pointer-events:none}
     .nd-btn:hover{transform:translateY(-3px) scale(1.03);filter:brightness(1.08)}
     .nd-btn:active{transform:translateY(4px) scale(.97);box-shadow:0 3px 0 rgba(120,60,30,.28),0 6px 14px rgba(0,0,0,.4)}
@@ -93,8 +93,26 @@ function ensureStyles(): void {
     .nd-nav:hover .nd-navicon{transform:translateY(-3px) scale(1.08)}
     .nd-nav.on .nd-navicon{filter:none drop-shadow(0 4px 8px rgba(255,180,90,.6));transform:translateY(-8px) scale(1.28)}
     .nd-nav.on .nd-navlbl{color:${NEON.gold}}
-    .nd-nav.on::before{content:'';position:absolute;bottom:-2px;width:30px;height:5px;border-radius:3px;
-      background:linear-gradient(90deg,${NEON.gold},${NEON.pink});box-shadow:0 0 12px ${NEON.gold}}
+    .nd-nav.on::before{content:'';position:absolute;bottom:-2px;width:28px;height:4px;border-radius:3px;
+      background:linear-gradient(90deg,${NEON.gold},${NEON.pink});box-shadow:0 0 8px ${NEON.gold}88}
+    /* Centre "home" nav button sits raised in a circular badge (Clash-style). */
+    .nd-nav.home{margin-top:-14px}
+    .nd-nav.home .nd-navicon{font-size:26px;width:54px;height:54px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(160deg,${NEON.gold},${NEON.pink});color:${NEON.ink};
+      border:3px solid rgba(255,240,220,.8);
+      box-shadow:0 6px 0 rgba(150,80,40,.4),0 10px 20px rgba(0,0,0,.45);filter:none}
+    .nd-nav.home:hover .nd-navicon{transform:translateY(-2px) scale(1.05)}
+    .nd-nav.home.on .nd-navicon{transform:translateY(-2px) scale(1.05)}
+    .nd-nav.home.on::before{display:none}
+
+    .nd-cog{cursor:pointer;border:none;width:42px;height:42px;border-radius:14px;font-size:18px;
+      background:linear-gradient(160deg,rgba(40,22,66,0.74),rgba(20,12,38,0.66));
+      border:1px solid rgba(255,210,180,0.26);backdrop-filter:blur(10px);pointer-events:auto;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 5px 14px rgba(0,0,0,.34);
+      transition:transform .14s cubic-bezier(.34,1.6,.5,1)}
+    .nd-cog:hover{transform:rotate(40deg)}
+    .nd-cog:active{transform:scale(.92)}
 
     .nd-scroll::-webkit-scrollbar{width:8px}
     .nd-scroll::-webkit-scrollbar-thumb{background:rgba(255,210,180,.32);border-radius:4px}
@@ -143,8 +161,9 @@ export function screen(opaque = true): HTMLDivElement {
     color: NEON.text,
     fontFamily: 'system-ui, sans-serif',
     background: opaque
-      ? 'radial-gradient(ellipse at 50% 25%, rgba(60,30,80,.72), rgba(18,10,34,.94))'
+      ? 'radial-gradient(ellipse at 50% 25%, rgba(60,30,80,.5), rgba(18,10,34,.82))'
       : 'transparent',
+    backdropFilter: opaque ? 'blur(14px) saturate(1.1)' : 'none',
     animation: 'nd-fade .25s ease',
     pointerEvents: 'auto',
   });

@@ -5,15 +5,16 @@ import type { RunnerGame } from '../core/RunnerGame';
 import { ACHIEVEMENTS, DAILY } from '../data/achievements';
 import { CHARACTERS } from '../data/characters';
 import { CONSUMABLES } from '../data/consumables';
+import { JOURNEY } from '../data/journey';
 import type { GameMode, SaveManager } from '../data/SaveManager';
 import { UPGRADES } from '../data/upgrades';
 import { button, coinStr, el, gemStr, NEON, screen, show, tab } from './uikit';
 
 const REVIVE_COST = 80;
-/** Shop sub-tabs (inside the SHOP nav tab). */
+/** Sub-tabs used inside the shop / rewards views. */
 type Tab = 'characters' | 'items' | 'upgrades' | 'daily' | 'achievements';
-/** Instagram-style bottom navigation tabs. */
-type Nav = 'play' | 'shop' | 'rewards' | 'settings';
+/** Bottom navigation tabs (characters & items shops are now separate). */
+type Nav = 'play' | 'characters' | 'items' | 'journey' | 'rewards' | 'settings';
 
 /**
  * Owns every full-screen overlay and the flow between them, driven off the
@@ -115,10 +116,10 @@ export class ScreenManager {
     this.navbar = el('div', {
       display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end',
       margin: '0 auto calc(env(safe-area-inset-bottom,0px) + 12px)',
-      width: 'min(440px,92vw)', padding: '10px 8px 12px', flexShrink: '0', zIndex: '3',
+      width: 'min(500px,96vw)', padding: '10px 6px 12px', flexShrink: '0', zIndex: '3',
       borderRadius: '26px', border: '1px solid rgba(255,210,180,0.2)',
-      background: 'linear-gradient(160deg,rgba(34,18,56,0.82),rgba(16,9,32,0.78))',
-      backdropFilter: 'blur(18px)',
+      background: 'linear-gradient(160deg,rgba(34,18,56,0.78),rgba(16,9,32,0.72))',
+      backdropFilter: 'blur(20px) saturate(1.15)',
       boxShadow: 'inset 0 1px 0 rgba(255,255,255,.14),0 14px 34px rgba(0,0,0,.5)',
     });
 
@@ -138,7 +139,9 @@ export class ScreenManager {
     this.content.style.animation = 'nd-popin .42s cubic-bezier(.34,1.5,.5,1) both';
     ({
       play: () => this.viewPlay(),
-      shop: () => this.viewShop(),
+      characters: () => this.viewCharacters(),
+      items: () => this.viewItems(),
+      journey: () => this.viewJourney(),
       rewards: () => this.viewRewards(),
       settings: () => this.viewSettings(),
     })[this.nav]();
@@ -151,39 +154,54 @@ export class ScreenManager {
     this.renderMenu();
   }
 
-  /** Re-render the active shop/rewards view in place (after a purchase). */
+  /** Re-render the active view in place (after a purchase / claim). */
   private refreshShop(): void {
     this.renderHeader();
-    if (this.nav === 'rewards') this.viewRewards();
-    else this.viewShop();
+    this.content.innerHTML = '';
+    this.content.scrollTop = 0;
+    this.cardIndex = 0;
+    ({
+      play: () => this.viewPlay(),
+      characters: () => this.viewCharacters(),
+      items: () => this.viewItems(),
+      journey: () => this.viewJourney(),
+      rewards: () => this.viewRewards(),
+      settings: () => this.viewSettings(),
+    })[this.nav]();
   }
 
   private renderHeader(): void {
     const d = this.save.data;
-    this.header.innerHTML =
-      `<div style="font:900 22px/1 'Trebuchet MS',system-ui;
-        background:linear-gradient(120deg,${NEON.gold},${NEON.pink},#8a7bff);
-        -webkit-background-clip:text;background-clip:text;color:transparent">SUNSET RUNNER</div>` +
-      `<div style="display:flex;gap:8px">
-        <span class="nd-chip" style="color:${NEON.gold};font-size:14px">${coinStr(d.coins)}</span>
-        <span class="nd-chip" style="color:#9ad8ff;font-size:14px">${gemStr(d.mileage)}</span>
-      </div>`;
+    this.header.innerHTML = '';
+    // Left: settings cog.
+    const cog = el('button');
+    cog.className = 'nd-cog';
+    cog.innerHTML = '⚙️';
+    cog.addEventListener('click', () => this.go('settings'));
+    // Right: wallet chips.
+    const wallet = el('div', { display: 'flex', gap: '8px' });
+    wallet.innerHTML =
+      `<span class="nd-chip" style="color:${NEON.gold};font-size:14px">${coinStr(d.coins)}</span>` +
+      `<span class="nd-chip" style="color:#9ad8ff;font-size:14px">${gemStr(d.mileage)}</span>`;
+    this.header.append(cog, wallet);
   }
 
   private renderNavbar(): void {
     this.navbar.innerHTML = '';
-    const dot = this.save.canClaimDaily() ||
+    const rewardDot = this.save.canClaimDaily() ||
       ACHIEVEMENTS.some((a) => a.stat(this.save.data) >= a.goal && !this.save.data.claimedAchievements.includes(a.id));
     const items: Array<[Nav, string, string, boolean]> = [
+      ['characters', '🦸', '캐릭터', false],
+      ['items', '🎒', '아이템', false],
       ['play', '🏠', '홈', false],
-      ['shop', '🛍️', '상점', false],
-      ['rewards', '🎁', '보상', dot],
-      ['settings', '⚙️', '설정', false],
+      ['journey', '🗺️', '여정', false],
+      ['rewards', '🎁', '보상', rewardDot],
     ];
     for (const [nav, icon, label, badge] of items) {
-      const on = this.nav === nav;
+      const on = this.nav === nav || (nav === 'characters' && this.nav === 'characters');
+      const home = nav === 'play';
       const b = el('button');
-      b.className = `nd-nav${on ? ' on' : ''}`;
+      b.className = `nd-nav${on ? ' on' : ''}${home ? ' home' : ''}`;
       b.innerHTML =
         `<span class="nd-navicon">${icon}</span>` +
         `<span class="nd-navlbl">${label}</span>` +
@@ -207,9 +225,9 @@ export class ScreenManager {
       textAlign: 'center', marginTop: '1vh', animation: 'nd-float 4s ease-in-out infinite', flexShrink: '0',
     });
     title.innerHTML =
-      `<div style="font:900 clamp(30px,7.5vw,54px)/0.95 'Trebuchet MS',system-ui;letter-spacing:1px;
+      `<div style="font:900 clamp(44px,12vw,84px)/0.9 'Trebuchet MS',system-ui;letter-spacing:1px;
         background:linear-gradient(120deg,${NEON.gold},${NEON.pink},#8a7bff);-webkit-background-clip:text;
-        background-clip:text;color:transparent;filter:drop-shadow(0 4px 16px rgba(255,126,179,.4))">SUNSET RUNNER</div>`;
+        background-clip:text;color:transparent;filter:drop-shadow(0 4px 14px rgba(255,126,179,.32))">SUNSET<br>RUNNER</div>`;
 
     // Spacer that lets the live character "pop out" of the empty middle.
     const spacer = el('div', { flex: '1' });
@@ -228,7 +246,7 @@ export class ScreenManager {
       <b style="color:${NEON.gold}">${c.name}</b>
       <span style="opacity:.6;font-size:12px">${c.blurb.replace(/^.. /, '')}</span>
       <span style="opacity:.8">▸</span>`;
-    namePill.addEventListener('click', () => { this.tabSel = 'characters'; this.go('shop'); });
+    namePill.addEventListener('click', () => this.go('characters'));
 
     // Slim segmented mode toggle.
     const toggle = el('div', {
@@ -264,49 +282,138 @@ export class ScreenManager {
     this.content.append(title, spacer, bottom);
   }
 
-  // ── View: SHOP (sub-tabs: characters / items / upgrades) ────────────────────
-  private viewShop(): void {
-    if (this.tabSel === 'daily' || this.tabSel === 'achievements') this.tabSel = 'characters';
-    const tabs: Array<[Tab, string]> = [
-      ['characters', '🛒 캐릭터'], ['items', '🎒 아이템'], ['upgrades', '⬆️ 강화'],
-    ];
-    const tabRow = el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' });
-    for (const [t, label] of tabs) {
-      const b = tab(label, () => { this.tabSel = t; this.viewShop(); });
+  /** A styled section title used atop each shop/journey view. */
+  private sectionTitle(icon: string, label: string, sub: string): HTMLDivElement {
+    const t = el('div', { textAlign: 'center', marginBottom: '2px', flexShrink: '0' });
+    t.innerHTML =
+      `<div style="font:900 26px/1 'Trebuchet MS',system-ui;color:${NEON.gold};
+        filter:drop-shadow(0 2px 8px rgba(255,180,90,.4))">${icon} ${label}</div>` +
+      `<div style="font:700 11px/1.3 system-ui;opacity:.6;letter-spacing:1px;margin-top:3px">${sub}</div>`;
+    return t;
+  }
+
+  // ── View: CHARACTERS shop ───────────────────────────────────────────────────
+  private viewCharacters(): void {
+    this.shopBody = el('div', {
+      width: '100%', display: 'flex', flexWrap: 'wrap', gap: '14px', justifyContent: 'center', padding: '4px',
+    });
+    this.content.append(this.sectionTitle('🦸', '캐릭터', '능력을 가진 러너를 모으세요'), this.shopBody);
+    this.cardIndex = 0;
+    this.renderCharacters();
+  }
+
+  // ── View: ITEMS shop (consumables + upgrades) ───────────────────────────────
+  private viewItems(): void {
+    if (this.tabSel !== 'items' && this.tabSel !== 'upgrades') this.tabSel = 'items';
+    const tabRow = el('div', { display: 'flex', gap: '8px', justifyContent: 'center', flexShrink: '0' });
+    for (const [t, label] of [['items', '🎒 소모품'], ['upgrades', '⬆️ 강화']] as Array<[Tab, string]>) {
+      const b = tab(label, () => { this.tabSel = t; this.refreshShop(); });
       if (this.tabSel === t) b.className = 'nd-tab on';
       tabRow.append(b);
     }
     this.shopBody = el('div', {
-      width: '100%', display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', padding: '4px',
+      width: '100%', display: 'flex', flexWrap: 'wrap', gap: '14px', justifyContent: 'center', padding: '4px',
     });
-    this.content.innerHTML = '';
-    this.content.append(tabRow, this.shopBody);
+    this.content.append(this.sectionTitle('🎒', '아이템', '부스트 아이템과 영구 강화'), tabRow, this.shopBody);
     this.cardIndex = 0;
-    ({
-      characters: () => this.renderCharacters(),
-      items: () => this.renderItems(),
-      upgrades: () => this.renderUpgrades(),
-    } as Record<string, () => void>)[this.tabSel]();
+    if (this.tabSel === 'upgrades') this.renderUpgrades();
+    else this.renderItems();
   }
 
   // ── View: REWARDS (daily + achievements) ────────────────────────────────────
   private viewRewards(): void {
     const sub: Array<[Tab, string]> = [['daily', '🎁 출석'], ['achievements', '🏆 업적']];
     if (this.tabSel !== 'daily' && this.tabSel !== 'achievements') this.tabSel = 'daily';
-    const tabRow = el('div', { display: 'flex', gap: '8px', justifyContent: 'center' });
+    const tabRow = el('div', { display: 'flex', gap: '8px', justifyContent: 'center', flexShrink: '0' });
     for (const [t, label] of sub) {
-      const b = tab(label, () => { this.tabSel = t; this.viewRewards(); });
+      const b = tab(label, () => { this.tabSel = t; this.refreshShop(); });
       if (this.tabSel === t) b.className = 'nd-tab on';
       tabRow.append(b);
     }
     this.shopBody = el('div', {
       width: '100%', display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', padding: '4px',
     });
-    this.content.innerHTML = '';
-    this.content.append(tabRow, this.shopBody);
+    this.content.append(this.sectionTitle('🎁', '보상', '매일 출석하고 업적을 달성하세요'), tabRow, this.shopBody);
     this.cardIndex = 0;
     if (this.tabSel === 'daily') this.renderDaily();
     else this.renderAchievements();
+  }
+
+  // ── View: JOURNEY (Clash-Royale-style mileage reward track) ─────────────────
+  private viewJourney(): void {
+    const prog = this.save.journeyProgress;
+    this.content.append(this.sectionTitle('🗺️', '마일리지 여정', `누적 마일리지 ${prog} 💎`));
+
+    // Find the next unclaimed/locked milestone for the progress headline.
+    const next = JOURNEY.find((m, i) => !this.save.milestoneClaimed(i) && prog < m.need);
+    if (next) {
+      const remain = next.need - prog;
+      const banner = el('div');
+      banner.className = 'nd-card';
+      banner.style.cssText += 'width:min(420px,92vw);align-items:center;text-align:center;gap:4px;flex-shrink:0';
+      banner.innerHTML =
+        `<div style="font:700 12px/1;opacity:.7">다음 보상까지</div>` +
+        `<div style="font:900 22px/1 'Trebuchet MS',system-ui;color:#9ad8ff">${remain} 💎</div>`;
+      this.content.append(banner);
+    }
+
+    // Vertical track: alternating left/right nodes joined by a glowing path.
+    const track = el('div', {
+      position: 'relative', display: 'flex', flexDirection: 'column-reverse',
+      alignItems: 'center', gap: '0', width: 'min(440px,94vw)', padding: '10px 0 20px',
+    });
+    // Central path line.
+    const line = el('div', {
+      position: 'absolute', top: '0', bottom: '0', left: '50%', width: '8px',
+      transform: 'translateX(-50%)', borderRadius: '4px',
+      background: 'linear-gradient(180deg,rgba(255,210,140,.5),rgba(120,80,160,.4))',
+      boxShadow: 'inset 0 0 6px rgba(0,0,0,.4)',
+    });
+    track.append(line);
+
+    JOURNEY.forEach((m, i) => {
+      const reached = prog >= m.need;
+      const claimed = this.save.milestoneClaimed(i);
+      const claimable = reached && !claimed;
+      const side = i % 2 === 0 ? 'flex-start' : 'flex-end';
+
+      const rowOuter = el('div', {
+        width: '100%', display: 'flex', justifyContent: side, position: 'relative',
+        padding: '12px 6px', zIndex: '1',
+      });
+      const node = el('div');
+      node.className = `nd-card${claimable ? ' sel' : ''}${!reached ? ' locked' : ''}`;
+      node.style.cssText += 'width:172px;align-items:center;text-align:center;gap:4px';
+      node.style.animation = 'nd-popin .4s cubic-bezier(.34,1.5,.5,1) both';
+      node.style.animationDelay = `${i * 0.05}s`;
+      if (claimable) node.style.animation += ', nd-bounce 1.4s ease-in-out infinite .4s';
+
+      const rewardLine =
+        `<span style="color:${NEON.gold}">${m.coins}🪙</span>` +
+        (m.bomb ? ` <span>💣${m.bomb}</span>` : '') +
+        (m.rocket ? ` <span>🚀${m.rocket}</span>` : '');
+      node.innerHTML =
+        `<div style="font:800 10px/1;opacity:.6;letter-spacing:1px">${m.need} 💎</div>` +
+        `<div style="font-size:40px;line-height:1;filter:drop-shadow(0 4px 8px rgba(0,0,0,.45))${claimed ? ';opacity:.45' : ''}">${m.icon}</div>` +
+        (m.label ? `<div style="font:800 12px/1;color:#9ad8ff">${m.label}</div>` : '') +
+        `<div style="font:800 12px/1.4">${rewardLine}</div>`;
+
+      if (claimed) node.append(el('div', { color: '#6bffb0', font: '800 12px/1' }, '✓ 수령'));
+      else if (claimable) {
+        node.append(button('받기 🎁', () => {
+          if (this.save.claimMilestone(i, m.coins, m.bomb, m.rocket)) {
+            this.audio.power();
+            this.refreshShop();
+          }
+        }, 'pink'));
+      } else {
+        node.append(el('div', { font: '800 11px/1', color: 'rgba(255,242,224,.5)' }, '🔒 잠김'));
+      }
+      rowOuter.append(node);
+      track.append(rowOuter);
+    });
+
+    this.content.append(track);
   }
 
   // ── View: SETTINGS ──────────────────────────────────────────────────────────
@@ -348,7 +455,7 @@ export class ScreenManager {
         🏁 멀리 갈수록 (신기록) → 거리 비례 💎<br>
         ⏱️ 오래 플레이할수록 (누적 2분마다) → +3💎<br>
         🎁 보물상자 → +5💎 즉시</div>`;
-    wrap.append(muteBtn, qBtn, stats, mile);
+    wrap.append(muteBtn, qBtn, stats, mile, button('← 홈으로', () => this.go('play'), 'ghost'));
     this.content.append(wrap);
   }
 
@@ -364,16 +471,48 @@ export class ScreenManager {
   }
 
   /** A round character "avatar" disc tinted with the character's colours. */
-  private avatar(shirt: number, hat: number, size = 64): HTMLDivElement {
-    const s = `#${shirt.toString(16).padStart(6, '0')}`;
-    const h = `#${hat.toString(16).padStart(6, '0')}`;
-    const a = el('div', {
-      width: `${size}px`, height: `${size}px`, borderRadius: '50%', margin: '0 auto',
-      background: `radial-gradient(circle at 38% 30%, ${h}, ${s} 70%)`,
-      boxShadow: `inset 0 3px 8px rgba(255,255,255,.35),inset 0 -6px 12px rgba(0,0,0,.35),0 6px 16px ${s}66`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: `${size * 0.46}px`,
-    }, '🏃');
-    return a;
+  /** A pseudo-3D mini character that pops up out of a glowing pedestal. */
+  private avatar(c: typeof CHARACTERS[number], popped: boolean): HTMLDivElement {
+    const skin = `#${c.colors.skin.toString(16).padStart(6, '0')}`;
+    const shirt = `#${c.colors.shirt.toString(16).padStart(6, '0')}`;
+    const pants = `#${c.colors.pants.toString(16).padStart(6, '0')}`;
+    const hat = `#${c.colors.hat.toString(16).padStart(6, '0')}`;
+    const stage = el('div', {
+      position: 'relative', width: '100%', height: '108px', display: 'flex',
+      alignItems: 'flex-end', justifyContent: 'center', perspective: '500px',
+    });
+    // Glowing pedestal disc.
+    stage.append(el('div', {
+      position: 'absolute', bottom: '6px', width: '76px', height: '20px', borderRadius: '50%',
+      background: `radial-gradient(ellipse at 50% 50%, ${shirt}66, transparent 70%)`,
+      filter: 'blur(2px)',
+    }));
+    // Stacked-box mini figure (hat + head + torso + legs), floating + swaying.
+    const fig = el('div', {
+      position: 'relative', width: '56px', height: '92px',
+      animation: `nd-bounce ${popped ? 1.8 : 2.6}s ease-in-out infinite`,
+      transformStyle: 'preserve-3d', transform: 'rotateX(6deg)',
+    });
+    const part = (bg: string, w: number, h: number, bottom: number, radius = 6) => el('div', {
+      position: 'absolute', left: '50%', bottom: `${bottom}px`, width: `${w}px`, height: `${h}px`,
+      transform: 'translateX(-50%)', background: bg, borderRadius: `${radius}px`,
+      boxShadow: 'inset 0 2px 3px rgba(255,255,255,.4),inset 0 -3px 5px rgba(0,0,0,.3),0 4px 8px rgba(0,0,0,.35)',
+    });
+    fig.append(
+      part(pants, 30, 22, 0, 5),                     // legs
+      part(shirt, 38, 32, 18, 7),                    // torso
+      part(skin, 30, 28, 46, 8),                     // head
+      part(hat, 40, 12, 66, 6),                      // hat brim
+      part(hat, 28, 12, 74, 6),                      // hat crown
+    );
+    // Tiny eyes for personality.
+    fig.append(el('div', {
+      position: 'absolute', left: '50%', bottom: '56px', transform: 'translateX(-50%)',
+      width: '20px', height: '5px', display: 'flex', justifyContent: 'space-between',
+    }, '<span style="width:5px;height:5px;background:#201826;border-radius:50%"></span>' +
+       '<span style="width:5px;height:5px;background:#201826;border-radius:50%"></span>'));
+    stage.append(fig);
+    return stage;
   }
 
   private renderCharacters(): void {
@@ -385,12 +524,12 @@ export class ScreenManager {
       card.style.alignItems = 'center';
       card.style.textAlign = 'center';
       if (selected) card.className = 'nd-card sel';
+      card.style.width = '200px';
       const swatch = `#${c.colors.shirt.toString(16).padStart(6, '0')}`;
-      const av = this.avatar(c.colors.shirt, c.colors.hat);
-      av.style.animation = selected ? 'nd-bounce 2s ease-in-out infinite' : 'none';
+      const av = this.avatar(c, selected);
       card.append(
         av,
-        el('div', { font: '800 18px/1', color: swatch }, c.name),
+        el('div', { font: '900 19px/1', color: swatch }, c.name),
         el('div', { font: '600 11px/1.4', opacity: '0.9', minHeight: '32px' }, c.blurb),
       );
       if (selected) card.append(el('div', { color: NEON.gold, font: '800 13px/1', textAlign: 'center' }, '✓ 선택됨'));
@@ -409,16 +548,32 @@ export class ScreenManager {
     }
   }
 
+  /** A big emoji floating above a glowing pedestal (used by items/upgrades). */
+  private emojiStage(emoji: string, glow: string): HTMLDivElement {
+    const stage = el('div', {
+      position: 'relative', width: '100%', height: '78px', display: 'flex',
+      alignItems: 'flex-end', justifyContent: 'center',
+    });
+    stage.append(el('div', {
+      position: 'absolute', bottom: '4px', width: '64px', height: '18px', borderRadius: '50%',
+      background: `radial-gradient(ellipse at 50% 50%, ${glow}, transparent 70%)`, filter: 'blur(2px)',
+    }));
+    stage.append(el('div', {
+      position: 'absolute', bottom: '18px', fontSize: '52px', lineHeight: '1',
+      animation: 'nd-bounce 2.4s ease-in-out infinite',
+      filter: 'drop-shadow(0 8px 12px rgba(0,0,0,.5))',
+    }, emoji));
+    return stage;
+  }
+
   private renderItems(): void {
     for (const item of CONSUMABLES) {
       const have = this.save.data.inventory[item.id];
       const card = this.card();
       card.style.alignItems = 'center';
       card.style.textAlign = 'center';
-      const icon = el('div', {
-        fontSize: '46px', lineHeight: '1', animation: 'nd-bounce 2.4s ease-in-out infinite',
-        filter: 'drop-shadow(0 6px 10px rgba(0,0,0,.45))',
-      }, item.emoji);
+      card.style.width = '200px';
+      const icon = this.emojiStage(item.emoji, item.id === 'bomb' ? '#ff563088' : '#ff9f4388');
       const haveChip = el('div', { font: '800 12px/1', color: NEON.gold });
       haveChip.className = 'nd-chip';
       haveChip.textContent = `보유 ${have}`;
@@ -444,7 +599,9 @@ export class ScreenManager {
       const card = this.card();
       card.style.alignItems = 'center';
       card.style.textAlign = 'center';
-      const icon = el('div', { fontSize: '34px', lineHeight: '1', filter: 'drop-shadow(0 4px 8px rgba(0,0,0,.4))' }, u.emoji);
+      card.style.width = '188px';
+      const icon = this.emojiStage(u.emoji, '#ffd86b66');
+      icon.style.height = '64px';
       // Pip row showing the upgrade level as glowing 3D dots.
       const pips = el('div', { display: 'flex', gap: '5px', justifyContent: 'center' });
       for (let i = 0; i < u.max; i++) {

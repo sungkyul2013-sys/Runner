@@ -32,6 +32,8 @@ export interface SaveData {
   totalCoins: number;
   totalDistance: number;
   totalTime: number; // cumulative seconds played (drives play-time mileage)
+  totalMileage: number; // lifetime mileage earned (drives the journey track)
+  claimedMilestones: number[]; // indices of claimed journey milestones
   settings: Settings;
 }
 
@@ -53,6 +55,8 @@ function defaults(): SaveData {
     totalCoins: 0,
     totalDistance: 0,
     totalTime: 0,
+    totalMileage: 0,
+    claimedMilestones: [],
     settings: { muted: false, quality: 'high' },
   };
 }
@@ -172,8 +176,28 @@ export class SaveManager {
     mileage += Math.max(0, after - before) * 3;
 
     this.d.mileage += mileage;
+    this.d.totalMileage += mileage;
     this.save();
     return { mileage, isBest };
+  }
+
+  // ── Journey milestones ──────────────────────────────────────────────────────
+  /** Lifetime mileage earned — the progress along the journey track. */
+  get journeyProgress(): number {
+    return this.d.totalMileage;
+  }
+  milestoneClaimed(index: number): boolean {
+    return this.d.claimedMilestones.includes(index);
+  }
+  /** Claim a milestone reward (coins + items). Returns true on success. */
+  claimMilestone(index: number, coins: number, bomb: number, rocket: number): boolean {
+    if (this.milestoneClaimed(index)) return false;
+    this.d.claimedMilestones.push(index);
+    this.d.coins += coins;
+    this.d.inventory.bomb += bomb;
+    this.d.inventory.rocket += rocket;
+    this.save();
+    return true;
   }
 
   // ── Characters ────────────────────────────────────────────────────────────

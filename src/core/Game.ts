@@ -158,8 +158,7 @@ export class Game {
   private stepAttract(dt: number): void {
     this.menuTime += dt;
     const scroll = ATTRACT_SPEED * dt;
-    this.player.setAnimSpeed(ATTRACT_SPEED / BASE_SPEED);
-    this.player.update(dt);
+    this.player.menuShowcase(dt, this.menuTime);
     this.track.update(scroll);
     this.environment.update(scroll);
     this.cameraRig.menu(dt, this.menuTime);
