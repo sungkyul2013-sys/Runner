@@ -340,80 +340,144 @@ export class ScreenManager {
   }
 
   // ── View: JOURNEY (Clash-Royale-style mileage reward track) ─────────────────
+  // ── View: JOURNEY — a fully dimensional Clash-style reward board ────────────
+  //  Chests sit on 3D pillars rising from a tilted board; a glowing path fills
+  //  with your progress and a little runner marker shows where you stand.
   private viewJourney(): void {
     const prog = this.save.journeyProgress;
     this.content.append(this.sectionTitle('🗺️', '마일리지 여정', `누적 마일리지 ${prog} 💎`));
 
-    // Find the next unclaimed/locked milestone for the progress headline.
     const next = JOURNEY.find((m, i) => !this.save.milestoneClaimed(i) && prog < m.need);
     if (next) {
-      const remain = next.need - prog;
       const banner = el('div');
-      banner.className = 'nd-card';
-      banner.style.cssText += 'width:min(420px,92vw);align-items:center;text-align:center;gap:4px;flex-shrink:0';
-      banner.innerHTML =
-        `<div style="font:700 12px/1;opacity:.7">다음 보상까지</div>` +
-        `<div style="font:900 22px/1 'Trebuchet MS',system-ui;color:#9ad8ff">${remain} 💎</div>`;
+      banner.className = 'nd-chip';
+      banner.style.cssText += 'font-size:14px;gap:8px;flex-shrink:0';
+      banner.innerHTML = `다음 보상까지 <b style="color:#9ad8ff">${next.need - prog} 💎</b>`;
       this.content.append(banner);
     }
 
-    // Vertical track: alternating left/right nodes joined by a glowing path.
-    const track = el('div', {
+    // Perspective viewport → the board leans back like a 3D diorama.
+    const viewport = el('div', { perspective: '850px', width: 'min(460px,96vw)', flexShrink: '0' });
+    const board = el('div', {
       position: 'relative', display: 'flex', flexDirection: 'column-reverse',
-      alignItems: 'center', gap: '0', width: 'min(440px,94vw)', padding: '10px 0 20px',
+      alignItems: 'center', padding: '18px 0 26px',
+      transform: 'rotateX(14deg)', transformStyle: 'preserve-3d',
     });
-    // Central path line.
-    const line = el('div', {
-      position: 'absolute', top: '0', bottom: '0', left: '50%', width: '8px',
-      transform: 'translateX(-50%)', borderRadius: '4px',
-      background: 'linear-gradient(180deg,rgba(255,210,140,.5),rgba(120,80,160,.4))',
-      boxShadow: 'inset 0 0 6px rgba(0,0,0,.4)',
-    });
-    track.append(line);
+
+    // Path + progress fill (bottom → top as lifetime mileage grows).
+    const maxNeed = JOURNEY[JOURNEY.length - 1].need;
+    const frac = Math.min(1, prog / maxNeed);
+    board.append(el('div', {
+      position: 'absolute', top: '0', bottom: '0', left: '50%', width: '10px',
+      transform: 'translateX(-50%)', borderRadius: '5px',
+      background: 'rgba(40,22,60,.7)', boxShadow: 'inset 0 0 8px rgba(0,0,0,.5)',
+    }));
+    board.append(el('div', {
+      position: 'absolute', bottom: '0', left: '50%', width: '10px',
+      height: `${Math.max(4, frac * 100)}%`,
+      transform: 'translateX(-50%)', borderRadius: '5px',
+      background: `linear-gradient(180deg,${NEON.pink},${NEON.gold})`,
+      boxShadow: `0 0 10px ${NEON.gold}66`,
+    }));
+    // Runner marker at the current progress height.
+    board.append(el('div', {
+      position: 'absolute', bottom: `calc(${Math.min(96, frac * 100)}% - 14px)`, left: '50%',
+      transform: 'translateX(-50%)', width: '34px', height: '34px', borderRadius: '50%',
+      background: `linear-gradient(150deg,${NEON.gold},${NEON.pink})`,
+      border: '2px solid rgba(255,244,224,.9)', zIndex: '5',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px',
+      boxShadow: '0 4px 12px rgba(0,0,0,.5)', animation: 'nd-bounce 1.6s ease-in-out infinite',
+    }, '🏃'));
 
     JOURNEY.forEach((m, i) => {
       const reached = prog >= m.need;
       const claimed = this.save.milestoneClaimed(i);
       const claimable = reached && !claimed;
       const side = i % 2 === 0 ? 'flex-start' : 'flex-end';
+      // Recede slightly with height for a sense of depth on the tilted board.
+      const depth = Math.max(0.84, 1 - i * 0.018);
 
-      const rowOuter = el('div', {
-        width: '100%', display: 'flex', justifyContent: side, position: 'relative',
-        padding: '12px 6px', zIndex: '1',
+      const row = el('div', {
+        width: '100%', display: 'flex', justifyContent: side,
+        position: 'relative', padding: '8px 10px', zIndex: '1',
       });
-      const node = el('div');
-      node.className = `nd-card${claimable ? ' sel' : ''}${!reached ? ' locked' : ''}`;
-      node.style.cssText += 'width:172px;align-items:center;text-align:center;gap:4px';
-      node.style.animation = 'nd-popin .4s cubic-bezier(.34,1.5,.5,1) both';
-      node.style.animationDelay = `${i * 0.05}s`;
-      if (claimable) node.style.animation += ', nd-bounce 1.4s ease-in-out infinite .4s';
 
-      const rewardLine =
-        `<span style="color:${NEON.gold}">${m.coins}🪙</span>` +
-        (m.bomb ? ` <span>💣${m.bomb}</span>` : '') +
-        (m.rocket ? ` <span>🚀${m.rocket}</span>` : '');
-      node.innerHTML =
-        `<div style="font:800 10px/1;opacity:.6;letter-spacing:1px">${m.need} 💎</div>` +
-        `<div style="font-size:40px;line-height:1;filter:drop-shadow(0 4px 8px rgba(0,0,0,.45))${claimed ? ';opacity:.45' : ''}">${m.icon}</div>` +
-        (m.label ? `<div style="font:800 12px/1;color:#9ad8ff">${m.label}</div>` : '') +
-        `<div style="font:800 12px/1.4">${rewardLine}</div>`;
+      // ── A chest on a 3D pillar ──
+      const spot = el('div', {
+        position: 'relative', width: '150px', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', transform: `scale(${depth})`,
+        animation: 'nd-popin .45s cubic-bezier(.34,1.5,.5,1) both',
+        animationDelay: `${i * 0.05}s`,
+      });
 
-      if (claimed) node.append(el('div', { color: '#6bffb0', font: '800 12px/1' }, '✓ 수령'));
-      else if (claimable) {
-        node.append(button('받기 🎁', () => {
+      // Chest floating above the pillar.
+      const chest = el('div', {
+        fontSize: '52px', lineHeight: '1', zIndex: '3', position: 'relative',
+        filter: claimed
+          ? 'grayscale(.8) brightness(.7) drop-shadow(0 8px 10px rgba(0,0,0,.5))'
+          : 'drop-shadow(0 10px 14px rgba(0,0,0,.55))',
+        animation: claimable ? 'nd-bounce 1.3s ease-in-out infinite' : 'nd-float 3.4s ease-in-out infinite',
+      }, m.icon);
+      if (!reached) chest.style.filter = 'saturate(.4) brightness(.55) drop-shadow(0 8px 10px rgba(0,0,0,.5))';
+
+      // Pillar: glossy top + shaded column + ground shadow (pseudo-3D).
+      const pTopCol = claimable ? NEON.gold : reached ? '#b98ae0' : '#5a3f78';
+      const pillar = el('div', { position: 'relative', width: '96px', height: '74px', marginTop: '-12px' });
+      pillar.append(
+        el('div', { // ground shadow
+          position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)',
+          width: '104px', height: '20px', borderRadius: '50%',
+          background: 'radial-gradient(ellipse, rgba(0,0,0,.45), transparent 70%)', filter: 'blur(2px)',
+        }),
+        el('div', { // column body
+          position: 'absolute', bottom: '0', left: '50%', transform: 'translateX(-50%)',
+          width: '84px', height: '58px', borderRadius: '10px 10px 14px 14px',
+          background: 'linear-gradient(180deg,#46285f 0%,#2c1840 70%,#1d1030 100%)',
+          boxShadow: 'inset 6px 0 10px rgba(255,255,255,.06), inset -6px 0 12px rgba(0,0,0,.45)',
+        }),
+        el('div', { // glossy top face
+          position: 'absolute', top: '0', left: '50%', transform: 'translateX(-50%)',
+          width: '92px', height: '30px', borderRadius: '50% / 46%',
+          background: `linear-gradient(160deg, ${pTopCol}, #6a4090)`,
+          boxShadow: `inset 0 3px 6px rgba(255,255,255,.4), 0 3px 8px rgba(0,0,0,.35)${claimable ? `,0 0 16px ${NEON.gold}55` : ''}`,
+        }),
+        el('div', { // milestone number on the column
+          position: 'absolute', bottom: '14px', left: '50%', transform: 'translateX(-50%)',
+          font: `900 15px/1 'Trebuchet MS',system-ui`, color: 'rgba(255,236,210,.9)',
+          textShadow: '0 2px 3px rgba(0,0,0,.6)',
+        }, `${m.need}💎`),
+      );
+
+      const rewardLine = el('div', {
+        font: '800 12px/1.4', textAlign: 'center', marginTop: '6px',
+        color: reached ? '#fff' : 'rgba(255,242,224,.55)',
+      }, `<span style="color:${NEON.gold}">${m.coins}🪙</span>` +
+         (m.bomb ? ` 💣${m.bomb}` : '') + (m.rocket ? ` 🚀${m.rocket}` : ''));
+
+      spot.append(chest, pillar, rewardLine);
+      if (m.label) spot.append(el('div', { font: '800 11px/1', color: '#9ad8ff', marginTop: '2px' }, m.label));
+
+      if (claimed) {
+        spot.append(el('div', { color: '#6bffb0', font: '800 12px/1', marginTop: '4px' }, '✓ 수령 완료'));
+      } else if (claimable) {
+        const b = button('받기 🎁', () => {
           if (this.save.claimMilestone(i, m.coins, m.bomb, m.rocket)) {
             this.audio.power();
             this.refreshShop();
           }
-        }, 'pink'));
+        }, 'pink');
+        b.style.cssText += 'padding:9px 20px;font-size:14px;margin-top:4px';
+        spot.append(b);
       } else {
-        node.append(el('div', { font: '800 11px/1', color: 'rgba(255,242,224,.5)' }, '🔒 잠김'));
+        spot.append(el('div', { font: '800 12px/1', color: 'rgba(255,242,224,.45)', marginTop: '4px' }, '🔒'));
       }
-      rowOuter.append(node);
-      track.append(rowOuter);
+
+      row.append(spot);
+      board.append(row);
     });
 
-    this.content.append(track);
+    viewport.append(board);
+    this.content.append(viewport);
   }
 
   // ── View: SETTINGS ──────────────────────────────────────────────────────────

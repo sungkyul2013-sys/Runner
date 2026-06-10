@@ -53,6 +53,7 @@ export class Game {
   }
   toMenu(): void {
     this.resetRun();
+    this.menuTime = 0; // restart the walk-out entrance + pose cycle
     this.state.set(GameState.MENU);
   }
   pause(): void {
