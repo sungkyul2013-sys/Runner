@@ -33,22 +33,31 @@ interface KindSpec {
   moving: boolean;
   rideable?: boolean;
   destructible?: boolean;
+  /** Cannot be destroyed by a bomb and never spawns destructibly (hard block). */
+  unbreakable?: boolean;
+  /** A ramp leads up to the roof on the near (+Z) side — run up to board it.
+   *  `rampLen` is the world-Z length of the ramp in front of the body. */
+  rampLen?: number;
 }
 
 /**
  * Analytic collider sizes per kind (independent of the visual, so the hitbox
  * is always exact). Heights are tuned so BARRIER clears with a jump, TUNNEL/
- * SIGN clear with a slide, LOW_TRAIN/CRATE roofs are landable, and TRAIN/WALL
- * force a lane change.
+ * SIGN clear with a slide, the RAMP train is boarded by running up its front
+ * stairs, CRATE roofs are landable, TRAIN forces a lane change, and WALL is an
+ * unbreakable hard block.
  */
 const SPECS: Record<ObstacleKind, KindSpec> = {
   [ObstacleKind.TRAIN]: { half: { x: 1.0, y: 1.3, z: 3.0 }, yCenter: 1.3, moving: false, destructible: true },
   [ObstacleKind.TRAIN_MOVING]: { half: { x: 1.0, y: 1.3, z: 3.0 }, yCenter: 1.3, moving: true, destructible: true },
   [ObstacleKind.BARRIER]: { half: { x: 1.0, y: 0.45, z: 0.18 }, yCenter: 0.45, moving: false, destructible: true },
   [ObstacleKind.TUNNEL]: { half: { x: 1.0, y: 0.5, z: 0.3 }, yCenter: 1.5, moving: false }, // spans 1.0–2.0
-  [ObstacleKind.WALL]: { half: { x: 1.0, y: 1.2, z: 0.25 }, yCenter: 1.2, moving: false },
-  [ObstacleKind.LOW_TRAIN]: { half: { x: 1.0, y: 0.7, z: 2.5 }, yCenter: 0.7, moving: false, rideable: true, destructible: true },
-  [ObstacleKind.CRATE]: { half: { x: 0.7, y: 0.45, z: 0.7 }, yCenter: 0.45, moving: false, rideable: true, destructible: true },
+  // WALL — an unbreakable hard block; a bomb can't clear it, must change lane.
+  [ObstacleKind.WALL]: { half: { x: 1.0, y: 1.4, z: 0.3 }, yCenter: 1.4, moving: false, unbreakable: true },
+  // RAMP train — run up the front stairs onto the roof and ride; jump from up
+  // there to clear taller hazards. Body roof at y = yCenter + half.y = 1.5.
+  [ObstacleKind.LOW_TRAIN]: { half: { x: 1.0, y: 0.75, z: 2.4 }, yCenter: 0.75, moving: false, rideable: true, rampLen: 2.0 },
+  [ObstacleKind.CRATE]: { half: { x: 0.7, y: 0.45, z: 0.7 }, yCenter: 0.45, moving: false, rideable: true, rampLen: 0.9 },
   [ObstacleKind.SIGN]: { half: { x: 1.0, y: 0.45, z: 0.15 }, yCenter: 1.65, moving: false }, // spans 1.2–2.1
 };
 
@@ -142,23 +151,33 @@ const LABELS: Partial<Record<ObstacleKind, string>> = {
 };
 
 const spriteCache = new Map<string, THREE.Sprite>();
-/** Build (once per emoji) a camera-facing sprite from a canvas-drawn glyph. */
+/** Build (once per emoji) a camera-facing sprite from a high-res glyph that
+ *  always renders on top (depthTest off) so action hints are never hidden by
+ *  the obstacle geometry. A soft dark backing keeps it readable on any biome. */
 function labelSprite(emoji: string): THREE.Sprite {
   let cached = spriteCache.get(emoji);
   if (cached) return cached;
   const c = document.createElement('canvas');
-  c.width = c.height = 96;
+  c.width = c.height = 160;
   const ctx = c.getContext('2d')!;
-  ctx.font = '70px sans-serif';
+  // Subtle dark rounded backing (low glare, high contrast).
+  ctx.fillStyle = 'rgba(20,12,32,0.42)';
+  ctx.beginPath();
+  ctx.arc(80, 80, 64, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = '108px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(emoji, 48, 52);
+  ctx.fillText(emoji, 80, 86);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   mats.set(`sprite:${emoji}`, tex as unknown as THREE.Material);
-  const m = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false });
+  const m = new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthWrite: false, depthTest: false, fog: false,
+  });
   mats.set(`spritemat:${emoji}`, m);
   cached = new THREE.Sprite(m);
+  cached.renderOrder = 999;
   spriteCache.set(emoji, cached);
   return cached;
 }
@@ -243,6 +262,28 @@ export class Obstacle {
   get destructible(): boolean {
     return this.spec.destructible === true;
   }
+  /** Hard block — never destructible, must be dodged by changing lanes. */
+  get unbreakable(): boolean {
+    return this.spec.unbreakable === true;
+  }
+  /** Length (world-Z) of the boarding ramp on the +Z front, or 0 if none. */
+  get rampLen(): number {
+    return this.spec.rampLen ?? 0;
+  }
+  /** Near (+Z) edge of the solid body (where the ramp meets the roof). */
+  get bodyFrontZ(): number {
+    return this.group.position.z + this.spec.half.z;
+  }
+  /** Far (−Z) edge of the ramp (where boarding begins). */
+  get rampStartZ(): number {
+    return this.bodyFrontZ + this.rampLen;
+  }
+  get halfX(): number {
+    return this.spec.half.x;
+  }
+  get halfZ(): number {
+    return this.spec.half.z;
+  }
 
   reset(): void {
     this.group.visible = false;
@@ -265,7 +306,7 @@ export class Obstacle {
         this.buildTrain(0xff5cf0, 2.6, 6);
         break;
       case ObstacleKind.LOW_TRAIN:
-        this.buildTrain(COLORS.lowTrain, 1.4, 5, true);
+        this.buildRampTrain();
         break;
       case ObstacleKind.BARRIER:
         this.buildBarrier();
@@ -295,9 +336,67 @@ export class Obstacle {
     if (!emoji) return;
     const sprite = labelSprite(emoji);
     const s = sprite.clone(); // share the material/texture, own transform
-    s.scale.set(1.1, 1.1, 1);
-    s.position.set(0, this.topY + 0.7, 0);
+    s.scale.set(1.7, 1.7, 1); // bigger, easy to read while running
+    s.renderOrder = 999;
+    // Stair hint floats just in front of the ramp foot; others sit above.
+    if (this.spec.rampLen) s.position.set(0, this.topY + 0.55, this.spec.half.z + this.spec.rampLen * 0.5);
+    else s.position.set(0, this.topY + 0.85, 0);
     this.group.add(s);
+  }
+
+  /**
+   * Boardable ramp-train: a low train body (roof at y≈1.5) with a flight of
+   * **stairs on its near (+Z) face** that the player runs up to mount the roof.
+   * From up top they can jump to clear taller hazards. Dimensions mirror the
+   * SPEC (half.z 2.4, rampLen 2.0) so the visual matches the ramp collider.
+   */
+  private buildRampTrain(): void {
+    const halfZ = 2.4;
+    const roofY = 1.5;
+    // Body.
+    const bodyG = geo('ramp:body', () => new THREE.BoxGeometry(1.9, 1.36, halfZ * 2));
+    const bodyM = mat('ramp:body', COLORS.lowTrain, { e: 0.1, rough: 0.5 });
+    this.add(bodyG, bodyM, 0, 0.14 + 1.36 / 2, 0);
+    // Bright roof platform (where you stand).
+    const roofG = geo('ramp:roof', () => new THREE.BoxGeometry(2.0, 0.16, halfZ * 2 + 0.1));
+    const roofM = mat('ramp:roof', COLORS.trainRoof, { e: 0.22, rough: 0.4 });
+    this.add(roofG, roofM, 0, roofY, 0);
+    // Side window strips (lit) for a train look.
+    const winG = geo('ramp:win', () => new THREE.PlaneGeometry(halfZ * 1.7, 0.5));
+    let winM = mats.get('ramp:winmat');
+    if (!winM) {
+      winM = new THREE.MeshBasicMaterial({ map: windowTexture(), transparent: true });
+      mats.set('ramp:winmat', winM);
+    }
+    const l = this.add(winG, winM, -0.96, 0.85, 0); l.rotation.y = -Math.PI / 2;
+    const r = this.add(winG, winM, 0.96, 0.85, 0); r.rotation.y = Math.PI / 2;
+    // Stairs on the front (+Z) face — a series of descending steps.
+    const stepN = 5;
+    const stepDepth = 2.0 / stepN;
+    const stepG = geo('ramp:step', () => new THREE.BoxGeometry(1.7, 0.16, stepDepth + 0.04));
+    const stepM = mat('ramp:step', 0xffe2a8, { e: 0.22, rough: 0.5 });
+    for (let i = 0; i < stepN; i++) {
+      const h = roofY * ((i + 1) / stepN); // top of this step
+      const z = halfZ + stepDepth * (i + 0.5); // out in front of the body
+      this.add(stepG, stepM, 0, h - 0.08, z);
+      // Riser block under the step so it reads as solid stairs.
+      const riserG = geo(`ramp:riser:${i}`, () => new THREE.BoxGeometry(1.7, h, 0.06));
+      this.add(riserG, bodyM, 0, h / 2, z - stepDepth / 2);
+    }
+    // Hand-rails along the stairs.
+    const railG = geo('ramp:rail', () => new THREE.BoxGeometry(0.08, 0.08, 2.1));
+    const railM = mat('ramp:rail', 0xffd0a0, { e: 0.3 });
+    for (const sx of [-0.82, 0.82]) {
+      const rail = this.add(railG, railM, sx, roofY + 0.18, halfZ + 1.0);
+      rail.rotation.x = Math.atan2(roofY, 2.0);
+    }
+    // Wheels.
+    const wheelG = geo('ramp:wheel', () => { const g = new THREE.CylinderGeometry(0.18, 0.18, 0.1, 10); g.rotateZ(Math.PI / 2); return g; });
+    const wheelM = mat('train:wheel', 0x171020, { rough: 0.8 });
+    for (const zw of [-halfZ * 0.5, halfZ * 0.5]) {
+      this.add(wheelG, wheelM, -0.85, 0.18, zw);
+      this.add(wheelG, wheelM, 0.85, 0.18, zw);
+    }
   }
 
   /** Train: body, golden roof, window strips, wheels, headlight. */

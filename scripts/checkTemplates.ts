@@ -31,10 +31,10 @@ function kindAt(
 function survives(kind: ObstacleKind | null, vert: Vert): boolean {
   switch (kind) {
     case null:
+    case ObstacleKind.LOW_TRAIN: // run up its front ramp onto the roof — always passable
+    case ObstacleKind.CRATE: // small ramp — boardable on the run
       return true;
     case ObstacleKind.BARRIER:
-    case ObstacleKind.LOW_TRAIN: // jump ONTO the roof
-    case ObstacleKind.CRATE: // jump onto the crate
       return vert === 'AIR';
     case ObstacleKind.TUNNEL:
     case ObstacleKind.SIGN: // slide under

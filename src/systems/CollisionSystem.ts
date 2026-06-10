@@ -29,40 +29,72 @@ export class CollisionSystem {
     const pbox = player.aabb;
     const feet = player.feet;
     const vy = player.verticalVelocity;
+    const px = player.posX;
 
     let fatal: Obstacle | null = null;
     let supportY = 0;
     let nearMiss = false;
 
     for (const o of obstacles) {
-      if (Math.abs(o.z - PLAYER_Z) > Z_CHECK_RANGE) continue;
+      if (Math.abs(o.z - PLAYER_Z) > Z_CHECK_RANGE + o.rampLen) continue;
 
+      // ── Rideable obstacles with a boarding ramp (run up the front stairs) ──
+      if (o.rideable) {
+        const top = o.topY;
+        const inLaneX = Math.abs(px - o.position.x) <= o.halfX;
+        if (inLaneX && o.rampLen > 0) {
+          // Player Z is fixed near PLAYER_Z; the ramp scrolls toward them, so
+          // map the obstacle's front/ramp edges (relative to the player) onto a
+          // 0→top height ramp. When standing on the ramp/roof we provide support
+          // rather than a fatal side hit.
+          const front = o.bodyFrontZ; // roof front edge
+          const start = o.rampStartZ; // ramp foot (further toward player, +Z)
+          if (PLAYER_Z <= start && PLAYER_Z >= o.position.z - o.halfZ) {
+            let surf: number;
+            if (PLAYER_Z >= front) {
+              // On the ramp incline: height rises from 0 (foot) to top (roof).
+              const t = (start - PLAYER_Z) / (start - front); // 0..1
+              surf = top * Math.min(1, Math.max(0, t));
+            } else {
+              // On the flat roof.
+              surf = top;
+            }
+            // Accept the surface as support if the feet are near/above it.
+            if (feet >= surf - LAND_TOLERANCE) {
+              if (surf > supportY) supportY = surf;
+            } else if (PLAYER_Z < front - 0.1) {
+              // Below the roof and past the ramp → ran into the solid front face.
+              fatal = o;
+            }
+            continue;
+          }
+        }
+        // No ramp (or out of lane) — fall back to top-landing like a crate.
+        const ob = o.aabb;
+        const overlapX = pbox.min.x <= ob.max.x && pbox.max.x >= ob.min.x;
+        const overlapZ = pbox.min.z <= ob.max.z && pbox.max.z >= ob.min.z;
+        if (overlapX && overlapZ) {
+          if (feet >= top - LAND_TOLERANCE && vy <= 0.01) {
+            if (top > supportY) supportY = top;
+          } else if (pbox.min.y < top - 0.05) {
+            fatal = o;
+          }
+        }
+        continue;
+      }
+
+      // ── Solid obstacles ──
       const ob = o.aabb;
       const overlapX = pbox.min.x <= ob.max.x && pbox.max.x >= ob.min.x;
       const overlapZ = pbox.min.z <= ob.max.z && pbox.max.z >= ob.min.z;
-
       if (!(overlapX && overlapZ)) {
-        // No horizontal overlap — was it a near-miss in the adjacent lane?
         const dx = Math.max(ob.min.x - pbox.max.x, pbox.min.x - ob.max.x);
         const dz = Math.max(ob.min.z - pbox.max.z, pbox.min.z - ob.max.z);
         if (dx <= NEAR_MISS_MARGIN && dx > 0 && dz < 0) nearMiss = true;
         continue;
       }
-
-      if (o.rideable) {
-        const top = o.topY;
-        // Landing on / standing on the roof while descending → safe support.
-        if (feet >= top - LAND_TOLERANCE && vy <= 0.01) {
-          if (top > supportY) supportY = top;
-          continue;
-        }
-        // Below the roof but horizontally inside → smashed into its side.
-        if (pbox.min.y < top - 0.05) fatal = o;
-        continue;
-      }
-
-      // Solid obstacle: any box overlap is fatal (jump/slide shrink the player
-      // box so cleared barriers/tunnels simply don't overlap).
+      // Any box overlap is fatal (jump/slide shrink the player box so cleared
+      // barriers/tunnels simply don't overlap).
       if (pbox.min.y <= ob.max.y && pbox.max.y >= ob.min.y) fatal = o;
     }
 

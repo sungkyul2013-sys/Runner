@@ -257,4 +257,32 @@ export const TEMPLATES: SegmentTemplate[] = [
       { slot: 2, lane: 0, kind: K.TRAIN_MOVING },
     ],
   },
+  {
+    difficulty: 2,
+    safePath: 'board the centre ramp-train and ride straight through',
+    placements: [
+      { slot: 1, lane: 0, kind: K.LOW_TRAIN },
+      { slot: 2, lane: -1, kind: K.WALL },
+      { slot: 2, lane: 1, kind: K.WALL },
+    ],
+  },
+  {
+    difficulty: 3,
+    safePath: 'ramp up centre, then the roof leads over a barrier — or take a side lane',
+    placements: [
+      { slot: 1, lane: 0, kind: K.LOW_TRAIN },
+      { slot: 2, lane: 0, kind: K.BARRIER },
+      { slot: 3, lane: -1, kind: K.TRAIN_MOVING },
+    ],
+  },
+  {
+    difficulty: 3,
+    safePath: 'unbreakable wall gauntlet — only the open lane each slot is safe',
+    placements: [
+      { slot: 1, lane: -1, kind: K.WALL },
+      { slot: 1, lane: 0, kind: K.WALL },
+      { slot: 3, lane: 0, kind: K.WALL },
+      { slot: 3, lane: 1, kind: K.WALL },
+    ],
+  },
 ];
