@@ -195,6 +195,13 @@ export class Character {
     }
   }
 
+  /** Raise both arms in a triumphant cheer (used by the record celebration). */
+  cheerArms(dt: number): void {
+    const t = 1 - Math.exp(-12 * dt);
+    this.leftArm.rotation.x += (-2.7 - this.leftArm.rotation.x) * t;
+    this.rightArm.rotation.x += (-2.7 - this.rightArm.rotation.x) * t;
+  }
+
   dispose(): void {
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;

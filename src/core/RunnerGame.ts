@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BIOMES, CHECKPOINT_DIST, COLORS, LEVEL_DIST, TIME_ATTACK_SECONDS } from '../config/constants';
+import { BIOMES, CHECKPOINT_DIST, COLORS, LEVEL_DIST, MAX_SPEED, TIME_ATTACK_SECONDS } from '../config/constants';
 import { COINBURST_AMOUNT, POWERUPS, PowerupType, TREASURE_COINS, TREASURE_MILEAGE } from '../config/powerups';
 import { AudioManager } from '../audio/AudioManager';
 import { getCharacter } from '../data/characters';
@@ -75,6 +75,10 @@ export class RunnerGame extends Game {
   /** While true (death explosion playing) the world is frozen before game-over. */
   private dying = false;
   private dyingTimer = 0;
+  /** While true the character runs off-screen to celebrate a new record. */
+  private celebrating = false;
+  private celebrateTimer = 0;
+  private pendingResult: RunResult | null = null;
 
   // Consumable inventory carried into the run.
   private bombs = 0;
@@ -246,7 +250,7 @@ export class RunnerGame extends Game {
   }
 
   protected override speedMultiplier(): number {
-    if (this.frozenStart || this.dying) return 0; // hold the world
+    if (this.frozenStart || this.dying || this.celebrating) return 0; // hold the world
     const headstart = this.headstartTimer > 0 ? HEADSTART_SPEED : 1;
     return this.powerups.speedBoost() * headstart;
   }
@@ -274,6 +278,11 @@ export class RunnerGame extends Game {
   }
 
   protected override stepWorld(dt: number, scroll: number): void {
+    // New-record victory dash — the character runs off-screen.
+    if (this.celebrating) {
+      this.stepCelebration(dt);
+      return;
+    }
     // Death explosion: world frozen, debris flies, then drop to game-over.
     if (this.dying) {
       this.dyingTimer -= dt;
@@ -408,7 +417,7 @@ export class RunnerGame extends Game {
       this.treasureMileage,
       this.runTime,
     );
-    this.lastResult = {
+    const result: RunResult = {
       mode: this.mode,
       score: this.score.score,
       coins: this.score.coins,
@@ -416,7 +425,52 @@ export class RunnerGame extends Game {
       mileage,
       isBest,
     };
-    this.state.set(GameState.GAMEOVER);
+    // New record → the character springs back up and runs off-screen to
+    // celebrate before the game-over screen appears.
+    if (isBest && result.score > 0) {
+      this.startCelebration(result);
+    } else {
+      this.lastResult = result;
+      this.state.set(GameState.GAMEOVER);
+    }
+  }
+
+  /** New-record celebration: revive the rig and sprint it off-screen. */
+  private startCelebration(result: RunResult): void {
+    this.pendingResult = result;
+    this.dying = false;
+    this.celebrating = true;
+    this.celebrateTimer = 1.9;
+    this.player.reset();
+    this.player.celebrate();
+    this.hud.banner('🏆 신기록!', 'NEW RECORD');
+    this.audio.power();
+    const p = this.player.group.position;
+    this.particles.burst(p, COLORS.coin, { count: 30, speed: 7, life: 1.1, size: 0.9 });
+    this.particles.burst(p, 0xff7eb3, { count: 22, speed: 6, life: 1.0 });
+  }
+
+  private stepCelebration(dt: number): void {
+    this.celebrateTimer -= dt;
+    // Drive the runner forward and the world fast underneath for a victory dash.
+    this.player.celebrateStep(dt);
+    const scroll = MAX_SPEED * 1.4 * dt;
+    this.track.update(scroll);
+    this.environment.update(scroll);
+    this.segments.update(scroll, dt, this.distance);
+    // Occasional confetti burst.
+    if (Math.random() < 0.4) {
+      this.particles.burst(
+        new THREE.Vector3((Math.random() - 0.5) * 4, 3 + Math.random() * 2, -2),
+        [0xffd86b, 0xff7eb3, 0x9ad8ff, 0x6bffb0][(Math.random() * 4) | 0],
+        { count: 4, speed: 5, life: 1.0, size: 0.7 },
+      );
+    }
+    if (this.celebrateTimer <= 0) {
+      this.celebrating = false;
+      if (this.pendingResult) this.lastResult = this.pendingResult;
+      this.state.set(GameState.GAMEOVER);
+    }
   }
 
   /** Continue the current run after a crash (paid revive). */
@@ -431,6 +485,8 @@ export class RunnerGame extends Game {
   protected override resetRun(): void {
     this.dying = false;
     this.dyingTimer = 0;
+    this.celebrating = false;
+    this.pendingResult = null;
     this.frozenStart = false;
     this.hud.hideGameOver();
     this.segments.reset();

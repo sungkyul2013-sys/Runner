@@ -217,6 +217,36 @@ export class Player {
     this.surfboard.visible = false;
   }
 
+  /** Begin the new-record celebration: stand the rig up, centred and visible. */
+  celebrate(): void {
+    this.rig.group.visible = true;
+    this.rig.group.scale.set(1, 1, 1);
+    this.rig.group.rotation.set(0, 0, 0);
+    this.currentLane = 0;
+    this.x = 0;
+    this.feetY = 0;
+    this.vy = 0;
+    this.grounded = true;
+    this.celebrateZ = PLAYER_Z;
+    this.celebratePhase = 0;
+  }
+
+  /** Per-frame victory dash: jog with little hops and sprint toward the camera
+   *  exit (−Z), then keep going so the runner exits the frame. */
+  celebrateStep(dt: number): void {
+    this.celebratePhase += dt;
+    this.celebrateZ -= dt * 9; // run forward, off-screen
+    // Cheerful hop.
+    const hop = Math.abs(Math.sin(this.celebratePhase * 6)) * 0.35;
+    this.group.position.set(0, PLAYER_HALF_STANDING.y + hop, this.celebrateZ);
+    this.rig.update(dt, 'run', 2.2);
+    // Arms raised triumphantly as it goes.
+    this.rig.cheerArms(dt);
+  }
+
+  private celebrateZ = 0;
+  private celebratePhase = 0;
+
   moveLeft(): void {
     this.currentLane = Math.max(-1, this.currentLane - 1);
   }
