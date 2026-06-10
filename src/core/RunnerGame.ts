@@ -68,6 +68,8 @@ export class RunnerGame extends Game {
   private comboTimer = 0;
   private wasNearMiss = false;
   private usedAbilityRevive = false;
+  /** While true (start countdown) the world is held still and input ignored. */
+  private frozenStart = false;
 
   // Consumable inventory carried into the run.
   private bombs = 0;
@@ -169,7 +171,12 @@ export class RunnerGame extends Game {
   private onPowerup(type: PowerupType): void {
     this.audio.power();
     this.particles.burst(this.player.group.position, POWERUPS[type].color, { count: 14, speed: 4, life: 0.7 });
-    if (type !== PowerupType.HOVERBOARD && type !== PowerupType.BOMB) {
+    if (type === PowerupType.ROCKET) {
+      // Lift-off: a kick of shake + a downward thrust plume + banner.
+      this.engine.shake(0.45);
+      this.particles.burst(this.player.group.position, 0xffae5a, { count: 26, speed: 9, life: 0.8, size: 1.0 });
+      this.hud.banner('🚀 ROCKET', '하늘로!');
+    } else if (type !== PowerupType.HOVERBOARD && type !== PowerupType.BOMB) {
       this.hud.popup(POWERUPS[type].label, '#ffd86b');
     }
   }
@@ -203,9 +210,32 @@ export class RunnerGame extends Game {
     this.hud.setItems(this.bombs, this.rockets);
   }
 
+  /** Begin a run with a 3·2·1·GO countdown — the world holds still until GO. */
+  beginRun(): void {
+    this.frozenStart = true;
+    this.startRun(); // enters PLAYING + resets, but speed is gated below
+    this.hud.countdown(() => {
+      this.frozenStart = false;
+      this.audio.power();
+    });
+  }
+
   protected override speedMultiplier(): number {
+    if (this.frozenStart) return 0; // hold the world during the countdown
     const headstart = this.headstartTimer > 0 ? HEADSTART_SPEED : 1;
     return this.powerups.speedBoost() * headstart;
+  }
+
+  protected override inputEnabled(): boolean {
+    return !this.frozenStart;
+  }
+
+  protected override cameraLift(): number {
+    // Ease the dramatic lift in/out over the rocket's lifetime so the camera
+    // soars up at launch and settles back as it expires.
+    if (!this.powerups.isRocketing()) return 0;
+    const p = this.powerups.rocketProgress(); // 0..1
+    return Math.min(1, Math.min(p * 5, (1 - p) * 5 + 0.4));
   }
 
   private detonateBomb(range: number): void {
@@ -219,6 +249,8 @@ export class RunnerGame extends Game {
   }
 
   protected override stepWorld(dt: number, scroll: number): void {
+    // During the start countdown the world is frozen — skip all gameplay.
+    if (this.frozenStart) return;
     if (this.headstartTimer > 0) this.headstartTimer -= dt;
     if (this.comboTimer > 0) {
       this.comboTimer -= dt;

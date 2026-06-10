@@ -135,18 +135,21 @@ export class Character {
       this.inner.position.y = this.baseY + Math.abs(s) * 0.05;
       this.inner.rotation.x = 0.08; // slight forward lean
     } else {
-      const t = 1 - Math.exp(-12 * dt);
+      // Snappy easing so jump/slide poses read instantly.
+      const t = 1 - Math.exp(-18 * dt);
+      // `lean` rotates the whole body about X: negative leans back (baseball
+      // slide), the legs kick forward and arms swing back for a dynamic duck.
       const target =
         pose === 'air'
-          ? { leg: -0.6, arm: -1.4, lean: 0.0 }
+          ? { leg: -0.7, arm: -1.5, lean: 0.0, yOff: 0 }
           : pose === 'slide'
-            ? { leg: 1.1, arm: -0.5, lean: 0.5 }
-            : { leg: 0.05, arm: 0.05, lean: 0.0 };
+            ? { leg: -1.15, arm: 0.9, lean: -0.95, yOff: -0.12 }
+            : { leg: 0.05, arm: 0.05, lean: 0.0, yOff: 0 };
       this.leftLeg.rotation.x += (target.leg - this.leftLeg.rotation.x) * t;
       this.rightLeg.rotation.x += (target.leg - this.rightLeg.rotation.x) * t;
       this.leftArm.rotation.x += (target.arm - this.leftArm.rotation.x) * t;
       this.rightArm.rotation.x += (target.arm - this.rightArm.rotation.x) * t;
-      this.inner.position.y += (this.baseY - this.inner.position.y) * t;
+      this.inner.position.y += (this.baseY + target.yOff - this.inner.position.y) * t;
       this.inner.rotation.x += (target.lean - this.inner.rotation.x) * t;
     }
   }

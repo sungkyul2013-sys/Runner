@@ -24,7 +24,8 @@ export const MAX_SPEED = 25;
 export const SPEED_RAMP_PER_SEC = 0.2;
 
 // ── Player movement ──────────────────────────────────────────────────────
-export const LANE_LERP = 16;
+/** Lane-change easing rate. High = snappy, near-instant tracking of input. */
+export const LANE_LERP = 22;
 export const JUMP_VELOCITY = 14;
 export const GRAVITY = 38;
 export const SLIDE_DURATION = 0.62;

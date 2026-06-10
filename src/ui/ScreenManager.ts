@@ -80,7 +80,7 @@ export class ScreenManager {
     this.audio.startBgm();
     this.audio.ui();
     this.game.setMode(this.mode);
-    this.game.startRun();
+    this.game.beginRun();
   }
   private toHome(): void {
     this.reviveUsed = false;
@@ -106,78 +106,94 @@ export class ScreenManager {
     const c = CHARACTERS.find((x) => x.id === d.selected)!;
     this.homeBody.innerHTML = '';
 
-    // Wallet bar.
+    // ── Top wallet chips ──
     const wallet = el('div', {
       position: 'absolute', top: '14px', left: '0', right: '0',
-      display: 'flex', justifyContent: 'space-between', padding: '0 16px',
-      font: `800 18px/1 'Trebuchet MS',system-ui`,
+      display: 'flex', justifyContent: 'space-between', padding: '0 16px', pointerEvents: 'none',
     });
     wallet.innerHTML =
-      `<span style="color:${NEON.gold}">${coinStr(d.coins)}</span>` +
-      `<span style="color:#9ad8ff">${gemStr(d.mileage)}</span>`;
+      `<span class="nd-chip" style="color:${NEON.gold}">${coinStr(d.coins)}</span>` +
+      `<span class="nd-chip" style="color:#9ad8ff">${gemStr(d.mileage)}</span>`;
 
-    // Title.
-    const top = el('div', { textAlign: 'center', marginTop: '4vh', animation: 'nd-float 4s ease-in-out infinite' });
+    // ── Title ──
+    const top = el('div', { textAlign: 'center', marginTop: '5vh', animation: 'nd-float 4s ease-in-out infinite' });
     top.append(
       el('div', {
-        font: `900 clamp(40px,10vw,92px)/0.95 'Trebuchet MS',system-ui`, letterSpacing: '1px',
+        font: `900 clamp(42px,11vw,98px)/0.92 'Trebuchet MS',system-ui`, letterSpacing: '1px',
         background: `linear-gradient(120deg,${NEON.gold},${NEON.pink},#8a7bff)`,
         webkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-      }, 'SUNSET RUNNER'),
-      el('div', { font: '700 15px/1 system-ui', color: NEON.pink, opacity: '0.9', marginTop: '4px' },
+        filter: 'drop-shadow(0 4px 18px rgba(255,126,179,.4))',
+      }, 'SUNSET<span style="opacity:.95">RUNNER</span>'),
+      el('div', { font: '700 15px/1 system-ui', color: NEON.pink, opacity: '0.92', marginTop: '6px', letterSpacing: '3px' },
         '석양을 달리는 무한 질주'),
     );
 
-    // Character tag.
-    const tag = el('div', {
-      background: 'rgba(22,14,44,0.55)', border: '1px solid rgba(255,210,180,0.3)',
-      borderRadius: '16px', padding: '10px 18px', textAlign: 'center', backdropFilter: 'blur(7px)',
-    });
+    // ── Character preview card (the live 3D runner shows behind) ──
+    const tag = el('div', { animation: 'nd-slideup .4s ease both' });
+    tag.className = 'nd-card sel';
+    tag.style.cssText += 'align-items:center;text-align:center;padding:14px 26px;min-width:240px';
     tag.innerHTML =
-      `<div style="font:700 12px/1 system-ui;opacity:.7;letter-spacing:2px">CHARACTER</div>` +
-      `<div style="font:800 22px/1.3 'Trebuchet MS',system-ui;color:${NEON.gold}">${c.name}</div>` +
-      `<div style="font:600 13px/1.3 system-ui;color:#fff;opacity:.9">${c.blurb}</div>`;
+      `<div style="font:800 11px/1 system-ui;opacity:.65;letter-spacing:3px">선택한 캐릭터</div>` +
+      `<div style="font:900 26px/1.2 'Trebuchet MS',system-ui;color:${NEON.gold}">${c.name}</div>` +
+      `<div style="font:700 13px/1.3 system-ui;color:#fff;opacity:.92">${c.blurb}</div>`;
+    const swapBtn = button('캐릭터 변경 ▸', () => this.openShop('characters'), 'ghost');
+    swapBtn.style.cssText += 'margin-top:4px;font-size:13px;padding:8px 16px';
+    tag.append(swapBtn);
 
-    // Mode select.
-    const modes = el('div', { display: 'flex', gap: '10px' });
-    const mk = (m: GameMode, label: string) => {
-      const b = tab(label, () => { this.mode = m; this.renderHome(); });
-      if (this.mode === m) b.className = 'nd-tab on';
-      b.style.font = `800 15px/1 'Trebuchet MS',system-ui`;
-      b.style.padding = '11px 20px';
-      return b;
+    // ── Mode select as twin cards ──
+    const modes = el('div', { display: 'flex', gap: '12px' });
+    const mk = (m: GameMode, icon: string, label: string, sub: string) => {
+      const card = el('div', { animation: 'nd-slideup .45s ease both' });
+      card.className = `nd-card${this.mode === m ? ' sel' : ''}`;
+      card.style.cssText += 'cursor:pointer;align-items:center;text-align:center;width:150px;gap:3px';
+      card.innerHTML =
+        `<div style="font-size:30px">${icon}</div>` +
+        `<div style="font:800 16px/1 'Trebuchet MS',system-ui">${label}</div>` +
+        `<div style="font:600 11px/1.2 system-ui;opacity:.7">${sub}</div>`;
+      card.addEventListener('click', () => { this.mode = m; this.audio.ui(); this.renderHome(); });
+      return card;
     };
-    modes.append(mk('endless', '♾️ 무한 모드'), mk('challenge', '⏱️ 챌린지'));
+    modes.append(
+      mk('endless', '♾️', '무한 모드', `최고 ${d.best}`),
+      mk('challenge', '⏱️', '챌린지', `최고 ${d.bestChallenge}`),
+    );
 
-    // Play button.
+    // ── Play button ──
     const play = button('게임 시작 ▶', () => this.startRun(), 'pink');
-    play.style.font = `900 24px/1 'Trebuchet MS',system-ui`;
-    play.style.padding = '18px 60px';
+    play.style.font = `900 25px/1 'Trebuchet MS',system-ui`;
+    play.style.padding = '19px 64px';
     play.style.animation = 'nd-breathe 2.4s ease-in-out infinite';
 
     const mid = el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' });
     mid.append(tag, modes, play);
 
-    // Tab bar to the shop.
+    // ── Shop tab bar ──
     const tabs = el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' });
-    const goShop = (t: Tab) => { this.tabSel = t; show(this.home, false); show(this.shop, true); this.renderShop(); this.audio.ui(); };
-    const dailyBadge = this.save.canClaimDaily() ? ' <span style="color:#ff6b8a">!</span>' : '';
-    const achBadge = ACHIEVEMENTS.some((a) => a.stat(this.save.data) >= a.goal && !this.save.data.claimedAchievements.includes(a.id)) ? ' <span style="color:#ff6b8a">!</span>' : '';
+    const dot = ' <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff6b8a;box-shadow:0 0 8px #ff6b8a"></span>';
+    const dailyBadge = this.save.canClaimDaily() ? dot : '';
+    const achBadge = ACHIEVEMENTS.some((a) => a.stat(this.save.data) >= a.goal && !this.save.data.claimedAchievements.includes(a.id)) ? dot : '';
     tabs.append(
-      tab('🛒 캐릭터', () => goShop('characters')),
-      tab('🎒 아이템', () => goShop('items')),
-      tab('⬆️ 강화', () => goShop('upgrades')),
-      tab('🎁 보상' + dailyBadge, () => goShop('daily')),
-      tab('🏆 업적' + achBadge, () => goShop('achievements')),
+      tab('🛒 캐릭터', () => this.openShop('characters')),
+      tab('🎒 아이템', () => this.openShop('items')),
+      tab('⬆️ 강화', () => this.openShop('upgrades')),
+      tab('🎁 보상' + dailyBadge, () => this.openShop('daily')),
+      tab('🏆 업적' + achBadge, () => this.openShop('achievements')),
     );
 
-    const bottom = el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' });
+    const bottom = el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' });
     const settingsBtn = button('⚙ 설정', () => { show(this.home, false); show(this.settings, true); }, 'ghost');
-    bottom.append(tabs, settingsBtn,
-      el('div', { font: '600 13px/1.5 ui-monospace,monospace', opacity: '0.85', textAlign: 'center' },
-        `최고 ${d.best}　·　챌린지 ${d.bestChallenge}　·　런 ${d.runs}`));
+    settingsBtn.style.cssText += 'padding:9px 16px;font-size:13px';
+    bottom.append(tabs, settingsBtn);
 
     this.homeBody.append(wallet, top, mid, bottom);
+  }
+
+  private openShop(t: Tab): void {
+    this.tabSel = t;
+    show(this.home, false);
+    show(this.shop, true);
+    this.renderShop();
+    this.audio.ui();
   }
 
   // ── Shop (5 tabs) ────────────────────────────────────────────────────────────
@@ -193,6 +209,7 @@ export class ScreenManager {
       width: 'min(820px,94vw)', maxHeight: '60vh', overflowY: 'auto',
       display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', padding: '6px',
     });
+    this.shopBody.className = 'nd-scroll';
     root.append(bar, this.shopTabs, this.shopBody, button('← 뒤로', () => { show(this.shop, false); show(this.home, true); this.renderHome(); }, 'ghost'));
     return root;
   }
@@ -211,6 +228,7 @@ export class ScreenManager {
     }
     this.walletEl.innerHTML = `${coinStr(this.save.data.coins)}　${gemStr(this.save.data.mileage)}`;
     this.shopBody.innerHTML = '';
+    this.cardIndex = 0;
     ({
       characters: () => this.renderCharacters(),
       items: () => this.renderItems(),
@@ -220,10 +238,14 @@ export class ScreenManager {
     })[this.tabSel]();
   }
 
+  private cardIndex = 0;
   private card(): HTMLDivElement {
     const c = el('div');
     c.className = 'nd-card';
     c.style.width = '190px';
+    // Staggered entrance for a lively shop.
+    c.style.animation = `nd-slideup .35s ease both`;
+    c.style.animationDelay = `${(this.cardIndex++ % 8) * 0.035}s`;
     return c;
   }
 
@@ -375,8 +397,9 @@ export class ScreenManager {
   private buildPause(): HTMLDivElement {
     const root = screen(true);
     root.append(
-      el('div', { font: `900 36px/1 'Trebuchet MS',system-ui` }, '일시정지'),
-      button('계속하기', () => this.game.resume(), 'pink'),
+      el('div', { fontSize: '52px', animation: 'nd-float 3s ease-in-out infinite' }, '⏸️'),
+      el('div', { font: `900 38px/1 'Trebuchet MS',system-ui`, color: NEON.gold }, '일시정지'),
+      button('▶ 계속하기', () => this.game.resume(), 'pink'),
       button('다시 시작', () => this.startRun(), 'ghost'),
       button('홈으로', () => this.toHome(), 'ghost'),
     );
@@ -397,20 +420,39 @@ export class ScreenManager {
     const modeLabel = r.mode === 'challenge' ? '⏱️ 챌린지' : '♾️ 무한 모드';
     const best = r.mode === 'challenge' ? d.bestChallenge : d.best;
     this.gameoverBody.innerHTML = '';
+    this.gameoverBody.style.animation = 'nd-slideup .4s ease both';
+
     this.gameoverBody.append(
-      el('div', { font: `900 46px/1 'Trebuchet MS',system-ui`, color: NEON.pink, textShadow: `0 2px 20px ${NEON.pink}aa` }, 'GAME OVER'),
-      el('div', { font: '700 14px/1 system-ui', opacity: '0.85' }, modeLabel),
-      el('div', { font: `900 36px/1 'Trebuchet MS',system-ui` }, `${r.score}`),
-      el('div', { opacity: '0.9' }, `🪙 ${r.coins}　·　${Math.floor(r.distance)} m`),
-      el('div', { font: '700 14px/1 system-ui', opacity: '0.8' }, `최고 ${best}　·　+${r.mileage}💎`),
+      el('div', { font: `900 50px/1 'Trebuchet MS',system-ui`, color: NEON.pink, textShadow: `0 2px 24px ${NEON.pink}aa` }, 'GAME OVER'),
+      el('div', { font: '800 13px/1 system-ui', opacity: '0.8', letterSpacing: '2px' }, modeLabel),
     );
+
+    // Stats panel card.
+    const panel = el('div');
+    panel.className = 'nd-card';
+    panel.style.cssText += 'align-items:center;gap:6px;padding:18px 30px;margin-top:4px';
+    const stat = (label: string, value: string, color = '#fff') =>
+      `<div style="display:flex;justify-content:space-between;gap:30px;width:200px">
+        <span style="opacity:.7;font:700 13px/1.6 system-ui">${label}</span>
+        <span style="font:800 16px/1.6 'Trebuchet MS',system-ui;color:${color}">${value}</span></div>`;
+    panel.innerHTML =
+      `<div style="font:900 40px/1 'Trebuchet MS',system-ui;color:${NEON.gold}">${r.score}</div>` +
+      `<div style="font:700 11px/1 system-ui;opacity:.6;letter-spacing:2px;margin-bottom:6px">SCORE</div>` +
+      stat('🪙 코인', `${r.coins}`, NEON.gold) +
+      stat('📏 거리', `${Math.floor(r.distance)} m`) +
+      stat('🏆 최고', `${best}`) +
+      stat('💎 마일리지', `+${r.mileage}`, '#9ad8ff');
+    this.gameoverBody.append(panel);
+
     if (r.isBest && r.score > 0) {
-      const nb = el('div', { color: NEON.gold, font: `800 18px/1 'Trebuchet MS',system-ui`, animation: 'nd-pop .4s ease' }, '🏆 신기록 달성!');
-      this.gameoverBody.append(nb);
+      this.gameoverBody.append(
+        el('div', { color: NEON.gold, font: `900 20px/1 'Trebuchet MS',system-ui`, animation: 'nd-pop .5s ease both' }, '🏆 신기록 달성!'),
+      );
     }
-    const btns = el('div', { display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap', justifyContent: 'center' });
+
+    const btns = el('div', { display: 'flex', gap: '12px', marginTop: '10px', flexWrap: 'wrap', justifyContent: 'center' });
     const canRevive = !this.reviveUsed && d.coins >= REVIVE_COST;
-    const revive = button(`부활 ${coinStr(REVIVE_COST)}`, () => {
+    const revive = button(`💖 부활 ${coinStr(REVIVE_COST)}`, () => {
       if (this.reviveUsed || !this.save.spend(REVIVE_COST)) return;
       this.reviveUsed = true;
       this.game.revive();

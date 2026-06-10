@@ -214,6 +214,34 @@ export class HUD {
     setTimeout(() => e.remove(), 2250);
   }
 
+  /** "3 · 2 · 1 · GO!" start countdown; calls `onGo` when it finishes. */
+  countdown(onGo: () => void): void {
+    HUD.ensureStyle('nd-count',
+      '@keyframes nd-count{0%{opacity:0;transform:translate(-50%,-50%) scale(1.8)}' +
+      '30%{opacity:1;transform:translate(-50%,-50%) scale(1)}' +
+      '100%{opacity:0;transform:translate(-50%,-50%) scale(.7)}}');
+    const steps = ['3', '2', '1', 'GO!'];
+    let i = 0;
+    const tick = () => {
+      const e = document.createElement('div');
+      const go = steps[i] === 'GO!';
+      Object.assign(e.style, {
+        position: 'fixed', top: '42%', left: '50%', zIndex: '90', pointerEvents: 'none',
+        font: `900 ${go ? 96 : 120}px/1 'Trebuchet MS',system-ui`,
+        color: go ? '#6bffb0' : '#ffd86b',
+        textShadow: '0 4px 30px rgba(255,126,179,.8)',
+        animation: 'nd-count 0.7s ease-out forwards',
+      } as CSSStyleDeclaration);
+      e.textContent = steps[i];
+      document.body.appendChild(e);
+      setTimeout(() => e.remove(), 700);
+      i++;
+      if (i < steps.length) setTimeout(tick, 600);
+      else setTimeout(onGo, 400);
+    };
+    tick();
+  }
+
   /** Compatibility no-op (game-over now lives in ScreenManager). */
   hideGameOver(): void {}
 

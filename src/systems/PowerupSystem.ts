@@ -184,6 +184,15 @@ export class PowerupSystem {
   isFlying(): boolean {
     return this.effects.has(PowerupType.JETPACK) || this.effects.has(PowerupType.ROCKET);
   }
+  /** Rocket is active — drives the dramatic lift-off camera. */
+  isRocketing(): boolean {
+    return this.effects.has(PowerupType.ROCKET);
+  }
+  /** 0..1 progress of the active rocket (for camera/altitude easing). */
+  rocketProgress(): number {
+    const e = this.effects.get(PowerupType.ROCKET);
+    return e ? 1 - e.remaining / e.total : 0;
+  }
   isInvulnerable(): boolean {
     return this.isFlying() || this.invulnTimer > 0;
   }

@@ -62,8 +62,13 @@ export class Game {
     if (this.state.is(GameState.PAUSED)) this.state.set(GameState.PLAYING);
   }
 
+  /** Gameplay input gate (RunnerGame blocks it during the start countdown). */
+  protected inputEnabled(): boolean {
+    return true;
+  }
+
   private handleIntent = (intent: Intent): void => {
-    if (!this.state.is(GameState.PLAYING)) return;
+    if (!this.state.is(GameState.PLAYING) || !this.inputEnabled()) return;
     switch (intent) {
       case 'left':
         this.player.moveLeft();
@@ -133,7 +138,18 @@ export class Game {
     this.track.update(scroll);
     this.environment.update(scroll);
     this.stepWorld(dt, scroll);
-    this.cameraRig.update(dt, this.player.group.position.x, effectiveSpeed);
+    this.cameraRig.update(
+      dt,
+      this.player.group.position.x,
+      effectiveSpeed,
+      this.cameraLift(),
+      this.player.feet,
+    );
+  }
+
+  /** 0..1 camera lift (RunnerGame raises it while the Rocket flies). */
+  protected cameraLift(): number {
+    return 0;
   }
 
   /** Menu background: the character jogs forward on an empty, looping track. */

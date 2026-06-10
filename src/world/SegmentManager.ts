@@ -13,8 +13,10 @@ import { TEMPLATES, type SegmentTemplate } from './segments/templates';
 /** Empty warmup segments at run start so the player gets a clear runway. */
 const WARMUP_SEGMENTS = 3;
 /** Distance (units) of travel before each successive difficulty tier unlocks. */
-const DIFFICULTY_STEP = 350;
+const DIFFICULTY_STEP = 260;
 const MAX_DIFFICULTY = 3;
+/** Past this distance, denser (higher-difficulty) templates are favoured. */
+const DENSE_DISTANCE = 600;
 
 /**
  * Procedurally fills the track with obstacle segments ahead of the player and
@@ -93,11 +95,26 @@ export class SegmentManager {
     }
   }
 
-  /** Pick a random template whose difficulty is unlocked by current distance. */
+  /** Pick a template unlocked by distance, biased toward denser (higher-
+   *  difficulty, more-obstacle) layouts the further the player has run. */
   private pickTemplate(distance: number): SegmentTemplate {
     const maxDiff = Math.min(MAX_DIFFICULTY, Math.floor(distance / DIFFICULTY_STEP));
     const eligible = TEMPLATES.filter((t) => t.difficulty <= maxDiff);
-    return eligible[(Math.random() * eligible.length) | 0];
+    const dense = distance > DENSE_DISTANCE;
+    // Weight by (difficulty + obstacle count) once past DENSE_DISTANCE so the
+    // track fills up; otherwise uniform. Empty warmup template is de-weighted.
+    let total = 0;
+    const weights = eligible.map((t) => {
+      const w = dense ? 1 + t.difficulty * 1.5 + t.placements.length * 0.4 : 1;
+      total += w;
+      return w;
+    });
+    let r = Math.random() * total;
+    for (let i = 0; i < eligible.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return eligible[i];
+    }
+    return eligible[eligible.length - 1];
   }
 
   /** Instantiate one template's obstacles at the given near-edge Z. */

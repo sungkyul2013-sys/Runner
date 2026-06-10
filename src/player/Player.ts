@@ -175,7 +175,8 @@ export class Player {
     }
     this.sliding = true;
     this.slideTimer = SLIDE_DURATION;
-    this.rig.group.scale.set(1, 0.5, 1);
+    // Light vertical squash; the Character's baseball-slide lean does the rest.
+    this.rig.group.scale.set(1.05, 0.78, 1.05);
   }
 
   private endSlide(): void {

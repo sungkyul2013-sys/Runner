@@ -20,6 +20,10 @@ export class CameraRig {
   private readonly lookTarget = new THREE.Vector3(0, 1, PLAYER_Z - CAMERA_LOOK_AHEAD);
   private targetX = 0;
   private camX = 0;
+  /** Smoothed "rocket lift" amount, 0 = normal chase, 1 = soaring overhead. */
+  private lift = 0;
+  /** Smoothed feet height of the player (so the camera rises with flight). */
+  private followY = 0;
 
   constructor(private readonly camera: THREE.PerspectiveCamera) {
     camera.position.set(0, CAMERA_HEIGHT, PLAYER_Z + CAMERA_BACK);
@@ -27,18 +31,29 @@ export class CameraRig {
     camera.updateProjectionMatrix();
   }
 
-  update(dt: number, playerX: number, speed: number): void {
-    // Ease horizontally toward the player (damped, ~30% of the player's offset
-    // so the camera lags slightly and the lane change reads as motion).
-    this.targetX = playerX * 0.35;
+  /**
+   * @param liftAmount 0..1 — pushes the camera up and back into a dramatic
+   *        bird's-eye chase (used while the Rocket is active).
+   * @param playerY    the player's current height, so the camera tracks flight.
+   */
+  update(dt: number, playerX: number, speed: number, liftAmount = 0, playerY = CAMERA_HEIGHT): void {
     const t = 1 - Math.exp(-CAMERA_FOLLOW_LERP * dt);
+    this.targetX = playerX * 0.35;
     this.camX += (this.targetX - this.camX) * t;
+    this.lift += (liftAmount - this.lift) * (1 - Math.exp(-4 * dt));
+    this.followY += (playerY - this.followY) * t;
+
+    // Rocket lift: rise high and pull back for a soaring, top-down-ish view.
+    const height = CAMERA_HEIGHT + this.lift * 9 + this.followY * 0.55;
+    const back = CAMERA_BACK + this.lift * 4;
 
     this.camera.position.x = this.camX;
-    this.camera.position.y = CAMERA_HEIGHT;
-    this.camera.position.z = PLAYER_Z + CAMERA_BACK;
+    this.camera.position.y = height;
+    this.camera.position.z = PLAYER_Z + back;
 
-    this.lookTarget.set(this.camX * 0.5, 1, PLAYER_Z - CAMERA_LOOK_AHEAD);
+    // Aim further down/ahead as we climb so the player stays framed below.
+    const aimY = 1 + this.followY * 0.5 - this.lift * 1.5;
+    this.lookTarget.set(this.camX * 0.5, aimY, PLAYER_Z - CAMERA_LOOK_AHEAD);
     this.camera.lookAt(this.lookTarget);
 
     // Subtle roll into lane changes — the camera "banks" with the player.
@@ -50,7 +65,7 @@ export class CameraRig {
       0,
       1,
     );
-    const targetFov = THREE.MathUtils.lerp(CAMERA_FOV_BASE, CAMERA_FOV_MAX, speedT);
+    const targetFov = THREE.MathUtils.lerp(CAMERA_FOV_BASE, CAMERA_FOV_MAX, speedT) + this.lift * 6;
     if (Math.abs(this.camera.fov - targetFov) > 0.01) {
       this.camera.fov += (targetFov - this.camera.fov) * t;
       this.camera.updateProjectionMatrix();
@@ -60,5 +75,7 @@ export class CameraRig {
   reset(): void {
     this.camX = 0;
     this.targetX = 0;
+    this.lift = 0;
+    this.followY = 0;
   }
 }

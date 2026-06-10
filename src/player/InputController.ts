@@ -19,6 +19,7 @@ export class InputController {
 
   // Active swipe tracking.
   private swiping = false;
+  private fired = false; // a swipe already emitted this gesture
   private startX = 0;
   private startY = 0;
   private startT = 0;
@@ -26,17 +27,20 @@ export class InputController {
   private lastTapT = 0;
   private readonly doubleTapMs = 280;
 
-  /** Minimum pointer travel (px) before a gesture counts as a swipe. */
-  private readonly swipeThreshold = 28;
+  /** Minimum pointer travel (px) before a gesture counts as a swipe. Low for
+   *  a snappy, responsive feel — the move fires the instant the threshold is
+   *  crossed (in pointermove), not on release. */
+  private readonly swipeThreshold = 18;
   /** Max duration (ms) for a near-stationary press to count as a tap. */
   private readonly tapMaxMs = 250;
   /** Max travel (px) for a press to still count as a tap. */
-  private readonly tapMaxDist = 16;
+  private readonly tapMaxDist = 14;
 
   constructor(target: HTMLElement = document.body) {
     this.target = target;
     window.addEventListener('keydown', this.onKeyDown);
     this.target.addEventListener('pointerdown', this.onPointerDown);
+    this.target.addEventListener('pointermove', this.onPointerMove);
     this.target.addEventListener('pointerup', this.onPointerUp);
     this.target.addEventListener('pointercancel', this.onPointerCancel);
   }
@@ -86,19 +90,30 @@ export class InputController {
 
   private onPointerDown = (e: PointerEvent): void => {
     this.swiping = true;
+    this.fired = false;
     this.startX = e.clientX;
     this.startY = e.clientY;
     this.startT = performance.now();
   };
 
+  /** Fire the swipe the moment the threshold is crossed — instant response. */
+  private onPointerMove = (e: PointerEvent): void => {
+    if (!this.swiping || this.fired) return;
+    const dx = e.clientX - this.startX;
+    const dy = e.clientY - this.startY;
+    if (Math.hypot(dx, dy) < this.swipeThreshold) return;
+    this.fired = true;
+    if (Math.abs(dx) > Math.abs(dy)) this.emit(dx > 0 ? 'right' : 'left');
+    else this.emit(dy > 0 ? 'slide' : 'jump');
+  };
+
   private onPointerUp = (e: PointerEvent): void => {
     if (!this.swiping) return;
     this.swiping = false;
+    if (this.fired) return; // swipe already handled in pointermove
 
     const dx = e.clientX - this.startX;
     const dy = e.clientY - this.startY;
-    const adx = Math.abs(dx);
-    const ady = Math.abs(dy);
     const dist = Math.hypot(dx, dy);
     const dt = performance.now() - this.startT;
 
@@ -115,13 +130,10 @@ export class InputController {
       return;
     }
 
-    if (dist < this.swipeThreshold) return;
-
-    // Diagonal swipes resolve to the dominant axis.
-    if (adx > ady) {
-      this.emit(dx > 0 ? 'right' : 'left');
-    } else {
-      this.emit(dy > 0 ? 'slide' : 'jump');
+    // Slow swipe that never crossed the move threshold — resolve on release.
+    if (dist >= this.swipeThreshold) {
+      if (Math.abs(dx) > Math.abs(dy)) this.emit(dx > 0 ? 'right' : 'left');
+      else this.emit(dy > 0 ? 'slide' : 'jump');
     }
   };
 
@@ -132,6 +144,7 @@ export class InputController {
   dispose(): void {
     window.removeEventListener('keydown', this.onKeyDown);
     this.target.removeEventListener('pointerdown', this.onPointerDown);
+    this.target.removeEventListener('pointermove', this.onPointerMove);
     this.target.removeEventListener('pointerup', this.onPointerUp);
     this.target.removeEventListener('pointercancel', this.onPointerCancel);
     this.listeners.clear();
