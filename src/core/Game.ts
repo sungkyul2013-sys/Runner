@@ -67,9 +67,11 @@ export class Game {
     switch (intent) {
       case 'left':
         this.player.moveLeft();
+        this.onLane();
         break;
       case 'right':
         this.player.moveRight();
+        this.onLane();
         break;
       case 'jump':
         if (!this.player.isAirborne) this.onJump();
@@ -85,10 +87,11 @@ export class Game {
     }
   };
 
-  /** Extension points for SFX / FX. Overridden by RunnerGame in Phase 7. */
+  /** Extension points for SFX / FX. Overridden by RunnerGame. */
   protected onDeploy(): void {}
   protected onJump(): void {}
   protected onSlide(): void {}
+  protected onLane(): void {}
 
   /** Multiplier applied to the world speed (Phase 4 Rocket / headstart). */
   protected speedMultiplier(): number {

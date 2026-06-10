@@ -190,4 +190,43 @@ export const TEMPLATES: SegmentTemplate[] = [
       { slot: 3, lane: 0, kind: K.LOW_TRAIN },
     ],
   },
+
+  // ── Signature set-pieces (commercial-feel variety) ──────────────────────
+  {
+    difficulty: 2,
+    safePath: 'low-train alley: hop roofs on lane 0, or weave the sides',
+    placements: [
+      { slot: 1, lane: 0, kind: K.LOW_TRAIN },
+      { slot: 3, lane: 0, kind: K.LOW_TRAIN },
+    ],
+  },
+  {
+    difficulty: 2,
+    safePath: 'staggered barriers: jump twice or zig-zag',
+    placements: [
+      { slot: 1, lane: -1, kind: K.BARRIER },
+      { slot: 2, lane: 0, kind: K.BARRIER },
+      { slot: 3, lane: 1, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 3,
+    safePath: 'train yard: only the right lane runs clear (ride or weave)',
+    placements: [
+      { slot: 1, lane: -1, kind: K.TRAIN },
+      { slot: 2, lane: 0, kind: K.TRAIN_MOVING },
+      { slot: 3, lane: -1, kind: K.LOW_TRAIN },
+      { slot: 4, lane: 0, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 3,
+    safePath: 'gauntlet: slide the gate then jump the crate lane or switch',
+    placements: [
+      { slot: 0, lane: 0, kind: K.SIGN },
+      { slot: 2, lane: -1, kind: K.CRATE },
+      { slot: 2, lane: 1, kind: K.TUNNEL },
+      { slot: 4, lane: 0, kind: K.WALL },
+    ],
+  },
 ];

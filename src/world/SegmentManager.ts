@@ -6,7 +6,7 @@ import {
   SPAWN_AHEAD,
 } from '../config/constants';
 import { PLAYER_Z } from '../player/Player';
-import { Obstacle } from './Obstacle';
+import { Obstacle, ObstacleKind } from './Obstacle';
 import { ObjectPool } from './ObjectPool';
 import { TEMPLATES, type SegmentTemplate } from './segments/templates';
 
@@ -18,14 +18,15 @@ const MAX_DIFFICULTY = 3;
 
 /**
  * Procedurally fills the track with obstacle segments ahead of the player and
- * recycles them once they pass behind, reusing a single {@link ObjectPool} so
- * the active obstacle count stays bounded (no per-frame allocation, no leak).
- * Difficulty rises with distance by widening the pool of eligible templates.
+ * recycles them once they pass behind. Obstacles are pooled **per kind** (each
+ * pooled instance builds its composite visual exactly once), so steady-state
+ * play allocates nothing. Difficulty rises with distance by widening the pool
+ * of eligible templates.
  */
 export class SegmentManager {
   readonly group = new THREE.Group();
 
-  private readonly pool: ObjectPool<Obstacle>;
+  private readonly pools = new Map<ObstacleKind, ObjectPool<Obstacle>>();
   private active: Obstacle[] = [];
 
   /** Near-edge Z of the next segment to spawn (more negative = further ahead). */
@@ -33,15 +34,23 @@ export class SegmentManager {
   private segmentsSpawned = 0;
 
   constructor() {
-    this.pool = new ObjectPool<Obstacle>(
-      () => {
-        const o = new Obstacle();
-        this.group.add(o.mesh); // mesh stays parented; visibility is toggled
-        return o;
-      },
-      (o) => o.reset(),
-    );
     this.fillAhead(0);
+  }
+
+  private poolFor(kind: ObstacleKind): ObjectPool<Obstacle> {
+    let pool = this.pools.get(kind);
+    if (!pool) {
+      pool = new ObjectPool<Obstacle>(
+        () => {
+          const o = new Obstacle(kind);
+          this.group.add(o.group); // stays parented; visibility toggles
+          return o;
+        },
+        (o) => o.reset(),
+      );
+      this.pools.set(kind, pool);
+    }
+    return pool;
   }
 
   /** Live obstacle list for the collision system to test against. */
@@ -53,20 +62,22 @@ export class SegmentManager {
   update(scroll: number, dt: number, distance: number): void {
     this.nextSpawnZ += scroll;
 
-    // Move + recycle (swap-remove to keep it allocation-free).
     const recycleZ = PLAYER_Z + RECYCLE_BEHIND;
     for (let i = this.active.length - 1; i >= 0; i--) {
       const o = this.active[i];
       o.update(scroll, dt);
-      if (o.z > recycleZ) {
-        this.pool.release(o);
-        const last = this.active.length - 1;
-        this.active[i] = this.active[last];
-        this.active.pop();
-      }
+      if (o.z > recycleZ) this.releaseAt(i);
     }
 
     this.fillAhead(distance);
+  }
+
+  private releaseAt(i: number): void {
+    const o = this.active[i];
+    this.poolFor(o.kind).release(o);
+    const last = this.active.length - 1;
+    this.active[i] = this.active[last];
+    this.active.pop();
   }
 
   /** Spawn segments until the track is populated out to SPAWN_AHEAD. */
@@ -84,10 +95,7 @@ export class SegmentManager {
 
   /** Pick a random template whose difficulty is unlocked by current distance. */
   private pickTemplate(distance: number): SegmentTemplate {
-    const maxDiff = Math.min(
-      MAX_DIFFICULTY,
-      Math.floor(distance / DIFFICULTY_STEP),
-    );
+    const maxDiff = Math.min(MAX_DIFFICULTY, Math.floor(distance / DIFFICULTY_STEP));
     const eligible = TEMPLATES.filter((t) => t.difficulty <= maxDiff);
     return eligible[(Math.random() * eligible.length) | 0];
   }
@@ -96,16 +104,15 @@ export class SegmentManager {
   private spawnSegment(nearZ: number, template: SegmentTemplate): void {
     for (const p of template.placements) {
       const z = nearZ - (p.slot + 0.5) * SLOT_SPACING;
-      const o = this.pool.acquire();
-      o.configure(p.kind, p.lane, z);
+      const o = this.poolFor(p.kind).acquire();
+      o.configure(p.lane, z);
       this.active.push(o);
     }
   }
 
   /**
    * Destroy (recycle) every destructible obstacle within `range` ahead of the
-   * player — used by the Bomb power-up. Returns the world positions cleared so
-   * the caller can spawn explosion FX. Walls (non-destructible) survive.
+   * player — used by the Bomb. Returns the cleared world positions for FX.
    */
   destroyAhead(range: number): THREE.Vector3[] {
     const cleared: THREE.Vector3[] = [];
@@ -114,11 +121,8 @@ export class SegmentManager {
     for (let i = this.active.length - 1; i >= 0; i--) {
       const o = this.active[i];
       if (o.destructible && o.z >= minZ && o.z <= maxZ) {
-        cleared.push(o.mesh.position.clone());
-        this.pool.release(o);
-        const last = this.active.length - 1;
-        this.active[i] = this.active[last];
-        this.active.pop();
+        cleared.push(o.position.clone());
+        this.releaseAt(i);
       }
     }
     return cleared;
@@ -126,8 +130,7 @@ export class SegmentManager {
 
   /** Clear all obstacles and reset the spawn cursor for a fresh run. */
   reset(): void {
-    for (const o of this.active) this.pool.release(o);
-    this.active = [];
+    for (let i = this.active.length - 1; i >= 0; i--) this.releaseAt(i);
     this.nextSpawnZ = PLAYER_Z;
     this.segmentsSpawned = 0;
     this.fillAhead(0);

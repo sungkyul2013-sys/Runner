@@ -4,6 +4,7 @@ import { RunnerGame } from './core/RunnerGame';
 import { SaveManager } from './data/SaveManager';
 import { Loading } from './ui/Loading';
 import { ScreenManager } from './ui/ScreenManager';
+import { vignette } from './ui/uikit';
 
 /**
  * Entry point. Wires the engine, persistent profile, synthesised audio, the
@@ -19,6 +20,7 @@ const save = new SaveManager();
 const audio = new AudioManager(save.data.settings.muted);
 const game = new RunnerGame(engine, save, audio);
 new ScreenManager(game, save, audio, engine);
+vignette();
 
 engine.start();
 

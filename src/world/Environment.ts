@@ -89,6 +89,9 @@ export class Environment {
     this.disposables.push(this.mountainMat);
     this.addMountains();
 
+    // ── Drifting clouds ──
+    this.addClouds();
+
     // ── Side scenery ──
     this.buildScenery();
   }
@@ -120,6 +123,22 @@ export class Environment {
       m.rotation.y = Math.random();
       m.scale.setScalar(0.7 + Math.random() * 0.8);
       this.group.add(m);
+    }
+  }
+
+  private readonly clouds: THREE.Mesh[] = [];
+  private addClouds(): void {
+    const geo = new THREE.SphereGeometry(1, 10, 7);
+    const matC = new THREE.MeshBasicMaterial({
+      color: 0xffe6d8, transparent: true, opacity: 0.32, fog: false, depthWrite: false,
+    });
+    this.disposables.push(geo, matC);
+    for (let i = 0; i < 7; i++) {
+      const puff = new THREE.Mesh(geo, matC);
+      puff.position.set(-110 + i * 36 + Math.random() * 18, 32 + Math.random() * 26, -150 - Math.random() * 60);
+      puff.scale.set(11 + Math.random() * 9, 2.6 + Math.random() * 1.6, 4);
+      this.clouds.push(puff);
+      this.group.add(puff);
     }
   }
 
@@ -211,8 +230,13 @@ export class Environment {
       if (p.z > WRAP_BEHIND) p.z -= TOTAL_Z;
       p.group.position.z = p.z;
     }
-    // Slowly rotate the halo for a subtle shimmer.
+    // Slowly rotate the halo for a subtle shimmer; clouds drift sideways.
     this.sunHalo.rotation.z += 0.0008 * scroll;
+    for (let i = 0; i < this.clouds.length; i++) {
+      const c = this.clouds[i];
+      c.position.x += (0.12 + i * 0.03) * scroll * 0.1;
+      if (c.position.x > 160) c.position.x = -160;
+    }
   }
 
   /** Smoothly lerp the sky/sun/fog colours toward a biome (call each frame). */

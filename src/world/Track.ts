@@ -11,87 +11,125 @@ import { PLAYER_Z } from '../player/Player';
 /** Width of the runnable floor plus a small margin on each side. */
 const TRACK_WIDTH = LANE_COUNT * LANE_WIDTH + 1.4;
 
+/** Procedural asphalt texture with sleeper bars + speckle grain. */
+function asphaltTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#5d4070';
+  ctx.fillRect(0, 0, 128, 256);
+  // Grain speckles.
+  for (let i = 0; i < 420; i++) {
+    const v = Math.random();
+    ctx.fillStyle = v > 0.5 ? 'rgba(255,220,200,0.06)' : 'rgba(20,10,30,0.10)';
+    ctx.fillRect(Math.random() * 128, Math.random() * 256, 2, 2);
+  }
+  // Horizontal sleeper bars (metro ties) — repeat 4 per tile.
+  ctx.fillStyle = 'rgba(30,16,40,0.45)';
+  for (let y = 8; y < 256; y += 64) ctx.fillRect(0, y, 128, 10);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 /**
- * The endless scrolling floor. A fixed ring of ground tiles is moved toward the
- * camera (+Z) each frame; once a tile passes behind the player it is wrapped
- * back to the far end, giving a seamless infinite road with zero allocation.
- * Phase 2's obstacle segments ride on top of this same scroll model.
+ * The endless scrolling floor: textured asphalt tiles recycled front-to-back,
+ * per-lane metro rails (two silver strips each), glowing lane dividers and
+ * warm edge rails. Zero allocation while scrolling — the same ring of meshes
+ * wraps forever.
  */
 export class Track {
   readonly group = new THREE.Group();
 
   private readonly tiles: THREE.Mesh[] = [];
-  private readonly tileCount: number;
+  private readonly tileCount = 10;
   private readonly spanZ: number;
 
   constructor() {
-    // Enough tiles to cover from well behind the camera to the fog horizon.
-    this.tileCount = 10;
     this.spanZ = this.tileCount * SEGMENT_LENGTH;
 
+    const tex = asphaltTexture();
     const geo = new THREE.PlaneGeometry(TRACK_WIDTH, SEGMENT_LENGTH);
-    geo.rotateX(-Math.PI / 2); // lay flat
+    geo.rotateX(-Math.PI / 2);
+    const matA = new THREE.MeshStandardMaterial({ map: tex, color: 0xc9b0d8, roughness: 0.95 });
+    const matB = new THREE.MeshStandardMaterial({ map: tex, color: 0xb39ac4, roughness: 0.95 });
 
     for (let i = 0; i < this.tileCount; i++) {
-      const mat = new THREE.MeshStandardMaterial({
-        color: i % 2 === 0 ? COLORS.groundA : COLORS.groundB,
-        roughness: 0.95,
-        metalness: 0.0,
-      });
-      const tile = new THREE.Mesh(geo, mat);
-      // Tile 0 sits just behind the player; the rest extend ahead into -Z.
+      const tile = new THREE.Mesh(geo, i % 2 === 0 ? matA : matB);
       tile.position.z = PLAYER_Z + SEGMENT_LENGTH / 2 - i * SEGMENT_LENGTH;
       this.tiles.push(tile);
       this.group.add(tile);
     }
 
-    this.addLaneStripes();
-    this.addSideRails();
+    this.addLaneRails();
+    this.addDividers();
+    this.addEdgeRails();
   }
 
-  /** Glowing dashed lines marking the boundaries between the lanes. */
-  private addLaneStripes(): void {
-    const stripeMat = new THREE.MeshBasicMaterial({ color: COLORS.laneStripe });
-    // Two divider lines: between lane -1/0 and lane 0/1.
+  /** Two thin silver metro rails per lane. */
+  private addLaneRails(): void {
+    const railGeo = new THREE.BoxGeometry(0.07, 0.05, this.spanZ);
+    const railMat = new THREE.MeshStandardMaterial({
+      color: 0xc9c2d8,
+      emissive: 0x9a90b0,
+      emissiveIntensity: 0.12,
+      metalness: 0.8,
+      roughness: 0.35,
+    });
+    const zCenter = PLAYER_Z - this.spanZ / 2 + SEGMENT_LENGTH;
+    for (const lane of [-1, 0, 1]) {
+      for (const off of [-0.7, 0.7]) {
+        const rail = new THREE.Mesh(railGeo, railMat);
+        rail.position.set(laneToX(lane) + off, 0.03, zCenter);
+        this.group.add(rail);
+      }
+    }
+  }
+
+  /** Warm dashed dividers between lanes. */
+  private addDividers(): void {
+    const stripeMat = new THREE.MeshBasicMaterial({ color: COLORS.laneStripe, transparent: true, opacity: 0.5 });
+    const stripeGeo = new THREE.BoxGeometry(0.06, 0.02, this.spanZ);
+    const zCenter = PLAYER_Z - this.spanZ / 2 + SEGMENT_LENGTH;
     for (const lane of [-0.5, 0.5]) {
-      const stripe = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.02, this.spanZ),
-        stripeMat,
-      );
-      stripe.position.set(laneToX(lane), 0.011, PLAYER_Z - this.spanZ / 2 + SEGMENT_LENGTH);
+      const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+      stripe.position.set(laneToX(lane), 0.011, zCenter);
       this.group.add(stripe);
     }
   }
 
-  /** Low neon side rails to frame the track edges. */
-  private addSideRails(): void {
+  /** Glowing edge rails framing the track. */
+  private addEdgeRails(): void {
     const railMat = new THREE.MeshStandardMaterial({
-      color: COLORS.laneStripe,
-      emissive: COLORS.laneStripe,
-      emissiveIntensity: 0.32,
+      color: COLORS.rail,
+      emissive: COLORS.rail,
+      emissiveIntensity: 0.35,
       roughness: 0.4,
     });
-    const railGeo = new THREE.BoxGeometry(0.15, 0.4, this.spanZ);
+    const railGeo = new THREE.BoxGeometry(0.18, 0.34, this.spanZ);
+    const zCenter = PLAYER_Z - this.spanZ / 2 + SEGMENT_LENGTH;
     for (const side of [-1, 1]) {
       const rail = new THREE.Mesh(railGeo, railMat);
-      rail.position.set(
-        side * (TRACK_WIDTH / 2 + 0.1),
-        0.2,
-        PLAYER_Z - this.spanZ / 2 + SEGMENT_LENGTH,
-      );
+      rail.position.set(side * (TRACK_WIDTH / 2 + 0.12), 0.17, zCenter);
       this.group.add(rail);
+      // Kerb below the rail.
+      const kerb = new THREE.Mesh(
+        new THREE.BoxGeometry(0.4, 0.1, this.spanZ),
+        new THREE.MeshStandardMaterial({ color: 0x4a3358, roughness: 0.9 }),
+      );
+      kerb.position.set(side * (TRACK_WIDTH / 2 + 0.12), 0.05, zCenter);
+      this.group.add(kerb);
     }
   }
 
   /** Scroll the floor toward the camera by `scroll` world units. */
   update(scroll: number): void {
-    const recycleZ = PLAYER_Z + SEGMENT_LENGTH; // just behind the camera
+    const recycleZ = PLAYER_Z + SEGMENT_LENGTH;
     for (const tile of this.tiles) {
       tile.position.z += scroll;
-      if (tile.position.z > recycleZ) {
-        // Wrap to the far end to keep the road continuous.
-        tile.position.z -= this.spanZ;
-      }
+      if (tile.position.z > recycleZ) tile.position.z -= this.spanZ;
     }
   }
 }

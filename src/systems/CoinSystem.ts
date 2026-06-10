@@ -57,9 +57,9 @@ export class CoinSystem {
     this.mat = new THREE.MeshStandardMaterial({
       color: COLORS.coin,
       emissive: COLORS.coin,
-      emissiveIntensity: 0.4,
+      emissiveIntensity: 0.85, // bright enough for the bloom pass to catch
       metalness: 0.7,
-      roughness: 0.3,
+      roughness: 0.25,
     });
     this.mesh = new THREE.InstancedMesh(this.geo, this.mat, MAX_COINS);
     this.mesh.frustumCulled = false; // instances span the whole track

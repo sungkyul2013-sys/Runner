@@ -48,6 +48,12 @@ export class Player {
   /** When flying (jetpack/rocket) gravity is suspended and Y is driven outside. */
   private flying = false;
 
+  private squashTimer = 0;
+  private shieldOn = false;
+  private readonly magnetAura: THREE.Mesh;
+  private readonly shieldBubble: THREE.Mesh;
+  private readonly hoverboard: THREE.Group;
+
   private sliding = false;
   private slideTimer = 0;
 
@@ -57,7 +63,57 @@ export class Player {
   constructor() {
     this.rig = new Character(CHARACTERS[0].colors);
     this.group.add(this.rig.group);
+
+    // Magnet aura — translucent blue field, spins while active.
+    this.magnetAura = new THREE.Mesh(
+      new THREE.SphereGeometry(1.25, 18, 12),
+      new THREE.MeshBasicMaterial({
+        color: 0x55aaff, transparent: true, opacity: 0.16,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }),
+    );
+    this.magnetAura.visible = false;
+    this.group.add(this.magnetAura);
+
+    // Shield bubble — green protective sphere (hoverboard active).
+    this.shieldBubble = new THREE.Mesh(
+      new THREE.SphereGeometry(1.15, 18, 12),
+      new THREE.MeshBasicMaterial({
+        color: 0x6bffb0, transparent: true, opacity: 0.18,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }),
+    );
+    this.shieldBubble.visible = false;
+    this.group.add(this.shieldBubble);
+
+    // Hoverboard under the feet while the shield is deployed.
+    this.hoverboard = new THREE.Group();
+    const deck = new THREE.Mesh(
+      new THREE.BoxGeometry(0.95, 0.08, 1.9),
+      new THREE.MeshStandardMaterial({
+        color: 0x55c8ff, emissive: 0x2a88cc, emissiveIntensity: 0.5, roughness: 0.3, metalness: 0.4,
+      }),
+    );
+    this.hoverboard.add(deck);
+    const glow = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, 0.04, 1.5),
+      new THREE.MeshBasicMaterial({
+        color: 0x9adfff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false,
+      }),
+    );
+    glow.position.y = -0.08;
+    this.hoverboard.add(glow);
+    this.hoverboard.position.y = -PLAYER_HALF_STANDING.y + 0.06;
+    this.hoverboard.visible = false;
+    this.group.add(this.hoverboard);
+
     this.reset();
+  }
+
+  /** Toggle power-up visuals (called each frame from the game). */
+  setEffects(magnet: boolean, shield: boolean): void {
+    this.magnetAura.visible = magnet;
+    this.shieldOn = shield;
   }
 
   /** Swap in a different character look without touching the physics. */
@@ -84,7 +140,13 @@ export class Player {
     this.flying = false;
     this.sliding = false;
     this.slideTimer = 0;
+    this.squashTimer = 0;
+    this.shieldOn = false;
+    this.magnetAura.visible = false;
+    this.shieldBubble.visible = false;
+    this.hoverboard.visible = false;
     this.rig.group.scale.set(1, 1, 1);
+    this.rig.group.rotation.z = 0;
     this.group.position.set(0, PLAYER_HALF_STANDING.y, PLAYER_Z);
     this.updateAABB();
   }
@@ -151,6 +213,7 @@ export class Player {
     const t = 1 - Math.exp(-LANE_LERP * this.laneSpeedMult * dt);
     this.x += (targetX - this.x) * t;
 
+    const wasAirborne = !this.grounded;
     if (!this.flying) {
       // Vertical gravity integration resolving to the current support height.
       this.vy -= GRAVITY * (this.lowGravity ? 0.72 : 1) * dt;
@@ -163,6 +226,8 @@ export class Player {
         this.grounded = false;
       }
     }
+    // Landing → brief squash for impact feel.
+    if (wasAirborne && this.grounded && !this.sliding) this.squashTimer = 0.18;
 
     // Slide timeout.
     if (this.sliding) {
@@ -173,6 +238,23 @@ export class Player {
     const half = this.sliding ? PLAYER_HALF_SLIDING : PLAYER_HALF_STANDING;
     this.group.position.set(this.x, this.feetY + half.y, PLAYER_Z);
     this.updateAABB();
+
+    // Juice: landing squash & lean into lane changes (visual only).
+    if (!this.sliding) {
+      if (this.squashTimer > 0) {
+        this.squashTimer -= dt;
+        const k = Math.max(0, this.squashTimer / 0.18);
+        this.rig.group.scale.set(1 + 0.18 * k, 1 - 0.24 * k, 1 + 0.18 * k);
+      } else {
+        this.rig.group.scale.set(1, 1, 1);
+      }
+    }
+    this.rig.group.rotation.z = (this.x - targetX) * 0.14;
+
+    // Power-up visuals follow their states.
+    if (this.magnetAura.visible) this.magnetAura.rotation.y += dt * 2.2;
+    this.hoverboard.visible = this.shieldOn;
+    this.shieldBubble.visible = this.shieldOn;
 
     // Drive the character animation from the current motion state.
     const pose: Pose =

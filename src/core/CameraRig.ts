@@ -41,6 +41,9 @@ export class CameraRig {
     this.lookTarget.set(this.camX * 0.5, 1, PLAYER_Z - CAMERA_LOOK_AHEAD);
     this.camera.lookAt(this.lookTarget);
 
+    // Subtle roll into lane changes — the camera "banks" with the player.
+    this.camera.rotateZ((this.camX - this.targetX) * 0.06);
+
     // Map current speed (BASE..MAX) onto the FOV range and ease toward it.
     const speedT = THREE.MathUtils.clamp(
       (speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED),

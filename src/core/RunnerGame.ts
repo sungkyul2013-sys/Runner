@@ -1,4 +1,4 @@
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import { BIOMES, CHECKPOINT_DIST, COLORS, LEVEL_DIST, TIME_ATTACK_SECONDS } from '../config/constants';
 import { POWERUPS, PowerupType } from '../config/powerups';
 import { AudioManager } from '../audio/AudioManager';
@@ -58,6 +58,9 @@ export class RunnerGame extends Game {
 
   // Run state.
   mode: GameMode = 'endless';
+  private trailColor = 0xff7eb3;
+  private trailTimer = 0;
+  private readonly trailPos = new THREE.Vector3();
   private level = 1;
   private nextCheckpoint = CHECKPOINT_DIST;
   private timeLeft = TIME_ATTACK_SECONDS;
@@ -133,6 +136,7 @@ export class RunnerGame extends Game {
     this.score.coinMult = a.coinMult ?? 1;
     this.score.coinValueBonus = (this.save.upgradeLevel('multiplier')) * 1;
     this.headstartDur = 1.5 + this.save.upgradeLevel('headstart') * 1.0;
+    this.trailColor = c.colors.trail;
     this.player.setLaneSpeedMult(a.laneSpeedMult ?? 1);
     this.player.setLowGravity(this.lowGravity);
     this.player.applyCharacterId(c.id);
@@ -176,6 +180,9 @@ export class RunnerGame extends Game {
   protected override onSlide(): void {
     this.audio.slide();
     this.particles.burst(this.player.group.position, 0xffe0c0, { count: 6, speed: 2, life: 0.4, size: 0.5 });
+  }
+  protected override onLane(): void {
+    this.audio.whoosh();
   }
   protected override onDeploy(): void {
     this.powerups.deploy();
@@ -287,6 +294,18 @@ export class RunnerGame extends Game {
     this.coins.update(scroll, dt, this.player, magnet);
     this.score.multiplier = this.powerups.scoreMultiplier();
     this.score.addDistance(scroll);
+
+    // Power-up visuals + character-coloured run trail.
+    this.player.setEffects(magnet > 0, this.powerups.isShielded());
+    this.trailTimer -= dt;
+    if (this.trailTimer <= 0) {
+      this.trailTimer = 0.07;
+      const p = this.player.group.position;
+      this.trailPos.set(p.x, p.y - 0.5, p.z + 0.5);
+      this.particles.burst(this.trailPos, this.trailColor, {
+        count: 1, speed: 0.6, life: 0.35, size: 0.55, gravity: 0,
+      });
+    }
     this.hud.setRun({
       score: this.score.score,
       coins: this.score.coins,

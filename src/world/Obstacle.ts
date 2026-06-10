@@ -3,15 +3,15 @@ import { COLORS, laneToX } from '../config/constants';
 
 /** The kinds of hazard the runner must survive. */
 export enum ObstacleKind {
-  /** Tall static block — dodge by switching lanes. */
+  /** Tall train — dodge by switching lanes. */
   TRAIN = 'TRAIN',
   /** Like TRAIN but drifts along Z — dodge by switching lanes. */
   TRAIN_MOVING = 'TRAIN_MOVING',
-  /** Low barrier — clear by jumping. */
+  /** Low striped barrier — clear by jumping. */
   BARRIER = 'BARRIER',
-  /** Overhead — clear by sliding under. */
+  /** Overhead gate — clear by sliding under. */
   TUNNEL = 'TUNNEL',
-  /** Tall side wall blocking a lane — dodge by switching lanes. */
+  /** Tall fence wall blocking a lane — dodge by switching lanes. */
   WALL = 'WALL',
   /** Low train — jump ONTO its roof and ride, or dodge. */
   LOW_TRAIN = 'LOW_TRAIN',
@@ -29,193 +29,335 @@ interface Half {
 
 interface KindSpec {
   half: Half; // collision half-extents
-  yCenter: number; // collider/mesh centre height
-  color: number;
-  emissive: number;
+  yCenter: number; // collider centre height
   moving: boolean;
-  opacity?: number;
-  /** Player can land on its roof instead of dying (top hit = safe). */
   rideable?: boolean;
-  /** Can be cleared by a Bomb power-up. */
   destructible?: boolean;
 }
 
 /**
- * Per-kind dimensions. The collider is analytic (derived from `half`/`yCenter`),
- * so it always matches regardless of the mesh. Heights are tuned so:
- * BARRIER is cleared by jumping, TUNNEL only by sliding under, and TRAIN/WALL
- * force a lane change (too tall to jump, too low to slide under).
+ * Analytic collider sizes per kind (independent of the visual, so the hitbox
+ * is always exact). Heights are tuned so BARRIER clears with a jump, TUNNEL/
+ * SIGN clear with a slide, LOW_TRAIN/CRATE roofs are landable, and TRAIN/WALL
+ * force a lane change.
  */
 const SPECS: Record<ObstacleKind, KindSpec> = {
-  [ObstacleKind.TRAIN]: {
-    half: { x: 1.0, y: 1.0, z: 3.0 },
-    yCenter: 1.0,
-    color: COLORS.trainBody,
-    emissive: 0x2a1f6b,
-    moving: false,
-    destructible: true,
-  },
-  [ObstacleKind.TRAIN_MOVING]: {
-    half: { x: 1.0, y: 1.0, z: 3.0 },
-    yCenter: 1.0,
-    color: 0xff5cf0,
-    emissive: 0x7a1f6b,
-    moving: true,
-    destructible: true,
-  },
-  [ObstacleKind.BARRIER]: {
-    half: { x: 1.0, y: 0.35, z: 0.5 },
-    yCenter: 0.35,
-    color: COLORS.barrier,
-    emissive: 0x803012,
-    moving: false,
-    destructible: true,
-  },
-  [ObstacleKind.TUNNEL]: {
-    half: { x: 1.0, y: 0.6, z: 0.5 },
-    yCenter: 1.6, // spans 1.0–2.2: stand=collide, slide(top 0.9)=pass
-    color: COLORS.tunnel,
-    emissive: 0x12808a,
-    moving: false,
-    opacity: 0.6,
-  },
-  [ObstacleKind.WALL]: {
-    half: { x: 1.0, y: 1.2, z: 1.0 },
-    yCenter: 1.2,
-    color: COLORS.wall,
-    emissive: 0x1a1f2b,
-    moving: false,
-  },
-  [ObstacleKind.LOW_TRAIN]: {
-    half: { x: 1.0, y: 0.7, z: 2.5 },
-    yCenter: 0.7, // roof at y=1.4 — reachable by a normal jump
-    color: COLORS.lowTrain,
-    emissive: 0x10704f,
-    moving: false,
-    rideable: true,
-    destructible: true,
-  },
-  [ObstacleKind.CRATE]: {
-    half: { x: 0.7, y: 0.45, z: 0.7 },
-    yCenter: 0.45, // roof at y=0.9
-    color: COLORS.crate,
-    emissive: 0x6b4218,
-    moving: false,
-    rideable: true,
-    destructible: true,
-  },
-  [ObstacleKind.SIGN]: {
-    half: { x: 1.0, y: 0.5, z: 0.3 },
-    yCenter: 1.7, // spans 1.2–2.2: stand=collide, slide=pass
-    color: COLORS.sign,
-    emissive: 0x806010,
-    moving: false,
-  },
+  [ObstacleKind.TRAIN]: { half: { x: 1.0, y: 1.3, z: 3.0 }, yCenter: 1.3, moving: false, destructible: true },
+  [ObstacleKind.TRAIN_MOVING]: { half: { x: 1.0, y: 1.3, z: 3.0 }, yCenter: 1.3, moving: true, destructible: true },
+  [ObstacleKind.BARRIER]: { half: { x: 1.0, y: 0.45, z: 0.18 }, yCenter: 0.45, moving: false, destructible: true },
+  [ObstacleKind.TUNNEL]: { half: { x: 1.0, y: 0.5, z: 0.3 }, yCenter: 1.5, moving: false }, // spans 1.0–2.0
+  [ObstacleKind.WALL]: { half: { x: 1.0, y: 1.2, z: 0.25 }, yCenter: 1.2, moving: false },
+  [ObstacleKind.LOW_TRAIN]: { half: { x: 1.0, y: 0.7, z: 2.5 }, yCenter: 0.7, moving: false, rideable: true, destructible: true },
+  [ObstacleKind.CRATE]: { half: { x: 0.7, y: 0.45, z: 0.7 }, yCenter: 0.45, moving: false, rideable: true, destructible: true },
+  [ObstacleKind.SIGN]: { half: { x: 1.0, y: 0.45, z: 0.15 }, yCenter: 1.65, moving: false }, // spans 1.2–2.1
 };
 
-/** Shared geometry/material per kind — built once, disposed on teardown. */
-const geoCache = new Map<ObstacleKind, THREE.BoxGeometry>();
-const matCache = new Map<ObstacleKind, THREE.MeshStandardMaterial>();
+// ── Shared geometry / material caches (built once, reused by every instance) ──
+const geos = new Map<string, THREE.BufferGeometry>();
+const mats = new Map<string, THREE.Material>();
 
-function resourcesFor(kind: ObstacleKind): {
-  geo: THREE.BoxGeometry;
-  mat: THREE.MeshStandardMaterial;
-} {
-  let geo = geoCache.get(kind);
-  let mat = matCache.get(kind);
-  if (!geo || !mat) {
-    const s = SPECS[kind];
-    geo = new THREE.BoxGeometry(s.half.x * 2, s.half.y * 2, s.half.z * 2);
-    mat = new THREE.MeshStandardMaterial({
-      color: s.color,
-      emissive: s.emissive,
-      emissiveIntensity: 0.28,
-      roughness: 0.5,
-      metalness: 0.1,
-      transparent: s.opacity !== undefined,
-      opacity: s.opacity ?? 1,
-    });
-    geoCache.set(kind, geo);
-    matCache.set(kind, mat);
+function geo(key: string, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
+  let g = geos.get(key);
+  if (!g) {
+    g = make();
+    geos.set(key, g);
   }
-  return { geo, mat };
+  return g;
 }
 
-/** Dispose all shared obstacle resources (call on full teardown only). */
+function mat(key: string, color: number, opts: { e?: number; rough?: number; metal?: number; basic?: boolean } = {}): THREE.Material {
+  let m = mats.get(key);
+  if (!m) {
+    m = opts.basic
+      ? new THREE.MeshBasicMaterial({ color })
+      : new THREE.MeshStandardMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: opts.e ?? 0.12,
+          roughness: opts.rough ?? 0.6,
+          metalness: opts.metal ?? 0.1,
+        });
+    mats.set(key, m);
+  }
+  return m;
+}
+
+/** Striped hazard texture (orange/white diagonal) for barriers. */
+function stripeTexture(): THREE.CanvasTexture {
+  const key = 'tex:stripe';
+  const cached = mats.get(key) as unknown as THREE.CanvasTexture | undefined;
+  if (cached) return cached;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#ffb13a';
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = '#fff2d0';
+  for (let i = -64; i < 128; i += 32) {
+    ctx.beginPath();
+    ctx.moveTo(i, 64);
+    ctx.lineTo(i + 16, 64);
+    ctx.lineTo(i + 16 + 64, 0);
+    ctx.lineTo(i + 64, 0);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  mats.set(key, tex as unknown as THREE.Material);
+  return tex;
+}
+
+/** Lit train-window strip texture. */
+function windowTexture(): THREE.CanvasTexture {
+  const key = 'tex:windows';
+  const cached = mats.get(key) as unknown as THREE.CanvasTexture | undefined;
+  if (cached) return cached;
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 32;
+  const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 32);
+  for (let x = 6; x < 122; x += 22) {
+    ctx.fillStyle = Math.random() > 0.25 ? '#ffe9a8' : '#5a3a50';
+    ctx.beginPath();
+    (ctx as CanvasRenderingContext2D & { roundRect: (x: number, y: number, w: number, h: number, r: number) => void })
+      .roundRect(x, 7, 14, 18, 3);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  mats.set(key, tex as unknown as THREE.Material);
+  return tex;
+}
+
 export function disposeObstacleResources(): void {
-  for (const g of geoCache.values()) g.dispose();
-  for (const m of matCache.values()) m.dispose();
-  geoCache.clear();
-  matCache.clear();
+  for (const g of geos.values()) g.dispose();
+  for (const m of mats.values()) m.dispose();
+  geos.clear();
+  mats.clear();
 }
 
 /** Drift speed (units/sec) applied to moving trains, sign chosen per spawn. */
 const MOVING_DRIFT = 5;
 
 /**
- * A single pooled hazard. Wraps one mesh and a live AABB. `configure` aims it
- * at a lane/Z and swaps in the right shared geometry+material for its kind;
- * `update` scrolls it toward the camera and refreshes the collider.
+ * A pooled hazard with a **composite visual** (built once per pooled instance
+ * from shared geometries/materials — zero steady-state allocation) and an
+ * analytic AABB from {@link SPECS}. Pools are per kind, so `configure` only
+ * repositions; the model never rebuilds.
  */
 export class Obstacle {
-  readonly mesh = new THREE.Mesh();
+  readonly group = new THREE.Group();
   readonly aabb = new THREE.Box3();
 
-  kind: ObstacleKind = ObstacleKind.TRAIN;
-  private spec: KindSpec = SPECS[ObstacleKind.TRAIN];
+  readonly kind: ObstacleKind;
+  private readonly spec: KindSpec;
   private drift = 0;
 
   private readonly center = new THREE.Vector3();
   private readonly size = new THREE.Vector3();
 
-  /** Aim this obstacle at a lane and world-Z, applying its kind's appearance. */
-  configure(kind: ObstacleKind, lane: number, z: number): void {
+  constructor(kind: ObstacleKind) {
     this.kind = kind;
     this.spec = SPECS[kind];
-    const { geo, mat } = resourcesFor(kind);
-    this.mesh.geometry = geo;
-    this.mesh.material = mat;
-    this.mesh.position.set(laneToX(lane), this.spec.yCenter, z);
-    this.mesh.visible = true;
-    // Moving trains drift along Z; randomise the direction for variety.
+    this.buildVisual();
+    this.group.visible = false;
+  }
+
+  /** Aim this obstacle at a lane and world-Z. */
+  configure(lane: number, z: number): void {
+    this.group.position.set(laneToX(lane), 0, z);
+    this.group.visible = true;
     this.drift = this.spec.moving ? (Math.random() < 0.5 ? -1 : 1) * MOVING_DRIFT : 0;
     this.refreshAABB();
   }
 
   /** Scroll toward the camera by `scroll`, plus any self-drift. */
   update(scroll: number, dt: number): void {
-    this.mesh.position.z += scroll + this.drift * dt;
+    this.group.position.z += scroll + this.drift * dt;
     this.refreshAABB();
   }
 
   private refreshAABB(): void {
-    const p = this.mesh.position;
-    this.center.set(p.x, p.y, p.z);
+    const p = this.group.position;
+    this.center.set(p.x, this.spec.yCenter, p.z);
     this.size.set(this.spec.half.x * 2, this.spec.half.y * 2, this.spec.half.z * 2);
     this.aabb.setFromCenterAndSize(this.center, this.size);
   }
 
   get z(): number {
-    return this.mesh.position.z;
+    return this.group.position.z;
   }
-
-  /** Height of this obstacle's roof (top surface). */
+  get position(): THREE.Vector3 {
+    return this.group.position;
+  }
   get topY(): number {
-    return this.mesh.position.y + this.spec.half.y;
+    return this.spec.yCenter + this.spec.half.y;
   }
-
-  /** Whether the player can land on top instead of dying. */
   get rideable(): boolean {
     return this.spec.rideable === true;
   }
-
-  /** Whether a Bomb power-up can clear this obstacle. */
   get destructible(): boolean {
     return this.spec.destructible === true;
   }
 
-  /** Hide when released to the pool. */
   reset(): void {
-    this.mesh.visible = false;
+    this.group.visible = false;
+  }
+
+  // ── Visual assembly (once per instance, shared resources) ─────────────────
+  private add(g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number): THREE.Mesh {
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.set(x, y, z);
+    this.group.add(mesh);
+    return mesh;
+  }
+
+  private buildVisual(): void {
+    switch (this.kind) {
+      case ObstacleKind.TRAIN:
+        this.buildTrain(COLORS.trainBody, 2.6, 6);
+        break;
+      case ObstacleKind.TRAIN_MOVING:
+        this.buildTrain(0xff5cf0, 2.6, 6);
+        break;
+      case ObstacleKind.LOW_TRAIN:
+        this.buildTrain(COLORS.lowTrain, 1.4, 5, true);
+        break;
+      case ObstacleKind.BARRIER:
+        this.buildBarrier();
+        break;
+      case ObstacleKind.TUNNEL:
+        this.buildOverhead(1.0, 2.0, COLORS.tunnel, 'tunnel');
+        break;
+      case ObstacleKind.SIGN:
+        this.buildOverhead(1.2, 2.1, COLORS.sign, 'sign');
+        break;
+      case ObstacleKind.WALL:
+        this.buildWall();
+        break;
+      case ObstacleKind.CRATE:
+        this.buildCrate();
+        break;
+    }
+  }
+
+  /** Train: body, golden roof, window strips, wheels, headlight. */
+  private buildTrain(bodyColor: number, height: number, length: number, low = false): void {
+    const tag = `${this.kind}`;
+    const bodyG = geo(`train:body:${height}:${length}`, () => new THREE.BoxGeometry(1.9, height - 0.36, length));
+    const bodyM = mat(`train:body:${tag}`, bodyColor, { e: 0.1, rough: 0.5 });
+    this.add(bodyG, bodyM, 0, 0.3 + (height - 0.36) / 2, 0);
+
+    // Rounded golden roof slab.
+    const roofG = geo(`train:roof:${length}`, () => new THREE.BoxGeometry(2.0, 0.14, length + 0.1));
+    const roofM = mat('train:roof', COLORS.trainRoof, { e: 0.18, rough: 0.4 });
+    this.add(roofG, roofM, 0, height - 0.07, 0);
+
+    // Window strips on both sides (lit).
+    if (!low) {
+      const winG = geo(`train:win:${length}`, () => new THREE.PlaneGeometry(length * 0.9, 0.55));
+      const winKey = 'train:winmat';
+      let winM = mats.get(winKey);
+      if (!winM) {
+        winM = new THREE.MeshBasicMaterial({ map: windowTexture(), transparent: true });
+        mats.set(winKey, winM);
+      }
+      const l = this.add(winG, winM, -0.96, height * 0.62, 0);
+      l.rotation.y = -Math.PI / 2;
+      const r = this.add(winG, winM, 0.96, height * 0.62, 0);
+      r.rotation.y = Math.PI / 2;
+    }
+
+    // Headlight on the face the player sees (+Z) + dark windshield.
+    const lampG = geo('train:lamp', () => new THREE.CircleGeometry(0.16, 12));
+    const lampM = mat('train:lamp', 0xfff6d0, { basic: true });
+    this.add(lampG, lampM, 0, low ? 0.7 : 0.9, length / 2 + 0.01);
+    const shieldG = geo('train:shield', () => new THREE.PlaneGeometry(1.5, 0.5));
+    const shieldM = mat('train:shield', 0x2a1830, { e: 0.05, rough: 0.2, metal: 0.6 });
+    this.add(shieldG, shieldM, 0, height * 0.72, length / 2 + 0.01);
+
+    // Undercarriage + wheels.
+    const underG = geo(`train:under:${length}`, () => new THREE.BoxGeometry(1.7, 0.3, length * 0.92));
+    const underM = mat('train:under', 0x241a2e, { rough: 0.9 });
+    this.add(underG, underM, 0, 0.15, 0);
+    const wheelG = geo('train:wheel', () => {
+      const g = new THREE.CylinderGeometry(0.18, 0.18, 0.1, 10);
+      g.rotateZ(Math.PI / 2);
+      return g;
+    });
+    const wheelM = mat('train:wheel', 0x171020, { rough: 0.8 });
+    for (const zw of [-length * 0.32, length * 0.32]) {
+      this.add(wheelG, wheelM, -0.85, 0.18, zw);
+      this.add(wheelG, wheelM, 0.85, 0.18, zw);
+    }
+  }
+
+  /** Jump barrier: striped bar on two posts + warning cone tip. */
+  private buildBarrier(): void {
+    const barG = geo('barrier:bar', () => new THREE.BoxGeometry(2.0, 0.3, 0.16));
+    const stripeKey = 'barrier:stripe';
+    let stripeM = mats.get(stripeKey);
+    if (!stripeM) {
+      stripeM = new THREE.MeshStandardMaterial({
+        map: stripeTexture(),
+        emissive: 0xff8a3a,
+        emissiveIntensity: 0.12,
+        roughness: 0.6,
+      });
+      mats.set(stripeKey, stripeM);
+    }
+    this.add(barG, stripeM, 0, 0.72, 0);
+    const postG = geo('barrier:post', () => new THREE.BoxGeometry(0.1, 0.6, 0.1));
+    const postM = mat('barrier:post', 0x6a5560, { rough: 0.8 });
+    this.add(postG, postM, -0.85, 0.3, 0);
+    this.add(postG, postM, 0.85, 0.3, 0);
+    // Gold cone tip — the "jump!" signal.
+    const tipG = geo('barrier:tip', () => new THREE.ConeGeometry(0.12, 0.26, 8));
+    const tipM = mat('barrier:tip', COLORS.trainRoof, { e: 0.5 });
+    this.add(tipG, tipM, 0, 1.0, 0);
+  }
+
+  /** Overhead bar (slide under) with side support legs. */
+  private buildOverhead(bottom: number, top: number, color: number, tag: string): void {
+    const h = top - bottom;
+    const barG = geo(`over:bar:${tag}`, () => new THREE.BoxGeometry(2.1, h, 0.26));
+    const barM = mat(`over:bar:${tag}`, color, { e: 0.2, rough: 0.5 });
+    this.add(barG, barM, 0, bottom + h / 2, 0);
+    const legG = geo(`over:leg:${top}`, () => new THREE.BoxGeometry(0.14, top, 0.14));
+    const legM = mat('over:leg', 0x55406a, { rough: 0.8 });
+    this.add(legG, legM, -1.04, top / 2, 0);
+    this.add(legG, legM, 1.04, top / 2, 0);
+    // Down-arrow plate hinting "slide".
+    const plateG = geo('over:plate', () => new THREE.PlaneGeometry(0.5, 0.3));
+    const plateM = mat('over:plate', 0xfff2d0, { basic: true });
+    const p = this.add(plateG, plateM, 0, bottom + h / 2, 0.14);
+    p.scale.set(0.7, 0.7, 1);
+  }
+
+  /** Lane-blocking fence wall with posts. */
+  private buildWall(): void {
+    const panelG = geo('wall:panel', () => new THREE.BoxGeometry(2.0, 2.2, 0.14));
+    const panelM = mat('wall:panel', COLORS.wall, { rough: 0.85, e: 0.06 });
+    this.add(panelG, panelM, 0, 1.2, 0);
+    const capG = geo('wall:cap', () => new THREE.BoxGeometry(2.1, 0.12, 0.24));
+    const capM = mat('wall:cap', 0xffd0a0, { e: 0.2 });
+    this.add(capG, capM, 0, 2.36, 0);
+    const postG = geo('wall:post', () => new THREE.BoxGeometry(0.16, 2.4, 0.2));
+    const postM = mat('wall:post', 0x3a2a44, { rough: 0.9 });
+    this.add(postG, postM, -0.95, 1.2, 0);
+    this.add(postG, postM, 0.95, 1.2, 0);
+  }
+
+  /** Wooden crate with cross planks (landable). */
+  private buildCrate(): void {
+    const boxG = geo('crate:box', () => new THREE.BoxGeometry(1.3, 0.9, 1.3));
+    const boxM = mat('crate:box', COLORS.crate, { rough: 0.9, e: 0.05 });
+    this.add(boxG, boxM, 0, 0.45, 0);
+    const plankG = geo('crate:plank', () => new THREE.BoxGeometry(1.36, 0.12, 1.36));
+    const plankM = mat('crate:plank', 0x8a5a2a, { rough: 0.9 });
+    this.add(plankG, plankM, 0, 0.06, 0);
+    this.add(plankG, plankM, 0, 0.84, 0);
   }
 }

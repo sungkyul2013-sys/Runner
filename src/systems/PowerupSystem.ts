@@ -187,6 +187,10 @@ export class PowerupSystem {
   isInvulnerable(): boolean {
     return this.isFlying() || this.invulnTimer > 0;
   }
+  /** A deployed hoverboard shield is currently protecting the player. */
+  isShielded(): boolean {
+    return this.shieldActive;
+  }
   magnetRadius(): number {
     if (this.isFlying()) return FLIGHT_MAGNET_RADIUS;
     return this.effects.has(PowerupType.MAGNET) ? MAGNET_RADIUS : 0;

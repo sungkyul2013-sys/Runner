@@ -73,26 +73,32 @@ export class AudioManager {
     src.start(t);
   }
 
-  jump(): void { this.blip(360, 0.18, 'square', 0.22, 760); }
-  slide(): void { this.noise(0.22, 0.18); }
-  coin(): void { this.blip(880, 0.07, 'triangle', 0.2); this.blip(1320, 0.09, 'triangle', 0.18, undefined, 0.06); }
+  jump(): void { this.blip(360, 0.18, 'square', 0.2, 760); }
+  slide(): void { this.noise(0.22, 0.16); }
+  whoosh(): void { this.noise(0.1, 0.1); }
+  coin(): void { this.blip(988, 0.06, 'triangle', 0.18); this.blip(1319, 0.1, 'triangle', 0.16, undefined, 0.05); }
   crash(): void { this.noise(0.4, 0.5); this.blip(120, 0.4, 'sawtooth', 0.35, 50); }
-  power(): void { this.blip(440, 0.1, 'square', 0.2); this.blip(660, 0.1, 'square', 0.2, undefined, 0.09); this.blip(880, 0.14, 'square', 0.2, undefined, 0.18); }
-  ui(): void { this.blip(620, 0.05, 'square', 0.12); }
+  power(): void { this.blip(523, 0.1, 'square', 0.16); this.blip(659, 0.1, 'square', 0.16, undefined, 0.08); this.blip(784, 0.16, 'square', 0.16, undefined, 0.16); }
+  ui(): void { this.blip(620, 0.05, 'square', 0.1); }
 
-  // ── Simple looping BGM ──────────────────────────────────────────────────────
-  private static readonly BASS = [110, 110, 146.8, 130.8];
-  private static readonly LEAD = [440, 0, 587.3, 659.3, 0, 523.3, 440, 0];
+  // ── Looping BGM: a warm two-bar progression (Am–F–C–G feel) ──────────────────
+  //   16 steps; bass on halves, arpeggio lead, soft hat on off-beats.
+  private static readonly BASS = [110, 110, 87.3, 87.3, 130.8, 130.8, 98, 98];
+  private static readonly LEAD = [
+    440, 523.3, 659.3, 523.3, 349.2, 440, 523.3, 0,
+    523.3, 659.3, 784, 659.3, 392, 494, 587.3, 0,
+  ];
 
   startBgm(): void {
     if (this.bgmTimer !== null || !this.ctx) return;
-    const stepMs = 250;
+    const stepMs = 230;
     this.bgmTimer = window.setInterval(() => {
       if (!this.ctx) return;
       const s = this.bgmStep++;
-      this.blip(AudioManager.BASS[(s >> 1) % AudioManager.BASS.length], 0.22, 'triangle', 0.12);
+      this.blip(AudioManager.BASS[(s >> 1) % AudioManager.BASS.length], 0.24, 'triangle', 0.11);
       const lead = AudioManager.LEAD[s % AudioManager.LEAD.length];
-      if (lead > 0) this.blip(lead, 0.16, 'square', 0.05);
+      if (lead > 0) this.blip(lead, 0.15, 'square', 0.045);
+      if (s % 2 === 1) this.noise(0.03, 0.03); // hat
     }, stepMs);
   }
 

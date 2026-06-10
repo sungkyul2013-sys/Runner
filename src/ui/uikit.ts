@@ -27,6 +27,8 @@ function ensureStyles(): void {
       padding:14px 28px;color:${NEON.ink};background:linear-gradient(120deg,${NEON.gold},${NEON.cyan});
       transition:transform .08s,filter .2s,box-shadow .2s;box-shadow:0 6px 18px rgba(0,0,0,.35);pointer-events:auto}
     .nd-btn:hover{transform:translateY(-2px);filter:brightness(1.06)}
+    .nd-btn:active{transform:scale(.96)}
+    .nd-tab:active{transform:scale(.95)}
     .nd-btn.pink{background:linear-gradient(120deg,${NEON.pink},${NEON.cyan})}
     .nd-btn.ghost{background:rgba(40,24,70,0.40);color:${NEON.text};border:1px solid rgba(255,210,180,0.30);
       font-size:15px;padding:11px 18px;box-shadow:none}
@@ -104,6 +106,18 @@ export function coinStr(n: number): string {
 /** Format a gem/mileage count. */
 export function gemStr(n: number): string {
   return `💎 ${n}`;
+}
+
+/** Cinematic vignette overlay (call once at boot). */
+export function vignette(): void {
+  const v = el('div', {
+    position: 'fixed',
+    inset: '0',
+    pointerEvents: 'none',
+    zIndex: '40',
+    background: 'radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(10,4,20,0.45) 100%)',
+  });
+  document.body.appendChild(v);
 }
 
 /** A small tab button. */
