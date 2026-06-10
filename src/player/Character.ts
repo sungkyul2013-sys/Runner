@@ -85,24 +85,35 @@ export class Character {
     hips.position.y = 0.92;
     this.inner.add(hips);
 
-    // Head (skin) + brim hat.
-    const head = this.box(0.4, 0.4, 0.4, skin);
-    head.position.y = 1.78;
+    // Head (skin) — slightly oversized for a friendly, readable silhouette.
+    const head = this.box(0.46, 0.44, 0.46, skin);
+    head.position.y = 1.8;
     this.inner.add(head);
     // Eyes (tiny dark blocks) for a face.
     const eyeMat = this.mat(0x201826);
-    for (const sx of [-0.1, 0.1]) {
-      const eye = this.box(0.06, 0.08, 0.04, eyeMat);
-      eye.position.set(sx, 1.8, 0.21);
+    for (const sx of [-0.11, 0.11]) {
+      const eye = this.box(0.07, 0.09, 0.04, eyeMat);
+      eye.position.set(sx, 1.82, 0.24);
       this.inner.add(eye);
     }
     // Hat: crown + brim.
-    const crown = this.box(0.44, 0.16, 0.44, hat);
-    crown.position.y = 2.02;
+    const crown = this.box(0.5, 0.16, 0.5, hat);
+    crown.position.y = 2.07;
     this.inner.add(crown);
-    const brim = this.box(0.6, 0.05, 0.6, hat);
-    brim.position.y = 1.95;
+    const brim = this.box(0.66, 0.05, 0.66, hat);
+    brim.position.y = 2.0;
     this.inner.add(brim);
+
+    // Backpack — the runner's signature.
+    const pack = this.box(0.4, 0.46, 0.18, shoes);
+    pack.position.set(0, 1.3, -0.26);
+    this.inner.add(pack);
+    const strapMat = this.mat(c.pants);
+    for (const sx of [-0.16, 0.16]) {
+      const strap = this.box(0.07, 0.5, 0.34, strapMat);
+      strap.position.set(sx, 1.32, -0.02);
+      this.inner.add(strap);
+    }
 
     // Limbs: arms (skin sleeves) + legs (pants) with shoes.
     this.leftArm = this.limb(-0.36, 1.5, 0.15, 0.58, skin);
