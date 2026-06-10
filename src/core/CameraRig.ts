@@ -72,6 +72,28 @@ export class CameraRig {
     }
   }
 
+  /**
+   * Menu "hero" camera: frames the character up close and slightly to the side,
+   * slowly orbiting so it reads as a showcased, popped-out model rather than a
+   * far-away runner. `elapsed` drives the gentle orbit.
+   */
+  menu(dt: number, elapsed: number): void {
+    const t = 1 - Math.exp(-5 * dt);
+    const orbit = Math.sin(elapsed * 0.35) * 1.7; // gentle side-to-side
+    const tx = orbit;
+    const tz = PLAYER_Z + 5.2; // closer than the gameplay chase cam
+    const ty = 2.0;
+    this.camera.position.x += (tx - this.camera.position.x) * t;
+    this.camera.position.y += (ty - this.camera.position.y) * t;
+    this.camera.position.z += (tz - this.camera.position.z) * t;
+    // Look at the upper body so the character feels prominent.
+    this.lookTarget.set(0, 1.25, PLAYER_Z);
+    this.camera.lookAt(this.lookTarget);
+    const targetFov = 42; // tighter FOV → bigger, more "portrait" character
+    this.camera.fov += (targetFov - this.camera.fov) * t;
+    this.camera.updateProjectionMatrix();
+  }
+
   reset(): void {
     this.camX = 0;
     this.targetX = 0;

@@ -95,26 +95,31 @@ export class ScreenManager {
     root.style.cssText +=
       'justify-content:stretch;align-items:stretch;gap:0;padding:0';
 
-    // Top header: brand + wallet chips.
+    // Top header: brand + wallet chips (floats over the live 3D scene).
     this.header = el('div', {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: 'calc(env(safe-area-inset-top,0px) + 14px) 18px 12px',
-      borderBottom: '1px solid rgba(255,210,180,0.12)', flexShrink: '0',
+      padding: 'calc(env(safe-area-inset-top,0px) + 16px) 18px 12px',
+      flexShrink: '0', zIndex: '2',
     });
 
-    // Scrollable content area (one view per nav tab).
+    // Scrollable content area (one view per nav tab) with 3D perspective so the
+    // pop-in transition reads as depth.
     this.content = el('div', {
-      flex: '1', overflowY: 'auto', padding: '14px 14px 18px',
+      flex: '1', overflowY: 'auto', padding: '10px 14px 22px',
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px',
+      perspective: '1200px',
     });
     this.content.className = 'nd-scroll';
 
-    // Bottom nav bar (icon tabs).
+    // Bottom nav bar — a floating glass pill with pop-out 3D buttons.
     this.navbar = el('div', {
-      display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-      padding: '8px 6px calc(env(safe-area-inset-bottom,0px) + 8px)',
-      borderTop: '1px solid rgba(255,210,180,0.16)',
-      background: 'rgba(14,8,28,0.66)', backdropFilter: 'blur(12px)', flexShrink: '0',
+      display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end',
+      margin: '0 auto calc(env(safe-area-inset-bottom,0px) + 12px)',
+      width: 'min(440px,92vw)', padding: '10px 8px 12px', flexShrink: '0', zIndex: '3',
+      borderRadius: '26px', border: '1px solid rgba(255,210,180,0.2)',
+      background: 'linear-gradient(160deg,rgba(34,18,56,0.82),rgba(16,9,32,0.78))',
+      backdropFilter: 'blur(18px)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,.14),0 14px 34px rgba(0,0,0,.5)',
     });
 
     root.append(this.header, this.content, this.navbar);
@@ -126,6 +131,11 @@ export class ScreenManager {
     this.renderNavbar();
     this.content.scrollTop = 0;
     this.content.innerHTML = '';
+    this.content.style.justifyContent = 'flex-start'; // viewPlay overrides this
+    // Re-trigger the dynamic "pop-in" each time a tab is shown.
+    this.content.style.animation = 'none';
+    void this.content.offsetWidth; // reflow to restart the animation
+    this.content.style.animation = 'nd-popin .42s cubic-bezier(.34,1.5,.5,1) both';
     ({
       play: () => this.viewPlay(),
       shop: () => this.viewShop(),
@@ -166,79 +176,92 @@ export class ScreenManager {
       ACHIEVEMENTS.some((a) => a.stat(this.save.data) >= a.goal && !this.save.data.claimedAchievements.includes(a.id));
     const items: Array<[Nav, string, string, boolean]> = [
       ['play', '🏠', '홈', false],
-      ['shop', '🛒', '상점', false],
+      ['shop', '🛍️', '상점', false],
       ['rewards', '🎁', '보상', dot],
       ['settings', '⚙️', '설정', false],
     ];
     for (const [nav, icon, label, badge] of items) {
       const on = this.nav === nav;
-      const b = el('button', {
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
-        background: 'none', border: 'none', cursor: 'pointer', pointerEvents: 'auto',
-        padding: '4px 14px', position: 'relative', transition: 'transform .1s',
-      });
+      const b = el('button');
+      b.className = `nd-nav${on ? ' on' : ''}`;
       b.innerHTML =
-        `<span style="font-size:23px;filter:${on ? 'none' : 'grayscale(.5) opacity(.7)'}">${icon}</span>` +
-        `<span style="font:800 10px/1 system-ui;letter-spacing:1px;color:${on ? NEON.gold : 'rgba(255,242,224,.6)'}">${label}</span>` +
-        (badge ? `<span style="position:absolute;top:2px;right:10px;width:8px;height:8px;border-radius:50%;background:#ff6b8a;box-shadow:0 0 8px #ff6b8a"></span>` : '');
+        `<span class="nd-navicon">${icon}</span>` +
+        `<span class="nd-navlbl">${label}</span>` +
+        (badge ? `<span style="position:absolute;top:0;right:12px;width:9px;height:9px;border-radius:50%;background:#ff6b8a;box-shadow:0 0 8px #ff6b8a"></span>` : '');
       b.addEventListener('click', () => this.go(nav));
       this.navbar.append(b);
     }
   }
 
-  // ── View: PLAY (hero + mode select + play button) ──────────────────────────
+  // ── View: PLAY ──────────────────────────────────────────────────────────────
+  //  Minimal & clean: a small title chip up top, the rest of the screen left
+  //  open so the live 3D character is the hero, and a compact mode toggle +
+  //  small PLAY button floating at the bottom. (No big boxy panels.)
   private viewPlay(): void {
     const d = this.save.data;
     const c = CHARACTERS.find((x) => x.id === d.selected)!;
+    this.content.style.justifyContent = 'space-between';
 
-    const hero = el('div', { textAlign: 'center', marginTop: '2vh', animation: 'nd-slideup .4s ease both' });
-    hero.append(
-      el('div', {
-        font: `900 clamp(36px,9vw,76px)/0.92 'Trebuchet MS',system-ui`, letterSpacing: '1px',
-        background: `linear-gradient(120deg,${NEON.gold},${NEON.pink},#8a7bff)`,
-        webkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-        filter: 'drop-shadow(0 4px 18px rgba(255,126,179,.4))', animation: 'nd-float 4s ease-in-out infinite',
-      }, 'SUNSET<span style="opacity:.95">RUNNER</span>'),
-      el('div', { font: '700 14px/1 system-ui', color: NEON.pink, opacity: '0.9', marginTop: '6px', letterSpacing: '3px' },
-        '석양을 달리는 무한 질주'),
-    );
+    // Top: tiny brand wordmark.
+    const title = el('div', {
+      textAlign: 'center', marginTop: '1vh', animation: 'nd-float 4s ease-in-out infinite', flexShrink: '0',
+    });
+    title.innerHTML =
+      `<div style="font:900 clamp(30px,7.5vw,54px)/0.95 'Trebuchet MS',system-ui;letter-spacing:1px;
+        background:linear-gradient(120deg,${NEON.gold},${NEON.pink},#8a7bff);-webkit-background-clip:text;
+        background-clip:text;color:transparent;filter:drop-shadow(0 4px 16px rgba(255,126,179,.4))">SUNSET RUNNER</div>`;
 
-    // Character preview card (live 3D runner shows behind).
-    const tagc = el('div', { animation: 'nd-slideup .42s ease both' });
-    tagc.className = 'nd-card sel';
-    tagc.style.cssText += 'align-items:center;text-align:center;padding:14px 26px;min-width:240px';
-    tagc.innerHTML =
-      `<div style="font:800 11px/1 system-ui;opacity:.65;letter-spacing:3px">선택한 캐릭터</div>` +
-      `<div style="font:900 26px/1.2 'Trebuchet MS',system-ui;color:${NEON.gold}">${c.name}</div>` +
-      `<div style="font:700 13px/1.3 system-ui;color:#fff;opacity:.92">${c.blurb}</div>`;
-    const swap = button('캐릭터 변경 ▸', () => { this.tabSel = 'characters'; this.go('shop'); }, 'ghost');
-    swap.style.cssText += 'margin-top:4px;font-size:13px;padding:8px 16px';
-    tagc.append(swap);
+    // Spacer that lets the live character "pop out" of the empty middle.
+    const spacer = el('div', { flex: '1' });
 
-    // Twin mode cards.
-    const modes = el('div', { display: 'flex', gap: '12px', animation: 'nd-slideup .44s ease both' });
-    const mk = (m: GameMode, icon: string, label: string, sub: string) => {
-      const card = el('div');
-      card.className = `nd-card${this.mode === m ? ' sel' : ''}`;
-      card.style.cssText += 'cursor:pointer;align-items:center;text-align:center;width:150px;gap:3px';
-      card.innerHTML =
-        `<div style="font-size:30px">${icon}</div>` +
-        `<div style="font:800 16px/1 'Trebuchet MS',system-ui">${label}</div>` +
-        `<div style="font:600 11px/1.2 system-ui;opacity:.7">${sub}</div>`;
-      card.addEventListener('click', () => { this.mode = m; this.audio.ui(); this.renderMenu(); });
-      return card;
+    // Bottom controls: a small name pill, a slim mode toggle, a compact PLAY.
+    const bottom = el('div', {
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px',
+      flexShrink: '0', animation: 'nd-slideup .4s ease both', paddingBottom: '4px',
+    });
+
+    // Character name pill (tap → character shop).
+    const namePill = el('button');
+    namePill.className = 'nd-chip';
+    namePill.style.cssText += 'cursor:pointer;font-size:15px;gap:8px';
+    namePill.innerHTML = `<span style="font-size:18px">🪪</span>
+      <b style="color:${NEON.gold}">${c.name}</b>
+      <span style="opacity:.6;font-size:12px">${c.blurb.replace(/^.. /, '')}</span>
+      <span style="opacity:.8">▸</span>`;
+    namePill.addEventListener('click', () => { this.tabSel = 'characters'; this.go('shop'); });
+
+    // Slim segmented mode toggle.
+    const toggle = el('div', {
+      display: 'inline-flex', padding: '4px', borderRadius: '999px', gap: '4px',
+      background: 'rgba(20,12,38,0.7)', border: '1px solid rgba(255,210,180,0.2)',
+      backdropFilter: 'blur(10px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.1)',
+    });
+    const seg = (m: GameMode, label: string) => {
+      const on = this.mode === m;
+      const b = el('button', {
+        border: 'none', cursor: 'pointer', borderRadius: '999px', padding: '8px 18px',
+        font: `800 13px/1 'Trebuchet MS',system-ui`, pointerEvents: 'auto',
+        transition: 'all .2s', color: on ? NEON.ink : 'rgba(255,242,224,.7)',
+        background: on ? `linear-gradient(120deg,${NEON.gold},${NEON.pink})` : 'transparent',
+        boxShadow: on ? '0 3px 10px rgba(255,126,179,.4)' : 'none',
+      }, label);
+      b.addEventListener('click', () => { this.mode = m; this.audio.ui(); this.renderMenu(); });
+      return b;
     };
-    modes.append(
-      mk('endless', '♾️', '무한 모드', `최고 ${d.best}`),
-      mk('challenge', '⏱️', '챌린지', `최고 ${d.bestChallenge}`),
-    );
+    toggle.append(seg('endless', '♾️ 무한'), seg('challenge', '⏱️ 챌린지'));
 
+    const best = this.mode === 'challenge' ? d.bestChallenge : d.best;
+    const bestLine = el('div', { font: '700 12px/1 system-ui', color: 'rgba(255,242,224,.65)' },
+      `🏆 최고 ${best}`);
+
+    // Compact, lively PLAY button (small, not a giant slab).
     const play = button('게임 시작 ▶', () => this.startRun(), 'pink');
-    play.style.font = `900 25px/1 'Trebuchet MS',system-ui`;
-    play.style.padding = '19px 64px';
+    play.style.font = `900 19px/1 'Trebuchet MS',system-ui`;
+    play.style.padding = '14px 44px';
     play.style.animation = 'nd-breathe 2.4s ease-in-out infinite';
 
-    this.content.append(hero, tagc, modes, play);
+    bottom.append(namePill, toggle, bestLine, play);
+    this.content.append(title, spacer, bottom);
   }
 
   // ── View: SHOP (sub-tabs: characters / items / upgrades) ────────────────────
@@ -302,16 +325,30 @@ export class ScreenManager {
     }, 'ghost');
     const syncQ = () => { qBtn.innerHTML = `그래픽: ${this.save.data.settings.quality === 'high' ? '높음' : '낮음'}`; };
     syncQ();
+    const d = this.save.data;
+    const mins = Math.floor(d.totalTime / 60);
     const stats = el('div');
     stats.className = 'nd-card';
-    stats.style.cssText += 'width:min(420px,90vw);gap:6px;margin-top:6px';
-    const d = this.save.data;
+    stats.style.cssText += 'width:min(420px,90vw);gap:7px;margin-top:6px';
     const row = (l: string, v: string) =>
       `<div style="display:flex;justify-content:space-between"><span style="opacity:.7">${l}</span><b style="color:${NEON.gold}">${v}</b></div>`;
     stats.innerHTML =
-      row('총 플레이', `${d.runs} 회`) + row('누적 거리', `${Math.floor(d.totalDistance)} m`) +
+      `<div style="font:800 13px/1;letter-spacing:2px;opacity:.6;margin-bottom:2px">📊 통계</div>` +
+      row('총 플레이', `${d.runs} 회`) + row('누적 시간', `${mins} 분`) +
+      row('누적 거리', `${Math.floor(d.totalDistance)} m`) +
       row('누적 코인', `${d.totalCoins}`) + row('최고 점수', `${d.best}`);
-    wrap.append(muteBtn, qBtn, stats);
+
+    // Mileage reward explainer — rewards for going far & playing a lot.
+    const mile = el('div');
+    mile.className = 'nd-card';
+    mile.style.cssText += 'width:min(420px,90vw);gap:6px';
+    mile.innerHTML =
+      `<div style="font:800 13px/1;letter-spacing:1px;color:#9ad8ff;margin-bottom:2px">💎 마일리지 보상</div>` +
+      `<div style="font:600 12px/1.6;opacity:.85">
+        🏁 멀리 갈수록 (신기록) → 거리 비례 💎<br>
+        ⏱️ 오래 플레이할수록 (누적 2분마다) → +3💎<br>
+        🎁 보물상자 → +5💎 즉시</div>`;
+    wrap.append(muteBtn, qBtn, stats, mile);
     this.content.append(wrap);
   }
 
@@ -320,10 +357,23 @@ export class ScreenManager {
     const c = el('div');
     c.className = 'nd-card';
     c.style.width = '190px';
-    // Staggered entrance for a lively shop.
-    c.style.animation = `nd-slideup .35s ease both`;
-    c.style.animationDelay = `${(this.cardIndex++ % 8) * 0.035}s`;
+    // Staggered 3D pop-in for a lively, dynamic shop.
+    c.style.animation = `nd-popin .4s cubic-bezier(.34,1.5,.5,1) both`;
+    c.style.animationDelay = `${(this.cardIndex++ % 9) * 0.045}s`;
     return c;
+  }
+
+  /** A round character "avatar" disc tinted with the character's colours. */
+  private avatar(shirt: number, hat: number, size = 64): HTMLDivElement {
+    const s = `#${shirt.toString(16).padStart(6, '0')}`;
+    const h = `#${hat.toString(16).padStart(6, '0')}`;
+    const a = el('div', {
+      width: `${size}px`, height: `${size}px`, borderRadius: '50%', margin: '0 auto',
+      background: `radial-gradient(circle at 38% 30%, ${h}, ${s} 70%)`,
+      boxShadow: `inset 0 3px 8px rgba(255,255,255,.35),inset 0 -6px 12px rgba(0,0,0,.35),0 6px 16px ${s}66`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: `${size * 0.46}px`,
+    }, '🏃');
+    return a;
   }
 
   private renderCharacters(): void {
@@ -332,17 +382,22 @@ export class ScreenManager {
       const owned = this.save.owns(c.id);
       const selected = d.selected === c.id;
       const card = this.card();
+      card.style.alignItems = 'center';
+      card.style.textAlign = 'center';
       if (selected) card.className = 'nd-card sel';
       const swatch = `#${c.colors.shirt.toString(16).padStart(6, '0')}`;
+      const av = this.avatar(c.colors.shirt, c.colors.hat);
+      av.style.animation = selected ? 'nd-bounce 2s ease-in-out infinite' : 'none';
       card.append(
-        el('div', { font: '800 19px/1', color: swatch }, c.name),
-        el('div', { font: '600 12px/1.4', opacity: '0.9', minHeight: '34px' }, c.blurb),
+        av,
+        el('div', { font: '800 18px/1', color: swatch }, c.name),
+        el('div', { font: '600 11px/1.4', opacity: '0.9', minHeight: '32px' }, c.blurb),
       );
-      if (selected) card.append(el('div', { color: NEON.gold, font: '700 14px/1', textAlign: 'center' }, '✓ 선택됨'));
+      if (selected) card.append(el('div', { color: NEON.gold, font: '800 13px/1', textAlign: 'center' }, '✓ 선택됨'));
       else if (owned) card.append(button('선택', () => { this.save.select(c.id); this.game.refreshLoadout(); this.refreshShop(); }, 'ghost'));
       else {
         const price = c.gem ? gemStr(c.price) : coinStr(c.price);
-        const b = button(`구매 ${price}`, () => {
+        const b = button(`${price}`, () => {
           const ok = c.gem ? this.save.spendMileage(c.price) : this.save.spend(c.price);
           if (ok) { this.save.buy(c.id); this.save.select(c.id); this.game.refreshLoadout(); this.audio.power(); }
           this.refreshShop();
@@ -358,12 +413,22 @@ export class ScreenManager {
     for (const item of CONSUMABLES) {
       const have = this.save.data.inventory[item.id];
       const card = this.card();
+      card.style.alignItems = 'center';
+      card.style.textAlign = 'center';
+      const icon = el('div', {
+        fontSize: '46px', lineHeight: '1', animation: 'nd-bounce 2.4s ease-in-out infinite',
+        filter: 'drop-shadow(0 6px 10px rgba(0,0,0,.45))',
+      }, item.emoji);
+      const haveChip = el('div', { font: '800 12px/1', color: NEON.gold });
+      haveChip.className = 'nd-chip';
+      haveChip.textContent = `보유 ${have}`;
       card.append(
-        el('div', { font: '800 19px/1' }, `${item.emoji} ${item.name}`),
-        el('div', { font: '600 12px/1.4', opacity: '0.9', minHeight: '34px' }, item.desc),
-        el('div', { font: '700 13px/1', color: NEON.gold }, `보유: ${have}`),
+        icon,
+        el('div', { font: '800 18px/1' }, item.name),
+        el('div', { font: '600 11px/1.4', opacity: '0.9', minHeight: '32px' }, item.desc),
+        haveChip,
       );
-      const b = button(`구매 ${coinStr(item.price)}`, () => {
+      const b = button(`${coinStr(item.price)}`, () => {
         if (this.save.spend(item.price)) { this.save.addItem(item.id); this.audio.power(); }
         this.refreshShop();
       }, 'pink');
@@ -377,15 +442,28 @@ export class ScreenManager {
     for (const u of UPGRADES) {
       const lvl = this.save.upgradeLevel(u.id);
       const card = this.card();
+      card.style.alignItems = 'center';
+      card.style.textAlign = 'center';
+      const icon = el('div', { fontSize: '34px', lineHeight: '1', filter: 'drop-shadow(0 4px 8px rgba(0,0,0,.4))' }, u.emoji);
+      // Pip row showing the upgrade level as glowing 3D dots.
+      const pips = el('div', { display: 'flex', gap: '5px', justifyContent: 'center' });
+      for (let i = 0; i < u.max; i++) {
+        pips.append(el('div', {
+          width: '11px', height: '11px', borderRadius: '50%',
+          background: i < lvl ? `linear-gradient(160deg,${NEON.gold},${NEON.pink})` : 'rgba(255,255,255,.14)',
+          boxShadow: i < lvl ? `0 0 8px ${NEON.gold},inset 0 1px 1px rgba(255,255,255,.5)` : 'inset 0 1px 2px rgba(0,0,0,.4)',
+        }));
+      }
       card.append(
-        el('div', { font: '800 18px/1' }, `${u.emoji} ${u.name}`),
-        el('div', { font: '600 12px/1.3', opacity: '0.85' }, u.desc),
-        el('div', { font: '700 13px/1', color: NEON.gold }, `Lv ${lvl}/${u.max}`),
+        icon,
+        el('div', { font: '800 16px/1' }, u.name),
+        el('div', { font: '600 11px/1.3', opacity: '0.8', minHeight: '26px' }, u.desc),
+        pips,
       );
-      if (lvl >= u.max) card.append(el('div', { color: NEON.gold, font: '700 13px/1' }, 'MAX'));
+      if (lvl >= u.max) card.append(el('div', { color: NEON.gold, font: '800 14px/1', marginTop: '2px' }, '⭐ MAX'));
       else {
         const cost = u.cost(lvl);
-        const b = button(`강화 ${coinStr(cost)}`, () => {
+        const b = button(`${coinStr(cost)}`, () => {
           if (this.save.spend(cost)) { this.save.raiseUpgrade(u.id); this.game.refreshLoadout(); this.audio.power(); }
           this.refreshShop();
         });
@@ -407,11 +485,15 @@ export class ScreenManager {
       cell.className = `nd-card${isNext ? ' sel' : ''}`;
       cell.style.cssText += 'width:88px;align-items:center;text-align:center;gap:4px';
       cell.style.opacity = claimed ? '0.5' : '1';
+      cell.style.animation = 'nd-popin .4s cubic-bezier(.34,1.5,.5,1) both';
+      cell.style.animationDelay = `${i * 0.04}s`;
+      if (isNext) cell.style.animation += ', nd-bounce 1.6s ease-in-out infinite .5s';
+      const reward = [r.coins ? `${r.coins}🪙` : '', r.mile ? `${r.mile}💎` : ''].filter(Boolean).join(' ');
       cell.innerHTML =
-        `<div style="font:700 11px/1;opacity:.7">DAY ${i + 1}</div>` +
-        `<div style="font-size:26px">${r.ic}</div>` +
-        `<div style="font:700 12px/1;color:${NEON.gold}">${r.coins ? r.coins + '🪙' : r.mile + '💎'}</div>` +
-        (claimed ? `<div style="font:700 11px/1;color:#6bffb0">✓</div>` : '');
+        `<div style="font:800 10px/1;opacity:.65;letter-spacing:1px">DAY ${i + 1}</div>` +
+        `<div style="font-size:30px;filter:drop-shadow(0 3px 5px rgba(0,0,0,.4))">${r.ic}</div>` +
+        `<div style="font:800 11px/1.2;color:${NEON.gold}">${reward}</div>` +
+        (claimed ? `<div style="font:800 12px/1;color:#6bffb0">✓</div>` : '');
       row.append(cell);
     });
     wrap.append(row);

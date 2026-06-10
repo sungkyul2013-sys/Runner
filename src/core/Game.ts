@@ -152,14 +152,17 @@ export class Game {
     return 0;
   }
 
-  /** Menu background: the character jogs forward on an empty, looping track. */
+  /** Menu background: the character jogs in place while the world streams past
+   *  and a dedicated "hero" camera shows it off up close (popped out). */
+  private menuTime = 0;
   private stepAttract(dt: number): void {
+    this.menuTime += dt;
     const scroll = ATTRACT_SPEED * dt;
     this.player.setAnimSpeed(ATTRACT_SPEED / BASE_SPEED);
     this.player.update(dt);
     this.track.update(scroll);
     this.environment.update(scroll);
-    this.cameraRig.update(dt, this.player.group.position.x, ATTRACT_SPEED);
+    this.cameraRig.menu(dt, this.menuTime);
   }
 
   /** Per-frame world advance while PLAYING (Phase 2+ systems). No-op here. */

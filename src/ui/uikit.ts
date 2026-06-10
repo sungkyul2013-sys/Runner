@@ -20,49 +20,84 @@ function ensureStyles(): void {
   const s = document.createElement('style');
   s.textContent = `
     @keyframes nd-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-9px)} }
-    @keyframes nd-breathe { 0%,100%{box-shadow:0 8px 26px rgba(255,126,179,.5),0 0 0 0 ${NEON.gold}66}
-      50%{box-shadow:0 10px 34px rgba(255,126,179,.7),0 0 0 8px ${NEON.gold}00} }
+    @keyframes nd-breathe { 0%,100%{box-shadow:0 10px 30px rgba(255,126,179,.45),0 0 0 0 ${NEON.gold}55}
+      50%{box-shadow:0 14px 40px rgba(255,126,179,.65),0 0 0 10px ${NEON.gold}00} }
     @keyframes nd-fade { from{opacity:0} to{opacity:1} }
     @keyframes nd-slideup { from{opacity:0;transform:translateY(28px)} to{opacity:1;transform:translateY(0)} }
-    @keyframes nd-pop { 0%{transform:scale(.6);opacity:0} 70%{transform:scale(1.08)} 100%{transform:scale(1);opacity:1} }
+    @keyframes nd-pop { 0%{transform:scale(.5);opacity:0} 65%{transform:scale(1.12)} 100%{transform:scale(1);opacity:1} }
+    @keyframes nd-popin { 0%{opacity:0;transform:translateY(24px) scale(.9) rotateX(18deg)}
+      100%{opacity:1;transform:translateY(0) scale(1) rotateX(0)} }
     @keyframes nd-shine { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
     @keyframes nd-spin { to{transform:rotate(360deg)} }
-    .nd-btn{position:relative;overflow:hidden;cursor:pointer;border:none;border-radius:16px;
-      font:800 18px/1 'Trebuchet MS',system-ui,sans-serif;padding:15px 30px;color:${NEON.ink};
-      background:linear-gradient(120deg,${NEON.gold},${NEON.cyan});
-      transition:transform .1s cubic-bezier(.34,1.56,.64,1),filter .2s,box-shadow .2s;
-      box-shadow:0 6px 18px rgba(0,0,0,.35);pointer-events:auto}
+    @keyframes nd-bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+    @keyframes nd-aurora { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+
+    .nd-btn{position:relative;overflow:hidden;cursor:pointer;border:none;border-radius:18px;
+      font:800 17px/1 'Trebuchet MS',system-ui,sans-serif;padding:14px 28px;color:${NEON.ink};
+      background:linear-gradient(135deg,${NEON.gold},${NEON.cyan});
+      transition:transform .14s cubic-bezier(.34,1.7,.5,1),filter .2s,box-shadow .25s;
+      box-shadow:0 8px 0 rgba(120,60,30,.28),0 12px 26px rgba(0,0,0,.42);pointer-events:auto}
+    .nd-btn::before{content:'';position:absolute;inset:0 0 50% 0;border-radius:18px 18px 40% 40%;
+      background:linear-gradient(180deg,rgba(255,255,255,.4),transparent);pointer-events:none}
     .nd-btn::after{content:'';position:absolute;inset:0;background:linear-gradient(110deg,
-      transparent 30%,rgba(255,255,255,.45) 50%,transparent 70%);background-size:200% 100%;
-      animation:nd-shine 3.5s linear infinite;pointer-events:none}
-    .nd-btn:hover{transform:translateY(-3px) scale(1.02);filter:brightness(1.08)}
-    .nd-btn:active{transform:scale(.95)}
-    .nd-tab:active{transform:scale(.93)}
-    .nd-btn.pink{background:linear-gradient(120deg,${NEON.pink},#8a7bff)}
-    .nd-btn.ghost{background:rgba(40,24,70,0.45);color:${NEON.text};border:1px solid rgba(255,210,180,0.30);
-      font-size:15px;padding:12px 20px;box-shadow:none}
+      transparent 30%,rgba(255,255,255,.5) 50%,transparent 70%);background-size:220% 100%;
+      animation:nd-shine 3.8s linear infinite;pointer-events:none}
+    .nd-btn:hover{transform:translateY(-3px) scale(1.03);filter:brightness(1.08)}
+    .nd-btn:active{transform:translateY(4px) scale(.97);box-shadow:0 3px 0 rgba(120,60,30,.28),0 6px 14px rgba(0,0,0,.4)}
+    .nd-btn.pink{background:linear-gradient(135deg,${NEON.pink},#8a7bff)}
+    .nd-btn.ghost{background:rgba(46,26,74,0.5);color:${NEON.text};border:1px solid rgba(255,210,180,0.26);
+      font-size:14px;padding:11px 18px;box-shadow:0 4px 0 rgba(0,0,0,.3),0 8px 16px rgba(0,0,0,.3)}
     .nd-btn.ghost::after{display:none}
-    .nd-btn.ghost:hover{background:rgba(70,40,100,0.6)}
-    .nd-btn:disabled{filter:grayscale(.7) brightness(.6);cursor:not-allowed;transform:none}
+    .nd-btn.ghost::before{inset:0 0 55% 0}
+    .nd-btn.ghost:hover{background:rgba(72,42,104,0.62)}
+    .nd-btn:disabled{filter:grayscale(.7) brightness(.55);cursor:not-allowed;transform:none;
+      box-shadow:0 4px 0 rgba(0,0,0,.25)}
     .nd-btn:disabled::after{display:none}
-    .nd-card{position:relative;background:linear-gradient(160deg,rgba(46,26,72,0.66),rgba(20,12,38,0.62));
-      border:1px solid rgba(255,210,180,0.28);border-radius:18px;padding:15px;display:flex;
-      flex-direction:column;gap:8px;min-width:150px;backdrop-filter:blur(9px);
-      box-shadow:0 8px 22px rgba(0,0,0,.32);transition:transform .12s,box-shadow .2s,border-color .2s}
-    .nd-card:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(0,0,0,.45)}
-    .nd-card.sel{border-color:${NEON.gold};box-shadow:0 0 0 2px ${NEON.gold}55,0 10px 26px rgba(0,0,0,.4)}
-    .nd-card.locked{filter:saturate(.5) brightness(.82)}
-    .nd-tab{position:relative;cursor:pointer;border:none;border-radius:14px;font:800 14px/1 'Trebuchet MS',system-ui;
-      padding:10px 15px;background:rgba(40,24,70,0.45);color:${NEON.text};
-      border:1px solid rgba(255,210,180,0.16);pointer-events:auto;transition:transform .1s,background .2s}
-    .nd-tab:hover{background:rgba(66,38,96,0.6)}
-    .nd-tab.on{background:linear-gradient(120deg,${NEON.gold},${NEON.pink});color:${NEON.ink};
-      box-shadow:0 4px 14px rgba(255,126,179,.4)}
-    .nd-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(22,14,44,0.6);
-      border:1px solid rgba(255,210,180,0.28);border-radius:999px;padding:7px 14px;
-      font:800 16px/1 'Trebuchet MS',system-ui;backdrop-filter:blur(8px)}
+
+    .nd-card{position:relative;background:linear-gradient(155deg,rgba(58,32,90,0.62),rgba(22,12,40,0.58));
+      border:1px solid rgba(255,210,180,0.26);border-radius:22px;padding:16px;display:flex;
+      flex-direction:column;gap:8px;min-width:150px;backdrop-filter:blur(14px);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 12px 28px rgba(0,0,0,.4);
+      transition:transform .16s cubic-bezier(.34,1.5,.5,1),box-shadow .25s,border-color .2s;
+      transform-style:preserve-3d}
+    .nd-card::before{content:'';position:absolute;top:0;left:0;right:0;height:42%;border-radius:22px 22px 60% 60%/22px 22px 30% 30%;
+      background:linear-gradient(180deg,rgba(255,255,255,.10),transparent);pointer-events:none}
+    .nd-card:hover{transform:translateY(-5px) scale(1.02);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 20px 40px rgba(0,0,0,.5)}
+    .nd-card.sel{border-color:${NEON.gold};
+      box-shadow:0 0 0 2px ${NEON.gold}66,inset 0 1px 0 rgba(255,255,255,.2),0 16px 34px rgba(255,180,90,.25)}
+    .nd-card.locked{filter:saturate(.45) brightness(.78)}
+
+    .nd-tab{position:relative;cursor:pointer;border:none;border-radius:16px;font:800 14px/1 'Trebuchet MS',system-ui;
+      padding:10px 16px;background:rgba(46,26,74,0.5);color:${NEON.text};
+      border:1px solid rgba(255,210,180,0.16);pointer-events:auto;
+      transition:transform .14s cubic-bezier(.34,1.6,.5,1),background .2s;
+      box-shadow:0 4px 0 rgba(0,0,0,.28)}
+    .nd-tab:hover{background:rgba(72,42,104,0.62);transform:translateY(-2px)}
+    .nd-tab:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.28)}
+    .nd-tab.on{background:linear-gradient(135deg,${NEON.gold},${NEON.pink});color:${NEON.ink};
+      box-shadow:0 5px 0 rgba(150,80,40,.3),0 8px 18px rgba(255,126,179,.4)}
+
+    .nd-chip{display:inline-flex;align-items:center;gap:6px;
+      background:linear-gradient(160deg,rgba(40,22,66,0.74),rgba(20,12,38,0.66));
+      border:1px solid rgba(255,210,180,0.26);border-radius:999px;padding:7px 15px;
+      font:800 15px/1 'Trebuchet MS',system-ui;backdrop-filter:blur(10px);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 6px 14px rgba(0,0,0,.32)}
+
+    /* Pop-out 3D bottom navigation buttons. */
+    .nd-nav{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;
+      background:none;border:none;cursor:pointer;pointer-events:auto;padding:6px 16px;
+      transition:transform .18s cubic-bezier(.34,1.8,.5,1)}
+    .nd-nav .nd-navicon{font-size:24px;line-height:1;transition:transform .2s cubic-bezier(.34,1.8,.5,1),filter .2s;
+      filter:grayscale(.55) opacity(.66) drop-shadow(0 2px 3px rgba(0,0,0,.4))}
+    .nd-nav .nd-navlbl{font:800 10px/1 system-ui;letter-spacing:1px;color:rgba(255,242,224,.55);transition:color .2s}
+    .nd-nav:hover .nd-navicon{transform:translateY(-3px) scale(1.08)}
+    .nd-nav.on .nd-navicon{filter:none drop-shadow(0 4px 8px rgba(255,180,90,.6));transform:translateY(-8px) scale(1.28)}
+    .nd-nav.on .nd-navlbl{color:${NEON.gold}}
+    .nd-nav.on::before{content:'';position:absolute;bottom:-2px;width:30px;height:5px;border-radius:3px;
+      background:linear-gradient(90deg,${NEON.gold},${NEON.pink});box-shadow:0 0 12px ${NEON.gold}}
+
     .nd-scroll::-webkit-scrollbar{width:8px}
-    .nd-scroll::-webkit-scrollbar-thumb{background:rgba(255,210,180,.3);border-radius:4px}
+    .nd-scroll::-webkit-scrollbar-thumb{background:rgba(255,210,180,.32);border-radius:4px}
   `;
   document.head.appendChild(s);
 }
