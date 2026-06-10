@@ -15,8 +15,10 @@ import {
   ROCKET_ALTITUDE,
   ROCKET_SPEED_BOOST,
   SHIELD_INVULN,
+  SLOWMO_FACTOR,
   SNEAKERS_JUMP_MULT,
   SPAWNABLE,
+  STAR_SCORE_MULT,
 } from '../config/powerups';
 import { Player, PLAYER_Z } from '../player/Player';
 import { ObjectPool } from '../world/ObjectPool';
@@ -140,12 +142,12 @@ export class PowerupSystem {
       case PowerupType.HOVERBOARD:
         this.hoverCharges++;
         break;
+      case PowerupType.COINBURST:
+        // Instant payout — handled entirely by the game via onActivate.
+        break;
       default: {
         const total = this.durationFor(type);
         this.effects.set(type, { remaining: total, total });
-        if (type === PowerupType.ROCKET || type === PowerupType.JETPACK) {
-          // start flight from the player's current height handled by lerp
-        }
       }
     }
     this.onActivate(type);
@@ -194,7 +196,11 @@ export class PowerupSystem {
     return e ? 1 - e.remaining / e.total : 0;
   }
   isInvulnerable(): boolean {
-    return this.isFlying() || this.invulnTimer > 0;
+    return this.isFlying() || this.invulnTimer > 0 || this.effects.has(PowerupType.STAR);
+  }
+  /** Invincible shooting-star is active (drives a sparkly aura + x3 score). */
+  isStar(): boolean {
+    return this.effects.has(PowerupType.STAR);
   }
   /** A deployed hoverboard shield is currently protecting the player. */
   isShielded(): boolean {
@@ -205,13 +211,19 @@ export class PowerupSystem {
     return this.effects.has(PowerupType.MAGNET) ? MAGNET_RADIUS : 0;
   }
   scoreMultiplier(): number {
-    return this.effects.has(PowerupType.DOUBLE) ? 2 : 1;
+    let m = 1;
+    if (this.effects.has(PowerupType.DOUBLE)) m *= 2;
+    if (this.effects.has(PowerupType.STAR)) m *= STAR_SCORE_MULT;
+    return m;
   }
   jumpMult(): number {
     return this.effects.has(PowerupType.SNEAKERS) ? SNEAKERS_JUMP_MULT : 1;
   }
   speedBoost(): number {
-    return this.effects.has(PowerupType.ROCKET) ? ROCKET_SPEED_BOOST : 1;
+    let m = 1;
+    if (this.effects.has(PowerupType.ROCKET)) m *= ROCKET_SPEED_BOOST;
+    if (this.effects.has(PowerupType.SLOWMO)) m *= SLOWMO_FACTOR;
+    return m;
   }
 
   // ── Spawning ──────────────────────────────────────────────────────────────

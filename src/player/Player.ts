@@ -52,6 +52,8 @@ export class Player {
   private shieldOn = false;
   private readonly magnetAura: THREE.Mesh;
   private readonly shieldBubble: THREE.Mesh;
+  private readonly starAura: THREE.Mesh;
+  private starOn = false;
   private readonly hoverboard: THREE.Group;
 
   private sliding = false;
@@ -86,6 +88,17 @@ export class Player {
     this.shieldBubble.visible = false;
     this.group.add(this.shieldBubble);
 
+    // Star aura — golden invincibility glow.
+    this.starAura = new THREE.Mesh(
+      new THREE.SphereGeometry(1.3, 18, 12),
+      new THREE.MeshBasicMaterial({
+        color: 0xffe06b, transparent: true, opacity: 0.22,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }),
+    );
+    this.starAura.visible = false;
+    this.group.add(this.starAura);
+
     // Hoverboard under the feet while the shield is deployed.
     this.hoverboard = new THREE.Group();
     const deck = new THREE.Mesh(
@@ -111,9 +124,11 @@ export class Player {
   }
 
   /** Toggle power-up visuals (called each frame from the game). */
-  setEffects(magnet: boolean, shield: boolean): void {
+  setEffects(magnet: boolean, shield: boolean, star = false): void {
     this.magnetAura.visible = magnet;
     this.shieldOn = shield;
+    this.starOn = star;
+    this.starAura.visible = star;
   }
 
   /** Swap in a different character look without touching the physics. */
@@ -142,13 +157,25 @@ export class Player {
     this.slideTimer = 0;
     this.squashTimer = 0;
     this.shieldOn = false;
+    this.starOn = false;
     this.magnetAura.visible = false;
     this.shieldBubble.visible = false;
+    this.starAura.visible = false;
     this.hoverboard.visible = false;
     this.rig.group.scale.set(1, 1, 1);
-    this.rig.group.rotation.z = 0;
+    this.rig.group.rotation.set(0, 0, 0);
+    this.rig.group.visible = true; // un-hide after a death explosion
     this.group.position.set(0, PLAYER_HALF_STANDING.y, PLAYER_Z);
     this.updateAABB();
+  }
+
+  /** Hide the rig for the death "펑!" explosion (debris carries the moment). */
+  explode(): void {
+    this.rig.group.visible = false;
+    this.magnetAura.visible = false;
+    this.shieldBubble.visible = false;
+    this.starAura.visible = false;
+    this.hoverboard.visible = false;
   }
 
   moveLeft(): void {
@@ -256,6 +283,11 @@ export class Player {
     if (this.magnetAura.visible) this.magnetAura.rotation.y += dt * 2.2;
     this.hoverboard.visible = this.shieldOn;
     this.shieldBubble.visible = this.shieldOn;
+    if (this.starOn) {
+      this.starAura.rotation.y += dt * 4;
+      const pulse = 1 + Math.sin(this.starAura.rotation.y * 3) * 0.08;
+      this.starAura.scale.setScalar(pulse);
+    }
 
     // Drive the character animation from the current motion state.
     const pose: Pose =

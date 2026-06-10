@@ -7,6 +7,9 @@ export enum PowerupType {
   ROCKET = 'ROCKET',
   HOVERBOARD = 'HOVERBOARD',
   BOMB = 'BOMB',
+  SLOWMO = 'SLOWMO', // brief slow-motion to thread tight gaps
+  STAR = 'STAR', // shooting-star: timed invincibility + x3 score
+  COINBURST = 'COINBURST', // instant coin payout
 }
 
 export interface PowerupDef {
@@ -33,6 +36,9 @@ export const POWERUPS: Record<PowerupType, PowerupDef> = {
   [PowerupType.ROCKET]: { color: 0xff5a2a, icon: '🚀', label: '로켓', duration: 5, weight: 2 },
   [PowerupType.HOVERBOARD]: { color: 0x8a7bff, icon: '🛹', label: '호버보드', duration: 16, weight: 3 },
   [PowerupType.BOMB]: { color: 0xff5630, icon: '💣', label: '폭탄', duration: 0, weight: 2 },
+  [PowerupType.SLOWMO]: { color: 0x9ad8ff, icon: '⏳', label: '슬로우', duration: 4, weight: 2 },
+  [PowerupType.STAR]: { color: 0xffe06b, icon: '⭐', label: '무적별', duration: 6, weight: 2 },
+  [PowerupType.COINBURST]: { color: 0xffd86b, icon: '💰', label: '코인다발', duration: 0, weight: 2 },
 };
 
 /** Power-ups that appear as collectible tokens on the track. */
@@ -44,6 +50,9 @@ export const SPAWNABLE: PowerupType[] = [
   PowerupType.ROCKET,
   PowerupType.HOVERBOARD,
   PowerupType.BOMB,
+  PowerupType.SLOWMO,
+  PowerupType.STAR,
+  PowerupType.COINBURST,
 ];
 
 // ── Effect magnitudes ──────────────────────────────────────────────────────
@@ -55,3 +64,6 @@ export const ROCKET_ALTITUDE = 11; // soars high for the dramatic lift-off view
 export const ROCKET_SPEED_BOOST = 1.8;
 export const SHIELD_INVULN = 1.2; // brief invuln after a hoverboard saves you
 export const BOMB_RANGE = 36; // forward distance cleared by a bomb
+export const SLOWMO_FACTOR = 0.55; // world speed while slow-mo is active
+export const STAR_SCORE_MULT = 3; // score multiplier during the invincible star
+export const COINBURST_AMOUNT = 30; // coins granted instantly by a coin-burst

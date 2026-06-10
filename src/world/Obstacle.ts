@@ -131,15 +131,48 @@ function windowTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+/** Action hint emoji per obstacle kind (floats above the model). */
+const LABELS: Record<ObstacleKind, string> = {
+  [ObstacleKind.TRAIN]: '🚫',
+  [ObstacleKind.TRAIN_MOVING]: '↔️',
+  [ObstacleKind.BARRIER]: '⬆️',
+  [ObstacleKind.TUNNEL]: '⬇️',
+  [ObstacleKind.SIGN]: '⬇️',
+  [ObstacleKind.WALL]: '🚫',
+  [ObstacleKind.LOW_TRAIN]: '🏃',
+  [ObstacleKind.CRATE]: '⬆️',
+};
+
+const spriteCache = new Map<string, THREE.Sprite>();
+/** Build (once per emoji) a camera-facing sprite from a canvas-drawn glyph. */
+function labelSprite(emoji: string): THREE.Sprite {
+  let cached = spriteCache.get(emoji);
+  if (cached) return cached;
+  const c = document.createElement('canvas');
+  c.width = c.height = 96;
+  const ctx = c.getContext('2d')!;
+  ctx.font = '70px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, 48, 52);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  mats.set(`sprite:${emoji}`, tex as unknown as THREE.Material);
+  const m = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false });
+  mats.set(`spritemat:${emoji}`, m);
+  cached = new THREE.Sprite(m);
+  spriteCache.set(emoji, cached);
+  return cached;
+}
+
 export function disposeObstacleResources(): void {
   for (const g of geos.values()) g.dispose();
   for (const m of mats.values()) m.dispose();
   geos.clear();
   mats.clear();
+  spriteCache.clear();
 }
 
-/** Drift speed (units/sec) applied to moving trains, sign chosen per spawn. */
-const MOVING_DRIFT = 5;
 
 /**
  * A pooled hazard with a **composite visual** (built once per pooled instance
@@ -153,7 +186,8 @@ export class Obstacle {
 
   readonly kind: ObstacleKind;
   private readonly spec: KindSpec;
-  private drift = 0;
+  private patrolCenter = 0;
+  private patrolPhase = 0;
 
   private readonly center = new THREE.Vector3();
   private readonly size = new THREE.Vector3();
@@ -169,13 +203,23 @@ export class Obstacle {
   configure(lane: number, z: number): void {
     this.group.position.set(laneToX(lane), 0, z);
     this.group.visible = true;
-    this.drift = this.spec.moving ? (Math.random() < 0.5 ? -1 : 1) * MOVING_DRIFT : 0;
+    if (this.spec.moving) {
+      // A patrolling train: bobs forward/back about its slot centre (lane stays
+      // fixed, so it's still cleared by a lane change — but the timing shifts).
+      this.patrolCenter = z;
+      this.patrolPhase = Math.random() * Math.PI * 2;
+    }
     this.refreshAABB();
   }
 
-  /** Scroll toward the camera by `scroll`, plus any self-drift. */
+  /** Scroll toward the camera; patrolling trains also bob along Z in place. */
   update(scroll: number, dt: number): void {
-    this.group.position.z += scroll + this.drift * dt;
+    this.group.position.z += scroll;
+    if (this.spec.moving) {
+      this.patrolCenter += scroll;
+      this.patrolPhase += dt * 2.2;
+      this.group.position.z = this.patrolCenter + Math.sin(this.patrolPhase) * 3.2;
+    }
     this.refreshAABB();
   }
 
@@ -241,6 +285,21 @@ export class Obstacle {
         this.buildCrate();
         break;
     }
+    this.addLabel();
+  }
+
+  /**
+   * A floating emoji label above the obstacle that tells the player, at a
+   * glance, what to do: ⬆️ jump, ⬇️ slide under, 🏃 ride the roof, 🚫 dodge.
+   */
+  private addLabel(): void {
+    const emoji = LABELS[this.kind];
+    if (!emoji) return;
+    const sprite = labelSprite(emoji);
+    const s = sprite.clone(); // share the material/texture, own transform
+    s.scale.set(1.1, 1.1, 1);
+    s.position.set(0, this.topY + 0.7, 0);
+    this.group.add(s);
   }
 
   /** Train: body, golden roof, window strips, wheels, headlight. */

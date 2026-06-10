@@ -10,7 +10,10 @@ import { UPGRADES } from '../data/upgrades';
 import { button, coinStr, el, gemStr, NEON, screen, show, tab } from './uikit';
 
 const REVIVE_COST = 80;
+/** Shop sub-tabs (inside the SHOP nav tab). */
 type Tab = 'characters' | 'items' | 'upgrades' | 'daily' | 'achievements';
+/** Instagram-style bottom navigation tabs. */
+type Nav = 'play' | 'shop' | 'rewards' | 'settings';
 
 /**
  * Owns every full-screen overlay and the flow between them, driven off the
@@ -21,18 +24,19 @@ type Tab = 'characters' | 'items' | 'upgrades' | 'daily' | 'achievements';
  * equipping mutates the {@link SaveManager} and refreshes the live preview.
  */
 export class ScreenManager {
-  private readonly home: HTMLDivElement;
-  private readonly shop: HTMLDivElement;
-  private readonly settings: HTMLDivElement;
+  /** The single menu app-shell (header + content + bottom tab bar). */
+  private readonly menu: HTMLDivElement;
   private readonly pause: HTMLDivElement;
   private readonly gameover: HTMLDivElement;
 
-  private homeBody!: HTMLDivElement;
+  private header!: HTMLDivElement;
+  private content!: HTMLDivElement;
+  private navbar!: HTMLDivElement;
   private shopBody!: HTMLDivElement;
-  private shopTabs!: HTMLDivElement;
   private gameoverBody!: HTMLDivElement;
 
   private mode: GameMode = 'endless';
+  private nav: Nav = 'play';
   private tabSel: Tab = 'characters';
   private reviveUsed = false;
 
@@ -46,9 +50,7 @@ export class ScreenManager {
     this.audio.setMuted(save.data.settings.muted);
     window.addEventListener('pointerdown', () => this.audio.unlock());
 
-    this.home = this.buildHome();
-    this.shop = this.buildShop();
-    this.settings = this.buildSettings();
+    this.menu = this.buildMenuShell();
     this.pause = this.buildPause();
     this.gameover = this.buildGameOver();
 
@@ -65,12 +67,10 @@ export class ScreenManager {
   };
 
   private onState(s: GameState): void {
-    show(this.home, s === GameState.MENU);
+    show(this.menu, s === GameState.MENU);
     show(this.pause, s === GameState.PAUSED);
     show(this.gameover, s === GameState.GAMEOVER);
-    show(this.shop, false);
-    show(this.settings, false);
-    if (s === GameState.MENU) this.renderHome();
+    if (s === GameState.MENU) this.renderMenu();
     if (s === GameState.GAMEOVER) this.renderGameOver();
   }
 
@@ -85,72 +85,147 @@ export class ScreenManager {
   private toHome(): void {
     this.reviveUsed = false;
     this.audio.stopBgm();
+    this.nav = 'play';
     this.game.toMenu();
   }
 
-  // ── Home ───────────────────────────────────────────────────────────────────
-  private buildHome(): HTMLDivElement {
+  // ── Instagram-style app shell ──────────────────────────────────────────────
+  private buildMenuShell(): HTMLDivElement {
     const root = screen(false);
-    root.style.justifyContent = 'space-between';
-    root.style.padding = '6vh 0 4vh';
-    this.homeBody = el('div', {
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      justifyContent: 'space-between', gap: '14px', height: '100%', width: '100%',
+    root.style.cssText +=
+      'justify-content:stretch;align-items:stretch;gap:0;padding:0';
+
+    // Top header: brand + wallet chips.
+    this.header = el('div', {
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: 'calc(env(safe-area-inset-top,0px) + 14px) 18px 12px',
+      borderBottom: '1px solid rgba(255,210,180,0.12)', flexShrink: '0',
     });
-    root.append(this.homeBody);
+
+    // Scrollable content area (one view per nav tab).
+    this.content = el('div', {
+      flex: '1', overflowY: 'auto', padding: '14px 14px 18px',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px',
+    });
+    this.content.className = 'nd-scroll';
+
+    // Bottom nav bar (icon tabs).
+    this.navbar = el('div', {
+      display: 'flex', justifyContent: 'space-around', alignItems: 'center',
+      padding: '8px 6px calc(env(safe-area-inset-bottom,0px) + 8px)',
+      borderTop: '1px solid rgba(255,210,180,0.16)',
+      background: 'rgba(14,8,28,0.66)', backdropFilter: 'blur(12px)', flexShrink: '0',
+    });
+
+    root.append(this.header, this.content, this.navbar);
     return root;
   }
 
-  private renderHome(): void {
+  private renderMenu(): void {
+    this.renderHeader();
+    this.renderNavbar();
+    this.content.scrollTop = 0;
+    this.content.innerHTML = '';
+    ({
+      play: () => this.viewPlay(),
+      shop: () => this.viewShop(),
+      rewards: () => this.viewRewards(),
+      settings: () => this.viewSettings(),
+    })[this.nav]();
+  }
+
+  private go(nav: Nav): void {
+    if (this.nav === nav) return;
+    this.nav = nav;
+    this.audio.ui();
+    this.renderMenu();
+  }
+
+  /** Re-render the active shop/rewards view in place (after a purchase). */
+  private refreshShop(): void {
+    this.renderHeader();
+    if (this.nav === 'rewards') this.viewRewards();
+    else this.viewShop();
+  }
+
+  private renderHeader(): void {
+    const d = this.save.data;
+    this.header.innerHTML =
+      `<div style="font:900 22px/1 'Trebuchet MS',system-ui;
+        background:linear-gradient(120deg,${NEON.gold},${NEON.pink},#8a7bff);
+        -webkit-background-clip:text;background-clip:text;color:transparent">SUNSET RUNNER</div>` +
+      `<div style="display:flex;gap:8px">
+        <span class="nd-chip" style="color:${NEON.gold};font-size:14px">${coinStr(d.coins)}</span>
+        <span class="nd-chip" style="color:#9ad8ff;font-size:14px">${gemStr(d.mileage)}</span>
+      </div>`;
+  }
+
+  private renderNavbar(): void {
+    this.navbar.innerHTML = '';
+    const dot = this.save.canClaimDaily() ||
+      ACHIEVEMENTS.some((a) => a.stat(this.save.data) >= a.goal && !this.save.data.claimedAchievements.includes(a.id));
+    const items: Array<[Nav, string, string, boolean]> = [
+      ['play', '🏠', '홈', false],
+      ['shop', '🛒', '상점', false],
+      ['rewards', '🎁', '보상', dot],
+      ['settings', '⚙️', '설정', false],
+    ];
+    for (const [nav, icon, label, badge] of items) {
+      const on = this.nav === nav;
+      const b = el('button', {
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+        background: 'none', border: 'none', cursor: 'pointer', pointerEvents: 'auto',
+        padding: '4px 14px', position: 'relative', transition: 'transform .1s',
+      });
+      b.innerHTML =
+        `<span style="font-size:23px;filter:${on ? 'none' : 'grayscale(.5) opacity(.7)'}">${icon}</span>` +
+        `<span style="font:800 10px/1 system-ui;letter-spacing:1px;color:${on ? NEON.gold : 'rgba(255,242,224,.6)'}">${label}</span>` +
+        (badge ? `<span style="position:absolute;top:2px;right:10px;width:8px;height:8px;border-radius:50%;background:#ff6b8a;box-shadow:0 0 8px #ff6b8a"></span>` : '');
+      b.addEventListener('click', () => this.go(nav));
+      this.navbar.append(b);
+    }
+  }
+
+  // ── View: PLAY (hero + mode select + play button) ──────────────────────────
+  private viewPlay(): void {
     const d = this.save.data;
     const c = CHARACTERS.find((x) => x.id === d.selected)!;
-    this.homeBody.innerHTML = '';
 
-    // ── Top wallet chips ──
-    const wallet = el('div', {
-      position: 'absolute', top: '14px', left: '0', right: '0',
-      display: 'flex', justifyContent: 'space-between', padding: '0 16px', pointerEvents: 'none',
-    });
-    wallet.innerHTML =
-      `<span class="nd-chip" style="color:${NEON.gold}">${coinStr(d.coins)}</span>` +
-      `<span class="nd-chip" style="color:#9ad8ff">${gemStr(d.mileage)}</span>`;
-
-    // ── Title ──
-    const top = el('div', { textAlign: 'center', marginTop: '5vh', animation: 'nd-float 4s ease-in-out infinite' });
-    top.append(
+    const hero = el('div', { textAlign: 'center', marginTop: '2vh', animation: 'nd-slideup .4s ease both' });
+    hero.append(
       el('div', {
-        font: `900 clamp(42px,11vw,98px)/0.92 'Trebuchet MS',system-ui`, letterSpacing: '1px',
+        font: `900 clamp(36px,9vw,76px)/0.92 'Trebuchet MS',system-ui`, letterSpacing: '1px',
         background: `linear-gradient(120deg,${NEON.gold},${NEON.pink},#8a7bff)`,
         webkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-        filter: 'drop-shadow(0 4px 18px rgba(255,126,179,.4))',
+        filter: 'drop-shadow(0 4px 18px rgba(255,126,179,.4))', animation: 'nd-float 4s ease-in-out infinite',
       }, 'SUNSET<span style="opacity:.95">RUNNER</span>'),
-      el('div', { font: '700 15px/1 system-ui', color: NEON.pink, opacity: '0.92', marginTop: '6px', letterSpacing: '3px' },
+      el('div', { font: '700 14px/1 system-ui', color: NEON.pink, opacity: '0.9', marginTop: '6px', letterSpacing: '3px' },
         '석양을 달리는 무한 질주'),
     );
 
-    // ── Character preview card (the live 3D runner shows behind) ──
-    const tag = el('div', { animation: 'nd-slideup .4s ease both' });
-    tag.className = 'nd-card sel';
-    tag.style.cssText += 'align-items:center;text-align:center;padding:14px 26px;min-width:240px';
-    tag.innerHTML =
+    // Character preview card (live 3D runner shows behind).
+    const tagc = el('div', { animation: 'nd-slideup .42s ease both' });
+    tagc.className = 'nd-card sel';
+    tagc.style.cssText += 'align-items:center;text-align:center;padding:14px 26px;min-width:240px';
+    tagc.innerHTML =
       `<div style="font:800 11px/1 system-ui;opacity:.65;letter-spacing:3px">선택한 캐릭터</div>` +
       `<div style="font:900 26px/1.2 'Trebuchet MS',system-ui;color:${NEON.gold}">${c.name}</div>` +
       `<div style="font:700 13px/1.3 system-ui;color:#fff;opacity:.92">${c.blurb}</div>`;
-    const swapBtn = button('캐릭터 변경 ▸', () => this.openShop('characters'), 'ghost');
-    swapBtn.style.cssText += 'margin-top:4px;font-size:13px;padding:8px 16px';
-    tag.append(swapBtn);
+    const swap = button('캐릭터 변경 ▸', () => { this.tabSel = 'characters'; this.go('shop'); }, 'ghost');
+    swap.style.cssText += 'margin-top:4px;font-size:13px;padding:8px 16px';
+    tagc.append(swap);
 
-    // ── Mode select as twin cards ──
-    const modes = el('div', { display: 'flex', gap: '12px' });
+    // Twin mode cards.
+    const modes = el('div', { display: 'flex', gap: '12px', animation: 'nd-slideup .44s ease both' });
     const mk = (m: GameMode, icon: string, label: string, sub: string) => {
-      const card = el('div', { animation: 'nd-slideup .45s ease both' });
+      const card = el('div');
       card.className = `nd-card${this.mode === m ? ' sel' : ''}`;
       card.style.cssText += 'cursor:pointer;align-items:center;text-align:center;width:150px;gap:3px';
       card.innerHTML =
         `<div style="font-size:30px">${icon}</div>` +
         `<div style="font:800 16px/1 'Trebuchet MS',system-ui">${label}</div>` +
         `<div style="font:600 11px/1.2 system-ui;opacity:.7">${sub}</div>`;
-      card.addEventListener('click', () => { this.mode = m; this.audio.ui(); this.renderHome(); });
+      card.addEventListener('click', () => { this.mode = m; this.audio.ui(); this.renderMenu(); });
       return card;
     };
     modes.append(
@@ -158,84 +233,86 @@ export class ScreenManager {
       mk('challenge', '⏱️', '챌린지', `최고 ${d.bestChallenge}`),
     );
 
-    // ── Play button ──
     const play = button('게임 시작 ▶', () => this.startRun(), 'pink');
     play.style.font = `900 25px/1 'Trebuchet MS',system-ui`;
     play.style.padding = '19px 64px';
     play.style.animation = 'nd-breathe 2.4s ease-in-out infinite';
 
-    const mid = el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' });
-    mid.append(tag, modes, play);
-
-    // ── Shop tab bar ──
-    const tabs = el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' });
-    const dot = ' <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff6b8a;box-shadow:0 0 8px #ff6b8a"></span>';
-    const dailyBadge = this.save.canClaimDaily() ? dot : '';
-    const achBadge = ACHIEVEMENTS.some((a) => a.stat(this.save.data) >= a.goal && !this.save.data.claimedAchievements.includes(a.id)) ? dot : '';
-    tabs.append(
-      tab('🛒 캐릭터', () => this.openShop('characters')),
-      tab('🎒 아이템', () => this.openShop('items')),
-      tab('⬆️ 강화', () => this.openShop('upgrades')),
-      tab('🎁 보상' + dailyBadge, () => this.openShop('daily')),
-      tab('🏆 업적' + achBadge, () => this.openShop('achievements')),
-    );
-
-    const bottom = el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' });
-    const settingsBtn = button('⚙ 설정', () => { show(this.home, false); show(this.settings, true); }, 'ghost');
-    settingsBtn.style.cssText += 'padding:9px 16px;font-size:13px';
-    bottom.append(tabs, settingsBtn);
-
-    this.homeBody.append(wallet, top, mid, bottom);
+    this.content.append(hero, tagc, modes, play);
   }
 
-  private openShop(t: Tab): void {
-    this.tabSel = t;
-    show(this.home, false);
-    show(this.shop, true);
-    this.renderShop();
-    this.audio.ui();
-  }
-
-  // ── Shop (5 tabs) ────────────────────────────────────────────────────────────
-  private buildShop(): HTMLDivElement {
-    const root = screen(true);
-    root.style.justifyContent = 'flex-start';
-    root.style.padding = '4vh 0';
-    const bar = el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: 'min(820px,94vw)' });
-    bar.append(el('div', { font: `800 26px/1 'Trebuchet MS',system-ui` }, 'SHOP'),
-      (this.walletEl = el('div', { font: '700 18px/1 ui-monospace,monospace' })));
-    this.shopTabs = el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', margin: '4px 0' });
-    this.shopBody = el('div', {
-      width: 'min(820px,94vw)', maxHeight: '60vh', overflowY: 'auto',
-      display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', padding: '6px',
-    });
-    this.shopBody.className = 'nd-scroll';
-    root.append(bar, this.shopTabs, this.shopBody, button('← 뒤로', () => { show(this.shop, false); show(this.home, true); this.renderHome(); }, 'ghost'));
-    return root;
-  }
-  private walletEl!: HTMLDivElement;
-
-  private renderShop(): void {
+  // ── View: SHOP (sub-tabs: characters / items / upgrades) ────────────────────
+  private viewShop(): void {
+    if (this.tabSel === 'daily' || this.tabSel === 'achievements') this.tabSel = 'characters';
     const tabs: Array<[Tab, string]> = [
       ['characters', '🛒 캐릭터'], ['items', '🎒 아이템'], ['upgrades', '⬆️ 강화'],
-      ['daily', '🎁 보상'], ['achievements', '🏆 업적'],
     ];
-    this.shopTabs.innerHTML = '';
+    const tabRow = el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' });
     for (const [t, label] of tabs) {
-      const b = tab(label, () => { this.tabSel = t; this.renderShop(); });
+      const b = tab(label, () => { this.tabSel = t; this.viewShop(); });
       if (this.tabSel === t) b.className = 'nd-tab on';
-      this.shopTabs.append(b);
+      tabRow.append(b);
     }
-    this.walletEl.innerHTML = `${coinStr(this.save.data.coins)}　${gemStr(this.save.data.mileage)}`;
-    this.shopBody.innerHTML = '';
+    this.shopBody = el('div', {
+      width: '100%', display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', padding: '4px',
+    });
+    this.content.innerHTML = '';
+    this.content.append(tabRow, this.shopBody);
     this.cardIndex = 0;
     ({
       characters: () => this.renderCharacters(),
       items: () => this.renderItems(),
       upgrades: () => this.renderUpgrades(),
-      daily: () => this.renderDaily(),
-      achievements: () => this.renderAchievements(),
-    })[this.tabSel]();
+    } as Record<string, () => void>)[this.tabSel]();
+  }
+
+  // ── View: REWARDS (daily + achievements) ────────────────────────────────────
+  private viewRewards(): void {
+    const sub: Array<[Tab, string]> = [['daily', '🎁 출석'], ['achievements', '🏆 업적']];
+    if (this.tabSel !== 'daily' && this.tabSel !== 'achievements') this.tabSel = 'daily';
+    const tabRow = el('div', { display: 'flex', gap: '8px', justifyContent: 'center' });
+    for (const [t, label] of sub) {
+      const b = tab(label, () => { this.tabSel = t; this.viewRewards(); });
+      if (this.tabSel === t) b.className = 'nd-tab on';
+      tabRow.append(b);
+    }
+    this.shopBody = el('div', {
+      width: '100%', display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', padding: '4px',
+    });
+    this.content.innerHTML = '';
+    this.content.append(tabRow, this.shopBody);
+    this.cardIndex = 0;
+    if (this.tabSel === 'daily') this.renderDaily();
+    else this.renderAchievements();
+  }
+
+  // ── View: SETTINGS ──────────────────────────────────────────────────────────
+  private viewSettings(): void {
+    const wrap = el('div', { display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '2vh', alignItems: 'center' });
+    wrap.append(el('div', { font: `900 26px/1 'Trebuchet MS',system-ui`, color: NEON.gold }, '⚙️ 설정'));
+    const muteBtn = button('', () => {
+      const n = !this.save.data.settings.muted;
+      this.save.setMuted(n); this.audio.setMuted(n); syncM();
+    });
+    const syncM = () => { muteBtn.innerHTML = this.save.data.settings.muted ? '🔇 사운드: 끔' : '🔊 사운드: 켬'; };
+    syncM();
+    const qBtn = button('', () => {
+      const n = this.save.data.settings.quality === 'high' ? 'low' : 'high';
+      this.save.setQuality(n); this.engine.setQuality(n); syncQ();
+    }, 'ghost');
+    const syncQ = () => { qBtn.innerHTML = `그래픽: ${this.save.data.settings.quality === 'high' ? '높음' : '낮음'}`; };
+    syncQ();
+    const stats = el('div');
+    stats.className = 'nd-card';
+    stats.style.cssText += 'width:min(420px,90vw);gap:6px;margin-top:6px';
+    const d = this.save.data;
+    const row = (l: string, v: string) =>
+      `<div style="display:flex;justify-content:space-between"><span style="opacity:.7">${l}</span><b style="color:${NEON.gold}">${v}</b></div>`;
+    stats.innerHTML =
+      row('총 플레이', `${d.runs} 회`) + row('누적 거리', `${Math.floor(d.totalDistance)} m`) +
+      row('누적 코인', `${d.totalCoins}`) + row('최고 점수', `${d.best}`);
+    wrap.append(muteBtn, qBtn, stats);
+    this.content.append(wrap);
   }
 
   private cardIndex = 0;
@@ -262,13 +339,13 @@ export class ScreenManager {
         el('div', { font: '600 12px/1.4', opacity: '0.9', minHeight: '34px' }, c.blurb),
       );
       if (selected) card.append(el('div', { color: NEON.gold, font: '700 14px/1', textAlign: 'center' }, '✓ 선택됨'));
-      else if (owned) card.append(button('선택', () => { this.save.select(c.id); this.game.refreshLoadout(); this.renderShop(); }, 'ghost'));
+      else if (owned) card.append(button('선택', () => { this.save.select(c.id); this.game.refreshLoadout(); this.refreshShop(); }, 'ghost'));
       else {
         const price = c.gem ? gemStr(c.price) : coinStr(c.price);
         const b = button(`구매 ${price}`, () => {
           const ok = c.gem ? this.save.spendMileage(c.price) : this.save.spend(c.price);
           if (ok) { this.save.buy(c.id); this.save.select(c.id); this.game.refreshLoadout(); this.audio.power(); }
-          this.renderShop();
+          this.refreshShop();
         }, 'pink');
         b.disabled = c.gem ? d.mileage < c.price : d.coins < c.price;
         card.append(b);
@@ -288,7 +365,7 @@ export class ScreenManager {
       );
       const b = button(`구매 ${coinStr(item.price)}`, () => {
         if (this.save.spend(item.price)) { this.save.addItem(item.id); this.audio.power(); }
-        this.renderShop();
+        this.refreshShop();
       }, 'pink');
       b.disabled = this.save.data.coins < item.price;
       card.append(b);
@@ -310,7 +387,7 @@ export class ScreenManager {
         const cost = u.cost(lvl);
         const b = button(`강화 ${coinStr(cost)}`, () => {
           if (this.save.spend(cost)) { this.save.raiseUpgrade(u.id); this.game.refreshLoadout(); this.audio.power(); }
-          this.renderShop();
+          this.refreshShop();
         });
         b.disabled = this.save.data.coins < cost;
         card.append(b);
@@ -343,7 +420,7 @@ export class ScreenManager {
       const r = DAILY[d.dailyStreak % 7];
       this.save.claimDaily(r.coins, r.mile);
       this.audio.power();
-      this.renderShop();
+      this.refreshShop();
     }, 'pink');
     claimBtn.disabled = !this.save.canClaimDaily();
     wrap.append(claimBtn);
@@ -367,31 +444,12 @@ export class ScreenManager {
       );
       if (claimed) card.append(el('div', { color: '#6bffb0', font: '700 13px/1' }, '✓ 완료'));
       else if (done) {
-        card.append(button(`보상 ${coinStr(a.reward)}`, () => { this.save.claimAchievement(a.id, a.reward); this.audio.power(); this.renderShop(); }, 'pink'));
+        card.append(button(`보상 ${coinStr(a.reward)}`, () => { this.save.claimAchievement(a.id, a.reward); this.audio.power(); this.refreshShop(); }, 'pink'));
       } else card.append(el('div', { font: '700 13px/1', color: NEON.gold }, `+${a.reward}🪙`));
       this.shopBody.append(card);
     }
   }
 
-  // ── Settings ────────────────────────────────────────────────────────────────
-  private buildSettings(): HTMLDivElement {
-    const root = screen(true);
-    root.append(el('div', { font: `800 28px/1 'Trebuchet MS',system-ui` }, '설정'));
-    const muteBtn = button('', () => {
-      const n = !this.save.data.settings.muted;
-      this.save.setMuted(n); this.audio.setMuted(n); syncM();
-    });
-    const syncM = () => { muteBtn.innerHTML = this.save.data.settings.muted ? '🔇 사운드: 끔' : '🔊 사운드: 켬'; };
-    syncM();
-    const qBtn = button('', () => {
-      const n = this.save.data.settings.quality === 'high' ? 'low' : 'high';
-      this.save.setQuality(n); this.engine.setQuality(n); syncQ();
-    }, 'ghost');
-    const syncQ = () => { qBtn.innerHTML = `그래픽: ${this.save.data.settings.quality === 'high' ? '높음' : '낮음'}`; };
-    syncQ();
-    root.append(muteBtn, qBtn, button('← 뒤로', () => { show(this.settings, false); show(this.home, true); this.renderHome(); }, 'ghost'));
-    return root;
-  }
 
   // ── Pause ─────────────────────────────────────────────────────────────────────
   private buildPause(): HTMLDivElement {

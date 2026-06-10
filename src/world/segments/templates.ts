@@ -229,4 +229,32 @@ export const TEMPLATES: SegmentTemplate[] = [
       { slot: 4, lane: 0, kind: K.WALL },
     ],
   },
+  {
+    difficulty: 2,
+    safePath: 'ride the low train roof down the centre (sides have patrol trains)',
+    placements: [
+      { slot: 1, lane: 0, kind: K.LOW_TRAIN },
+      { slot: 3, lane: 0, kind: K.LOW_TRAIN },
+      { slot: 2, lane: -1, kind: K.TRAIN_MOVING },
+      { slot: 2, lane: 1, kind: K.TRAIN_MOVING },
+    ],
+  },
+  {
+    difficulty: 3,
+    safePath: 'patrol yard: weave the moving trains, clear lane shifts each slot',
+    placements: [
+      { slot: 1, lane: 0, kind: K.TRAIN_MOVING },
+      { slot: 2, lane: 1, kind: K.TRAIN_MOVING },
+      { slot: 3, lane: -1, kind: K.TRAIN_MOVING },
+    ],
+  },
+  {
+    difficulty: 2,
+    safePath: 'hop crate to crate up the left while a patrol train roams centre',
+    placements: [
+      { slot: 1, lane: -1, kind: K.CRATE },
+      { slot: 3, lane: -1, kind: K.CRATE },
+      { slot: 2, lane: 0, kind: K.TRAIN_MOVING },
+    ],
+  },
 ];

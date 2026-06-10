@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BIOMES, CHECKPOINT_DIST, COLORS, LEVEL_DIST, TIME_ATTACK_SECONDS } from '../config/constants';
-import { POWERUPS, PowerupType } from '../config/powerups';
+import { COINBURST_AMOUNT, POWERUPS, PowerupType } from '../config/powerups';
 import { AudioManager } from '../audio/AudioManager';
 import { getCharacter } from '../data/characters';
 import { SaveManager, type GameMode } from '../data/SaveManager';
@@ -68,8 +68,11 @@ export class RunnerGame extends Game {
   private comboTimer = 0;
   private wasNearMiss = false;
   private usedAbilityRevive = false;
-  /** While true (start countdown) the world is held still and input ignored. */
+  /** While true (resume countdown) the world is held still and input ignored. */
   private frozenStart = false;
+  /** While true (death explosion playing) the world is frozen before game-over. */
+  private dying = false;
+  private dyingTimer = 0;
 
   // Consumable inventory carried into the run.
   private bombs = 0;
@@ -176,8 +179,16 @@ export class RunnerGame extends Game {
       this.engine.shake(0.45);
       this.particles.burst(this.player.group.position, 0xffae5a, { count: 26, speed: 9, life: 0.8, size: 1.0 });
       this.hud.banner('🚀 ROCKET', '하늘로!');
+    } else if (type === PowerupType.COINBURST) {
+      const got = this.score.addCoins(COINBURST_AMOUNT);
+      this.particles.burst(this.player.group.position, COLORS.coin, { count: 24, speed: 6, life: 0.9 });
+      this.hud.popup(`💰 +${got}`, '#ffd86b');
+    } else if (type === PowerupType.STAR) {
+      this.hud.banner('⭐ INVINCIBLE', '무적!');
+    } else if (type === PowerupType.SLOWMO) {
+      this.hud.popup('⏳ SLOW-MO', '#9ad8ff');
     } else if (type !== PowerupType.HOVERBOARD && type !== PowerupType.BOMB) {
-      this.hud.popup(POWERUPS[type].label, '#ffd86b');
+      this.hud.popup(`${POWERUPS[type].icon} ${POWERUPS[type].label}`, '#ffd86b');
     }
   }
 
@@ -210,10 +221,17 @@ export class RunnerGame extends Game {
     this.hud.setItems(this.bombs, this.rockets);
   }
 
-  /** Begin a run with a 3·2·1·GO countdown — the world holds still until GO. */
+  /** Begin a fresh run immediately (no countdown — that's only for resume). */
   beginRun(): void {
+    this.frozenStart = false;
+    this.startRun();
+  }
+
+  /** Resume from pause with a 3·2·1·GO countdown so the player can re-orient. */
+  override resume(): void {
+    if (!this.state.is(GameState.PAUSED)) return;
     this.frozenStart = true;
-    this.startRun(); // enters PLAYING + resets, but speed is gated below
+    super.resume(); // back to PLAYING, but speed/input gated until GO
     this.hud.countdown(() => {
       this.frozenStart = false;
       this.audio.power();
@@ -221,13 +239,13 @@ export class RunnerGame extends Game {
   }
 
   protected override speedMultiplier(): number {
-    if (this.frozenStart) return 0; // hold the world during the countdown
+    if (this.frozenStart || this.dying) return 0; // hold the world
     const headstart = this.headstartTimer > 0 ? HEADSTART_SPEED : 1;
     return this.powerups.speedBoost() * headstart;
   }
 
   protected override inputEnabled(): boolean {
-    return !this.frozenStart;
+    return !this.frozenStart && !this.dying;
   }
 
   protected override cameraLift(): number {
@@ -249,7 +267,13 @@ export class RunnerGame extends Game {
   }
 
   protected override stepWorld(dt: number, scroll: number): void {
-    // During the start countdown the world is frozen — skip all gameplay.
+    // Death explosion: world frozen, debris flies, then drop to game-over.
+    if (this.dying) {
+      this.dyingTimer -= dt;
+      if (this.dyingTimer <= 0) this.finishDeath();
+      return;
+    }
+    // During the resume countdown the world is frozen — skip all gameplay.
     if (this.frozenStart) return;
     if (this.headstartTimer > 0) this.headstartTimer -= dt;
     if (this.comboTimer > 0) {
@@ -309,7 +333,7 @@ export class RunnerGame extends Game {
         this.hud.popup('REVIVE!', '#ff6a2a');
         this.audio.power();
       } else {
-        this.endRun();
+        this.startDeath();
         return;
       }
     }
@@ -328,7 +352,7 @@ export class RunnerGame extends Game {
     this.score.addDistance(scroll);
 
     // Power-up visuals + character-coloured run trail.
-    this.player.setEffects(magnet > 0, this.powerups.isShielded());
+    this.player.setEffects(magnet > 0, this.powerups.isShielded(), this.powerups.isStar());
     this.trailTimer -= dt;
     if (this.trailTimer <= 0) {
       this.trailTimer = 0.07;
@@ -347,12 +371,29 @@ export class RunnerGame extends Game {
     });
   }
 
-  private endRun(): void {
-    this.particles.burst(this.player.group.position, COLORS.player, { count: 24, speed: 8, life: 0.9 });
-    this.engine.shake(0.6);
-    this.engine.hitstop(0.12);
+  /** Crash death: a big "펑!" explosion, then game-over after a short beat. */
+  private startDeath(): void {
+    this.dying = true;
+    this.dyingTimer = 0.85;
+    const p = this.player.group.position;
+    // Multi-burst explosion in warm + character colours.
+    this.particles.burst(p, 0xffae3a, { count: 34, speed: 12, life: 1.0, size: 1.3 });
+    this.particles.burst(p, 0xff5630, { count: 26, speed: 8, life: 0.9, size: 1.1 });
+    this.particles.burst(p, COLORS.player, { count: 20, speed: 6, life: 0.8 });
+    this.player.explode(); // hide the rig + fling a debris poof
+    this.engine.shake(0.9);
+    this.engine.hitstop(0.16);
+    this.hud.popup('펑!', '#ff7e3a');
     this.audio.crash();
+  }
 
+  /** Record the run and switch to the game-over screen. */
+  private finishDeath(): void {
+    this.dying = false;
+    this.endRun();
+  }
+
+  private endRun(): void {
     const { mileage, isBest } = this.save.recordRun(
       this.mode,
       this.score.score,
@@ -380,6 +421,9 @@ export class RunnerGame extends Game {
   }
 
   protected override resetRun(): void {
+    this.dying = false;
+    this.dyingTimer = 0;
+    this.frozenStart = false;
     this.hud.hideGameOver();
     this.segments.reset();
     this.coins.reset();
