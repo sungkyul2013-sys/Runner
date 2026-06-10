@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BIOMES, CHECKPOINT_DIST, COLORS, LEVEL_DIST, TIME_ATTACK_SECONDS } from '../config/constants';
-import { COINBURST_AMOUNT, POWERUPS, PowerupType } from '../config/powerups';
+import { COINBURST_AMOUNT, POWERUPS, PowerupType, TREASURE_COINS, TREASURE_MILEAGE } from '../config/powerups';
 import { AudioManager } from '../audio/AudioManager';
 import { getCharacter } from '../data/characters';
 import { SaveManager, type GameMode } from '../data/SaveManager';
@@ -61,6 +61,8 @@ export class RunnerGame extends Game {
   private trailColor = 0xff7eb3;
   private trailTimer = 0;
   private readonly trailPos = new THREE.Vector3();
+  /** Bonus mileage earned from treasure chests this run. */
+  private treasureMileage = 0;
   private level = 1;
   private nextCheckpoint = CHECKPOINT_DIST;
   private timeLeft = TIME_ATTACK_SECONDS;
@@ -183,6 +185,11 @@ export class RunnerGame extends Game {
       const got = this.score.addCoins(COINBURST_AMOUNT);
       this.particles.burst(this.player.group.position, COLORS.coin, { count: 24, speed: 6, life: 0.9 });
       this.hud.popup(`💰 +${got}`, '#ffd86b');
+    } else if (type === PowerupType.TREASURE) {
+      const got = this.score.addCoins(TREASURE_COINS);
+      this.treasureMileage += TREASURE_MILEAGE;
+      this.particles.burst(this.player.group.position, 0xffcf3a, { count: 30, speed: 7, life: 1.0, size: 0.9 });
+      this.hud.banner('🎁 보물상자', `+${got} 🪙 · +${TREASURE_MILEAGE} 💎`);
     } else if (type === PowerupType.STAR) {
       this.hud.banner('⭐ INVINCIBLE', '무적!');
     } else if (type === PowerupType.SLOWMO) {
@@ -352,7 +359,7 @@ export class RunnerGame extends Game {
     this.score.addDistance(scroll);
 
     // Power-up visuals + character-coloured run trail.
-    this.player.setEffects(magnet > 0, this.powerups.isShielded(), this.powerups.isStar());
+    this.player.setEffects(magnet > 0, this.powerups.isShielded(), this.powerups.isStar(), this.powerups.isSurfing());
     this.trailTimer -= dt;
     if (this.trailTimer <= 0) {
       this.trailTimer = 0.07;
@@ -371,7 +378,7 @@ export class RunnerGame extends Game {
     });
   }
 
-  /** Crash death: a big "펑!" explosion, then game-over after a short beat. */
+  /** Crash death: a big explosion, then game-over after a short beat. */
   private startDeath(): void {
     this.dying = true;
     this.dyingTimer = 0.85;
@@ -383,7 +390,6 @@ export class RunnerGame extends Game {
     this.player.explode(); // hide the rig + fling a debris poof
     this.engine.shake(0.9);
     this.engine.hitstop(0.16);
-    this.hud.popup('펑!', '#ff7e3a');
     this.audio.crash();
   }
 
@@ -399,6 +405,8 @@ export class RunnerGame extends Game {
       this.score.score,
       this.score.coins,
       this.distance,
+      this.treasureMileage,
+      this.runTime,
     );
     this.lastResult = {
       mode: this.mode,
@@ -434,6 +442,7 @@ export class RunnerGame extends Game {
     this.timeLeft = TIME_ATTACK_SECONDS;
     this.environment.setBiome(0, this.engine.scene.fog!.color);
     this.score.reset();
+    this.treasureMileage = 0;
     this.comboCount = 0;
     this.comboTimer = 0;
     this.wasNearMiss = false;

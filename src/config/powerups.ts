@@ -10,6 +10,8 @@ export enum PowerupType {
   SLOWMO = 'SLOWMO', // brief slow-motion to thread tight gaps
   STAR = 'STAR', // shooting-star: timed invincibility + x3 score
   COINBURST = 'COINBURST', // instant coin payout
+  TREASURE = 'TREASURE', // treasure chest: big coin + mileage reward
+  SURF = 'SURF', // surfboard: ride hovering above the track, gently swaying
 }
 
 export interface PowerupDef {
@@ -39,6 +41,8 @@ export const POWERUPS: Record<PowerupType, PowerupDef> = {
   [PowerupType.SLOWMO]: { color: 0x9ad8ff, icon: '⏳', label: '슬로우', duration: 4, weight: 2 },
   [PowerupType.STAR]: { color: 0xffe06b, icon: '⭐', label: '무적별', duration: 6, weight: 2 },
   [PowerupType.COINBURST]: { color: 0xffd86b, icon: '💰', label: '코인다발', duration: 0, weight: 2 },
+  [PowerupType.TREASURE]: { color: 0xffcf3a, icon: '🎁', label: '보물상자', duration: 0, weight: 2 },
+  [PowerupType.SURF]: { color: 0x3ad1ff, icon: '🏄', label: '서핑보드', duration: 9, weight: 3 },
 };
 
 /** Power-ups that appear as collectible tokens on the track. */
@@ -53,6 +57,8 @@ export const SPAWNABLE: PowerupType[] = [
   PowerupType.SLOWMO,
   PowerupType.STAR,
   PowerupType.COINBURST,
+  PowerupType.TREASURE,
+  PowerupType.SURF,
 ];
 
 // ── Effect magnitudes ──────────────────────────────────────────────────────
@@ -67,3 +73,5 @@ export const BOMB_RANGE = 36; // forward distance cleared by a bomb
 export const SLOWMO_FACTOR = 0.55; // world speed while slow-mo is active
 export const STAR_SCORE_MULT = 3; // score multiplier during the invincible star
 export const COINBURST_AMOUNT = 30; // coins granted instantly by a coin-burst
+export const TREASURE_COINS = 80; // coins from a treasure chest
+export const TREASURE_MILEAGE = 5; // bonus gems/mileage from a treasure chest

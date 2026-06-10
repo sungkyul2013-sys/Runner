@@ -143,7 +143,8 @@ export class PowerupSystem {
         this.hoverCharges++;
         break;
       case PowerupType.COINBURST:
-        // Instant payout — handled entirely by the game via onActivate.
+      case PowerupType.TREASURE:
+        // Instant rewards — handled entirely by the game via onActivate.
         break;
       default: {
         const total = this.durationFor(type);
@@ -201,6 +202,10 @@ export class PowerupSystem {
   /** Invincible shooting-star is active (drives a sparkly aura + x3 score). */
   isStar(): boolean {
     return this.effects.has(PowerupType.STAR);
+  }
+  /** Surfboard is active — the player rides a hovering, swaying board. */
+  isSurfing(): boolean {
+    return this.effects.has(PowerupType.SURF);
   }
   /** A deployed hoverboard shield is currently protecting the player. */
   isShielded(): boolean {

@@ -54,7 +54,10 @@ export class Player {
   private readonly shieldBubble: THREE.Mesh;
   private readonly starAura: THREE.Mesh;
   private starOn = false;
+  private surfOn = false;
+  private surfPhase = 0;
   private readonly hoverboard: THREE.Group;
+  private surfboard!: THREE.Group;
 
   private sliding = false;
   private slideTimer = 0;
@@ -120,15 +123,38 @@ export class Player {
     this.hoverboard.visible = false;
     this.group.add(this.hoverboard);
 
+    // Surfboard — a curvy deck the player rides while gently hovering & swaying.
+    this.surfboard = new THREE.Group();
+    const board = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.34, 1.5, 4, 10),
+      new THREE.MeshStandardMaterial({
+        color: 0x3ad1ff, emissive: 0x1a7fb0, emissiveIntensity: 0.35, roughness: 0.35, metalness: 0.2,
+      }),
+    );
+    board.rotation.x = Math.PI / 2;
+    board.scale.set(1, 1, 0.45); // flatten into a board
+    this.surfboard.add(board);
+    const fin = new THREE.Mesh(
+      new THREE.ConeGeometry(0.12, 0.3, 4),
+      new THREE.MeshStandardMaterial({ color: 0xffd0a0, roughness: 0.5 }),
+    );
+    fin.position.set(0, -0.16, -0.7);
+    this.surfboard.add(fin);
+    this.surfboard.position.y = -PLAYER_HALF_STANDING.y + 0.12;
+    this.surfboard.visible = false;
+    this.group.add(this.surfboard);
+
     this.reset();
   }
 
   /** Toggle power-up visuals (called each frame from the game). */
-  setEffects(magnet: boolean, shield: boolean, star = false): void {
+  setEffects(magnet: boolean, shield: boolean, star = false, surf = false): void {
     this.magnetAura.visible = magnet;
     this.shieldOn = shield;
     this.starOn = star;
     this.starAura.visible = star;
+    this.surfOn = surf;
+    this.surfboard.visible = surf;
   }
 
   /** Swap in a different character look without touching the physics. */
@@ -158,24 +184,28 @@ export class Player {
     this.squashTimer = 0;
     this.shieldOn = false;
     this.starOn = false;
+    this.surfOn = false;
     this.magnetAura.visible = false;
     this.shieldBubble.visible = false;
     this.starAura.visible = false;
     this.hoverboard.visible = false;
+    this.surfboard.visible = false;
     this.rig.group.scale.set(1, 1, 1);
     this.rig.group.rotation.set(0, 0, 0);
+    this.rig.group.position.y = 0;
     this.rig.group.visible = true; // un-hide after a death explosion
     this.group.position.set(0, PLAYER_HALF_STANDING.y, PLAYER_Z);
     this.updateAABB();
   }
 
-  /** Hide the rig for the death "펑!" explosion (debris carries the moment). */
+  /** Hide the rig for the death explosion (debris carries the moment). */
   explode(): void {
     this.rig.group.visible = false;
     this.magnetAura.visible = false;
     this.shieldBubble.visible = false;
     this.starAura.visible = false;
     this.hoverboard.visible = false;
+    this.surfboard.visible = false;
   }
 
   moveLeft(): void {
@@ -287,6 +317,19 @@ export class Player {
       this.starAura.rotation.y += dt * 4;
       const pulse = 1 + Math.sin(this.starAura.rotation.y * 3) * 0.08;
       this.starAura.scale.setScalar(pulse);
+    }
+
+    // Surfboard: float the rig up a touch and sway it side-to-side gently.
+    if (this.surfOn) {
+      this.surfPhase += dt * 2.2;
+      const lift = 0.18 + Math.sin(this.surfPhase) * 0.07;
+      const sway = Math.sin(this.surfPhase * 0.8) * 0.12;
+      this.rig.group.position.y = lift;
+      this.rig.group.rotation.z = (this.x - targetX) * 0.14 + sway;
+      this.surfboard.position.y = -PLAYER_HALF_STANDING.y + 0.12 + Math.sin(this.surfPhase) * 0.05;
+      this.surfboard.rotation.z = sway;
+    } else if (this.rig.group.position.y !== 0) {
+      this.rig.group.position.y = 0;
     }
 
     // Drive the character animation from the current motion state.

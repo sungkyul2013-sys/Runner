@@ -31,6 +31,7 @@ export interface SaveData {
   runs: number;
   totalCoins: number;
   totalDistance: number;
+  totalTime: number; // cumulative seconds played (drives play-time mileage)
   settings: Settings;
 }
 
@@ -51,6 +52,7 @@ function defaults(): SaveData {
     runs: 0,
     totalCoins: 0,
     totalDistance: 0,
+    totalTime: 0,
     settings: { muted: false, quality: 'high' },
   };
 }
@@ -128,25 +130,48 @@ export class SaveManager {
   }
 
   // ── Run results ─────────────────────────────────────────────────────────────
-  /** Apply a finished run; returns mileage gained + whether a record was set. */
-  recordRun(mode: GameMode, score: number, coins: number, distance: number): {
-    mileage: number;
-    isBest: boolean;
-  } {
+  /**
+   * Apply a finished run. Mileage (💎) is awarded generously: a base from this
+   * run's distance + coins, a **distance milestone** bonus when you beat your
+   * best, a **bonus** carried in (treasure chests), plus a **play-time** trickle
+   * that rewards how long you've played overall. Returns the total mileage +
+   * whether a record was set.
+   */
+  recordRun(
+    mode: GameMode,
+    score: number,
+    coins: number,
+    distance: number,
+    bonusMileage = 0,
+    runSeconds = 0,
+  ): { mileage: number; isBest: boolean } {
     this.d.runs++;
     this.d.coins += coins;
     this.d.totalCoins += coins;
     this.d.totalDistance += distance;
-    const mileage = Math.floor(distance / 100) + Math.floor(coins / 10);
-    this.d.mileage += mileage;
+    this.d.totalTime += runSeconds;
+
+    // Base mileage — distance + coins (more generous than before).
+    let mileage = Math.floor(distance / 60) + Math.floor(coins / 6) + bonusMileage;
+
     let isBest = false;
     if (mode === 'endless' && score > this.d.best) {
+      // Distance milestone: a chunky reward for a new best (further = more).
+      mileage += 10 + Math.floor(distance / 200);
       this.d.best = score;
       isBest = true;
     } else if (mode === 'challenge' && score > this.d.bestChallenge) {
+      mileage += 10 + Math.floor(score / 200);
       this.d.bestChallenge = score;
       isBest = true;
     }
+
+    // Play-time reward: +1💎 per full 2 minutes of cumulative play crossed.
+    const before = Math.floor((this.d.totalTime - runSeconds) / 120);
+    const after = Math.floor(this.d.totalTime / 120);
+    mileage += Math.max(0, after - before) * 3;
+
+    this.d.mileage += mileage;
     this.save();
     return { mileage, isBest };
   }

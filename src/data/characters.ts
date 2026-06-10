@@ -55,7 +55,7 @@ export const CHARACTERS: CharacterDef[] = [
   {
     id: 'aqua',
     name: '아쿠아',
-    price: 600,
+    price: 300,
     blurb: '🧲 자석 지속 +50%',
     colors: { skin: 0xffe0c0, shirt: 0x3ad1ff, pants: 0x1c6fb0, shoes: 0xd0f6ff, hat: 0x3ad1ff, trail: 0x55c8ff },
     ability: { magnetMult: 1.5 },
@@ -63,7 +63,7 @@ export const CHARACTERS: CharacterDef[] = [
   {
     id: 'ninja',
     name: '섀도우 닌자',
-    price: 1500,
+    price: 700,
     blurb: '⚡ 초고속 레인 이동 + 피격 무적 +1초',
     colors: { skin: 0xe8c9a8, shirt: 0x2a2540, pants: 0x15121f, shoes: 0x403a5a, hat: 0x2a2540, trail: 0x8a7bff },
     ability: { laneSpeedMult: 1.6, hitInvulnBonus: 1 },
@@ -71,7 +71,7 @@ export const CHARACTERS: CharacterDef[] = [
   {
     id: 'neon',
     name: '네온 라이더',
-    price: 3000,
+    price: 1400,
     blurb: '✨ 점수 상시 +25%',
     colors: { skin: 0xffd0a8, shirt: 0xff3bd0, pants: 0x2a0f4a, shoes: 0x00ffd0, hat: 0xff3bd0, trail: 0xff7eff },
     ability: { scoreMult: 1.25 },
@@ -79,7 +79,7 @@ export const CHARACTERS: CharacterDef[] = [
   {
     id: 'astro',
     name: '우주인',
-    price: 5000,
+    price: 2400,
     blurb: '🌙 저중력 — 더 높고 길게 점프',
     colors: { skin: 0xffe6cc, shirt: 0xeef2ff, pants: 0xc9d2e6, shoes: 0xaab4cc, hat: 0xeef2ff, trail: 0xcfe0ff },
     ability: { lowGravity: true },
@@ -87,7 +87,7 @@ export const CHARACTERS: CharacterDef[] = [
   {
     id: 'phoenix',
     name: '피닉스',
-    price: 9000,
+    price: 4500,
     blurb: '💖 1회 부활 — 충돌해도 한 번 살아남음',
     colors: { skin: 0xffd0a8, shirt: 0xff5a2a, pants: 0xb02810, shoes: 0xffd23f, hat: 0xff8a2a, trail: 0xff6a2a },
     ability: { revive: true },
@@ -95,7 +95,7 @@ export const CHARACTERS: CharacterDef[] = [
   {
     id: 'golden',
     name: '골든 스타',
-    price: 18000,
+    price: 8000,
     blurb: '💰 모든 코인 2배',
     colors: { skin: 0xffe0b0, shirt: 0xffd23f, pants: 0xb88a10, shoes: 0xfff0a0, hat: 0xffd23f, trail: 0xffe06b },
     ability: { coinMult: 2 },
@@ -103,7 +103,7 @@ export const CHARACTERS: CharacterDef[] = [
   {
     id: 'celestial',
     name: '코스모스',
-    price: 150,
+    price: 100,
     gem: true,
     blurb: '💎 코인 2배 + 점수 +25%',
     colors: { skin: 0xf0e0ff, shirt: 0x6a4bd0, pants: 0x2a1a5a, shoes: 0x9affe0, hat: 0x6a4bd0, trail: 0x9affe0 },

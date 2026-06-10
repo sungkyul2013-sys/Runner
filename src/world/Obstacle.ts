@@ -131,16 +131,14 @@ function windowTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-/** Action hint emoji per obstacle kind (floats above the model). */
-const LABELS: Record<ObstacleKind, string> = {
-  [ObstacleKind.TRAIN]: '🚫',
-  [ObstacleKind.TRAIN_MOVING]: '↔️',
+/** Action hint emoji per obstacle kind (floats above the model). Obstacles you
+ *  must simply dodge (trains/walls) carry no label — only actionable ones do. */
+const LABELS: Partial<Record<ObstacleKind, string>> = {
   [ObstacleKind.BARRIER]: '⬆️',
   [ObstacleKind.TUNNEL]: '⬇️',
   [ObstacleKind.SIGN]: '⬇️',
-  [ObstacleKind.WALL]: '🚫',
-  [ObstacleKind.LOW_TRAIN]: '🏃',
-  [ObstacleKind.CRATE]: '⬆️',
+  [ObstacleKind.LOW_TRAIN]: '🪜',
+  [ObstacleKind.CRATE]: '🪜',
 };
 
 const spriteCache = new Map<string, THREE.Sprite>();

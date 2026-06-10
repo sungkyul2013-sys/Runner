@@ -58,8 +58,10 @@ check('use a bomb', save.useItem('bomb') && save.data.inventory.bomb === 1);
 
 // ── Run recording: mileage + best ──
 const res = save.recordRun('endless', 1500, 120, 3000);
-// mileage = floor(3000/100) + floor(120/10) = 30 + 12 = 42
-check('mileage computed', res.mileage === 42);
+// base = floor(3000/60) + floor(120/6) = 50 + 20 = 70
+// + new-best milestone = 10 + floor(3000/200) = 10 + 15 = 25 ; playtime = 0
+// total = 95
+check('mileage computed', res.mileage === 95);
 check('endless best set', save.data.best === 1500 && res.isBest);
 check('runs incremented', save.data.runs === 1);
 check('totals updated', save.data.totalDistance === 3000 && save.data.totalCoins === 120);
