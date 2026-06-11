@@ -3,6 +3,7 @@ import { BIOMES, CHECKPOINT_DIST, COLORS, LEVEL_DIST, MAX_SPEED, TIME_ATTACK_SEC
 import { COINBURST_AMOUNT, POWERUPS, PowerupType, TREASURE_COINS, TREASURE_MILEAGE } from '../config/powerups';
 import { AudioManager } from '../audio/AudioManager';
 import { getCharacter } from '../data/characters';
+import { getMode, LAVA_HOT, LAVA_SAFE, LAVA_WARN, type ModeDef } from '../data/modes';
 import { SaveManager, type GameMode } from '../data/SaveManager';
 import { ParticleSystem } from '../fx/ParticleSystem';
 import { CoinSystem } from '../systems/CoinSystem';
@@ -58,6 +59,11 @@ export class RunnerGame extends Game {
 
   // Run state.
   mode: GameMode = 'endless';
+  /** Active mode rules (timer/speed/score/lava…). */
+  private rules: ModeDef = getMode('endless');
+  /** Lava cycle clock (lava mode only). */
+  private lavaClock = 0;
+  private lavaWasHot = false;
   private trailColor = 0xff7eb3;
   private trailTimer = 0;
   private readonly trailPos = new THREE.Vector3();
@@ -114,6 +120,7 @@ export class RunnerGame extends Game {
     this.state.onChange((next) => this.applyVisibility(next === GameState.PLAYING));
     this.applyVisibility(false);
     this.refreshLoadout();
+    this.applySettings();
   }
 
   /** Reference duration formula: magnet/boots = 5 + lvl*1.2, x2 = 6 + lvl*1.5. */
@@ -127,6 +134,7 @@ export class RunnerGame extends Game {
 
   setMode(mode: GameMode): void {
     this.mode = mode;
+    this.rules = getMode(mode);
   }
 
   private applyVisibility(playing: boolean): void {
@@ -164,6 +172,10 @@ export class RunnerGame extends Game {
   }
   get challengeTime(): number {
     return Math.max(0, Math.ceil(this.timeLeft));
+  }
+  /** Active mode rules (UI reads reviveAllowed etc.). */
+  get modeRules(): ModeDef {
+    return this.rules;
   }
 
   // ── FX hooks ────────────────────────────────────────────────────────────
@@ -252,7 +264,7 @@ export class RunnerGame extends Game {
   protected override speedMultiplier(): number {
     if (this.frozenStart || this.dying || this.celebrating) return 0; // hold the world
     const headstart = this.headstartTimer > 0 ? HEADSTART_SPEED : 1;
-    return this.powerups.speedBoost() * headstart;
+    return this.powerups.speedBoost() * headstart * this.rules.speedMult;
   }
 
   protected override inputEnabled(): boolean {
@@ -300,11 +312,41 @@ export class RunnerGame extends Game {
       }
     }
 
-    // Challenge mode countdown.
-    if (this.mode === 'challenge') {
+    // Timed modes (challenge / coin rush) count down to the finish.
+    if (this.rules.timer > 0) {
       this.timeLeft -= dt;
       if (this.timeLeft <= 0) {
         this.endRun();
+        return;
+      }
+    }
+
+    // 🌋 Floor-is-lava cycle: safe → warning glow → molten (deadly on ground).
+    if (this.rules.lava) {
+      this.lavaClock += dt;
+      const cycle = LAVA_SAFE + LAVA_WARN + LAVA_HOT;
+      const t = this.lavaClock % cycle;
+      let heat = 0;
+      let hot = false;
+      if (t < LAVA_SAFE) {
+        heat = 0;
+      } else if (t < LAVA_SAFE + LAVA_WARN) {
+        heat = (t - LAVA_SAFE) / LAVA_WARN * 0.6; // rising warning glow
+        if (!this.lavaWasHot && heat > 0.1 && t - LAVA_SAFE < dt * 2) {
+          this.hud.banner('🌋 용암 경보!', '점프하거나 지붕으로!');
+          this.audio.ui();
+        }
+      } else {
+        heat = 0.6 + 0.4 * Math.abs(Math.sin(this.lavaClock * 6)); // molten shimmer
+        hot = true;
+      }
+      this.track.setLava(heat);
+      // Standing on the bare floor while molten → burn.
+      if (hot && !this.lavaWasHot) this.audio.power();
+      this.lavaWasHot = hot;
+      if (hot && !this.player.isAirborne && !this.player.isFlying && this.player.feet <= 0.05
+        && !this.powerups.isInvulnerable() && !this.powerups.tryAbsorb()) {
+        this.startDeath();
         return;
       }
     }
@@ -323,7 +365,7 @@ export class RunnerGame extends Game {
     if (this.distance >= this.nextCheckpoint) {
       this.nextCheckpoint += CHECKPOINT_DIST;
       this.particles.burst(this.player.group.position, COLORS.coin, { count: 18, speed: 6, life: 0.8 });
-      if (this.mode === 'challenge') {
+      if (this.rules.timer > 0) {
         this.timeLeft += CHECKPOINT_TIME;
         this.hud.popup(`+${CHECKPOINT_TIME}s`, '#ffd86b');
       } else {
@@ -364,7 +406,7 @@ export class RunnerGame extends Game {
 
     const magnet = this.powerups.magnetRadius();
     this.coins.update(scroll, dt, this.player, magnet);
-    this.score.multiplier = this.powerups.scoreMultiplier();
+    this.score.multiplier = this.powerups.scoreMultiplier() * this.rules.scoreMult;
     this.score.addDistance(scroll);
 
     // Power-up visuals + character-coloured run trail.
@@ -383,7 +425,7 @@ export class RunnerGame extends Game {
       coins: this.score.coins,
       distance: this.distance,
       level: this.level,
-      time: this.mode === 'challenge' ? this.challengeTime : undefined,
+      time: this.rules.timer > 0 ? this.challengeTime : undefined,
     });
   }
 
@@ -400,6 +442,16 @@ export class RunnerGame extends Game {
     this.engine.shake(0.9);
     this.engine.hitstop(0.16);
     this.audio.crash();
+    // Haptic thump on supported devices (settings toggle).
+    if (this.save.data.settings.vibrate && navigator.vibrate) navigator.vibrate(90);
+  }
+
+  /** Re-apply user settings to live systems (called by the settings screen). */
+  applySettings(): void {
+    const s = this.save.data.settings;
+    this.engine.shakeScale = s.shake === 'off' ? 0 : s.shake === 'low' ? 0.45 : 1;
+    this.engine.setShowFps(s.showFps);
+    this.hud.comboEnabled = s.showCombo;
   }
 
   /** Record the run and switch to the game-over screen. */
@@ -495,9 +547,16 @@ export class RunnerGame extends Game {
     this.particles.reset();
     this.level = 1;
     this.nextCheckpoint = CHECKPOINT_DIST;
-    this.timeLeft = TIME_ATTACK_SECONDS;
+    // Apply the active mode's rules to all subsystems.
+    this.timeLeft = this.rules.timer > 0 ? this.rules.timer : TIME_ATTACK_SECONDS;
+    this.coins.density = this.rules.coinDensity;
+    this.segments.difficultyCap = this.rules.difficultyCap;
+    this.lavaClock = 0;
+    this.lavaWasHot = false;
+    this.track.setLava(0);
     this.environment.setBiome(0, this.engine.scene.fog!.color);
     this.score.reset();
+    this.score.multiplier = this.rules.scoreMult;
     this.treasureMileage = 0;
     this.comboCount = 0;
     this.comboTimer = 0;

@@ -132,9 +132,13 @@ export class CoinSystem {
     this.active.pop();
   }
 
+  /** Pattern density multiplier (Coin Rush raises this to ~2). */
+  density = 1;
+
   private fillAhead(): void {
     while (this.nextSpawnZ > -SEGMENT_LENGTH * 7) {
       this.spawnPattern(this.nextSpawnZ);
+      if (this.density >= 2) this.spawnPattern(this.nextSpawnZ - SEGMENT_LENGTH / 2);
       this.nextSpawnZ -= SEGMENT_LENGTH;
     }
   }

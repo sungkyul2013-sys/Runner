@@ -175,6 +175,7 @@ export class Player {
   /** Drive the menu hero: first the character **walks out** from down the
    *  track toward the camera, then performs the lively pose cycle in place. */
   menuShowcase(dt: number, elapsed: number): void {
+    this.rig.group.visible = true; // restore after a death explosion
     this.rig.group.scale.set(1, 1, 1);
     this.rig.group.rotation.z = 0;
     const E = Player.ENTRANCE;

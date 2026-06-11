@@ -46,6 +46,13 @@ export class Track {
   private readonly tiles: THREE.Mesh[] = [];
   private readonly tileCount = 10;
   private readonly spanZ: number;
+  private readonly matA: THREE.MeshStandardMaterial;
+  private readonly matB: THREE.MeshStandardMaterial;
+  private readonly baseA = new THREE.Color(0xc9b0d8);
+  private readonly baseB = new THREE.Color(0xb39ac4);
+  private readonly lavaCol = new THREE.Color(0xff5a1a);
+  private readonly lavaEmissive = new THREE.Color(0xff3300);
+  private readonly black = new THREE.Color(0x000000);
 
   constructor() {
     this.spanZ = this.tileCount * SEGMENT_LENGTH;
@@ -53,11 +60,11 @@ export class Track {
     const tex = asphaltTexture();
     const geo = new THREE.PlaneGeometry(TRACK_WIDTH, SEGMENT_LENGTH);
     geo.rotateX(-Math.PI / 2);
-    const matA = new THREE.MeshStandardMaterial({ map: tex, color: 0xc9b0d8, roughness: 0.95 });
-    const matB = new THREE.MeshStandardMaterial({ map: tex, color: 0xb39ac4, roughness: 0.95 });
+    this.matA = new THREE.MeshStandardMaterial({ map: tex, color: 0xc9b0d8, roughness: 0.95 });
+    this.matB = new THREE.MeshStandardMaterial({ map: tex, color: 0xb39ac4, roughness: 0.95 });
 
     for (let i = 0; i < this.tileCount; i++) {
-      const tile = new THREE.Mesh(geo, i % 2 === 0 ? matA : matB);
+      const tile = new THREE.Mesh(geo, i % 2 === 0 ? this.matA : this.matB);
       tile.position.z = PLAYER_Z + SEGMENT_LENGTH / 2 - i * SEGMENT_LENGTH;
       this.tiles.push(tile);
       this.group.add(tile);
@@ -66,6 +73,18 @@ export class Track {
     this.addLaneRails();
     this.addDividers();
     this.addEdgeRails();
+  }
+
+  /**
+   * Floor-is-lava heat: 0 = normal asphalt, 1 = fully molten (bright glowing
+   * red). The whole floor lerps colour + emissive so the danger reads clearly.
+   */
+  setLava(t: number): void {
+    const k = Math.min(1, Math.max(0, t));
+    this.matA.color.copy(this.baseA).lerp(this.lavaCol, k);
+    this.matB.color.copy(this.baseB).lerp(this.lavaCol, k);
+    this.matA.emissive.copy(this.black).lerp(this.lavaEmissive, k * 0.9);
+    this.matB.emissive.copy(this.black).lerp(this.lavaEmissive, k * 0.9);
   }
 
   /** Two thin silver metro rails per lane. */

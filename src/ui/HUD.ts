@@ -154,8 +154,11 @@ export class HUD {
     this.coinsEl.innerHTML = `🪙 ${s.coins}`;
   }
 
+  /** Settings toggle: hide the combo meter entirely when false. */
+  comboEnabled = true;
+
   setCombo(count: number): void {
-    if (count >= 5) {
+    if (this.comboEnabled && count >= 5) {
       this.comboEl.style.display = 'block';
       this.comboEl.textContent = `x${count} COIN COMBO`;
     } else {

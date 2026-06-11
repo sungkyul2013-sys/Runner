@@ -95,10 +95,13 @@ export class SegmentManager {
     }
   }
 
+  /** Optional cap on template difficulty (e.g. the easy Coin Rush mode). */
+  difficultyCap = MAX_DIFFICULTY;
+
   /** Pick a template unlocked by distance, biased toward denser (higher-
    *  difficulty, more-obstacle) layouts the further the player has run. */
   private pickTemplate(distance: number): SegmentTemplate {
-    const maxDiff = Math.min(MAX_DIFFICULTY, Math.floor(distance / DIFFICULTY_STEP));
+    const maxDiff = Math.min(MAX_DIFFICULTY, this.difficultyCap, Math.floor(distance / DIFFICULTY_STEP));
     const eligible = TEMPLATES.filter((t) => t.difficulty <= maxDiff);
     const dense = distance > DENSE_DISTANCE;
     // Weight by (difficulty + obstacle count) once past DENSE_DISTANCE so the

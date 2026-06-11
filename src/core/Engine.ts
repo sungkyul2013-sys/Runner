@@ -27,7 +27,7 @@ export class Engine {
 
   private readonly clock = new THREE.Clock();
   private readonly updaters = new Set<UpdateFn>();
-  private readonly stats?: Stats;
+  private stats?: Stats;
   private rafId = 0;
   private running = false;
   private elapsed = 0;
@@ -101,9 +101,21 @@ export class Engine {
     this.scene.remove(obj);
   }
 
+  /** Global shake intensity multiplier (settings: off/low/high). */
+  shakeScale = 1;
+
   /** Kick a decaying camera shake (used on crashes / bombs). */
   shake(amount: number): void {
-    this.shakeAmt = Math.max(this.shakeAmt, amount);
+    this.shakeAmt = Math.max(this.shakeAmt, amount * this.shakeScale);
+  }
+
+  /** Show/hide the FPS counter at runtime (settings toggle). */
+  setShowFps(on: boolean): void {
+    if (on && !this.stats) this.stats = new Stats();
+    else if (!on && this.stats) {
+      this.stats.dispose();
+      this.stats = undefined;
+    }
   }
   /** Brief slow-motion hit-stop. */
   hitstop(seconds: number): void {

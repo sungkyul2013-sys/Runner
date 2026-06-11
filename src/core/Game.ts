@@ -44,6 +44,11 @@ export class Game {
 
     this.input.onIntent(this.handleIntent);
     engine.onUpdate(this.update);
+
+    // Restart the results-screen entrance every time GAMEOVER is entered.
+    this.state.onChange((next) => {
+      if (next === GameState.GAMEOVER) this.goTime = 0;
+    });
   }
 
   // ── Flow control (driven by the screen layer) ─────────────────────────────
@@ -121,10 +126,22 @@ export class Game {
       case GameState.MENU:
         this.stepAttract(dt);
         break;
+      case GameState.GAMEOVER:
+        this.stepGameOver(dt);
+        break;
       default:
-        break; // PAUSED / GAMEOVER → frozen
+        break; // PAUSED → frozen
     }
   };
+
+  /** Results screen: the character jogs in from down the track and poses for
+   *  the camera in front of the fresh gradient backdrop. */
+  private goTime = 0;
+  private stepGameOver(dt: number): void {
+    this.goTime += dt;
+    this.player.menuShowcase(dt, this.goTime);
+    this.cameraRig.menu(dt, this.goTime);
+  }
 
   private stepPlaying(dt: number): void {
     this.runTime += dt;

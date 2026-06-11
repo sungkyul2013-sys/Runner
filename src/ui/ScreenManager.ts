@@ -6,6 +6,7 @@ import { ACHIEVEMENTS, DAILY } from '../data/achievements';
 import { CHARACTERS } from '../data/characters';
 import { CONSUMABLES } from '../data/consumables';
 import { JOURNEY } from '../data/journey';
+import { MODES } from '../data/modes';
 import type { GameMode, SaveManager } from '../data/SaveManager';
 import { UPGRADES } from '../data/upgrades';
 import { button, coinStr, el, gemStr, NEON, screen, show, tab } from './uikit';
@@ -248,29 +249,38 @@ export class ScreenManager {
       <span style="opacity:.8">▸</span>`;
     namePill.addEventListener('click', () => this.go('characters'));
 
-    // Slim segmented mode toggle.
+    // Game-mode carousel: 5 chunky mode cards in a horizontal scroller.
     const toggle = el('div', {
-      display: 'inline-flex', padding: '4px', borderRadius: '999px', gap: '4px',
-      background: 'rgba(20,12,38,0.7)', border: '1px solid rgba(255,210,180,0.2)',
-      backdropFilter: 'blur(10px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.1)',
+      display: 'flex', gap: '10px', overflowX: 'auto', maxWidth: 'min(480px,94vw)',
+      padding: '6px 8px 10px', scrollSnapType: 'x mandatory',
     });
-    const seg = (m: GameMode, label: string) => {
-      const on = this.mode === m;
-      const b = el('button', {
-        border: 'none', cursor: 'pointer', borderRadius: '999px', padding: '8px 18px',
-        font: `800 13px/1 'Trebuchet MS',system-ui`, pointerEvents: 'auto',
-        transition: 'all .2s', color: on ? NEON.ink : 'rgba(255,242,224,.7)',
-        background: on ? `linear-gradient(120deg,${NEON.gold},${NEON.pink})` : 'transparent',
-        boxShadow: on ? '0 3px 10px rgba(255,126,179,.4)' : 'none',
-      }, label);
-      b.addEventListener('click', () => { this.mode = m; this.audio.ui(); this.renderMenu(); });
-      return b;
-    };
-    toggle.append(seg('endless', '♾️ 무한'), seg('challenge', '⏱️ 챌린지'));
-
-    const best = this.mode === 'challenge' ? d.bestChallenge : d.best;
-    const bestLine = el('div', { font: '700 12px/1 system-ui', color: 'rgba(255,242,224,.65)' },
-      `🏆 최고 ${best}`);
+    toggle.className = 'nd-scroll';
+    for (const m of MODES) {
+      const on = this.mode === m.id;
+      const card = el('button', {
+        flexShrink: '0', width: '108px', border: 'none', cursor: 'pointer',
+        scrollSnapAlign: 'center', pointerEvents: 'auto', textAlign: 'center',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+        padding: '10px 6px 9px', borderRadius: '16px',
+        color: on ? NEON.ink : 'rgba(255,242,224,.85)',
+        background: on
+          ? `linear-gradient(150deg,${NEON.gold},${NEON.pink})`
+          : 'linear-gradient(155deg,rgba(50,28,80,0.66),rgba(22,12,40,0.6))',
+        boxShadow: on
+          ? '0 6px 0 rgba(150,80,40,.35),0 10px 22px rgba(255,126,179,.35)'
+          : '0 5px 0 rgba(0,0,0,.3),0 8px 16px rgba(0,0,0,.3)',
+        transition: 'transform .15s cubic-bezier(.34,1.6,.5,1)',
+        transform: on ? 'translateY(-4px) scale(1.05)' : 'none',
+      } as Partial<CSSStyleDeclaration>);
+      card.innerHTML =
+        `<span style="font-size:26px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.35))">${m.icon}</span>` +
+        `<span style="font:900 13px/1 'Trebuchet MS',system-ui">${m.name}</span>` +
+        `<span style="font:700 9px/1.25 system-ui;opacity:.75;min-height:22px">${m.desc}</span>` +
+        `<span style="font:800 10px/1 ui-monospace,monospace;${on ? '' : `color:${NEON.gold}`}">🏆 ${this.save.bestFor(m.id)}</span>`;
+      card.addEventListener('click', () => { this.mode = m.id; this.audio.ui(); this.renderMenu(); });
+      toggle.append(card);
+    }
+    const bestLine = el('div', { display: 'none' });
 
     // Compact, lively PLAY button (small, not a giant slab).
     const play = button('게임 시작 ▶', () => this.startRun(), 'pink');
@@ -482,25 +492,64 @@ export class ScreenManager {
 
   // ── View: SETTINGS ──────────────────────────────────────────────────────────
   private viewSettings(): void {
-    const wrap = el('div', { display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '2vh', alignItems: 'center' });
+    const wrap = el('div', { display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '1vh', alignItems: 'center', width: '100%' });
     wrap.append(el('div', { font: `900 26px/1 'Trebuchet MS',system-ui`, color: NEON.gold }, '⚙️ 설정'));
-    const muteBtn = button('', () => {
-      const n = !this.save.data.settings.muted;
-      this.save.setMuted(n); this.audio.setMuted(n); syncM();
-    });
-    const syncM = () => { muteBtn.innerHTML = this.save.data.settings.muted ? '🔇 사운드: 끔' : '🔊 사운드: 켬'; };
-    syncM();
-    const qBtn = button('', () => {
-      const n = this.save.data.settings.quality === 'high' ? 'low' : 'high';
-      this.save.setQuality(n); this.engine.setQuality(n); syncQ();
-    }, 'ghost');
-    const syncQ = () => { qBtn.innerHTML = `그래픽: ${this.save.data.settings.quality === 'high' ? '높음' : '낮음'}`; };
-    syncQ();
+
+    const s = this.save.data.settings;
+    // A tactile toggle row: tap to cycle the value, instantly applied.
+    const toggleRow = (icon: string, label: string, value: () => string, onTap: () => void) => {
+      const row = el('button', {
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        width: 'min(420px,92vw)', cursor: 'pointer', pointerEvents: 'auto',
+        padding: '13px 16px', borderRadius: '16px', border: '1px solid rgba(255,210,180,0.22)',
+        background: 'linear-gradient(155deg,rgba(50,28,80,0.6),rgba(22,12,40,0.55))',
+        color: '#fff2e0', boxShadow: '0 4px 0 rgba(0,0,0,.28),0 8px 16px rgba(0,0,0,.28)',
+        transition: 'transform .12s',
+      });
+      row.addEventListener('pointerdown', () => (row.style.transform = 'translateY(3px)'));
+      row.addEventListener('pointerup', () => (row.style.transform = 'none'));
+      const sync = () => {
+        row.innerHTML =
+          `<span style="font:800 14px/1 system-ui">${icon} ${label}</span>` +
+          `<span style="font:900 14px/1 'Trebuchet MS',system-ui;color:${NEON.gold}">${value()}</span>`;
+      };
+      sync();
+      row.addEventListener('click', () => { onTap(); this.audio.ui(); sync(); });
+      return row;
+    };
+
+    wrap.append(
+      toggleRow('🔊', '사운드', () => (s.muted ? '끔' : '켬'), () => {
+        this.save.setMuted(!s.muted);
+        this.audio.setMuted(s.muted);
+      }),
+      toggleRow('🎨', '그래픽', () => (s.quality === 'high' ? '높음' : '낮음'), () => {
+        this.save.setQuality(s.quality === 'high' ? 'low' : 'high');
+        this.engine.setQuality(s.quality);
+      }),
+      toggleRow('📳', '진동', () => (s.vibrate ? '켬' : '끔'), () => {
+        this.save.patchSettings({ vibrate: !s.vibrate });
+      }),
+      toggleRow('📷', '화면 흔들림', () => ({ off: '끔', low: '약하게', high: '강하게' }[s.shake]), () => {
+        const next = s.shake === 'high' ? 'low' : s.shake === 'low' ? 'off' : 'high';
+        this.save.patchSettings({ shake: next });
+        this.game.applySettings();
+      }),
+      toggleRow('🔥', '콤보 표시', () => (s.showCombo ? '켬' : '끔'), () => {
+        this.save.patchSettings({ showCombo: !s.showCombo });
+        this.game.applySettings();
+      }),
+      toggleRow('🖥️', 'FPS 표시', () => (s.showFps ? '켬' : '끔'), () => {
+        this.save.patchSettings({ showFps: !s.showFps });
+        this.game.applySettings();
+      }),
+    );
+
     const d = this.save.data;
     const mins = Math.floor(d.totalTime / 60);
     const stats = el('div');
     stats.className = 'nd-card';
-    stats.style.cssText += 'width:min(420px,90vw);gap:7px;margin-top:6px';
+    stats.style.cssText += 'width:min(420px,92vw);gap:7px;margin-top:4px';
     const row = (l: string, v: string) =>
       `<div style="display:flex;justify-content:space-between"><span style="opacity:.7">${l}</span><b style="color:${NEON.gold}">${v}</b></div>`;
     stats.innerHTML =
@@ -512,14 +561,29 @@ export class ScreenManager {
     // Mileage reward explainer — rewards for going far & playing a lot.
     const mile = el('div');
     mile.className = 'nd-card';
-    mile.style.cssText += 'width:min(420px,90vw);gap:6px';
+    mile.style.cssText += 'width:min(420px,92vw);gap:6px';
     mile.innerHTML =
       `<div style="font:800 13px/1;letter-spacing:1px;color:#9ad8ff;margin-bottom:2px">💎 마일리지 보상</div>` +
       `<div style="font:600 12px/1.6;opacity:.85">
         🏁 멀리 갈수록 (신기록) → 거리 비례 💎<br>
         ⏱️ 오래 플레이할수록 (누적 2분마다) → +3💎<br>
         🎁 보물상자 → +5💎 즉시</div>`;
-    wrap.append(muteBtn, qBtn, stats, mile, button('← 홈으로', () => this.go('play'), 'ghost'));
+
+    // Danger zone: full data reset (double-tap to confirm).
+    let armed = false;
+    const reset = button('🗑️ 데이터 초기화', () => {
+      if (!armed) {
+        armed = true;
+        reset.innerHTML = '⚠️ 한 번 더 누르면 전체 삭제!';
+        setTimeout(() => { armed = false; reset.innerHTML = '🗑️ 데이터 초기화'; }, 2500);
+        return;
+      }
+      this.save.wipe();
+      location.reload();
+    }, 'ghost');
+    reset.style.cssText += 'border-color:rgba(255,107,138,.5);color:#ff8aa0';
+
+    wrap.append(stats, mile, reset, button('← 홈으로', () => this.go('play'), 'ghost'));
     this.content.append(wrap);
   }
 
@@ -768,9 +832,20 @@ export class ScreenManager {
   }
 
   // ── Game over ───────────────────────────────────────────────────────────────────
+  //  Results screen: a brand-new gradient backdrop (deep teal → magenta →
+  //  amber) with a clear middle so the 3D character jogs in from behind and
+  //  poses; the title sits on top, the stats panel + actions along the bottom.
   private buildGameOver(): HTMLDivElement {
-    const root = screen(true);
-    this.gameoverBody = el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' });
+    const root = screen(false);
+    root.style.cssText +=
+      `justify-content:space-between;padding:calc(env(safe-area-inset-top,0px) + 26px) 16px ` +
+      `calc(env(safe-area-inset-bottom,0px) + 18px);` +
+      `background:linear-gradient(165deg,rgba(8,40,52,.82) 0%,rgba(60,14,66,.66) 38%,` +
+      `rgba(150,30,80,.42) 62%,rgba(255,150,60,.55) 100%);backdrop-filter:blur(3px)`;
+    this.gameoverBody = el('div', {
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'space-between', width: '100%', height: '100%',
+    });
     root.append(this.gameoverBody);
     return root;
   }
@@ -778,48 +853,67 @@ export class ScreenManager {
   private renderGameOver(): void {
     const r = this.game.getRunResult();
     const d = this.save.data;
-    const modeLabel = r.mode === 'challenge' ? '⏱️ 챌린지' : '♾️ 무한 모드';
-    const best = r.mode === 'challenge' ? d.bestChallenge : d.best;
+    const mode = MODES.find((m) => m.id === r.mode) ?? MODES[0];
+    const best = this.save.bestFor(r.mode);
     this.gameoverBody.innerHTML = '';
-    this.gameoverBody.style.animation = 'nd-slideup .4s ease both';
 
-    this.gameoverBody.append(
-      el('div', { font: `900 50px/1 'Trebuchet MS',system-ui`, color: NEON.pink, textShadow: `0 2px 24px ${NEON.pink}aa` }, 'GAME OVER'),
-      el('div', { font: '800 13px/1 system-ui', opacity: '0.8', letterSpacing: '2px' }, modeLabel),
+    // ── Top: title (the 3D character runs in below it). ──
+    const top = el('div', { textAlign: 'center', animation: 'nd-popin .5s cubic-bezier(.34,1.5,.5,1) both' });
+    top.innerHTML =
+      `<div style="font:900 clamp(38px,9vw,58px)/1 'Trebuchet MS',system-ui;
+        background:linear-gradient(120deg,#9ad8ff,${NEON.pink},${NEON.gold});
+        -webkit-background-clip:text;background-clip:text;color:transparent;
+        filter:drop-shadow(0 4px 16px rgba(255,126,179,.45))">${r.isBest && r.score > 0 ? 'NEW RECORD!' : 'GAME OVER'}</div>` +
+      `<div style="font:800 13px/1.6 system-ui;opacity:.85;letter-spacing:2px">${mode.icon} ${mode.name}</div>` +
+      (r.isBest && r.score > 0
+        ? `<div style="font:900 17px/1.5 'Trebuchet MS',system-ui;color:${NEON.gold};animation:nd-bounce 1.2s ease-in-out infinite">🏆 신기록 달성!</div>`
+        : '');
+
+    // ── Middle spacer: keeps the centre open for the posing character. ──
+    const spacer = el('div', { flex: '1' });
+
+    // ── Bottom: compact glass stats bar + actions. ──
+    const bottom = el('div', {
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px',
+      animation: 'nd-slideup .45s ease both', width: '100%',
+    });
+    const statsBar = el('div', {
+      display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center',
+    });
+    const chip = (icon: string, label: string, value: string, color = '#fff') => {
+      const c = el('div', { flexDirection: 'column', gap: '2px', padding: '9px 16px' });
+      c.className = 'nd-chip';
+      c.innerHTML =
+        `<span style="font:700 9px/1 system-ui;opacity:.6;letter-spacing:1px">${icon} ${label}</span>` +
+        `<span style="font:900 17px/1 'Trebuchet MS',system-ui;color:${color}">${value}</span>`;
+      return c;
+    };
+    statsBar.append(
+      chip('⭐', 'SCORE', `${r.score}`, NEON.gold),
+      chip('🪙', '코인', `${r.coins}`, NEON.gold),
+      chip('📏', '거리', `${Math.floor(r.distance)}m`),
+      chip('🏆', '최고', `${best}`),
+      chip('💎', '마일리지', `+${r.mileage}`, '#9ad8ff'),
     );
 
-    // Stats panel card.
-    const panel = el('div');
-    panel.className = 'nd-card';
-    panel.style.cssText += 'align-items:center;gap:6px;padding:18px 30px;margin-top:4px';
-    const stat = (label: string, value: string, color = '#fff') =>
-      `<div style="display:flex;justify-content:space-between;gap:30px;width:200px">
-        <span style="opacity:.7;font:700 13px/1.6 system-ui">${label}</span>
-        <span style="font:800 16px/1.6 'Trebuchet MS',system-ui;color:${color}">${value}</span></div>`;
-    panel.innerHTML =
-      `<div style="font:900 40px/1 'Trebuchet MS',system-ui;color:${NEON.gold}">${r.score}</div>` +
-      `<div style="font:700 11px/1 system-ui;opacity:.6;letter-spacing:2px;margin-bottom:6px">SCORE</div>` +
-      stat('🪙 코인', `${r.coins}`, NEON.gold) +
-      stat('📏 거리', `${Math.floor(r.distance)} m`) +
-      stat('🏆 최고', `${best}`) +
-      stat('💎 마일리지', `+${r.mileage}`, '#9ad8ff');
-    this.gameoverBody.append(panel);
-
-    if (r.isBest && r.score > 0) {
-      this.gameoverBody.append(
-        el('div', { color: NEON.gold, font: `900 20px/1 'Trebuchet MS',system-ui`, animation: 'nd-pop .5s ease both' }, '🏆 신기록 달성!'),
-      );
+    const btns = el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' });
+    const canRevive = mode.reviveAllowed && !this.reviveUsed && d.coins >= REVIVE_COST;
+    if (mode.reviveAllowed) {
+      const revive = button(`💖 부활 ${coinStr(REVIVE_COST)}`, () => {
+        if (this.reviveUsed || !this.save.spend(REVIVE_COST)) return;
+        this.reviveUsed = true;
+        this.game.revive();
+      }, 'pink');
+      revive.disabled = !canRevive;
+      btns.append(revive);
+    } else {
+      btns.append(el('div', {
+        font: '800 12px/2.8 system-ui', color: 'rgba(255,242,224,.6)', padding: '0 10px',
+      }, '💀 하드코어 — 부활 없음'));
     }
+    btns.append(button('다시 도전 ▶', () => this.startRun()), button('홈으로', () => this.toHome(), 'ghost'));
 
-    const btns = el('div', { display: 'flex', gap: '12px', marginTop: '10px', flexWrap: 'wrap', justifyContent: 'center' });
-    const canRevive = !this.reviveUsed && d.coins >= REVIVE_COST;
-    const revive = button(`💖 부활 ${coinStr(REVIVE_COST)}`, () => {
-      if (this.reviveUsed || !this.save.spend(REVIVE_COST)) return;
-      this.reviveUsed = true;
-      this.game.revive();
-    }, 'pink');
-    revive.disabled = !canRevive;
-    btns.append(revive, button('다시 도전 ▶', () => this.startRun()), button('홈으로', () => this.toHome(), 'ghost'));
-    this.gameoverBody.append(btns);
+    bottom.append(statsBar, btns);
+    this.gameoverBody.append(top, spacer, bottom);
   }
 }

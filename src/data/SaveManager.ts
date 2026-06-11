@@ -1,11 +1,20 @@
 const KEY = 'sunsetrunner.save';
 const VERSION = 2;
 
-export type GameMode = 'endless' | 'challenge';
+/** All playable game modes (endless + challenge + the special-rule arcade set). */
+export type GameMode = 'endless' | 'challenge' | 'lava' | 'rush' | 'hardcore';
 
 export interface Settings {
   muted: boolean;
   quality: 'high' | 'low';
+  /** Haptic feedback on crashes (mobile). */
+  vibrate: boolean;
+  /** Camera shake intensity. */
+  shake: 'off' | 'low' | 'high';
+  /** Show the coin-combo meter during runs. */
+  showCombo: boolean;
+  /** Show the FPS counter. */
+  showFps: boolean;
 }
 
 /** Day-key for the daily reward (YYYY-MM-DD in local time). */
@@ -34,6 +43,8 @@ export interface SaveData {
   totalTime: number; // cumulative seconds played (drives play-time mileage)
   totalMileage: number; // lifetime mileage earned (drives the journey track)
   claimedMilestones: number[]; // indices of claimed journey milestones
+  /** Best score per game mode (lava / rush / hardcore live here). */
+  bests: Partial<Record<GameMode, number>>;
   settings: Settings;
 }
 
@@ -57,7 +68,11 @@ function defaults(): SaveData {
     totalTime: 0,
     totalMileage: 0,
     claimedMilestones: [],
-    settings: { muted: false, quality: 'high' },
+    bests: {},
+    settings: {
+      muted: false, quality: 'high', vibrate: true,
+      shake: 'high', showCombo: true, showFps: false,
+    },
   };
 }
 
@@ -89,6 +104,7 @@ export class SaveManager {
             upgrades: { ...p.upgrades },
             inventory: { ...base.inventory, ...p.inventory },
             claimedAchievements: [...(p.claimedAchievements ?? [])],
+            bests: { ...p.bests },
             settings: { ...base.settings, ...p.settings },
           };
         }
@@ -134,6 +150,14 @@ export class SaveManager {
   }
 
   // ── Run results ─────────────────────────────────────────────────────────────
+  /** Best score for a mode (legacy fields are folded in). */
+  bestFor(mode: GameMode): number {
+    const b = this.d.bests[mode] ?? 0;
+    if (mode === 'endless') return Math.max(b, this.d.best);
+    if (mode === 'challenge') return Math.max(b, this.d.bestChallenge);
+    return b;
+  }
+
   /**
    * Apply a finished run. Mileage (💎) is awarded generously: a base from this
    * run's distance + coins, a **distance milestone** bonus when you beat your
@@ -158,15 +182,15 @@ export class SaveManager {
     // Base mileage — distance + coins (more generous than before).
     let mileage = Math.floor(distance / 60) + Math.floor(coins / 6) + bonusMileage;
 
+    // Per-mode best (covers all modes incl. the arcade set). The legacy
+    // best/bestChallenge fields stay in sync for old UI paths.
     let isBest = false;
-    if (mode === 'endless' && score > this.d.best) {
-      // Distance milestone: a chunky reward for a new best (further = more).
-      mileage += 10 + Math.floor(distance / 200);
-      this.d.best = score;
-      isBest = true;
-    } else if (mode === 'challenge' && score > this.d.bestChallenge) {
-      mileage += 10 + Math.floor(score / 200);
-      this.d.bestChallenge = score;
+    const prevBest = this.bestFor(mode);
+    if (score > prevBest) {
+      mileage += 10 + Math.floor(Math.max(distance, score) / 200);
+      this.d.bests[mode] = score;
+      if (mode === 'endless') this.d.best = score;
+      if (mode === 'challenge') this.d.bestChallenge = score;
       isBest = true;
     }
 
@@ -265,5 +289,18 @@ export class SaveManager {
   setQuality(q: 'high' | 'low'): void {
     this.d.settings.quality = q;
     this.save();
+  }
+  /** Patch any subset of settings (vibrate / shake / showCombo / showFps…). */
+  patchSettings(p: Partial<Settings>): void {
+    Object.assign(this.d.settings, p);
+    this.save();
+  }
+  /** Wipe the whole profile (settings menu "reset data"). */
+  wipe(): void {
+    try {
+      localStorage.removeItem(KEY);
+    } catch {
+      /* unavailable */
+    }
   }
 }
