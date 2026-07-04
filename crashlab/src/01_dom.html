@@ -1,0 +1,85 @@
+<canvas id="gl"></canvas>
+
+<div id="hud" class="screen">
+  <div class="hudTop">
+    <div id="modeWidget"></div>
+    <div class="hudSpacer"></div>
+    <button class="iconBtn" id="btnRepair" title="수리">🔧</button>
+    <button class="iconBtn" id="btnSlow" title="슬로모션">🐢</button>
+    <button class="iconBtn" id="btnCam" title="카메라">🎥</button>
+    <button class="iconBtn" id="btnReset" title="리셋">↺</button>
+    <button class="iconBtn" id="btnPause" title="일시정지">⏸</button>
+  </div>
+  <div id="dmgBox">
+    <div class="z" id="dmgF"></div><div class="z" id="dmgB"></div>
+    <div class="z" id="dmgL"></div><div class="z" id="dmgR"></div>
+  </div>
+  <div id="debugHud"></div>
+  <div id="toast"></div>
+  <div id="bigMsg"></div>
+  <div id="speedo">
+    <div id="speedVal">0<span id="gearVal">N</span></div>
+    <div class="u">KM/H</div>
+    <div id="rpmBar"><i></i></div>
+  </div>
+  <div id="ctlL">
+    <div id="steerZone"><div id="steerTrack"></div><div id="steerKnob">⇔</div></div>
+    <div id="steerBtns"><button class="padBtn" id="btnStL">◀</button><button class="padBtn" id="btnStR">▶</button></div>
+  </div>
+  <div id="ctlR">
+    <button class="padBtn" id="pedalBrake">🛑</button>
+    <button class="padBtn" id="pedalGas">▲</button>
+  </div>
+  <button class="padBtn" id="btnHB">🅿️</button>
+  <div id="ctlHint"></div>
+  <div id="crashPanel">
+    <div class="row"><span style="font-size:13px;font-weight:700;color:var(--tx2)">발사 속도</span>
+      <input type="range" id="crashSpeed" min="20" max="200" step="5" value="60">
+      <span id="crashSpeedVal">60 km/h</span></div>
+    <div class="row" style="margin-bottom:0">
+      <div class="seg" id="crashTargetSeg" style="flex:1"></div>
+      <button class="btn sm" id="btnLaunch">🚀 발사</button>
+    </div>
+  </div>
+</div>
+
+<div id="menu" class="screen on">
+  <div class="wrap">
+    <div id="menuHead">
+      <button class="iconBtn" id="btnMenuBack" style="display:none">←</button>
+      <div class="mlogo">CRASH<b>LAB</b></div>
+      <div class="crumb" id="menuCrumb"></div>
+      <div class="spacer"></div>
+      <button class="iconBtn" id="btnSettings">⚙️</button>
+    </div>
+    <div id="menuBody"></div>
+  </div>
+</div>
+
+<div id="pausePanel" class="overlayPanel"><div class="panelBox">
+  <h2>일시정지</h2>
+  <div class="stack" id="pauseBtns"></div>
+</div></div>
+
+<div id="reportPanel" class="overlayPanel"><div class="panelBox" id="reportBox"></div></div>
+<div id="resultPanel" class="overlayPanel"><div class="panelBox" id="resultBox"></div></div>
+
+<div id="editorScr" class="screen"><div class="wrap">
+  <div id="edLeft">
+    <div id="edTopBar">
+      <button class="btn sm ghost" id="edExit">← 나가기</button>
+      <input type="text" id="edName" placeholder="맵 이름" maxlength="18">
+      <button class="btn sm ghost" id="edRotate">↻ 회전</button>
+      <button class="btn sm" id="edSave">💾 저장</button>
+      <button class="btn sm" id="edTest">▶ 테스트</button>
+    </div>
+    <div id="edCanvasWrap"><canvas id="edCanvas"></canvas></div>
+  </div>
+  <div id="edSide"></div>
+</div></div>
+
+<div id="loading" class="screen on">
+  <div class="logo">CRASH<b>LAB</b><small>REAL DRIVING SANDBOX</small></div>
+  <div id="loadBar"><i></i></div>
+  <div id="loadTip">물리 엔진 예열 중…</div>
+</div>
