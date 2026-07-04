@@ -4,7 +4,7 @@
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$DIR/src"
-THREE="$DIR/vendor/three.min.js"
+THREE="$DIR/vendor/three-slim.js"  # esbuild 트리셰이킹 빌드(456KB)
 OUT="$DIR/../crashlab.html"
 {
   echo '<!DOCTYPE html>'

@@ -38,7 +38,11 @@ function applyShadows(){
 }
 
 function initRenderer(){
-  renderer=new THREE.WebGLRenderer({canvas:$("gl"),antialias:true,powerPreference:"high-performance"});
+  try{
+    renderer=new THREE.WebGLRenderer({canvas:$("gl"),antialias:true,powerPreference:"high-performance"});
+  }catch(err){
+    $("loadTip").textContent="⚠️ WebGL을 사용할 수 없습니다 — 브라우저/기기 설정을 확인해 주세요";
+    throw err;}
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.type=THREE.PCFShadowMap;
@@ -136,8 +140,14 @@ document.addEventListener("visibilitychange",()=>{
   if(document.hidden){Input.clear();if(Game.state==="play")Game.togglePause(true);}});
 addEventListener("blur",()=>Input.clear());
 
-/* global error net (안정성) */
-addEventListener("error",e=>{console.warn("caught:",e.message);});
+/* global error net (안정성) — 로딩 중이면 화면에 원인 표시 */
+addEventListener("error",e=>{
+  console.warn("caught:",e.message);
+  try{
+    const ld=$("loading");
+    if(ld&&!ld.classList.contains("off"))
+      $("loadTip").textContent="⚠️ "+(e.message||"오류")+(e.lineno?" (line "+e.lineno+")":"");
+  }catch(_){}});
 addEventListener("unhandledrejection",e=>{console.warn("caught rejection");e.preventDefault();});
 
 /* boot */
@@ -160,5 +170,12 @@ function boot(){
     i++;setTimeout(run,60);};
   run();
 }
+/* 디버깅·테스트용 전역 노출 (미니파이 IIFE 대비) */
+Object.assign(window,{$,Game,MAPS,CARS,Editor,Store,FPS,UI,Input,Settings,Sfx,CarVisual,Vehicle,
+  applyAssistPreset,buildCustomMap,toast,SURF_ID,DEG});
+Object.defineProperty(window,"scene",{get:()=>scene});
+Object.defineProperty(window,"camera",{get:()=>camera});
+Object.defineProperty(window,"renderer",{get:()=>renderer});
+window._vA=_vA;
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
 else boot();

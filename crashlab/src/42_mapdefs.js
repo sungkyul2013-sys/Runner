@@ -30,6 +30,8 @@ const MAPS=[
   mb.box(30,-0,120,10,1,9,0xc7742f,{pitch:-18*DEG,roll:14*DEG,mu:1,tag:"kick"});
   // slalom cones
   for(let k=0;k<8;k++)mb.prop("cone",10+((k%2)*8-4),-60-k*22);
+  // 과속방지턱 시험 구간
+  for(let k=0;k<5;k++)mb.bump(-20,-60-k*16,0,11);
   // skidpad R30 marking
   for(let a=0;a<Math.PI*2;a+=.05){
     mb.stamp(150+Math.cos(a)*30,-120+Math.sin(a)*30,1.6,(i,j)=>w.setS(i,j,S_CRB));}
@@ -83,6 +85,11 @@ const MAPS=[
   for(let k=-2;k<=2;k++){
     mb.prop("lamp",12,k*pitch+30,Math.PI);mb.prop("lamp",-12,k*pitch-30,0);
     mb.prop("sign",k*pitch+12,12,0);mb.prop("bench",k*pitch-14,-14,Math.PI/2);}
+  // 과속방지턱: 로터리 진입로 4곳 + 스쿨존 2곳
+  mb.bump(34,0,Math.PI/2,14);mb.bump(-34,0,Math.PI/2,14);
+  mb.bump(0,34,0,14);mb.bump(0,-34,0,14);
+  mb.bump(96,44,0,14);mb.bump(96,-44,0,14);
+  mb.bump(-52,-96,Math.PI/2,14);mb.bump(52,-96,Math.PI/2,14);
   // city loop route (time attack / race)
   const loop=samplePath([[-96,-192],[96,-192],[192,-96],[192,96],[96,192],[-96,192],[-192,96],[-192,-96]],true,160);
   w.checkpoints=pathCheckpoints(loop,20,15);
@@ -202,6 +209,61 @@ const MAPS=[
   return mb.finalize(this);}},
 ];
 
+/* ---------- 7. 그랜드 시티 (오픈월드) ---------- */
+MAPS.push(
+{id:"grand",name:"그랜드 시티",icon:"🌆",desc:"1.4km² 오픈월드 — 도심·순환고속도로·언덕·호수·공업지구·방지턱",
+ modes:["free","time","race","drift"],
+ build(){
+  const mb=new MapBuilder(1200,224),w=mb.world;
+  mb.fill((x,z)=>{
+    let h=1.2*Math.sin(x*.008)*Math.cos(z*.009);
+    const hd=Math.hypot(x-380,z+380);h+=22*Math.exp(-hd*hd/64800);   // 언덕(북동)
+    const h2=Math.hypot(x-260,z+170);h+=9*Math.exp(-h2*h2/28800);
+    const ld=Math.hypot(x+350,z-300);                                 // 호수(북서)
+    let s=S_GRS;
+    if(ld<95){h=Math.min(h,-.35);s=S_WET;}
+    else if(ld<115){h*=.3;s=S_SND;}
+    return[h,s];});
+  // 도심 격자 (pitch 90, 5x5)
+  for(let k=-2;k<=2;k++){
+    mb.paintPath([{x:-185,y:0,z:k*90},{x:185,y:0,z:k*90}],14,S_ASP,true);
+    mb.paintPath([{x:k*90,y:0,z:-185},{x:k*90,y:0,z:185}],14,S_ASP,true);}
+  // 순환 고속도로 (r≈420) — 언덕을 절개하며 통과
+  const ring=samplePath([[420,0],[300,300],[0,420],[-300,300],[-420,0],[-300,-300],[0,-420],[297,-297]],true,360);
+  mb.paintPath(ring,19,S_ASP,true);
+  railAlong(mb,ring,19,0xb9c2cc);
+  // 연결로 4방향
+  for(const[a,b]of[[[185,0],[418,0]],[[-185,0],[-418,0]],[[0,185],[0,418]],[[0,-185],[0,-418]]])
+    mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],14,S_ASP,true);
+  // 건물
+  let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
+  const bCols=[0x5b6a7f,0x74604f,0x4d5a68,0x6d7787,0x836a55];
+  for(let bx=-2;bx<2;bx++)for(let bz=-2;bz<2;bz++){
+    const cx=bx*90+45,cz=bz*90+45;
+    for(let k=0;k<2;k++){
+      const bw=20+rnd()*22,bd=20+rnd()*22,bh=10+rnd()*38;
+      mb.box(cx+(rnd()-.5)*(62-bw),bh/2,cz+(rnd()-.5)*(62-bd),bw,bh,bd,bCols[(rnd()*5)|0],{mu:.5,tag:"bld"});}}
+  // 교외 주택(남서) · 공업지구(남동)
+  for(let k=0;k<7;k++){
+    const hx2=-330+((k%3)*36),hz2=-260-((k/3)|0)*40;
+    mb.box(hx2,w.height(hx2,hz2)+2.4,hz2,12,4.8,10,0xc7b299,{yaw:rnd(),mu:.5,tag:"house"});
+    mb.box(hx2,w.height(hx2,hz2)+5.6,hz2,13,2,11,0x8a4f3d,{yaw:0,mu:.5,tag:"roof"});}
+  for(let k=0;k<4;k++)
+    mb.box(300+k*46,w.height(300+k*46,330)+5,330,38,10,26,0x77808c,{mu:.5,tag:"warehouse"});
+  for(let k=0;k<6;k++)mb.prop("barrel",310+k*5,300);
+  // 방지턱: 도심 스쿨존
+  for(const[bx,bz,yaw]of[[45,0,Math.PI/2],[-45,0,Math.PI/2],[0,45,0],[0,-45,0],[90,50,0],[-90,-50,0]])
+    mb.bump(bx,bz,yaw,13);
+  // 언덕 비포장길
+  const dirt=samplePath([[220,-140],[300,-230],[380,-330],[430,-390]],false,80);
+  for(const p of dirt)mb.stamp(p.x,p.z,6,(i,j)=>w.setS(i,j,SURF_ID.gravel));
+  // 가로등·표지판
+  for(let k=-1;k<=1;k++){mb.prop("lamp",10,k*90+25,Math.PI);mb.prop("sign",k*90+10,10,0);}
+  w.checkpoints=pathCheckpoints(ring,24,18);
+  w.waypoints=pathWaypoints(ring,true,50);
+  w.spawn={x:0,z:-60,yaw:0};
+  return mb.finalize(this);}});
+
 /* ---------- custom map from editor tiles ---------- */
 const ED_TILES=[
   {id:"road", name:"직선로", col:"#4a5058"},
@@ -209,6 +271,7 @@ const ED_TILES=[
   {id:"cross",name:"교차로", col:"#3e444d"},
   {id:"ramp", name:"램프",   col:"#c7742f"},
   {id:"wall", name:"벽",     col:"#9aa2ab"},
+  {id:"bump", name:"방지턱", col:"#e8b93c"},
   {id:"cone", name:"콘",     col:"#ff7518"},
   {id:"check",name:"체크포인트",col:"#3ddc84"},
   {id:"start",name:"출발점", col:"#ffd23e"},
@@ -237,6 +300,7 @@ function buildCustomMap(data){
         mb.paintPath(p,12,S_ASP,false);break;}
       case"ramp":mb.ramp(x,z,rot,20,14,10);break;
       case"wall":mb.box(x,1.2,z,TS*.9,2.4,1.2,0x9aa2ab,{yaw:rot,mu:.6,tag:"wall"});break;
+      case"bump":mb.bump(x,z,rot,12);break;
       case"cone":mb.prop("cone",x,z);break;
       case"check":cps.push({x,z,r:12,ord:t.ord||0});break;
       case"start":w.spawn={x,z,yaw:rot+Math.PI};break;}}

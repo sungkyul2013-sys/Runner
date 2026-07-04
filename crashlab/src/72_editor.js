@@ -51,6 +51,9 @@ const Editor=(()=>{
         ctx2.beginPath();ctx2.lineWidth=c*.6;ctx2.strokeStyle=def.col;
         ctx2.arc(c/2,-c/2,c/2,Math.PI/2,Math.PI);ctx2.stroke();}
       else if(t.t==="wall"){ctx2.fillRect(-c*.45,-c*.12,c*.9,c*.24);}
+      else if(t.t==="bump"){ctx2.fillRect(-c*.4,-c*.08,c*.8,c*.16);
+        ctx2.fillStyle="#23262c";
+        for(let k=-1;k<=1;k+=2)ctx2.fillRect(k*c*.2-c*.05,-c*.08,c*.1,c*.16);}
       else if(t.t==="ramp"){ctx2.beginPath();ctx2.moveTo(-c*.35,-c*.35);ctx2.lineTo(c*.35,-c*.35);
         ctx2.lineTo(0,c*.4);ctx2.closePath();ctx2.fill();}
       else if(t.t==="cone"){ctx2.beginPath();ctx2.arc(0,0,c*.16,0,7);ctx2.fill();}

@@ -56,6 +56,16 @@ class MapBuilder{
     for(let i=0;i<p.length;i++){this.mergePos.push(p[i]);this.mergeNor.push(nr[i]);}
     for(let i=0;i<p.length/3;i++)this.mergeCol.push(c.r,c.g,c.b);
     g.dispose();}
+  bump(x,z,yaw,width){ // 과속방지턱: 9cm 낮은 사다리꼴(OBB) + 노랑/검정 표시
+    const y=this.world.height(x,z);
+    this.box(x,y+.045,z,width,.09,.85,0xe8b93c,{yaw,mu:1,tag:"bump"});
+    // black stripes (visual only)
+    const n=Math.max(2,Math.round(width/1.6));
+    for(let i=0;i<n;i++){
+      const t=(i+.5)/n-.5;
+      this.visBox(x+Math.cos(yaw)*t*width,y+.095,z-Math.sin(yaw)*t*width,
+        width/n*.5,.012,.86,0x23262c,{yaw});}
+    return this;}
   ramp(x,z,yaw,pitchDeg,len,wid,color){ // ramp whose surface rises along +local z
     const pitch=-pitchDeg*DEG,h=.5;
     const rise=Math.sin(-pitch)*len;

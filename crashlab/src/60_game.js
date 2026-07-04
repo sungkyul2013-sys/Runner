@@ -288,6 +288,10 @@ const Game={
       $("btnReset").classList.toggle("blink",v.flipT>3);
     }else{Sfx.engine(0,0,false);Sfx.skid(0);Sfx.wind(0);}
     this.cam.update(dt,this.veh,this.world);
+    // 속도감 FOV
+    const tgtFov=66+clamp(this.veh.speed-18,0,60)*.16;
+    if(Math.abs(camera.fov-tgtFov)>.05){
+      camera.fov+=(tgtFov-camera.fov)*Math.min(1,dt*3);camera.updateProjectionMatrix();}
     this.vis.sync(this.veh,this.shakeT);
     for(const a of this.ais)a.vis.sync(a.veh,0);
     if(this.shakeT>0)this.shakeT-=dt;

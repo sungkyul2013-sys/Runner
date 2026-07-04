@@ -114,7 +114,7 @@ const UI=(()=>{
       seg2("어시스트 프리셋","assist",[["casual","캐주얼"],["sport","스포츠"],["sim","시뮬"]],S.assist)+
       tgl2("ABS","absOn",S.absOn)+tgl2("TCS (트랙션 컨트롤)","tcsOn",S.tcsOn)+
       tgl2("자동 카운터스티어","ctrSteer",S.ctrSteer)+tgl2("저속 안정화","stab",S.stab)+
-      seg2("조향 방식","steerMode",[["slider","슬라이더"],["buttons","버튼"],["tilt","틸트"]],S.steerMode)+
+      seg2("조향 방식","steerMode",[["slider","슬라이더"],["wheel","휠"],["buttons","버튼"],["tilt","틸트"]],S.steerMode)+
       '<div class="optRow"><div class="lb">조향 감도 <small>'+S.sensitivity.toFixed(2)+'</small></div>'+
       '<div class="ct"><input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="'+S.sensitivity+'"></div></div>'+
       tgl2("사운드","sound",S.sound)+

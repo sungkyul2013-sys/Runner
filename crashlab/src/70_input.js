@@ -6,6 +6,8 @@ const Input=(()=>{
   const st={steer:0,gas:0,brake:0,hb:false};
   const keys={};
   let steerPtr=null,tiltVal=0;
+  let whPtr=null,whAngle=0,whLast=0;      // steering wheel state (rad)
+  const WH_MAX=2.4;                        // 잠금까지 ±137°
   const camPtrs=new Map();let pinchD=0;
 
   function hookBtn(el,on,off){
@@ -33,6 +35,20 @@ const Input=(()=>{
     sz.addEventListener("pointermove",e=>{if(e.pointerId===steerPtr)updSteer(e);});
     const sEnd=e=>{if(e.pointerId===steerPtr){steerPtr=null;st.steer=0;}};
     sz.addEventListener("pointerup",sEnd);sz.addEventListener("pointercancel",sEnd);
+    // steering wheel
+    const sw=$("steerWheel");
+    const whAng=e=>{
+      const r=sw.getBoundingClientRect();
+      return Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2));};
+    sw.addEventListener("pointerdown",e=>{e.preventDefault();Sfx.resume();
+      whPtr=e.pointerId;sw.setPointerCapture(e.pointerId);whLast=whAng(e);});
+    sw.addEventListener("pointermove",e=>{
+      if(e.pointerId!==whPtr)return;
+      const a=whAng(e);let d=a-whLast;
+      while(d>Math.PI)d-=Math.PI*2;while(d<-Math.PI)d+=Math.PI*2;
+      whAngle=clamp(whAngle+d,-WH_MAX,WH_MAX);whLast=a;});
+    const whEnd=e=>{if(e.pointerId===whPtr)whPtr=null;};
+    sw.addEventListener("pointerup",whEnd);sw.addEventListener("pointercancel",whEnd);
     // camera gestures on canvas
     const gl=$("gl");
     gl.addEventListener("pointerdown",e=>{
@@ -71,6 +87,7 @@ const Input=(()=>{
   function applySteerModeUI(){
     $("steerZone").style.display=Settings.steerMode==="slider"?"":"none";
     $("steerBtns").style.display=Settings.steerMode==="buttons"?"flex":"none";
+    $("steerWheel").style.display=Settings.steerMode==="wheel"?"block":"none";
     $("ctlL").style.opacity=Settings.steerMode==="tilt"?"0":"1";
     $("ctlL").style.pointerEvents=Settings.steerMode==="tilt"?"none":"auto";
   }
@@ -80,25 +97,29 @@ const Input=(()=>{
         DeviceOrientationEvent.requestPermission().catch(()=>{});
     }catch(e){}
   }
-  function clear(){st.steer=0;st.gas=0;st.brake=0;st.hb=false;steerPtr=null;camPtrs.clear();
+  function clear(){st.steer=0;st.gas=0;st.brake=0;st.hb=false;steerPtr=null;whPtr=null;whAngle=0;camPtrs.clear();
     for(const k in keys)keys[k]=false;
     document.querySelectorAll(".padBtn.press").forEach(b=>b.classList.remove("press"));}
   function read(){
     let steer=st.steer,gas=st.gas,brake=st.brake,hb=st.hb;
     if(Settings.steerMode==="tilt")steer=tiltVal;
+    if(Settings.steerMode==="wheel")steer=clamp(whAngle/WH_MAX,-1,1);
     if(keys.ArrowLeft||keys.KeyA)steer=-1;
     if(keys.ArrowRight||keys.KeyD)steer=1;
     if(keys.ArrowUp||keys.KeyW)gas=1;
     if(keys.ArrowDown||keys.KeyS)brake=1;
     if(keys.Space)hb=true;
     return{steer:steer*Settings.sensitivity,gas,brake,hb};}
-  // steering smoothing for knob visual
+  // steering smoothing for knob/wheel visuals
   let knobV=0;
   function updateKnob(){
     const t=read().steer;
     knobV+=(clamp(t,-1,1)-knobV)*.3;
     const k=$("steerKnob");
-    if(k&&Settings.steerMode==="slider")k.style.left=(50+knobV*32)+"%";}
+    if(k&&Settings.steerMode==="slider")k.style.left=(50+knobV*32)+"%";
+    if(Settings.steerMode==="wheel"){
+      if(whPtr===null)whAngle*=.82;                  // 자동 복원
+      $("steerWheelFace").style.transform="rotate("+(whAngle*57.3)+"deg)";}}
   function applyTo(v){
     const r=read();
     v.steerIn=r.steer;

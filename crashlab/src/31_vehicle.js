@@ -105,6 +105,9 @@ class Vehicle{
       const curve=.62+.38*Math.sin(Math.PI*clamp((t-.02)/.98,0,1));
       const cutoff=(this.gear===sp.gears.length&&t>.985)?0:1;
       engF=eng.maxT*curve*this.throttle*ratio*.85/r*this.powerMul*cutoff;}
+    else if(this.driveMode==="D"&&this.throttle===0&&Math.abs(vFwd)>1.2){
+      engF=-sign(vFwd)*eng.maxT*ratio*.07/r*(this.rpm/eng.redline); // 엔진 브레이크
+    }
     else if(this.driveMode==="R"&&this.throttle>0){
       const rvCap=clamp(1+vFwd/8.5,0,1); // vFwd negative when reversing
       engF=-eng.maxT*sp.gears[0]*sp.final*.55/r*this.throttle*this.powerMul*rvCap;
