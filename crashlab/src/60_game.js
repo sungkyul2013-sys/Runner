@@ -58,6 +58,7 @@ const Game={
     applyTimeOfDay(o.tod);
     this.cam.mode="chase";this.cam.dist=spec.id==="titan"?10:7;this.cam.orbitYaw=0;
     this.cam.pos.set(sp.x-Math.sin(sp.yaw)*8,this.world.height(sp.x,sp.z)+4,sp.z-Math.cos(sp.yaw)*8);
+    if(typeof Showroom!=="undefined")Showroom.leave();
     this.state="play";this.paused=false;this.acc=0;this.slowmoT=0;this.manualSlow=false;
     $("btnSlow").classList.remove("on");
     $("menu").classList.remove("on");$("hud").classList.add("on");$("editorScr").classList.remove("on");
@@ -79,6 +80,7 @@ const Game={
     $("reportPanel").classList.remove("on");$("resultPanel").classList.remove("on");
     $("menu").classList.add("on");
     Sfx.engine(0,0,false);Sfx.skid(0);Sfx.wind(0);
+    if(typeof Showroom!=="undefined")Showroom.enter();
     UI.show("home");},
 
   /* ---------- crash test ---------- */

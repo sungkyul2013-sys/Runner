@@ -33,7 +33,10 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #loadTip{color:var(--tx2);font-size:13px}
 
 /* ---------- menu ---------- */
-#menu{background:radial-gradient(130% 110% at 50% -10%,#182338 0%,#0b0e13 62%);z-index:20;overflow:hidden}
+#menu{z-index:20;overflow:hidden;
+  background:linear-gradient(97deg,rgba(9,12,18,.96) 0%,rgba(9,12,18,.9) 40%,rgba(9,12,18,.42) 68%,rgba(9,12,18,.08) 100%)}
+@media (orientation:portrait){#menu{background:linear-gradient(180deg,rgba(9,12,18,.94) 0 52%,rgba(9,12,18,.25))}}
+#menuBody{max-width:660px}
 #menu .wrap{position:absolute;inset:0;padding:calc(var(--sat) + 14px) calc(var(--sar) + 18px) calc(var(--sab) + 14px) calc(var(--sal) + 18px);
   display:flex;flex-direction:column;overflow:hidden}
 #menuHead{display:flex;align-items:center;gap:12px;flex:0 0 auto;padding-bottom:10px}

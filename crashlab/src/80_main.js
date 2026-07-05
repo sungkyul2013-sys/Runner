@@ -126,9 +126,9 @@ function mainLoop(t){
         Game.veh.body.pos.y+TOD[Game.opts.tod].sunPos[1]*.5,
         Game.veh.body.pos.z+TOD[Game.opts.tod].sunPos[2]*.5);
       renderer.render(scene,camera);
-    }else if(Game.state==="menu"&&Game.world){
-      // idle orbit behind menu
-      renderer.render(scene,camera);}
+    }else if(Game.state==="menu"){
+      if(Showroom.active)Showroom.update(dt);
+      if(Showroom.active||Game.world)renderer.render(scene,camera);}
   }catch(err){
     console.error(err);
     if(!mainLoop._err){mainLoop._err=true;toast("⚠️ 오류 복구 중…");
@@ -174,6 +174,63 @@ addEventListener("error",e=>{
   }catch(_){}});
 addEventListener("unhandledrejection",e=>{console.warn("caught rejection");e.preventDefault();});
 
+/* ============ 3D 쇼룸 (메뉴 배경 라이브 씬) ============ */
+const Showroom={
+  group:null,vis:null,idx:-1,color:-1,t:0,active:false,Y:600,
+  ensure(){
+    if(this.group)return;
+    this.group=new THREE.Group();
+    this.group.position.y=this.Y;
+    const plat=new THREE.Mesh(new THREE.CylinderGeometry(4.6,4.9,.26,40),
+      new THREE.MeshPhongMaterial({color:0x171b22,shininess:90,specular:0x35404e}));
+    plat.position.y=-.13;plat.receiveShadow=true;
+    this.group.add(plat);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(4.75,.05,8,48),
+      new THREE.MeshBasicMaterial({color:0xff7a1a}));
+    ring.rotation.x=Math.PI/2;ring.position.y=.02;
+    this.group.add(ring);
+    const floor=new THREE.Mesh(new THREE.CylinderGeometry(30,30,.1,32),
+      new THREE.MeshPhongMaterial({color:0x0d1017,shininess:30}));
+    floor.position.y=-.3;floor.receiveShadow=true;
+    this.group.add(floor);
+    this.spot=new THREE.SpotLight(0xfff2dd,4.2,70,.75,.45,1);
+    this.spot.position.set(6,12,6);this.spot.target=plat;
+    this.group.add(this.spot);
+    this.carRoot=new THREE.Group();
+    this.group.add(this.carRoot);},
+  show(idx,color){
+    this.ensure();
+    if(idx===this.idx&&color===this.color&&this.vis)return;
+    if(this.vis){this.vis.dispose();this.vis=null;}
+    this.idx=idx;this.color=color;
+    const spec=CARS[idx];
+    this.vis=new CarVisual(spec,spec.colors[color%spec.colors.length]);
+    for(let i=0;i<4;i++){
+      const m=this.vis.wheelMeshes[i];
+      m.position.set((i%2?1:-1)*(spec.wheels.trackVis||spec.wheels.track),
+        spec.modelWheelY!==undefined?spec.modelWheelY:spec.wheels.y,
+        i<2?spec.wheels.front:-spec.wheels.rear);}
+    const groundY=(spec.modelWheelY!==undefined?spec.modelWheelY:spec.wheels.y)-spec.wheels.radius;
+    this.vis.group.position.y=-groundY;
+    this.carRoot.clear();this.carRoot.add(this.vis.group);},
+  enter(){
+    this.ensure();
+    if(!this.group.parent)scene.add(this.group);
+    this.active=true;
+    if(this.idx<0){
+      const last=Store.get("lastPlay",null);
+      this.show(clamp(last?.carIdx??1,0,CARS.length-1),last?.color??0);}
+    applyTimeOfDay("sunset");},
+  leave(){this.active=false;if(this.group?.parent)scene.remove(this.group);},
+  update(dt){
+    this.t+=dt;
+    this.carRoot.rotation.y=this.t*.45;
+    const wide=innerWidth>innerHeight;
+    camera.position.set(-2.7,this.Y+2.0,6.6);
+    camera.lookAt(wide?-2.15:0,this.Y+(wide?.75:1.7),0);   // 차가 화면 우측(가로)/하단(세로)에 오도록
+    skyDome.position.set(camera.position.x,0,camera.position.z);},
+};
+
 /* 차량 3D 프리뷰 썸네일 (차량 선택 카드용) */
 const CARTHUMBS={};
 function makeCarThumbs(){
@@ -214,6 +271,7 @@ function boot(){
     ["에디터 준비…",()=>Editor.init()],
     ["메뉴 구성…",()=>{UI.init();$("debugHud").classList.toggle("on",Settings.debug);}],
     ["완료!",()=>{
+      Showroom.enter();
       $("loading").classList.add("off");$("loading").classList.remove("on");
       requestAnimationFrame(mainLoop);}]];
   let i=0;

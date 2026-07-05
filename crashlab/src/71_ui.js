@@ -66,7 +66,9 @@ const UI=(()=>{
       const ci=e.target.dataset?.c;
       pickCar=+c.dataset.i;
       if(ci!==undefined)pickColor=+ci;
+      if(typeof Showroom!=="undefined")Showroom.show(pickCar,pickColor);
       Sfx.click();car();});
+    if(typeof Showroom!=="undefined")Showroom.show(pickCar,pickColor);
     $("carNext").onclick=()=>{Sfx.click();show("map");};
   }
   function stat(nm,v){return '<div class="statRow"><em>'+nm+'</em><div class="bar"><i style="width:'+v+'%"></i></div></div>';}

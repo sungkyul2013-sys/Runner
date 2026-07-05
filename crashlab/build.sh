@@ -18,7 +18,7 @@ OUT_FULL="$DIR/crashlab.html"
   cat "$THREE"
   echo '</script>'
   echo '<script>'
-  cat "$SRC/15_baked.js" "$SRC/16_assets.js" "$SRC/20_core.js" "$SRC/30_physics.js" "$SRC/31_vehicle.js" "$SRC/40_cars.js" \
+  cat "$SRC/15_baked.js" "$SRC/16_assets.js" "$SRC/20_core.js" "$SRC/30_physics.js" "$SRC/31_vehicle.js" "$SRC/40_cars.js" "$SRC/45_softbody.js" \
       "$SRC/41_maps.js" "$SRC/42_mapdefs.js" "$SRC/50_fx.js" "$SRC/60_game.js" \
       "$SRC/70_input.js" "$SRC/71_ui.js" "$SRC/72_editor.js" "$SRC/80_main.js"
   echo '</script>'
@@ -27,7 +27,7 @@ OUT_FULL="$DIR/crashlab.html"
 } > "$OUT_FULL"
 
 # artifact variant: minified game code, no doctype/html/head/body wrappers
-cat "$SRC/15_baked.js" "$SRC/16_assets.js" "$SRC/20_core.js" "$SRC/30_physics.js" "$SRC/31_vehicle.js" "$SRC/40_cars.js" \
+cat "$SRC/15_baked.js" "$SRC/16_assets.js" "$SRC/20_core.js" "$SRC/30_physics.js" "$SRC/31_vehicle.js" "$SRC/40_cars.js" "$SRC/45_softbody.js" \
     "$SRC/41_maps.js" "$SRC/42_mapdefs.js" "$SRC/50_fx.js" "$SRC/60_game.js" \
     "$SRC/70_input.js" "$SRC/71_ui.js" "$SRC/72_editor.js" "$SRC/80_main.js" > "$DIR/game.cat.js"
 (npx esbuild "$DIR/game.cat.js" --minify --format=iife --charset=utf8 --outfile="$DIR/game.min.js" --log-level=error)

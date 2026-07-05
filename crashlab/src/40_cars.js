@@ -172,6 +172,7 @@ function stationLerp(st,z,key){
 }
 
 const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:70,specular:0x555555});
+const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8});
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222});
 let _wheelGeoCache={};
 function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부)
@@ -252,9 +253,13 @@ class CarVisual{
   /* ===== 외부(베이크) 모델 차량 ===== */
   buildBaked(spec,colorHex){
     const e=this.baked,{hx,hy,hz}=spec.body;
-    this.bodyMesh=new THREE.Mesh(Assets.geo(e,{scale:spec.modelScale,sy:spec.squashY||1,
-      cx:spec.modelCx,cy:spec.modelCy,cz:spec.modelCz,paint:new THREE.Color(colorHex)}),MAT_CAR);
+    const split=Assets.geoSplit(e,{scale:spec.modelScale,sy:spec.squashY||1,
+      cx:spec.modelCx,cy:spec.modelCy,cz:spec.modelCz,paint:new THREE.Color(colorHex)});
+    this.bodyMesh=new THREE.Mesh(split.main,MAT_CAR);
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
+    if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,MAT_GLASS);
+      this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
+    this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh]);
     const bumpMat=new THREE.MeshPhongMaterial({color:0x191d24,flatShading:true,shininess:18});
     const by=Math.max(spec.modelWheelY,-hy*.62);
     this.parts={
@@ -327,16 +332,13 @@ class CarVisual{
       const m=new THREE.Mesh(wg,MAT_DETAIL);
       const grp=new THREE.Group();grp.add(m);grp.add(new THREE.Mesh(bg,MAT_DETAIL));
       this.group.add(grp);this.wheelMeshes.push(grp);}
+    this.lattice=new SoftLattice(spec,[this.bodyMesh,this.detailMesh]);
   }
   applyImpact(imp,veh){
     const dv=imp.dv;
     const d=Math.min(.48,.016*dv),R=.62+.024*dv;
-    // 차체는 스프링백 큐로 (슬라임처럼 눌렸다가 일부 복원)
-    if(!this.deforms)this.deforms=[];
-    this.deforms.push({lp:imp.lp.clone(),ln:imp.ln.clone(),d,R,t:0,applied:0});
-    if(this.deforms.length>10){const old=this.deforms.shift();
-      this.defVol+=deformGeo(this.bodyMesh,old.lp,old.ln,old.d*(1-old.applied),old.R,.55);}
-    if(this.detailMesh)deformGeo(this.detailMesh,imp.lp,imp.ln,d*.8,R,.4);
+    // 차체: 노드-빔 소프트바디에 충격 주입 (소성 변형은 격자가 계산)
+    this.lattice.impact(imp.lp,imp.ln,dv);
     for(const k in this.parts){
       const p=this.parts[k];
       if(this.detached[k])continue;
@@ -346,20 +348,8 @@ class CarVisual{
         this.partHp[k]-=dv*.02*(k==="fb"||k==="rb"?1.6:(k==="ml"||k==="mr")?3:1);
         if(this.partHp[k]<=0&&veh.damageOn)this.detachPart(k,veh,imp);}}
   }
-  updateDeforms(dt){ // 과변형(1.35×) 후 0.3s에 걸쳐 스프링백 → 잔류 1.0×
-    if(!this.deforms||!this.deforms.length)return;
-    for(let i=this.deforms.length-1;i>=0;i--){
-      const q=this.deforms[i];
-      q.t+=dt;
-      const p=q.t<.07?(q.t/.07)*1.35:Math.max(1,1.35-((q.t-.07)/.3)*.35);
-      const delta=p-q.applied;
-      if(Math.abs(delta)>.02){
-        this.defVol+=deformGeo(this.bodyMesh,q.lp,q.ln,q.d*delta,q.R,.55);
-        q.applied=p;}
-      if(q.t>.42){
-        if(Math.abs(1-q.applied)>.01)
-          this.defVol+=deformGeo(this.bodyMesh,q.lp,q.ln,q.d*(1-q.applied),q.R,.55);
-        this.deforms.splice(i,1);}}
+  updateDeforms(dt){ // 소프트바디 격자 스텝 (충격 후 ~1초간 활성)
+    if(this.lattice.update(dt))this.defVol=this.lattice.totalDisp()*1.3;
   }
   detachPart(k,veh,imp){
     if(this.detached[k])return;
@@ -367,9 +357,7 @@ class CarVisual{
     Fx.addDebris(p,veh,imp);
   }
   repair(){
-    restoreGeo(this.bodyMesh);
-    if(this.detailMesh)restoreGeo(this.detailMesh);
-    if(this.deforms)this.deforms.length=0;
+    this.lattice.reset();
     this.defVol=0;
     for(const k in this.parts){
       const p=this.parts[k];restoreGeo(p);this.partHp[k]=this.hp0[k];
@@ -395,6 +383,7 @@ class CarVisual{
   dispose(){
     this.group.parent&&this.group.parent.remove(this.group);
     this.bodyMesh.geometry.dispose();
+    if(this.glassMesh)this.glassMesh.geometry.dispose();
     if(this.detailMesh)this.detailMesh.geometry.dispose();
     if(this.lightsMesh)this.lightsMesh.geometry.dispose();
     for(const k in this.parts)this.parts[k].geometry.dispose();

@@ -82,7 +82,7 @@ function bakeNodes(g,mats,filter,opts){
         rgb=pbr.baseColorFactor.slice(0,3).map(v=>Math.round(v*255));} // linear 저장 (r152 ColorManagement)
       const nm=(mat.name||"").toLowerCase();
       if(nm.startsWith("paint"))isPaint=1;
-      if(nm==="window")rgb=[24,32,44];
+      if(nm==="window"){rgb=[24,32,44];isPaint|=2;} // bit2 = glass
       const count=I?I.length:P.count;
       for(let k=0;k<count;k++){
         const vi=I?I[k]:k;
@@ -141,7 +141,7 @@ function subdivide(soup){ // tri → 4 (부드러운 변형용)
                 [m01,v1,m12,nm01,n1,nm12,c1,c1,c1],
                 [m20,m12,v2,nm20,nm12,n2,c2,c2,c2],
                 [m01,m12,m20,nm01,nm12,nm20,c0,c1,c2]];
-    const mk=Math.max(mask[i0],mask[i1],mask[i2]);
+    const mk=mask[i0]|mask[i1]|mask[i2];
     for(const[a,b,c,na,nb,nc,ca,cb,cc]of tris){
       P.push(...a,...b,...c);N.push(...na,...nb,...nc);
       C.push(...ca,...cb,...cc);M.push(mk,mk,mk);}}
