@@ -44,6 +44,7 @@ const MAPS=[
   tower(160,120,10);tower(220,140,20);
   // barrels near barrier
   for(let k=0;k<4;k++)mb.prop("barrel",-40+k*3,200);
+  for(let k=0;k<8;k++)mb.baked(k%2?"trees":"treesTall",-262+k*70,262,11,k,{});
   w.spawn={x:-80,z:-220,yaw:0};
   return mb.finalize(this);}},
 
@@ -60,20 +61,31 @@ const MAPS=[
     const walk=!road&&(rx<11||rz<11);
     if(Math.abs(x)>half||Math.abs(z)>half)return[0,S_GRS];
     return[0,road?S_ASP:walk?S_WLK:S_GRS];});
-  // roundabout at center
+  // 차선 (도로 중앙 점선)
+  for(let j=0;j<=w.res;j++)for(let i=0;i<=w.res;i++){
+    const x=i*w.cell-320,z=j*w.cell-320;
+    if(Math.abs(x)>half||Math.abs(z)>half)continue;
+    if(w.sMap[w.idx(i,j)]!==S_ASP)continue;
+    const rx=Math.abs(((x%pitch)+pitch*1.5)%pitch-pitch*.5),rz=Math.abs(((z%pitch)+pitch*1.5)%pitch-pitch*.5);
+    if((rx<.9&&((z%9+9)%9)<4&&rz>10)||(rz<.9&&((x%9+9)%9)<4&&rx>10))w.setS(i,j,SURF_ID.lane);}
+  // roundabout at center + 분수
   mb.stamp(0,0,22,(i,j,d)=>{w.setS(i,j,S_ASP);});
-  mb.stamp(0,0,9,(i,j,d)=>{w.setS(i,j,S_GRS);w.hMap[w.idx(i,j)]=Math.max(0,(1-d/9)*1.4);});
-  // buildings in blocks
+  mb.stamp(0,0,9,(i,j,d)=>{w.setS(i,j,S_WLK);});
+  mb.baked("fountain",0,0,15,0,{y:0,collide:true,shrink:.75});
+  // 베이크 건물 (Kenney City Builder Kit)
   let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
-  const bCols=[0x5b6a7f,0x74604f,0x4d5a68,0x6d7787,0x836a55,0x596273];
+  const BLD=["bldA","bldB","bldC","bldD","garage"];
   for(let bx=-2.5;bx<=2.5;bx++)for(let bz=-2.5;bz<=2.5;bz++){
     if(Math.abs(bx)<1&&Math.abs(bz)<1)continue;
     const cx=bx*pitch,cz=bz*pitch;
     const n=1+((rnd()*2)|0);
     for(let k=0;k<n;k++){
-      const bw=22+rnd()*26,bd=22+rnd()*26,bh=12+rnd()*34;
-      const ox=cx+(rnd()-.5)*(70-bw),oz=cz+(rnd()-.5)*(70-bd);
-      mb.box(ox,bh/2,oz,bw,bh,bd,bCols[(rnd()*6)|0],{mu:.5,tag:"bld"});}}
+      const nm=BLD[(rnd()*5)|0];
+      const sc=22+rnd()*16;
+      const ox=cx+(rnd()-.5)*(66-sc),oz=cz+(rnd()-.5)*(66-sc);
+      mb.baked(nm,ox,oz,sc,((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});}
+    // 블록 코너 가로수
+    if(rnd()<.75)mb.baked(rnd()<.5?"trees":"treesTall",cx+30,cz+30,11+rnd()*4,rnd()*6,{y:0});}
   // overpass across x axis (z=~ -96 row): ramps + elevated deck
   const oy=7;
   mb.box(-40,oy-.5,-96,160,1,14,0x69707c,{mu:1,tag:"deck"});
@@ -95,6 +107,7 @@ const MAPS=[
   w.checkpoints=pathCheckpoints(loop,20,15);
   w.waypoints=pathWaypoints(loop,true,32);
   w.spawn={x:-96,z:-192,yaw:Math.PI/2};
+  mb.paintLanes();
   return mb.finalize(this);}},
 
 /* ---------- 3. 미시령 와인딩 ---------- */
@@ -116,8 +129,15 @@ const MAPS=[
     ctrl.push([xs[k],z,Math.max(e,2)]);}
   ctrl.push([320,330,2]);
   const road=samplePath(ctrl.map(c=>[c[0],c[1],c[2]]),false,420);
-  mb.paintPath(road,11,S_ASP,true);
+  mb.paintPath(road,11,S_ASP,true,true);
   railAlong(mb,road,11,0xc7ccd4);
+  {let sd=23;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<26;k++){
+     const p=road[(rr()*road.length)|0];
+     const off=18+rr()*40,ang=rr()*Math.PI*2;
+     const tx=p.x+Math.cos(ang)*off,tz=p.z+Math.sin(ang)*off;
+     if(w.surf(tx,tz)===S_GRS)mb.baked("treesTall",tx,tz,9+rr()*5,rr()*6,{});}}
+  mb.paintLanes();
   w.checkpoints=pathCheckpoints(road,42,15);
   w.waypoints=pathWaypoints(road,false,30);
   w.spawn={x:road[2].x,z:road[2].z,yaw:Math.atan2(road[6].x-road[2].x,road[6].z-road[2].z)};
@@ -183,7 +203,7 @@ const MAPS=[
   const ctrl=[[-300,-220],[-60,-300],[140,-260],[240,-140],[160,-40],[260,60],[280,200],[120,290],
               [-60,230],[-160,290],[-300,220],[-350,60],[-260,-40],[-340,-120]];
   const road=samplePath(ctrl,true,480);
-  mb.paintPath(road,13,S_ASP,true);
+  mb.paintPath(road,13,S_ASP,true,true);
   // curbs: paint stripe bands at corners (high curvature areas)
   for(let i=2;i<road.length-2;i+=2){
     const a=road[i-2],b=road[i],c=road[i+2];
@@ -201,9 +221,15 @@ const MAPS=[
     if(cv>.35&&cv<3)for(const s of[-1,1])
       mb.box(mid.x+dz/l*s*13,w.height(mid.x+dz/l*s*13,mid.z-dx/l*s*13)+.5,mid.z-dx/l*s*13,
         1.2,1,7,s>0?0xd8433b:0xe8e8e8,{yaw:ang2,mu:.6,bounce:.3,tag:"tirewall"});}
-  // grandstand
+  // grandstand + 나무
   mb.box(-180,4,-268,60,8,10,0x39424e,{mu:.5,tag:"stand"});
+  {let sd=17;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<22;k++){
+     const a=rr()*Math.PI*2,r=120+rr()*220;
+     const tx=Math.cos(a)*r,tz=Math.sin(a)*r*.9;
+     if(w.surf(tx,tz)===S_GRS)mb.baked(rr()<.5?"trees":"treesTall",tx,tz,10+rr()*5,rr()*6,{});}}
   w.checkpoints=pathCheckpoints(road,30,16);
+  mb.paintLanes();
   w.waypoints=pathWaypoints(road,true,52);
   w.spawn={x:road[0].x,z:road[0].z,yaw:Math.atan2(road[4].x-road[0].x,road[4].z-road[0].z)};
   return mb.finalize(this);}},
@@ -226,28 +252,30 @@ MAPS.push(
     return[h,s];});
   // 도심 격자 (pitch 90, 5x5)
   for(let k=-2;k<=2;k++){
-    mb.paintPath([{x:-185,y:0,z:k*90},{x:185,y:0,z:k*90}],14,S_ASP,true);
-    mb.paintPath([{x:k*90,y:0,z:-185},{x:k*90,y:0,z:185}],14,S_ASP,true);}
+    mb.paintPath([{x:-185,y:0,z:k*90},{x:185,y:0,z:k*90}],14,S_ASP,true,true);
+    mb.paintPath([{x:k*90,y:0,z:-185},{x:k*90,y:0,z:185}],14,S_ASP,true,true);}
   // 순환 고속도로 (r≈420) — 언덕을 절개하며 통과
   const ring=samplePath([[420,0],[300,300],[0,420],[-300,300],[-420,0],[-300,-300],[0,-420],[297,-297]],true,360);
-  mb.paintPath(ring,19,S_ASP,true);
+  mb.paintPath(ring,19,S_ASP,true,true);
   railAlong(mb,ring,19,0xb9c2cc);
   // 연결로 4방향
   for(const[a,b]of[[[185,0],[418,0]],[[-185,0],[-418,0]],[[0,185],[0,418]],[[0,-185],[0,-418]]])
     mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],14,S_ASP,true);
-  // 건물
+  // 베이크 건물
   let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
-  const bCols=[0x5b6a7f,0x74604f,0x4d5a68,0x6d7787,0x836a55];
+  const BLD2=["bldA","bldB","bldC","bldD"];
   for(let bx=-2;bx<2;bx++)for(let bz=-2;bz<2;bz++){
     const cx=bx*90+45,cz=bz*90+45;
     for(let k=0;k<2;k++){
-      const bw=20+rnd()*22,bd=20+rnd()*22,bh=10+rnd()*38;
-      mb.box(cx+(rnd()-.5)*(62-bw),bh/2,cz+(rnd()-.5)*(62-bd),bw,bh,bd,bCols[(rnd()*5)|0],{mu:.5,tag:"bld"});}}
-  // 교외 주택(남서) · 공업지구(남동)
+      const sc=20+rnd()*16;
+      mb.baked(BLD2[(rnd()*4)|0],cx+(rnd()-.5)*(60-sc),cz+(rnd()-.5)*(60-sc),sc,
+        ((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});}
+    if(rnd()<.6)mb.baked("trees",cx+26,cz-26,12,rnd()*6,{y:0});}
+  // 교외 주택(남서) — 차고 모델 + 나무
   for(let k=0;k<7;k++){
     const hx2=-330+((k%3)*36),hz2=-260-((k/3)|0)*40;
-    mb.box(hx2,w.height(hx2,hz2)+2.4,hz2,12,4.8,10,0xc7b299,{yaw:rnd(),mu:.5,tag:"house"});
-    mb.box(hx2,w.height(hx2,hz2)+5.6,hz2,13,2,11,0x8a4f3d,{yaw:0,mu:.5,tag:"roof"});}
+    mb.baked("garage",hx2,hz2,14,((k%4))*Math.PI/2,{collide:true,shrink:.9});
+    if(k%2)mb.baked("treesTall",hx2+18,hz2+8,10+(k%3)*2,k,{});}
   for(let k=0;k<4;k++)
     mb.box(300+k*46,w.height(300+k*46,330)+5,330,38,10,26,0x77808c,{mu:.5,tag:"warehouse"});
   for(let k=0;k<6;k++)mb.prop("barrel",310+k*5,300);
@@ -257,11 +285,17 @@ MAPS.push(
   // 언덕 비포장길
   const dirt=samplePath([[220,-140],[300,-230],[380,-330],[430,-390]],false,80);
   for(const p of dirt)mb.stamp(p.x,p.z,6,(i,j)=>w.setS(i,j,SURF_ID.gravel));
+  // 언덕·호수 나무
+  for(let k=0;k<16;k++){
+    const tx=240+rnd()*220,tz=-160-rnd()*220;
+    mb.baked(rnd()<.5?"trees":"treesTall",tx,tz,10+rnd()*5,rnd()*6,{});}
+  for(let k=0;k<6;k++)mb.baked("treesTall",-350+Math.cos(k*1.05)*130,300+Math.sin(k*1.05)*130,11,k,{});
   // 가로등·표지판
   for(let k=-1;k<=1;k++){mb.prop("lamp",10,k*90+25,Math.PI);mb.prop("sign",k*90+10,10,0);}
   w.checkpoints=pathCheckpoints(ring,24,18);
   w.waypoints=pathWaypoints(ring,true,50);
   w.spawn={x:0,z:-60,yaw:0};
+  mb.paintLanes();
   return mb.finalize(this);}});
 
 /* ---------- custom map from editor tiles ---------- */

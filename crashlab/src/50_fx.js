@@ -2,13 +2,23 @@
    FX — particle pools, skid marks, debris, slow-mo bookkeeping
    ============================================================ */
 const Fx=(()=>{
-  let scene=null,quality=1;
+  let scene=null,quality=1,softTex=null;
+  function getSoftTex(){
+    if(softTex)return softTex;
+    const c=document.createElement("canvas");c.width=c.height=64;
+    const x=c.getContext("2d");
+    const g=x.createRadialGradient(32,32,2,32,32,30);
+    g.addColorStop(0,"rgba(255,255,255,1)");g.addColorStop(.6,"rgba(255,255,255,.55)");
+    g.addColorStop(1,"rgba(255,255,255,0)");
+    x.fillStyle=g;x.fillRect(0,0,64,64);
+    softTex=new THREE.CanvasTexture(c);
+    return softTex;}
   /* particle pool */
   function makePool(n,size,color,additive,gravity,drag){
     const geo=new THREE.BufferGeometry();
     const pos=new Float32Array(n*3);pos.fill(1e5);
     geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
-    const mat=new THREE.PointsMaterial({size,color,transparent:true,opacity:.9,
+    const mat=new THREE.PointsMaterial({size,color,transparent:true,opacity:.9,map:getSoftTex(),
       blending:additive?THREE.AdditiveBlending:THREE.NormalBlending,depthWrite:false,sizeAttenuation:true});
     const pts=new THREE.Points(geo,mat);pts.frustumCulled=false;
     return{n,pos,geo,pts,vel:new Float32Array(n*3),life:new Float32Array(n),maxLife:new Float32Array(n),

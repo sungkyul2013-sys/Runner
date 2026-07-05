@@ -8,7 +8,7 @@ class MapBuilder{
     this.world=new World(size,res);
     this.group=new THREE.Group();
     this.mergePos=[];this.mergeNor=[];this.mergeCol=[];
-    this.props=[];
+    this.props=[];this.laneDots=[];
   }
   fill(fn){ // fn(x,z) -> [height, surfId]
     const w=this.world,r=w.res;
@@ -26,8 +26,9 @@ class MapBuilder{
       const d=Math.hypot(px-x,pz-z);
       if(d<=rad)cb(i,j,d,px,pz);}
   }
-  paintPath(pts,width,surfId,flatten){ // pts: [{x,y,z}]  y used when flatten
+  paintPath(pts,width,surfId,flatten,lane){ // pts: [{x,y,z}]  y used when flatten
     const w=this.world,step=w.cell*.5;
+    let dist=0;
     for(let k=0;k<pts.length-1;k++){
       const a=pts[k],b=pts[k+1];
       const len=Math.hypot(b.x-a.x,b.z-a.z),n=Math.max(1,Math.ceil(len/step));
@@ -38,7 +39,32 @@ class MapBuilder{
           if(flatten){
             const f=clamp((d-width*.5)/(w.cell*1.6),0,1);
             w.hMap[idx]=lerp(y,w.hMap[idx],f*f);}
-          if(d<=width*.5)w.sMap[idx]=surfId;});}}
+          if(d<=width*.5)w.sMap[idx]=surfId;});
+        dist+=len/n;
+        if(lane&&(dist%9)<4)this.laneDots.push([x,z]);}}
+  }
+  paintLanes(){ // 차선은 도로 도색이 모두 끝난 뒤 덧칠
+    const w=this.world;
+    for(const[x,z]of this.laneDots)
+      this.stamp(x,z,w.cell*.55,(i,j)=>{
+        if(w.sMap[w.idx(i,j)]===SURF_ID.asphalt)w.sMap[w.idx(i,j)]=SURF_ID.lane;});
+    this.laneDots.length=0;}
+  baked(name,x,z,scale,yaw,opt){ // 베이크 배경 모델 배치 (+선택 OBB)
+    opt=opt||{};
+    if(typeof BAKED==="undefined"||!BAKED[name])return;
+    const e=BAKED[name],A=Assets.arrays(e);
+    const y=opt.y!==undefined?opt.y:this.world.height(x,z);
+    const ca=Math.cos(yaw||0),sa=Math.sin(yaw||0);
+    for(let i=0;i<A.n;i++){
+      const px=A.pos[i*3]*scale,py=A.pos[i*3+1]*scale,pz=A.pos[i*3+2]*scale;
+      this.mergePos.push(px*ca+pz*sa+x,py+y,-px*sa+pz*ca+z);
+      const nx=A.nor[i*3],nz=A.nor[i*3+2];
+      this.mergeNor.push(nx*ca+nz*sa,A.nor[i*3+1],-nx*sa+nz*ca);
+      this.mergeCol.push(A.col[i*3],A.col[i*3+1],A.col[i*3+2]);}
+    if(opt.collide){
+      const bb=e.bb;
+      const hw=(bb[3]-bb[0])/2*scale*(opt.shrink||1),hh=(bb[4]-bb[1])/2*scale,hd=(bb[5]-bb[2])/2*scale*(opt.shrink||1);
+      this.world.boxes.push(new OBB(x,y+hh,z,hw,hh,hd,yaw||0,0,0,{mu:.5,tag:name}));}
   }
   box(x,y,z,w,h,d,color,opt){ // opt:{yaw,pitch,roll,mu,bounce,tag,noVis}
     opt=opt||{};

@@ -5,7 +5,8 @@
 const PHYS_DT=1/120, GRAV=9.81;
 const SURF={asphalt:{mu:1.0,col:0x3a3f47},wet:{mu:.7,col:0x2e3640},gravel:{mu:.6,col:0x6b5f4e},
   grass:{mu:.55,col:0x3e6b34},sand:{mu:.5,col:0xc2a368},ice:{mu:.15,col:0xbfe4f2},
-  snow:{mu:.35,col:0xe8eef2},curb:{mu:.95,col:0xb5443c},walk:{mu:.9,col:0x878e99}};
+  snow:{mu:.35,col:0xe8eef2},curb:{mu:.95,col:0xb5443c},walk:{mu:.9,col:0x878e99},
+  lane:{mu:1.0,col:0xdfe5ec}};
 const SURF_IDS=Object.keys(SURF);
 const SURF_MU=SURF_IDS.map(k=>SURF[k].mu);
 

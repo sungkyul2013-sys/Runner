@@ -53,6 +53,8 @@ const Game={
     if(this.mode==="drift")this.drift={score:0,run:0,combo:1,driftT:0,idleT:0,best:getRec("drift|"+o.mapId)||0,wallBonus:false};
     if(this.mode==="crash"){this.crash.phase="idle";this.crash.vTarget=parseInt($("crashSpeed").value);this.placeCrashCar();}
     Fx.reset();resetProps(this.world);
+    buildMinimap();
+    Store.set("lastPlay",{mode:this.mode,carIdx:o.carIdx,mapId:o.mapId,color:o.color,tod:o.tod});
     applyTimeOfDay(o.tod);
     this.cam.mode="chase";this.cam.dist=spec.id==="titan"?10:7;this.cam.orbitYaw=0;
     this.cam.pos.set(sp.x-Math.sin(sp.yaw)*8,this.world.height(sp.x,sp.z)+4,sp.z-Math.cos(sp.yaw)*8);
@@ -383,7 +385,64 @@ function stepAI(a,world,dt){
   if(v.flipT>3)v.reset(wp.x,wp.z,Math.atan2(look.x-wp.x,look.z-wp.z),true);
 }
 
-/* ---------- HUD ---------- */
+/* ---------- HUD: arc gauge + minimap ---------- */
+const GAUGE={ready:false};
+function arcPath(cx,cy,r,a0,a1){
+  const P=a=>[cx+r*Math.cos(a*DEG),cy+r*Math.sin(a*DEG)];
+  const[x0,y0]=P(a0),[x1,y1]=P(a1);
+  return"M "+x0+" "+y0+" A "+r+" "+r+" 0 "+(Math.abs(a1-a0)>180?1:0)+" 1 "+x1+" "+y1;}
+function initGauge(){
+  const d1=arcPath(80,66,54,160,380),d2=arcPath(80,66,41,160,380);
+  for(const id of["gArcBg","gArcBg2","gArc"])$(id).setAttribute("d",d1);
+  for(const id of["gArcRpmBg","gArcRpm"])$(id).setAttribute("d",d2);
+  GAUGE.sL=$("gArc").getTotalLength();GAUGE.rL=$("gArcRpm").getTotalLength();
+  for(const[id,L]of[["gArc",GAUGE.sL],["gArcRpm",GAUGE.rL]]){
+    $(id).style.strokeDasharray=L;$(id).style.strokeDashoffset=L;}
+  GAUGE.ready=true;}
+function buildMinimap(){
+  const w=Game.world,n=w.res+1;
+  const c=document.createElement("canvas");c.width=n;c.height=n;
+  const ctx=c.getContext("2d");
+  const img=ctx.createImageData(n,n);
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++){
+    const sf=SURF_IDS[w.sMap[j*n+i]];
+    let r=0,g=0,b=0,a=0;
+    if(sf==="asphalt"||sf==="lane"){r=172;g=182;b=198;a=235;}
+    else if(sf==="curb"){r=214;g=92;b=80;a=235;}
+    else if(sf==="walk"){r=120;g=128;b=140;a=160;}
+    else if(sf==="ice"||sf==="wet"){r=110;g=170;b=205;a=120;}
+    else a=0;
+    const o=(j*n+i)*4;img.data[o]=r;img.data[o+1]=g;img.data[o+2]=b;img.data[o+3]=a;}
+  ctx.putImageData(img,0,0);
+  Game.mm={cnv:c,size:w.size};}
+let _mmT=0;
+function drawMinimap(dt){
+  _mmT+=dt;if(_mmT<.12||!Game.mm)return;_mmT=0;
+  const cv=$("minimap"),ctx=cv.getContext("2d"),S=cv.width;
+  ctx.clearRect(0,0,S,S);
+  ctx.drawImage(Game.mm.cnv,0,0,S,S);
+  const toPx=(x,z)=>[(x/Game.mm.size+.5)*S,(z/Game.mm.size+.5)*S];
+  // next checkpoint
+  const T=Game.mode==="time"?Game.timing:Game.mode==="race"?Game.race:null;
+  if(T&&Game.world.checkpoints?.length){
+    const cp=Game.world.checkpoints[T.cp%Game.world.checkpoints.length];
+    const[cx,cy]=toPx(cp.x,cp.z);
+    ctx.strokeStyle="#3ddc84";ctx.lineWidth=4;
+    ctx.beginPath();ctx.arc(cx,cy,7+Math.sin(performance.now()*.008)*2,0,7);ctx.stroke();}
+  // AI dots
+  ctx.fillStyle="#ff5252";
+  for(const a of Game.ais){
+    const[ax,ay]=toPx(a.veh.body.pos.x,a.veh.body.pos.z);
+    ctx.beginPath();ctx.arc(ax,ay,5,0,7);ctx.fill();}
+  // player arrow
+  const b=Game.veh.body;
+  const yaw=Math.atan2(2*(b.quat.w*b.quat.y+b.quat.x*b.quat.z),
+    1-2*(b.quat.y*b.quat.y+b.quat.x*b.quat.x));
+  const[px,py]=toPx(b.pos.x,b.pos.z);
+  ctx.save();ctx.translate(px,py);ctx.rotate(-yaw);
+  ctx.fillStyle="#ffb25e";ctx.strokeStyle="#0b0e13";ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(6,7);ctx.lineTo(-6,7);ctx.closePath();
+  ctx.fill();ctx.stroke();ctx.restore();}
 let _hudT=0;
 function updateHUD(dt){
   const v=Game.veh;if(!v)return;
@@ -391,7 +450,10 @@ function updateHUD(dt){
   const kmh=Math.abs(v.fwdSpeed())*3.6;
   $("speedVal").childNodes[0].nodeValue=String(kmh|0);
   $("gearVal").textContent=v.driveMode==="R"?"R":(v.speed<.3&&v.throttle===0?"N":v.gear);
-  $("rpmBar").firstElementChild.style.width=(clamp(v.rpm/v.spec.engine.redline,0,1)*100)+"%";
+  if(GAUGE.ready){
+    $("gArc").style.strokeDashoffset=GAUGE.sL*(1-clamp(kmh/(v.spec.top+30),0,1));
+    $("gArcRpm").style.strokeDashoffset=GAUGE.rL*(1-clamp(v.rpm/v.spec.engine.redline,0,1));}
+  drawMinimap(.06);
   const dz=(el,val)=>{el.style.background=val>66?"var(--bad)":val>33?"var(--warn)":"var(--ok)";};
   dz($("dmgF"),v.dmg.f);dz($("dmgB"),v.dmg.b);dz($("dmgL"),v.dmg.l);dz($("dmgR"),v.dmg.r);
   updateModeWidget();
@@ -425,7 +487,7 @@ function updateModeWidget(){
       '<div class="sub">'+(c.phase==="run"?"주행 중…":"속도 설정 후 발사")+'</div>';}
   else{
     const s=SURF_IDS[Game.veh.wheels[0].surf]||"asphalt";
-    const names={asphalt:"아스팔트",wet:"젖은 노면",gravel:"자갈",grass:"잔디",sand:"모래",ice:"빙판",snow:"눈",curb:"연석",walk:"보도"};
+    const names={asphalt:"아스팔트",lane:"아스팔트",wet:"젖은 노면",gravel:"자갈",grass:"잔디",sand:"모래",ice:"빙판",snow:"눈",curb:"연석",walk:"보도"};
     el.innerHTML='<div class="big">자유주행</div><div class="sub">'+(names[s]||s)+' · '+Game.mapDef.name+'</div>';}
 }
 let _toastT=null;

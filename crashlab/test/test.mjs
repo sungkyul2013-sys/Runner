@@ -110,7 +110,7 @@ await step('drift GT on proving asphalt',async()=>{
 
 await step('all car x map load matrix',async()=>{
   const mapIds=await page.evaluate(()=>MAPS.map(m=>m.id));
-  for(const m of mapIds)for(let c=0;c<5;c++){
+  for(const m of mapIds)for(let c=0;c<6;c++){
     await start('free',c,m);
     await page.waitForTimeout(350);
     const s=await state();

@@ -2,7 +2,7 @@
    Bootstrap — renderer, lights, time-of-day, main loop,
    auto-quality, stability guards
    ============================================================ */
-let renderer,scene,camera,sunLight,hemiLight,headlight,skyDome;
+let renderer,scene,camera,sunLight,hemiLight,headlight,skyDome,clouds;
 const FPS={fps:60,ema:60,lowT:0,okT:0,tier:0};
 
 function disposeGroup(g){
@@ -14,21 +14,31 @@ function disposeGroup(g){
 }
 
 const TOD={
-  day:{sky:0x87b8e8,fog:0xa8c8e8,fogD:.0016,sun:0xfff4e0,sunI:1.15,hemi:0xcfe5ff,hemiG:0x51584a,hemiI:.75,
-    sunPos:[120,220,80],head:false},
-  sunset:{sky:0xf2814d,fog:0xe0916a,fogD:.0022,sun:0xffb066,sunI:1.0,hemi:0xffc9a0,hemiG:0x4a4038,hemiI:.6,
-    sunPos:[220,60,-140],head:false},
-  night:{sky:0x0a1024,fog:0x0c1428,fogD:.0028,sun:0x8aa8e0,sunI:.28,hemi:0x36406a,hemiG:0x141820,hemiI:.5,
-    sunPos:[-100,180,-60],head:true},
+  day:{horizon:0xaacdf0,zenith:0x2f6fd0,fog:0xa8c8e8,fogD:.0013,sun:0xfff4e0,sunI:1.5,
+    hemi:0xcfe5ff,hemiG:0x4a5244,hemiI:.85,sunPos:[120,220,80],head:false,cloud:1},
+  sunset:{horizon:0xffa25e,zenith:0x53306e,fog:0xe0916a,fogD:.0018,sun:0xffb066,sunI:1.3,
+    hemi:0xffc9a0,hemiG:0x4a4038,hemiI:.7,sunPos:[220,60,-140],head:false,cloud:.9},
+  night:{horizon:0x13203c,zenith:0x02040c,fog:0x0c1428,fogD:.0024,sun:0x8aa8e0,sunI:.4,
+    hemi:0x36406a,hemiG:0x141820,hemiI:.65,sunPos:[-100,180,-60],head:true,cloud:.12},
 };
 function applyTimeOfDay(tod){
   const t=TOD[tod]||TOD.day;
-  scene.background=new THREE.Color(t.sky);
+  scene.background=null;
   scene.fog=new THREE.FogExp2(t.fog,t.fogD);
   sunLight.color.set(t.sun);sunLight.intensity=t.sunI;
   sunLight.position.set(...t.sunPos);
   hemiLight.color.set(t.hemi);hemiLight.groundColor.set(t.hemiG);hemiLight.intensity=t.hemiI;
   if(headlight)headlight.visible=t.head;
+  // sky dome gradient
+  const g=skyDome.geometry,pos=g.attributes.position;
+  if(!g.attributes.color)g.setAttribute("color",new THREE.BufferAttribute(new Float32Array(pos.count*3),3));
+  const col=g.attributes.color,hz2=new THREE.Color(t.horizon),zn=new THREE.Color(t.zenith),tmp=new THREE.Color();
+  for(let i=0;i<pos.count;i++){
+    const f=Math.pow(clamp(pos.getY(i)/1500,0,1),.55);
+    tmp.copy(hz2).lerp(zn,f);
+    col.setXYZ(i,tmp.r,tmp.g,tmp.b);}
+  col.needsUpdate=true;
+  if(clouds)clouds.material.opacity=.85*t.cloud;
 }
 function applyShadows(){
   const on=Settings.shadows&&FPS.tier<1;
@@ -46,8 +56,21 @@ function initRenderer(){
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.type=THREE.PCFShadowMap;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.05;
   scene=new THREE.Scene();
-  camera=new THREE.PerspectiveCamera(66,innerWidth/innerHeight,.1,1600);
+  camera=new THREE.PerspectiveCamera(66,innerWidth/innerHeight,.1,2200);
+  // sky dome + clouds
+  skyDome=new THREE.Mesh(new THREE.SphereGeometry(1500,24,12),
+    new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide,fog:false}));
+  skyDome.frustumCulled=false;
+  scene.add(skyDome);
+  const cl=[];let cseed=5;const crnd=()=>{cseed=(cseed*16807)%2147483647;return cseed/2147483647;};
+  for(let k=0;k<14;k++)cl.push({geo:new THREE.SphereGeometry(1,7,5),color:0xeef2f7,
+    x:(crnd()-.5)*2400,y:150+crnd()*120,z:(crnd()-.5)*2400,
+    sx:60+crnd()*90,sy:10+crnd()*10,sz:40+crnd()*70});
+  clouds=new THREE.Mesh(mergeGeoms(cl),new THREE.MeshBasicMaterial({vertexColors:true,fog:false,transparent:true,opacity:.85}));
+  scene.add(clouds);
   sunLight=new THREE.DirectionalLight(0xffffff,1);
   sunLight.shadow.mapSize.set(1024,1024);
   const sc=90;
@@ -97,6 +120,7 @@ function mainLoop(t){
         const b=Game.veh.body;
         _t6.set(0,0,Game.veh.spec.body.hz);b.localToWorld(_t6,headlight.position);
         _t7.set(0,-1.5,30);b.localToWorld(_t7,headlight.target.position);}
+      skyDome.position.set(camera.position.x,0,camera.position.z);
       sunLight.target.position.copy(Game.veh.body.pos);
       sunLight.position.set(Game.veh.body.pos.x+TOD[Game.opts.tod].sunPos[0]*.5,
         Game.veh.body.pos.y+TOD[Game.opts.tod].sunPos[1]*.5,
@@ -153,8 +177,9 @@ addEventListener("unhandledrejection",e=>{console.warn("caught rejection");e.pre
 /* boot */
 function boot(){
   const steps=[
+    ["차량 모델 로드…",()=>{for(const c of CARS)if(!c.modelScale)applyModelSpec(c);}],
     ["렌더러 초기화…",()=>initRenderer()],
-    ["입력 시스템…",()=>{Input.init();initHudButtons();}],
+    ["입력 시스템…",()=>{Input.init();initHudButtons();initGauge();}],
     ["에디터 준비…",()=>Editor.init()],
     ["메뉴 구성…",()=>{UI.init();$("debugHud").classList.toggle("on",Settings.debug);}],
     ["완료!",()=>{

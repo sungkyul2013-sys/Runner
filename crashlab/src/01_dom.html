@@ -18,10 +18,25 @@
   <div id="toast"></div>
   <div id="bigMsg"></div>
   <div id="speedo">
+    <svg id="gaugeSvg" viewBox="0 0 160 96" width="184" height="110">
+      <defs>
+        <linearGradient id="gGrad" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stop-color="#ffb25e"/><stop offset="100%" stop-color="#ff7a1a"/>
+        </linearGradient>
+        <linearGradient id="gRpm" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#3ddc84"/><stop offset="70%" stop-color="#ffd23e"/><stop offset="100%" stop-color="#ff4d4d"/>
+        </linearGradient>
+      </defs>
+      <path id="gArcBg" fill="none" stroke="rgba(10,13,18,.55)" stroke-width="16" stroke-linecap="round"/>
+      <path id="gArcBg2" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="9" stroke-linecap="round"/>
+      <path id="gArc" fill="none" stroke="url(#gGrad)" stroke-width="9" stroke-linecap="round"/>
+      <path id="gArcRpmBg" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3.5" stroke-linecap="round"/>
+      <path id="gArcRpm" fill="none" stroke="url(#gRpm)" stroke-width="3.5" stroke-linecap="round"/>
+    </svg>
     <div id="speedVal">0<span id="gearVal">N</span></div>
     <div class="u">KM/H</div>
-    <div id="rpmBar"><i></i></div>
   </div>
+  <canvas id="minimap" width="150" height="150"></canvas>
   <div id="ctlL">
     <div id="steerZone"><div id="steerTrack"></div><div id="steerKnob">⇔</div></div>
     <div id="steerBtns"><button class="padBtn" id="btnStL">◀</button><button class="padBtn" id="btnStR">▶</button></div>

@@ -42,6 +42,19 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #menuHead .crumb{color:var(--tx2);font-size:13px;margin-left:2px}
 #menuHead .spacer{flex:1}
 #menuBody{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:2px 2px 12px}
+.hero{position:relative;border-radius:20px;padding:26px 24px 22px;margin-bottom:18px;overflow:hidden;
+  background:linear-gradient(120deg,rgba(255,122,26,.16),rgba(255,122,26,.02) 45%,rgba(60,120,255,.08)),
+    radial-gradient(140% 180% at 85% -20%,#232f47 0%,#141a26 55%);
+  border:1px solid rgba(255,255,255,.1)}
+.hero::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(105deg,transparent 0 26px,rgba(255,255,255,.022) 26px 27px)}
+.heroBadge{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.34em;color:var(--acc2);
+  border:1px solid rgba(255,178,94,.4);border-radius:20px;padding:5px 12px 4px;margin-bottom:12px}
+.heroTitle{font-size:min(9vw,42px);font-weight:900;line-height:1.12;letter-spacing:-.01em}
+.heroTitle b{color:var(--acc)}
+.heroSub{color:var(--tx2);font-size:13.5px;margin-top:10px;max-width:52ch;line-height:1.6}
+.card.mode .ic{font-size:30px;filter:drop-shadow(0 3px 6px rgba(0,0,0,.4))}
+.card.mode:hover{border-color:rgba(255,122,26,.5)}
 .h1{font-size:19px;font-weight:800;margin:6px 0 12px}
 .h1 small{color:var(--tx2);font-weight:500;font-size:13px;margin-left:8px}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
@@ -98,12 +111,16 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #modeWidget:empty{display:none}
 .hudSpacer{flex:1;pointer-events:none!important}
 
-#speedo{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 14px);text-align:center;pointer-events:none}
-#speedVal{font-size:44px;font-weight:900;line-height:1;text-shadow:0 2px 12px rgba(0,0,0,.7);font-variant-numeric:tabular-nums}
-#speedo .u{font-size:11px;color:var(--tx2);font-weight:700;letter-spacing:.15em}
-#gearVal{position:absolute;right:-34px;top:4px;font-size:19px;font-weight:900;color:var(--acc2)}
-#rpmBar{width:130px;height:5px;border-radius:3px;background:rgba(255,255,255,.14);margin:6px auto 0;overflow:hidden}
-#rpmBar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--ok),var(--warn) 70%,var(--bad));border-radius:3px}
+#speedo{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 6px);
+  text-align:center;pointer-events:none;width:184px}
+#gaugeSvg{display:block;filter:drop-shadow(0 3px 10px rgba(0,0,0,.45))}
+#speedVal{position:absolute;left:0;right:0;top:42px;font-size:37px;font-weight:900;line-height:1;
+  text-shadow:0 2px 12px rgba(0,0,0,.8);font-variant-numeric:tabular-nums}
+#speedo .u{position:absolute;left:0;right:0;top:82px;font-size:10px;color:var(--tx2);font-weight:700;letter-spacing:.18em}
+#gearVal{position:absolute;right:-30px;top:6px;font-size:18px;font-weight:900;color:var(--acc2)}
+#minimap{position:absolute;left:calc(var(--sal) + 12px);top:calc(var(--sat) + 158px);
+  width:118px;height:118px;border-radius:50%;background:rgba(12,15,21,.72);
+  border:2px solid rgba(255,255,255,.16);box-shadow:0 6px 18px rgba(0,0,0,.4);pointer-events:none}
 
 #dmgBox{position:absolute;left:calc(var(--sal) + 14px);top:calc(var(--sat) + 68px);width:44px;height:74px;opacity:.92;pointer-events:none}
 #dmgBox .z{position:absolute;background:var(--ok);transition:background .3s}

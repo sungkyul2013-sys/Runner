@@ -122,7 +122,7 @@ const Input=(()=>{
       $("steerWheelFace").style.transform="rotate("+(whAngle*57.3)+"deg)";}}
   function applyTo(v){
     const r=read();
-    v.steerIn=r.steer;
+    v.steerIn=-r.steer;   // 화면 오른쪽 입력 = 우회전 (조향 방향 반전)
     v.handbrake=r.hb;
     const fs=v.fwdSpeed();
     if(r.brake>0){

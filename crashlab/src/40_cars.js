@@ -3,16 +3,18 @@
    (8-point loft, wheel wells, fenders, detachable parts)
    ============================================================ */
 const CARS=[
- {id:"pony",name:"포니 시티",icon:"🚗",drive:"FF",mass:1050,hp:120,acc:"10.5초",top:168,
-  desc:"입문용 해치백. 관대한 그립, 리프트오프 턱인 연습에 최적.",
+ {id:"medivan",name:"메디밴 911",icon:"🚑",drive:"FF",mass:1250,hp:120,acc:"11초",top:155,
+  desc:"입문용 구조 밴. 관대한 그립 — 아이러니하게도 크래시 테스트 단골.",
+  model:"ambulance",rollFix:1.3,
   body:{hx:.8,hy:.55,hz:1.9},wheels:{track:.72,front:1.2,rear:1.2,y:-.3,radius:.3,width:.2},
-  susp:{k:40000,c:3400,travel:.16,rest:.18},arb:14000,
-  engine:{maxT:150,redline:6500,idle:900},gears:[3.4,2.0,1.35,1.0,.82],final:4.1,
-  brakeF:5400,steerLo:.62,steerHi:.14,aero:{cd:.85,df:0},gripF:1.0,gripR:1.02,
-  style:"hatch",colors:[0x4db3ff,0xffd23e,0xd9dee6,0xff6b6b,0x7dd87d],
-  stats:{spd:30,acc:32,grip:55,mass:20}},
+  susp:{k:46000,c:3900,travel:.17,rest:.18},arb:16000,
+  engine:{maxT:165,redline:6200,idle:900},gears:[3.4,2.0,1.35,1.0,.82],final:4.1,
+  brakeF:6200,steerLo:.62,steerHi:.14,aero:{cd:1.1,df:0},gripF:1.0,gripR:1.02,
+  style:"hatch",colors:[0xe8eef2,0xff6b6b,0x4db3ff,0xffd23e,0x7dd87d],
+  stats:{spd:28,acc:30,grip:55,mass:26}},
  {id:"gt",name:"드리프트킹 GT",icon:"🏎️",drive:"FR",mass:1380,hp:320,acc:"5.0초",top:255,
   desc:"파워 오버스티어의 교과서. 핸드브레이크 드리프트 진입 특화.",
+  model:"race",rollFix:1.35,
   body:{hx:.86,hy:.5,hz:2.15},wheels:{track:.8,front:1.35,rear:1.4,y:-.28,radius:.32,width:.25},
   susp:{k:64000,c:5400,travel:.12,rest:.15},arb:26000,
   engine:{maxT:420,redline:7200,idle:950},gears:[3.2,2.1,1.5,1.15,.92],final:3.7,
@@ -21,6 +23,7 @@ const CARS=[
   stats:{spd:70,acc:72,grip:70,mass:32}},
  {id:"offroad",name:"산악왕 4X4",icon:"🚙",drive:"4WD",mass:2150,hp:210,acc:"11.0초",top:170,
   desc:"서스펜션 트래블 250mm. 오프로드에서는 지배자.",
+  model:"suvLuxury",rollFix:1.28,
   body:{hx:.95,hy:.75,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -29,6 +32,7 @@ const CARS=[
   stats:{spd:32,acc:38,grip:60,mass:55}},
  {id:"titan",name:"타이탄 카고",icon:"🚚",drive:"RWD",mass:8000,hp:450,acc:"25초",top:120,
   desc:"8톤의 질량. 높은 무게중심 = 전복 장인. 뭐든 밀어버린다.",
+  model:"garbageTruck",rollFix:1.12,
   body:{hx:1.15,hy:1.25,hz:3.5},wheels:{track:1.02,front:2.35,rear:2.1,y:-.85,radius:.5,width:.35},
   susp:{k:240000,c:27000,travel:.2,rest:.26},arb:40000,
   engine:{maxT:1650,redline:3800,idle:600},gears:[4.5,2.8,1.8,1.2,.9],final:4.3,
@@ -37,12 +41,22 @@ const CARS=[
   stats:{spd:18,acc:12,grip:35,mass:100}},
  {id:"veloce",name:"벨로체 R",icon:"🏁",drive:"4WD",mass:1480,hp:720,acc:"2.9초",top:330,
   desc:"720마력 + 다운포스. 시뮬 모드에서 진가를 발휘한다.",
+  model:"raceFuture",rollFix:1.38,
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
   susp:{k:98000,c:7200,travel:.09,rest:.12},arb:60000,
   engine:{maxT:780,redline:8500,idle:1100},gears:[3.0,2.05,1.55,1.2,.97],final:3.4,
   brakeF:8600,steerLo:.56,steerHi:.11,aero:{cd:.42,df:95},gripF:1.16,gripR:1.14,
   style:"super",colors:[0xd7263d,0x04e762,0xffe600,0x101418,0x00a8e8],
   stats:{spd:100,acc:100,grip:95,mass:35}},
+ {id:"tractor",name:"막강 트랙터",icon:"🚜",drive:"4WD",mass:3200,hp:95,acc:"—",top:62,
+  desc:"느리지만 절대 멈추지 않는다. 어떤 지형이든 기어오르는 괴물 토크.",
+  model:"tractor",rollFix:1.18,
+  body:{hx:.75,hy:.68,hz:1.75},wheels:{track:.72,front:1.1,rear:1.1,y:-.35,radius:.4,width:.3},
+  susp:{k:95000,c:9500,travel:.22,rest:.24},arb:20000,
+  engine:{maxT:520,redline:2600,idle:650},gears:[4.6,2.6,1.6,1.05],final:3.9,
+  brakeF:15000,steerLo:.72,steerHi:.2,aero:{cd:8,df:0},gripF:1.05,gripR:1.08,
+  style:"suv",colors:[0x62a844,0xd7263d,0x3d5a80,0xffb340,0x8899aa],
+  stats:{spd:6,acc:14,grip:85,mass:62}},
 ];
 
 /* ---------- generic non-indexed geometry merger ---------- */
@@ -211,20 +225,54 @@ class CarVisual{
   constructor(spec,colorHex){
     this.spec=spec;
     this.group=new THREE.Group();
+    this.baked=(typeof BAKED!=="undefined")&&BAKED[spec.model]||null;
+    if(this.baked)this.buildBaked(spec,colorHex);
+    else this.buildProcedural(spec,colorHex);
+    this.hp0=Object.assign({},this.partHp);
+    this.detached={};
+    this.defVol=0;
+  }
+  mkPart(w,h,d,x,y,z,mat){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d,2,1,2).toNonIndexed(),mat);
+    m.position.set(x,y,z);m.castShadow=true;this.group.add(m);return m;}
+
+  /* ===== 외부(베이크) 모델 차량 ===== */
+  buildBaked(spec,colorHex){
+    const e=this.baked,{hx,hy,hz}=spec.body;
+    this.bodyMesh=new THREE.Mesh(Assets.geo(e,{scale:spec.modelScale,
+      cx:spec.modelCx,cy:spec.modelCy,cz:spec.modelCz,paint:new THREE.Color(colorHex)}),MAT_CAR);
+    this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
+    const bumpMat=new THREE.MeshPhongMaterial({color:0x191d24,flatShading:true,shininess:18});
+    const by=Math.max(spec.modelWheelY,-hy*.62);
+    this.parts={
+      fb:this.mkPart(hx*1.15,hy*.16,.1,0,by,hz-.01,bumpMat),
+      rb:this.mkPart(hx*1.15,hy*.16,.1,0,by,-hz+.01,bumpMat),
+      ml:this.mkPart(.07,.08,.17,-hx*.92,hy*.1,hz*.3,bumpMat),
+      mr:this.mkPart(.07,.08,.17,hx*.92,hy*.1,hz*.3,bumpMat)};
+    this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
+    if(!e.wheel._geos)e.wheel._geos={};
+    const wg=e.wheel._geos[spec.id]||(e.wheel._geos[spec.id]=
+      Assets.geo(e.wheel,{scale:spec.modelScale}));
+    this.wheelMeshes=[];
+    for(let i=0;i<4;i++){
+      const m=new THREE.Mesh(wg,MAT_DETAIL);m.castShadow=true;
+      const grp=new THREE.Group();grp.add(m);
+      this.group.add(grp);this.wheelMeshes.push(grp);}
+  }
+
+  /* ===== 절차 생성 차량 (폴백) ===== */
+  buildProcedural(spec,colorHex){
     const{hx,hy,hz}=spec.body,st=carStations(spec),W=spec.wheels;
     const bodyC=new THREE.Color(colorHex);
     const shadeC=bodyC.clone().multiplyScalar(.72);
     this.bodyMesh=new THREE.Mesh(buildCarBody(spec,colorHex),MAT_CAR);
     this.bodyMesh.castShadow=true;
     this.group.add(this.bodyMesh);
-
-    /* --- static detail (merged, one draw call) --- */
     const det=[];
     const wellR=W.radius+.1;
-    for(const[wx,wz]of[[-W.track,W.front],[W.track,W.front],[-W.track,-W.rear],[W.track,-W.rear]]){
+    for(const[wx,wz]of[[-W.track,W.front],[W.track,W.front],[-W.track,-W.rear],[W.track,-W.rear]])
       det.push({geo:new THREE.CylinderGeometry(wellR,wellR,W.width+.14,10,1,true,0,Math.PI),
-        color:0x0c0e12,x:wx,y:W.y+.02,z:wz,rz:Math.PI/2});}
-    // grille + plates + exhaust
+        color:0x0c0e12,x:wx,y:W.y+.02,z:wz,rz:Math.PI/2});
     const noseY=stationLerp(st,hz*.97,"y1"),tailY=stationLerp(st,-hz*.97,"y1");
     det.push({geo:new THREE.BoxGeometry(hx*.9,hy*.18,.05),color:0x10141a,x:0,y:noseY*.65-hy*.18,z:hz-.02});
     det.push({geo:new THREE.BoxGeometry(.34,.12,.03),color:0xe8ecf2,x:0,y:-hy*.5,z:hz+.09});
@@ -232,86 +280,45 @@ class CarVisual{
     for(const ex of spec.style==="super"?[-.3,-.1,.1,.3]:[-.25,.25])
       det.push({geo:new THREE.CylinderGeometry(.045,.045,.14,7),color:0x2e343c,
         x:ex*hx,y:-hy*.72,z:-hz-.04,rx:Math.PI/2});
-    // door handles
     const beltY=stationLerp(st,0,"y1");
-    for(const s of[-1,1])det.push({geo:new THREE.BoxGeometry(.03,.03,.16),color:0x1c2026,
-      x:s*hx*1.0,y:beltY-.05,z:hz*.06});
-    // style extras
-    if(spec.style==="coupe"){ // ducktail
-      det.push({geo:new THREE.BoxGeometry(hx*1.6,.05,.24),color:shadeC.getHex(),
-        x:0,y:stationLerp(st,-hz*.97,"y2")+.08,z:-hz*.95,rx:-.16});}
-    if(spec.style==="super"){ // big wing + splitter
-      const wy=stationLerp(st,-hz*.85,"y2")+.24;
-      det.push({geo:new THREE.BoxGeometry(hx*1.9,.04,.34),color:0x14171c,x:0,y:wy,z:-hz*.88,rx:-.12});
-      for(const s of[-1,1])det.push({geo:new THREE.BoxGeometry(.05,.24,.14),color:0x14171c,
-        x:s*hx*.7,y:wy-.13,z:-hz*.88});
-      det.push({geo:new THREE.BoxGeometry(hx*1.9,.05,.3),color:0x14171c,x:0,y:-hy*.96,z:hz*.92});}
-    if(spec.style==="suv"){ // roof rails + spare wheel
-      for(const s of[-1,1])det.push({geo:new THREE.BoxGeometry(.06,.07,hz*1.1),color:0x3a4048,
-        x:s*hx*.62,y:stationLerp(st,-hz*.2,"y2")+.06,z:-hz*.05});
-      det.push({geo:new THREE.CylinderGeometry(W.radius*.85,W.radius*.85,.2,12),color:0x1a1d22,
-        x:0,y:tailY*.4,z:-hz-.12,rx:Math.PI/2});}
-    if(spec.style==="truck"){ // cab/box divider + box ribs
-      for(let i=0;i<5;i++)det.push({geo:new THREE.BoxGeometry(hx*2.01,hy*1.6,.04),color:shadeC.getHex(),
-        x:0,y:hy*.38*.5+hy*.1,z:hz*.45-1.4-i*1.15,sy:1});}
-    if(spec.style==="hatch"){ // roof lip
-      det.push({geo:new THREE.BoxGeometry(hx*1.3,.04,.14),color:shadeC.getHex(),
-        x:0,y:stationLerp(st,-hz*.8,"y2")+.03,z:-hz*.82,rx:-.3});}
+    for(const s2 of[-1,1])det.push({geo:new THREE.BoxGeometry(.03,.03,.16),color:0x1c2026,
+      x:s2*hx*1.0,y:beltY-.05,z:hz*.06});
     this.detailMesh=new THREE.Mesh(mergeGeoms(det),MAT_DETAIL);
     this.detailMesh.castShadow=true;
     this.group.add(this.detailMesh);
-
-    /* --- lights (merged, MeshBasic) --- */
     const li=[];
     const hlY=spec.style==="super"?-hy*.45:noseY*.4;
-    for(const s of[-1,1]){
-      li.push({geo:new THREE.BoxGeometry(hx*.44,.1,.05),color:0xfff6d8,x:s*hx*.56,y:hlY,z:hz+.01});
-      li.push({geo:new THREE.BoxGeometry(hx*.4,.09,.05),color:0xff2a2a,x:s*hx*.56,y:tailY*.5,z:-hz-.01});
-      li.push({geo:new THREE.BoxGeometry(.08,.06,.1),color:0xffb340,x:s*hx*1.02,y:noseY*.4,z:hz*.94});}
+    for(const s2 of[-1,1]){
+      li.push({geo:new THREE.BoxGeometry(hx*.44,.1,.05),color:0xfff6d8,x:s2*hx*.56,y:hlY,z:hz+.01});
+      li.push({geo:new THREE.BoxGeometry(hx*.4,.09,.05),color:0xff2a2a,x:s2*hx*.56,y:tailY*.5,z:-hz-.01});}
     this.lightsMesh=new THREE.Mesh(mergeGeoms(li),new THREE.MeshBasicMaterial({vertexColors:true}));
     this.group.add(this.lightsMesh);
-
-    /* --- detachable parts --- */
     const partMat=new THREE.MeshPhongMaterial({color:bodyC.clone().multiplyScalar(.92),flatShading:true,shininess:55});
     const bumpMat=new THREE.MeshPhongMaterial({color:0x191d24,flatShading:true,shininess:18});
     const mirrMat=new THREE.MeshPhongMaterial({color:bodyC.clone().multiplyScalar(.8),flatShading:true,shininess:55});
-    const mk=(w,h,d,x,y,z,mat)=>{
-      const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d,2,1,2).toNonIndexed(),mat||partMat);
-      m.position.set(x,y,z);m.castShadow=true;this.group.add(m);return m;};
     const hoodY=stationLerp(st,hz*.5,"y2");
     this.parts={
-      fb:mk(hx*1.78,hy*.3,.18,0,-hy*.6,hz+.05,bumpMat),
-      rb:mk(hx*1.78,hy*.3,.18,0,-hy*.6,-hz-.05,bumpMat),
-      dl:mk(.05,hy*.66,hz*.56,-hx-.02,-hy*.2,hz*.04),
-      dr:mk(.05,hy*.66,hz*.56,hx+.02,-hy*.2,hz*.04),
-      ml:mk(.07,.09,.2,-hx-.1,stationLerp(st,hz*.12,"y1")+.14,hz*.14,mirrMat),
-      mr:mk(.07,.09,.2,hx+.1,stationLerp(st,hz*.12,"y1")+.14,hz*.14,mirrMat)};
-    if(spec.style!=="truck")
-      this.parts.hood=mk(hx*1.5,.05,hz*.42,0,hoodY+.02,hz*.6);
-    if(spec.style==="coupe"||spec.style==="super")
-      this.parts.trunk=mk(hx*1.4,.05,hz*.24,0,stationLerp(st,-hz*.8,"y2")+.02,-hz*.8);
-    else if(spec.style==="truck")
-      this.parts.trunk=mk(hx*1.85,hy*1.5,.06,0,hy*.2,-hz-.03); // 화물칸 뒷문
-    else // hatch/suv: 테일게이트 패널
-      this.parts.trunk=mk(hx*1.35,hy*.55,.05,0,stationLerp(st,-hz*.99,"y1")+hy*.28,-hz-.02);
+      fb:this.mkPart(hx*1.78,hy*.3,.18,0,-hy*.6,hz+.05,bumpMat),
+      rb:this.mkPart(hx*1.78,hy*.3,.18,0,-hy*.6,-hz-.05,bumpMat),
+      dl:this.mkPart(.05,hy*.66,hz*.56,-hx-.02,-hy*.2,hz*.04,partMat),
+      dr:this.mkPart(.05,hy*.66,hz*.56,hx+.02,-hy*.2,hz*.04,partMat),
+      ml:this.mkPart(.07,.09,.2,-hx-.1,stationLerp(st,hz*.12,"y1")+.14,hz*.14,mirrMat),
+      mr:this.mkPart(.07,.09,.2,hx+.1,stationLerp(st,hz*.12,"y1")+.14,hz*.14,mirrMat),
+      hood:this.mkPart(hx*1.5,.05,hz*.42,0,hoodY+.02,hz*.6,partMat),
+      trunk:this.mkPart(hx*1.35,hy*.55,.05,0,stationLerp(st,-hz*.99,"y1")+hy*.28,-hz-.02,partMat)};
     this.partHp={fb:1,rb:1,hood:1,trunk:1,dl:1,dr:1,ml:.35,mr:.35};
-    this.detached={};
-
-    /* --- wheels --- */
     this.wheelMeshes=[];
     const wg=wheelGeo(W.radius,W.width);
     for(let i=0;i<4;i++){
       const m=new THREE.Mesh(wg,MAT_DETAIL);
       const grp=new THREE.Group();grp.add(m);
-      grp.position.set(i%2?W.track:-W.track,W.y,i<2?W.front:-W.rear);
       this.group.add(grp);this.wheelMeshes.push(grp);}
-    this.defVol=0;
   }
   applyImpact(imp,veh){
     const dv=imp.dv;
     const d=Math.min(.4,.015*dv),R=.5+.02*dv;
     this.defVol+=deformGeo(this.bodyMesh,imp.lp,imp.ln,d,R,.45);
-    deformGeo(this.detailMesh,imp.lp,imp.ln,d*.8,R,.4);
+    if(this.detailMesh)deformGeo(this.detailMesh,imp.lp,imp.ln,d*.8,R,.4);
     for(const k in this.parts){
       const p=this.parts[k];
       if(this.detached[k])continue;
@@ -327,10 +334,11 @@ class CarVisual{
     Fx.addDebris(p,veh,imp);
   }
   repair(){
-    restoreGeo(this.bodyMesh);restoreGeo(this.detailMesh);this.defVol=0;
-    const HP={ml:.35,mr:.35};
+    restoreGeo(this.bodyMesh);
+    if(this.detailMesh)restoreGeo(this.detailMesh);
+    this.defVol=0;
     for(const k in this.parts){
-      const p=this.parts[k];restoreGeo(p);this.partHp[k]=HP[k]??1;
+      const p=this.parts[k];restoreGeo(p);this.partHp[k]=this.hp0[k];
       if(this.detached[k]){Fx.reclaimDebris(p);this.group.add(p);
         p.material.opacity=1;p.material.transparent=false;
         p.position.copy(p.userData.home);p.quaternion.identity();
@@ -342,17 +350,19 @@ class CarVisual{
     this.group.quaternion.copy(veh.body.quat);
     if(shakeT>0&&Settings.camShake){
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
+    const tv=this.baked?this.spec.wheels.trackVis:0;
     for(let i=0;i<4;i++){
       const w=veh.wheels[i],m=this.wheelMeshes[i];
-      m.position.set(w.local.x,w.visY,w.local.z);
+      m.position.set(this.baked?(w.left?-tv:tv):w.local.x,w.visY,w.local.z);
       const st=(w.front?veh.steer:0)+(w.left?-veh.toe:veh.toe)*8;
       m.rotation.set(0,st,0);
       m.children[0].rotation.x=w.spin;}
   }
   dispose(){
     this.group.parent&&this.group.parent.remove(this.group);
-    this.bodyMesh.geometry.dispose();this.detailMesh.geometry.dispose();
-    this.lightsMesh.geometry.dispose();
+    this.bodyMesh.geometry.dispose();
+    if(this.detailMesh)this.detailMesh.geometry.dispose();
+    if(this.lightsMesh)this.lightsMesh.geometry.dispose();
     for(const k in this.parts)this.parts[k].geometry.dispose();
   }
 }
