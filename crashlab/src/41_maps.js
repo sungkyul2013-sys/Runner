@@ -149,19 +149,27 @@ class MapBuilder{
     for(let i=0;i<p.length;i++){this.mergePos.push(p[i]);this.mergeNor.push(nr[i]);}
     for(let i=0;i<p.length/3;i++)this.mergeCol.push(c.r,c.g,c.b);
     g.dispose();}
-  bump(x,z,yaw,width){ // 한국형 과속방지턱: 폭 3.6m·높이 10cm 완만 아치 + 노랑/흰 사선
+  bump(x,z,yaw,width,h){ // 한국형 과속방지턱 (h: 높이 m, 기본 10cm) + 노랑/흰 사선
+    h=h||.1;
     const y=this.world.height(x,z);
     // physics: 2단 낮은 슬랩으로 아치 근사 (충격 완만)
-    this.box(x,y+.028,z,width,.056,3.2,0,{yaw,mu:1,tag:"bump",noVis:true});
-    this.box(x,y+.05,z,width,.1,1.7,0,{yaw,mu:1,tag:"bump",noVis:true});
+    this.box(x,y+h*.28,z,width,h*.56,3.2,0,{yaw,mu:1,tag:"bump",noVis:true});
+    this.box(x,y+h*.5,z,width,h,1.7,0,{yaw,mu:1,tag:"bump",noVis:true});
     // visual: 눌린 반원통 아치, 45° 사선 스트라이프
     const g=new THREE.CylinderGeometry(1.8,1.8,width,14,1,true,0,Math.PI).toNonIndexed();
     g.rotateZ(Math.PI/2);          // 축 → x(도로 가로)
-    g.scale(1,.058,1);             // 높이 10cm 아치
+    g.scale(1,.058*h/.1,1);
     this.pushGeo(g,x,y,z,yaw,(lx,ly,lz)=>{
       const band=Math.abs(Math.floor((lx+lz*1.04+200)/.5))%2;
       return band?[.86,.6,.06]:[.8,.82,.85];});
     return this;}
+  texText(x,z,sizeM,str,color,yaw){ // 노면 텍스트 마킹
+    const ctx=this.octx,[px,py]=this.tp(x,z);
+    ctx.save();ctx.translate(px,py);ctx.rotate(yaw||0);
+    ctx.fillStyle=color||"rgba(240,244,250,.92)";
+    ctx.font="700 "+Math.round(sizeM*this.ppm)+"px sans-serif";
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(str,0,0);ctx.restore();}
   pushGeo(geo,x,y,z,yaw,colorFn){ // 임의 지오메트리 병합(버텍스별 색)
     geo.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0,yaw||0,0)));
     const p=geo.attributes.position.array,nr=geo.attributes.normal.array;

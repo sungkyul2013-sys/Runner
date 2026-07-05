@@ -325,6 +325,66 @@ MAPS.push(
   mb.paintLanes();
   return mb.finalize(this);}});
 
+/* ---------- 8. 서스펜션 랩 ---------- */
+MAPS.push(
+{id:"susp",name:"서스펜션 랩",icon:"🔩",desc:"높이별 방지턱·빨래판·트위스트·언덕 4단·경사 8/15/25°·자갈밭·계단",
+ modes:["free"],
+ build(){
+  const mb=new MapBuilder(600,224),w=mb.world;
+  const LANES=[-150,-90,-30,30,100,170];
+  mb.fill((x,z)=>{
+    let h=0;
+    // 4레인: 언덕 4단 (가우시안 능선)
+    if(Math.abs(x-30)<26){
+      const edge=clamp((26-Math.abs(x-30))/8,0,1);
+      for(const[zc,H]of[[-120,1.5],[-55,3],[15,5],[100,8]]){
+        const s2=(H*2.2)*(H*2.2);
+        h+=H*Math.exp(-((z-zc)*(z-zc))/(2*s2))*edge;}}
+    // 5레인: 경사로 8/15/25° (오르막-정상-내리막 사다리꼴)
+    if(Math.abs(x-100)<24){
+      const edge=clamp((24-Math.abs(x-100))/8,0,1);
+      const wedge=(z0,up,top,down,H)=>{
+        if(z<z0||z>z0+up+top+down)return 0;
+        if(z<z0+up)return H*(z-z0)/up;
+        if(z<z0+up+top)return H;
+        return H*(1-(z-z0-up-top)/down);};
+      h+=(wedge(-160,36,12,26,5)+wedge(-70,30,12,24,8)+wedge(20,26,14,22,12))*edge;}
+    if(Math.abs(x)>282||Math.abs(z)>282)return[h,S_GRS];
+    return[h,S_ASP];});
+  // 1레인: 높이별 방지턱 4~16cm
+  const hs=[.04,.06,.08,.10,.13,.16];
+  hs.forEach((h,k)=>{
+    mb.bump(LANES[0],-140+k*38,0,13,h);
+    mb.texText(LANES[0]-9,-146+k*38,3.2,Math.round(h*100)+"cm");});
+  // 2레인: 빨래판 (슬랫 18개)
+  for(let k=0;k<18;k++)
+    mb.box(LANES[1],w.height(LANES[1],-140+k*1.35)+.018,-140+k*1.35,12,.036,.5,0x8f98a3,{mu:1,tag:"slat"});
+  for(let k=0;k<8;k++)
+    mb.box(LANES[1],.03,-60+k*3.4,12,.06,.9,0x8f98a3,{mu:1,tag:"slat"});
+  mb.texText(LANES[1],-152,3.2,"빨래판");
+  // 3레인: 트위스트 (좌우 엇갈림 → 대각 롤 유발)
+  for(let k=0;k<10;k++)
+    mb.bump(LANES[2]+(k%2?-3.2:3.2),-140+k*16,0,7,.11);
+  mb.texText(LANES[2],-152,3.2,"트위스트");
+  mb.texText(30,-152,3.2,"언덕 1.5~8m");
+  mb.texText(100,-152,3.2,"경사 8°/15°/25°");
+  // 6레인: 자갈밭(랜덤 슬랫) + 계단 + 연석 타격
+  {let sd=41;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<46;k++)
+     mb.box(LANES[5]+(rr()-.5)*10,.014,-140+rr()*90,1.2+rr()*1.6,.028+rr()*.03,.8+rr(),0x77808c,
+       {yaw:rr()*3,mu:1,tag:"cobble"});}
+  for(let k=0;k<3;k++)
+    mb.box(LANES[5],.06+k*.12,-20+k*1.4,12,.12,1.4,0x9aa2ab,{mu:1,tag:"stair"});
+  mb.box(LANES[5],.09,30,12,.18,.9,0xb5443c,{mu:1,tag:"curb"});
+  mb.texText(LANES[5],-152,3.2,"자갈·계단·연석");
+  // 레인 구분선 + 출발 안내
+  for(const lx of LANES)
+    mb.texPath([{x:lx,z:-170},{x:lx,z:150}],.3,"rgba(255,210,80,.5)",[2.5,2.5]);
+  mb.texText(0,-210,5,"SUSPENSION LAB","rgba(240,244,250,.85)");
+  for(let k=0;k<4;k++)mb.baked(k%2?"trees":"treesTall",-250+k*160,250,11,k,{});
+  w.spawn={x:0,z:-235,yaw:0};
+  return mb.finalize(this);}});
+
 /* ---------- custom map from editor tiles ---------- */
 const ED_TILES=[
   {id:"road", name:"직선로", col:"#4a5058"},

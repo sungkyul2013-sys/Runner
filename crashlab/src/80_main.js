@@ -233,16 +233,18 @@ const Showroom={
 
 /* 차량 3D 프리뷰 썸네일 (차량 선택 카드용) */
 const CARTHUMBS={};
-function makeCarThumbs(){
+function makeCarThumbs(){ // 메인 렌더러의 렌더타겟 사용 (모바일에서 2차 GL 컨텍스트 실패 방지)
   try{
-    const rw=280,rh=168;
-    const r2=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});
-    r2.setSize(rw,rh);r2.setPixelRatio(1.5);
-    r2.toneMapping=THREE.ACESFilmicToneMapping;
+    const RW=560,RH=336;
+    const rt=new THREE.WebGLRenderTarget(RW,RH);
     const sc=new THREE.Scene();
-    const cam2=new THREE.PerspectiveCamera(28,rw/rh,.1,60);
+    const cam2=new THREE.PerspectiveCamera(28,RW/RH,.1,60);
     sc.add(new THREE.HemisphereLight(0xd8e8ff,0x3a4038,.95));
     const dl=new THREE.DirectionalLight(0xfff4e0,1.7);dl.position.set(4,7,3);sc.add(dl);
+    const px=new Uint8Array(RW*RH*4);
+    const cnv=document.createElement("canvas");cnv.width=RW;cnv.height=RH;
+    const c2=cnv.getContext("2d");
+    const img=c2.createImageData(RW,RH);
     for(const spec of CARS){
       const vis=new CarVisual(spec,spec.colors[0]);
       for(let i=0;i<4;i++){
@@ -254,10 +256,23 @@ function makeCarThumbs(){
       sc.add(vis.group);
       const L=spec.body.hz+spec.body.hy;
       cam2.position.set(L*1.35,L*.8,L*1.8);cam2.lookAt(0,-spec.body.hy*.15,0);
-      r2.render(sc,cam2);
-      CARTHUMBS[spec.id]=r2.domElement.toDataURL("image/png");
+      renderer.setRenderTarget(rt);
+      renderer.setClearColor(0x000000,0);
+      renderer.clear();
+      renderer.render(sc,cam2);
+      renderer.readRenderTargetPixels(rt,0,0,RW,RH,px);
+      renderer.setRenderTarget(null);
+      // Y플립 + 감마 보정하여 2D 캔버스로
+      for(let y=0;y<RH;y++)for(let x=0;x<RW;x++){
+        const si=((RH-1-y)*RW+x)*4,di=(y*RW+x)*4;
+        img.data[di]=Math.round(Math.pow(px[si]/255,1/2.2)*255);
+        img.data[di+1]=Math.round(Math.pow(px[si+1]/255,1/2.2)*255);
+        img.data[di+2]=Math.round(Math.pow(px[si+2]/255,1/2.2)*255);
+        img.data[di+3]=px[si+3];}
+      c2.putImageData(img,0,0);
+      CARTHUMBS[spec.id]=cnv.toDataURL("image/png");
       sc.remove(vis.group);vis.dispose();}
-    r2.dispose();
+    rt.dispose();
   }catch(e){console.warn("thumb fail:",e.message);}
 }
 

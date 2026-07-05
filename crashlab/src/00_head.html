@@ -56,8 +56,24 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .heroTitle{font-size:min(9vw,42px);font-weight:900;line-height:1.12;letter-spacing:-.01em}
 .heroTitle b{color:var(--acc)}
 .heroSub{color:var(--tx2);font-size:13.5px;margin-top:10px;max-width:52ch;line-height:1.6}
-.card.mode .ic{font-size:30px;filter:drop-shadow(0 3px 6px rgba(0,0,0,.4))}
+.card.mode .ic{font-size:26px;filter:drop-shadow(0 3px 6px rgba(0,0,0,.4));
+  width:52px;height:52px;display:flex;align-items:center;justify-content:center;
+  border-radius:14px;background:linear-gradient(140deg,rgba(255,122,26,.28),rgba(255,122,26,.05) 70%);
+  border:1px solid rgba(255,178,94,.24)}
 .card.mode:hover{border-color:rgba(255,122,26,.5)}
+@keyframes cardIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:no-preference){
+  .grid .card{animation:cardIn .4s cubic-bezier(.2,.7,.3,1) backwards}
+  .grid .card:nth-child(1){animation-delay:.02s}.grid .card:nth-child(2){animation-delay:.06s}
+  .grid .card:nth-child(3){animation-delay:.1s}.grid .card:nth-child(4){animation-delay:.14s}
+  .grid .card:nth-child(5){animation-delay:.18s}.grid .card:nth-child(6){animation-delay:.22s}
+  .grid .card:nth-child(7){animation-delay:.26s}.grid .card:nth-child(8){animation-delay:.3s}
+  .hero{animation:cardIn .5s cubic-bezier(.2,.7,.3,1) backwards}}
+.btn{position:relative;overflow:hidden}
+.btn:not(.ghost):not(.danger)::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.22) 48%,transparent 62%);
+  transform:translateX(-120%);animation:sheen 3.6s 1.2s infinite}
+@keyframes sheen{0%{transform:translateX(-120%)}28%{transform:translateX(120%)}100%{transform:translateX(120%)}}
 .h1{font-size:19px;font-weight:800;margin:6px 0 12px}
 .h1 small{color:var(--tx2);font-weight:500;font-size:13px;margin-left:8px}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}

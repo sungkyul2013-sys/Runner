@@ -24,7 +24,7 @@ class SoftLattice{
       this.home[a+1]=this.min[1]+j*this.cell[1];
       this.home[a+2]=this.min[2]+k*this.cell[2];
       // 하부 중앙 = 프레임(강체에 가깝게), 외피는 약한 복원
-      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.5:0;
+      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.3:0;
       this.anchor[idx(i,j,k)]=.012+frame;}
     this.pos.set(this.home);this.prev.set(this.home);
     // beams
@@ -61,7 +61,7 @@ class SoftLattice{
     this.binds.push({mesh,orig,bi,bw,vc});
   }
   impact(lp,ln,dv){
-    const R=.6+.032*dv,d=Math.min(.55,.015*dv);
+    const R=.72+.042*dv,d=Math.min(.72,.02*dv);
     for(let i=0;i<this.n;i++){
       const a=i*3;
       const dx=this.pos[a]-lp.x,dy=this.pos[a+1]-lp.y,dz=this.pos[a+2]-lp.z;
@@ -71,7 +71,7 @@ class SoftLattice{
         const f=t*t*d;
         this.pos[a]+=ln.x*f;this.pos[a+1]+=ln.y*f;this.pos[a+2]+=ln.z*f;
         // 속도도 주입 (관성으로 주변으로 전파)
-        this.prev[a]-=ln.x*f*.5;this.prev[a+1]-=ln.y*f*.5;this.prev[a+2]-=ln.z*f*.5;}}
+        this.prev[a]-=ln.x*f*.75;this.prev[a+1]-=ln.y*f*.75;this.prev[a+2]-=ln.z*f*.75;}}
     this.hot=Math.min(this.hot+.5,1.1);this.dirty=true;
   }
   update(dt){
@@ -99,8 +99,8 @@ class SoftLattice{
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;
           if(it===0){
             const rest0=B[o+3],strain=(len-rest)/rest0;
-            if(Math.abs(strain)>.045){       // 항복 → 소성 변형 (영구)
-              B[o+2]=clamp(rest+(len-rest)*.55,rest0*.35,rest0*1.45);}}}
+            if(Math.abs(strain)>.032){       // 항복 → 소성 변형 (영구)
+              B[o+2]=clamp(rest+(len-rest)*.65,rest0*.28,rest0*1.5);}}}
     }
     this.write();
     return true;

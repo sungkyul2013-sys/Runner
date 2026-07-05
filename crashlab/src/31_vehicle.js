@@ -221,7 +221,7 @@ class Vehicle{
       const ct=world.pointContact(_vD);
       if(ct){
         const dv=resolvePointContact(b,_vD,ct,0);
-        if(dv>2)this.registerImpact(this.hull[i],_vD,ct.n,dv);}}
+        if(dv>1.4)this.registerImpact(this.hull[i],_vD,ct.n,dv);}}
 
     /* ----- props ----- */
     hitProps(this);
@@ -249,7 +249,7 @@ class Vehicle{
   registerImpact(lp,wp,n,dv){
     this.body.vecToLocal(n,_vA);
     this.impacts.push({lp:lp.clone(),ln:_vA.clone(),wp:wp.clone(),dv});
-    if(this.impacts.length>8)this.impacts.shift();
+    if(this.impacts.length>14)this.impacts.shift();
     this.addDamage(lp,dv);
   }
 }

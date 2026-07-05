@@ -657,7 +657,7 @@ class Vehicle{
       const ct=world.pointContact(_vD);
       if(ct){
         const dv=resolvePointContact(b,_vD,ct,0);
-        if(dv>2)this.registerImpact(this.hull[i],_vD,ct.n,dv);}}
+        if(dv>1.4)this.registerImpact(this.hull[i],_vD,ct.n,dv);}}
 
     /* ----- props ----- */
     hitProps(this);
@@ -685,7 +685,7 @@ class Vehicle{
   registerImpact(lp,wp,n,dv){
     this.body.vecToLocal(n,_vA);
     this.impacts.push({lp:lp.clone(),ln:_vA.clone(),wp:wp.clone(),dv});
-    if(this.impacts.length>8)this.impacts.shift();
+    if(this.impacts.length>14)this.impacts.shift();
     this.addDamage(lp,dv);
   }
 }
@@ -903,7 +903,7 @@ function stationLerp(st,z,key){
   return st[0][key];
 }
 
-const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:70,specular:0x555555});
+const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:95,specular:0x6a7078});
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8});
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222});
 let _wheelGeoCache={};
@@ -1147,7 +1147,7 @@ class SoftLattice{
       this.home[a+1]=this.min[1]+j*this.cell[1];
       this.home[a+2]=this.min[2]+k*this.cell[2];
       // 하부 중앙 = 프레임(강체에 가깝게), 외피는 약한 복원
-      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.5:0;
+      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.3:0;
       this.anchor[idx(i,j,k)]=.012+frame;}
     this.pos.set(this.home);this.prev.set(this.home);
     // beams
@@ -1184,7 +1184,7 @@ class SoftLattice{
     this.binds.push({mesh,orig,bi,bw,vc});
   }
   impact(lp,ln,dv){
-    const R=.6+.032*dv,d=Math.min(.55,.015*dv);
+    const R=.72+.042*dv,d=Math.min(.72,.02*dv);
     for(let i=0;i<this.n;i++){
       const a=i*3;
       const dx=this.pos[a]-lp.x,dy=this.pos[a+1]-lp.y,dz=this.pos[a+2]-lp.z;
@@ -1194,7 +1194,7 @@ class SoftLattice{
         const f=t*t*d;
         this.pos[a]+=ln.x*f;this.pos[a+1]+=ln.y*f;this.pos[a+2]+=ln.z*f;
         // 속도도 주입 (관성으로 주변으로 전파)
-        this.prev[a]-=ln.x*f*.5;this.prev[a+1]-=ln.y*f*.5;this.prev[a+2]-=ln.z*f*.5;}}
+        this.prev[a]-=ln.x*f*.75;this.prev[a+1]-=ln.y*f*.75;this.prev[a+2]-=ln.z*f*.75;}}
     this.hot=Math.min(this.hot+.5,1.1);this.dirty=true;
   }
   update(dt){
@@ -1222,8 +1222,8 @@ class SoftLattice{
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;
           if(it===0){
             const rest0=B[o+3],strain=(len-rest)/rest0;
-            if(Math.abs(strain)>.045){       // 항복 → 소성 변형 (영구)
-              B[o+2]=clamp(rest+(len-rest)*.55,rest0*.35,rest0*1.45);}}}
+            if(Math.abs(strain)>.032){       // 항복 → 소성 변형 (영구)
+              B[o+2]=clamp(rest+(len-rest)*.65,rest0*.28,rest0*1.5);}}}
     }
     this.write();
     return true;
@@ -1409,19 +1409,27 @@ class MapBuilder{
     for(let i=0;i<p.length;i++){this.mergePos.push(p[i]);this.mergeNor.push(nr[i]);}
     for(let i=0;i<p.length/3;i++)this.mergeCol.push(c.r,c.g,c.b);
     g.dispose();}
-  bump(x,z,yaw,width){ // 한국형 과속방지턱: 폭 3.6m·높이 10cm 완만 아치 + 노랑/흰 사선
+  bump(x,z,yaw,width,h){ // 한국형 과속방지턱 (h: 높이 m, 기본 10cm) + 노랑/흰 사선
+    h=h||.1;
     const y=this.world.height(x,z);
     // physics: 2단 낮은 슬랩으로 아치 근사 (충격 완만)
-    this.box(x,y+.028,z,width,.056,3.2,0,{yaw,mu:1,tag:"bump",noVis:true});
-    this.box(x,y+.05,z,width,.1,1.7,0,{yaw,mu:1,tag:"bump",noVis:true});
+    this.box(x,y+h*.28,z,width,h*.56,3.2,0,{yaw,mu:1,tag:"bump",noVis:true});
+    this.box(x,y+h*.5,z,width,h,1.7,0,{yaw,mu:1,tag:"bump",noVis:true});
     // visual: 눌린 반원통 아치, 45° 사선 스트라이프
     const g=new THREE.CylinderGeometry(1.8,1.8,width,14,1,true,0,Math.PI).toNonIndexed();
     g.rotateZ(Math.PI/2);          // 축 → x(도로 가로)
-    g.scale(1,.058,1);             // 높이 10cm 아치
+    g.scale(1,.058*h/.1,1);
     this.pushGeo(g,x,y,z,yaw,(lx,ly,lz)=>{
       const band=Math.abs(Math.floor((lx+lz*1.04+200)/.5))%2;
       return band?[.86,.6,.06]:[.8,.82,.85];});
     return this;}
+  texText(x,z,sizeM,str,color,yaw){ // 노면 텍스트 마킹
+    const ctx=this.octx,[px,py]=this.tp(x,z);
+    ctx.save();ctx.translate(px,py);ctx.rotate(yaw||0);
+    ctx.fillStyle=color||"rgba(240,244,250,.92)";
+    ctx.font="700 "+Math.round(sizeM*this.ppm)+"px sans-serif";
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(str,0,0);ctx.restore();}
   pushGeo(geo,x,y,z,yaw,colorFn){ // 임의 지오메트리 병합(버텍스별 색)
     geo.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0,yaw||0,0)));
     const p=geo.attributes.position.array,nr=geo.attributes.normal.array;
@@ -1918,6 +1926,66 @@ MAPS.push(
   w.waypoints=pathWaypoints(ring,true,50);
   w.spawn={x:0,z:-60,yaw:0};
   mb.paintLanes();
+  return mb.finalize(this);}});
+
+/* ---------- 8. 서스펜션 랩 ---------- */
+MAPS.push(
+{id:"susp",name:"서스펜션 랩",icon:"🔩",desc:"높이별 방지턱·빨래판·트위스트·언덕 4단·경사 8/15/25°·자갈밭·계단",
+ modes:["free"],
+ build(){
+  const mb=new MapBuilder(600,224),w=mb.world;
+  const LANES=[-150,-90,-30,30,100,170];
+  mb.fill((x,z)=>{
+    let h=0;
+    // 4레인: 언덕 4단 (가우시안 능선)
+    if(Math.abs(x-30)<26){
+      const edge=clamp((26-Math.abs(x-30))/8,0,1);
+      for(const[zc,H]of[[-120,1.5],[-55,3],[15,5],[100,8]]){
+        const s2=(H*2.2)*(H*2.2);
+        h+=H*Math.exp(-((z-zc)*(z-zc))/(2*s2))*edge;}}
+    // 5레인: 경사로 8/15/25° (오르막-정상-내리막 사다리꼴)
+    if(Math.abs(x-100)<24){
+      const edge=clamp((24-Math.abs(x-100))/8,0,1);
+      const wedge=(z0,up,top,down,H)=>{
+        if(z<z0||z>z0+up+top+down)return 0;
+        if(z<z0+up)return H*(z-z0)/up;
+        if(z<z0+up+top)return H;
+        return H*(1-(z-z0-up-top)/down);};
+      h+=(wedge(-160,36,12,26,5)+wedge(-70,30,12,24,8)+wedge(20,26,14,22,12))*edge;}
+    if(Math.abs(x)>282||Math.abs(z)>282)return[h,S_GRS];
+    return[h,S_ASP];});
+  // 1레인: 높이별 방지턱 4~16cm
+  const hs=[.04,.06,.08,.10,.13,.16];
+  hs.forEach((h,k)=>{
+    mb.bump(LANES[0],-140+k*38,0,13,h);
+    mb.texText(LANES[0]-9,-146+k*38,3.2,Math.round(h*100)+"cm");});
+  // 2레인: 빨래판 (슬랫 18개)
+  for(let k=0;k<18;k++)
+    mb.box(LANES[1],w.height(LANES[1],-140+k*1.35)+.018,-140+k*1.35,12,.036,.5,0x8f98a3,{mu:1,tag:"slat"});
+  for(let k=0;k<8;k++)
+    mb.box(LANES[1],.03,-60+k*3.4,12,.06,.9,0x8f98a3,{mu:1,tag:"slat"});
+  mb.texText(LANES[1],-152,3.2,"빨래판");
+  // 3레인: 트위스트 (좌우 엇갈림 → 대각 롤 유발)
+  for(let k=0;k<10;k++)
+    mb.bump(LANES[2]+(k%2?-3.2:3.2),-140+k*16,0,7,.11);
+  mb.texText(LANES[2],-152,3.2,"트위스트");
+  mb.texText(30,-152,3.2,"언덕 1.5~8m");
+  mb.texText(100,-152,3.2,"경사 8°/15°/25°");
+  // 6레인: 자갈밭(랜덤 슬랫) + 계단 + 연석 타격
+  {let sd=41;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<46;k++)
+     mb.box(LANES[5]+(rr()-.5)*10,.014,-140+rr()*90,1.2+rr()*1.6,.028+rr()*.03,.8+rr(),0x77808c,
+       {yaw:rr()*3,mu:1,tag:"cobble"});}
+  for(let k=0;k<3;k++)
+    mb.box(LANES[5],.06+k*.12,-20+k*1.4,12,.12,1.4,0x9aa2ab,{mu:1,tag:"stair"});
+  mb.box(LANES[5],.09,30,12,.18,.9,0xb5443c,{mu:1,tag:"curb"});
+  mb.texText(LANES[5],-152,3.2,"자갈·계단·연석");
+  // 레인 구분선 + 출발 안내
+  for(const lx of LANES)
+    mb.texPath([{x:lx,z:-170},{x:lx,z:150}],.3,"rgba(255,210,80,.5)",[2.5,2.5]);
+  mb.texText(0,-210,5,"SUSPENSION LAB","rgba(240,244,250,.85)");
+  for(let k=0;k<4;k++)mb.baked(k%2?"trees":"treesTall",-250+k*160,250,11,k,{});
+  w.spawn={x:0,z:-235,yaw:0};
   return mb.finalize(this);}});
 
 /* ---------- custom map from editor tiles ---------- */
@@ -3401,16 +3469,18 @@ const Showroom={
 
 /* 차량 3D 프리뷰 썸네일 (차량 선택 카드용) */
 const CARTHUMBS={};
-function makeCarThumbs(){
+function makeCarThumbs(){ // 메인 렌더러의 렌더타겟 사용 (모바일에서 2차 GL 컨텍스트 실패 방지)
   try{
-    const rw=280,rh=168;
-    const r2=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});
-    r2.setSize(rw,rh);r2.setPixelRatio(1.5);
-    r2.toneMapping=THREE.ACESFilmicToneMapping;
+    const RW=560,RH=336;
+    const rt=new THREE.WebGLRenderTarget(RW,RH);
     const sc=new THREE.Scene();
-    const cam2=new THREE.PerspectiveCamera(28,rw/rh,.1,60);
+    const cam2=new THREE.PerspectiveCamera(28,RW/RH,.1,60);
     sc.add(new THREE.HemisphereLight(0xd8e8ff,0x3a4038,.95));
     const dl=new THREE.DirectionalLight(0xfff4e0,1.7);dl.position.set(4,7,3);sc.add(dl);
+    const px=new Uint8Array(RW*RH*4);
+    const cnv=document.createElement("canvas");cnv.width=RW;cnv.height=RH;
+    const c2=cnv.getContext("2d");
+    const img=c2.createImageData(RW,RH);
     for(const spec of CARS){
       const vis=new CarVisual(spec,spec.colors[0]);
       for(let i=0;i<4;i++){
@@ -3422,10 +3492,23 @@ function makeCarThumbs(){
       sc.add(vis.group);
       const L=spec.body.hz+spec.body.hy;
       cam2.position.set(L*1.35,L*.8,L*1.8);cam2.lookAt(0,-spec.body.hy*.15,0);
-      r2.render(sc,cam2);
-      CARTHUMBS[spec.id]=r2.domElement.toDataURL("image/png");
+      renderer.setRenderTarget(rt);
+      renderer.setClearColor(0x000000,0);
+      renderer.clear();
+      renderer.render(sc,cam2);
+      renderer.readRenderTargetPixels(rt,0,0,RW,RH,px);
+      renderer.setRenderTarget(null);
+      // Y플립 + 감마 보정하여 2D 캔버스로
+      for(let y=0;y<RH;y++)for(let x=0;x<RW;x++){
+        const si=((RH-1-y)*RW+x)*4,di=(y*RW+x)*4;
+        img.data[di]=Math.round(Math.pow(px[si]/255,1/2.2)*255);
+        img.data[di+1]=Math.round(Math.pow(px[si+1]/255,1/2.2)*255);
+        img.data[di+2]=Math.round(Math.pow(px[si+2]/255,1/2.2)*255);
+        img.data[di+3]=px[si+3];}
+      c2.putImageData(img,0,0);
+      CARTHUMBS[spec.id]=cnv.toDataURL("image/png");
       sc.remove(vis.group);vis.dispose();}
-    r2.dispose();
+    rt.dispose();
   }catch(e){console.warn("thumb fail:",e.message);}
 }
 

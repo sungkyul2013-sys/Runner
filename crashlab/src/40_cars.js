@@ -171,7 +171,7 @@ function stationLerp(st,z,key){
   return st[0][key];
 }
 
-const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:70,specular:0x555555});
+const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:95,specular:0x6a7078});
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8});
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222});
 let _wheelGeoCache={};
