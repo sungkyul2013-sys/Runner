@@ -27,14 +27,14 @@ const Assets=(()=>{
     e._arr={pos,nor,col,M,dom,n};
     return e._arr;}
   /* geometry: flip(+scale) → 게임 좌표(+z 전방), optional paint retint */
-  function geo(e,opt){ // opt:{scale, cx,cy,cz(model-space center to subtract), paint:THREE.Color}
+  function geo(e,opt){ // opt:{scale, sy(y-squash), cx,cy,cz(model-space center), paint:THREE.Color}
     opt=opt||{};
-    const s=opt.scale||1,A=arrays(e);
+    const s=opt.scale||1,sy=(opt.sy||1)*s,A=arrays(e);
     const pos=new Float32Array(A.pos),nor=new Float32Array(A.nor),col=new Float32Array(A.col);
     const cx=opt.cx||0,cy=opt.cy||0,cz=opt.cz||0;
     for(let i=0;i<A.n;i++){
       pos[i*3]  =-(A.pos[i*3]-cx)*s;   // rotate 180° about Y + scale
-      pos[i*3+1]= (A.pos[i*3+1]-cy)*s;
+      pos[i*3+1]= (A.pos[i*3+1]-cy)*sy;
       pos[i*3+2]=-(A.pos[i*3+2]-cz)*s;
       nor[i*3]=-A.nor[i*3];nor[i*3+2]=-A.nor[i*3+2];
       if(opt.paint&&A.M&&A.M[i]&&A.dom&&
@@ -59,24 +59,27 @@ function applyModelSpec(spec){
   const bb=e.bb;
   const len=bb[5]-bb[2],wid=bb[3]-bb[0],hgt=bb[4]-bb[1];
   const s=spec.body.hz*2/len;
+  const sq=spec.squashY||1;                 // 차체 비례 보정(스포츠카 낮게)
   spec.modelScale=s;
   spec.body.hx=wid/2*s;
-  spec.body.hy=hgt/2*s;
+  spec.body.hy=hgt/2*s*sq;
   // com: 모델 높이 40% 지점 (전복 안정성)
   spec.modelCy=bb[1]+hgt*.42;
   spec.modelCx=(bb[0]+bb[3])/2;spec.modelCz=(bb[2]+bb[5])/2;
-  // wheels (model: front=-z → flip)
+  // wheels (model: front=-z → flip) — 실제 차 비율로 타이어 축소(0.8×)
   const w=e.wheels;
   const oldR=spec.wheels.radius;
-  const wr=(e.wheel.bb[4]-e.wheel.bb[1])/2*s;
+  const wrFull=(e.wheel.bb[4]-e.wheel.bb[1])/2*s;
+  const wr=wrFull*.8;
+  const drop=wrFull-wr;                     // 휠 축소분만큼 마운트 하향 → 지상고 유지
   const fw=w.filter(p=>p[2]<spec.modelCz),rw=w.filter(p=>p[2]>=spec.modelCz);
   spec.wheels.radius=wr;
-  spec.wheels.width=(e.wheel.bb[3]-e.wheel.bb[0])*s;
+  spec.wheels.width=(e.wheel.bb[3]-e.wheel.bb[0])*s*.92;
   spec.wheels.trackVis=Math.abs(w[0][0])*s;
   spec.wheels.track=Math.abs(w[0][0])*s*(spec.rollFix||1.25);   // 물리 트랙 보정
   spec.wheels.front=Math.abs((fw[0]?fw[0][2]:-len*.35)-spec.modelCz)*s;
   spec.wheels.rear=Math.abs((rw[0]?rw[0][2]:len*.35)-spec.modelCz)*s;
-  spec.wheels.y=(w[0][1]-spec.modelCy)*s+spec.susp.rest;
+  spec.wheels.y=(w[0][1]-spec.modelCy)*s*sq+spec.susp.rest-drop;
   spec.engine.maxT*=wr/oldR;                                     // 휠 반경 변화 보상
-  spec.modelWheelY=(w[0][1]-spec.modelCy)*s;
+  spec.modelWheelY=(w[0][1]-spec.modelCy)*s*sq-drop;
 }

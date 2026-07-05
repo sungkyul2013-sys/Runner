@@ -14,7 +14,7 @@ const CARS=[
   stats:{spd:28,acc:30,grip:55,mass:26}},
  {id:"gt",name:"드리프트킹 GT",icon:"🏎️",drive:"FR",mass:1380,hp:320,acc:"5.0초",top:255,
   desc:"파워 오버스티어의 교과서. 핸드브레이크 드리프트 진입 특화.",
-  model:"race",rollFix:1.35,
+  model:"race",rollFix:1.35,squashY:.9,
   body:{hx:.86,hy:.5,hz:2.15},wheels:{track:.8,front:1.35,rear:1.4,y:-.28,radius:.32,width:.25},
   susp:{k:64000,c:5400,travel:.12,rest:.15},arb:26000,
   engine:{maxT:420,redline:7200,idle:950},gears:[3.2,2.1,1.5,1.15,.92],final:3.7,
@@ -23,7 +23,7 @@ const CARS=[
   stats:{spd:70,acc:72,grip:70,mass:32}},
  {id:"offroad",name:"산악왕 4X4",icon:"🚙",drive:"4WD",mass:2150,hp:210,acc:"11.0초",top:170,
   desc:"서스펜션 트래블 250mm. 오프로드에서는 지배자.",
-  model:"suvLuxury",rollFix:1.28,
+  model:"suvLuxury",rollFix:1.28,squashY:.96,
   body:{hx:.95,hy:.75,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -41,7 +41,7 @@ const CARS=[
   stats:{spd:18,acc:12,grip:35,mass:100}},
  {id:"veloce",name:"벨로체 R",icon:"🏁",drive:"4WD",mass:1480,hp:720,acc:"2.9초",top:330,
   desc:"720마력 + 다운포스. 시뮬 모드에서 진가를 발휘한다.",
-  model:"raceFuture",rollFix:1.38,
+  model:"raceFuture",rollFix:1.38,squashY:.88,
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
   susp:{k:98000,c:7200,travel:.09,rest:.12},arb:60000,
   engine:{maxT:780,redline:8500,idle:1100},gears:[3.0,2.05,1.55,1.2,.97],final:3.4,
@@ -174,21 +174,34 @@ function stationLerp(st,z,key){
 const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:70,specular:0x555555});
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222});
 let _wheelGeoCache={};
-function wheelGeo(r,wd){ // merged tire+rim+spokes, vertex colors
+function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부)
   const k=(r*100|0)+"_"+(wd*100|0);
   if(!_wheelGeoCache[k]){
+    const tw=Math.max(wd*.55,r*.19);
     const items=[
-      {geo:new THREE.CylinderGeometry(r,r,wd,16),color:0x16181c,rz:Math.PI/2},
-      {geo:new THREE.CylinderGeometry(r*.58,r*.58,wd+.015,10),color:0xb8bfc9,rz:Math.PI/2},
-      {geo:new THREE.CylinderGeometry(r*.16,r*.16,wd+.05,8),color:0x30343c,rz:Math.PI/2}];
-    for(let s=0;s<5;s++)items.push({geo:new THREE.BoxGeometry(wd+.03,r*.42,r*.16),
-      color:0x585f6a,rx:s*Math.PI*2/5,y:0,z:0});
-    // spokes rotate around x-axis: build them along y then rotate about x
-    _wheelGeoCache[k]=mergeGeoms(items.map((it,i)=>{
-      if(i>=3){const a=(i-3)*Math.PI*2/5;
-        return{geo:new THREE.BoxGeometry(wd+.02,r*.9,r*.14),color:0x9aa2ad,rx:a};}
-      return it;}));}
+      // 타이어: 토러스(림이 보이는 실제 단면)
+      {geo:new THREE.TorusGeometry(r-tw,tw,9,24),color:0x0d0e10,ry:Math.PI/2,sx:1,sy:1,sz:1},
+      // 림 배럴 (건메탈)
+      {geo:new THREE.CylinderGeometry(r*.62,r*.62,wd*.7,18),color:0x1f2126,rz:Math.PI/2},
+      // 림 디쉬 (밝은 알로이 페이스)
+      {geo:new THREE.CylinderGeometry(r*.6,r*.6,wd*.72,18),color:0x454b54,rz:Math.PI/2},
+      // 림 립
+      {geo:new THREE.TorusGeometry(r*.6,r*.032,6,22),color:0xa7afb9,ry:Math.PI/2},
+      // 센터 캡
+      {geo:new THREE.CylinderGeometry(r*.13,r*.13,wd*.78,10),color:0x8f979f,rz:Math.PI/2}];
+    for(let sp=0;sp<6;sp++)
+      items.push({geo:new THREE.BoxGeometry(wd*.74,r*1.12,r*.1),color:0xa7afb9,rx:sp*Math.PI/6});
+    _wheelGeoCache[k]=mergeGeoms(items);}
   return _wheelGeoCache[k];
+}
+let _brakeGeoCache={};
+function brakeGeo(r,wd){ // 비회전부: 브레이크 디스크 + 캘리퍼
+  const k=(r*100|0)+"_"+(wd*100|0);
+  if(!_brakeGeoCache[k])
+    _brakeGeoCache[k]=mergeGeoms([
+      {geo:new THREE.CylinderGeometry(r*.46,r*.46,wd*.3,16),color:0x484d54,rz:Math.PI/2},
+      {geo:new THREE.BoxGeometry(wd*.42,r*.34,r*.24),color:0xb33227,y:r*.28,z:r*.3}]);
+  return _brakeGeoCache[k];
 }
 
 /* deform helper (unchanged API) */
@@ -239,7 +252,7 @@ class CarVisual{
   /* ===== 외부(베이크) 모델 차량 ===== */
   buildBaked(spec,colorHex){
     const e=this.baked,{hx,hy,hz}=spec.body;
-    this.bodyMesh=new THREE.Mesh(Assets.geo(e,{scale:spec.modelScale,
+    this.bodyMesh=new THREE.Mesh(Assets.geo(e,{scale:spec.modelScale,sy:spec.squashY||1,
       cx:spec.modelCx,cy:spec.modelCy,cz:spec.modelCz,paint:new THREE.Color(colorHex)}),MAT_CAR);
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
     const bumpMat=new THREE.MeshPhongMaterial({color:0x191d24,flatShading:true,shininess:18});
@@ -250,13 +263,13 @@ class CarVisual{
       ml:this.mkPart(.07,.08,.17,-hx*.92,hy*.1,hz*.3,bumpMat),
       mr:this.mkPart(.07,.08,.17,hx*.92,hy*.1,hz*.3,bumpMat)};
     this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
-    if(!e.wheel._geos)e.wheel._geos={};
-    const wg=e.wheel._geos[spec.id]||(e.wheel._geos[spec.id]=
-      Assets.geo(e.wheel,{scale:spec.modelScale}));
+    const wg=wheelGeo(spec.wheels.radius,spec.wheels.width);
+    const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
     this.wheelMeshes=[];
     for(let i=0;i<4;i++){
       const m=new THREE.Mesh(wg,MAT_DETAIL);m.castShadow=true;
-      const grp=new THREE.Group();grp.add(m);
+      const br=new THREE.Mesh(bg,MAT_DETAIL);
+      const grp=new THREE.Group();grp.add(m);grp.add(br);
       this.group.add(grp);this.wheelMeshes.push(grp);}
   }
 
@@ -309,9 +322,10 @@ class CarVisual{
     this.partHp={fb:1,rb:1,hood:1,trunk:1,dl:1,dr:1,ml:.35,mr:.35};
     this.wheelMeshes=[];
     const wg=wheelGeo(W.radius,W.width);
+    const bg=brakeGeo(W.radius,W.width);
     for(let i=0;i<4;i++){
       const m=new THREE.Mesh(wg,MAT_DETAIL);
-      const grp=new THREE.Group();grp.add(m);
+      const grp=new THREE.Group();grp.add(m);grp.add(new THREE.Mesh(bg,MAT_DETAIL));
       this.group.add(grp);this.wheelMeshes.push(grp);}
   }
   applyImpact(imp,veh){
