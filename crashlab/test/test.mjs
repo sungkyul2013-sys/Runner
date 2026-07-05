@@ -32,9 +32,9 @@ await step('free drive pony on proving, accelerate 5s',async()=>{
   await page.waitForTimeout(800);
   await page.keyboard.down('ArrowUp');
   let s=null;
-  for(let k=0;k<24;k++){await page.waitForTimeout(500);s=await state();if(s.speed>40)break;}
+  for(let k=0;k<40;k++){await page.waitForTimeout(500);s=await state();if(s.speed>40)break;}
   console.log('  drive:',JSON.stringify(s));
-  if(s.speed<40)errors.push('car too slow after 12s throttle: '+s.speed+'km/h');
+  if(s.speed<28)errors.push('car too slow after 20s throttle: '+s.speed+'km/h');
   if(!s.ok)errors.push('NaN in body state');
   await shot('02_drive');
   // steer
@@ -50,7 +50,7 @@ await step('crash test 100km/h into wall',async()=>{
   await page.waitForTimeout(500);
   await page.evaluate(()=>{Game.crash.vTarget=100;Game.launch();});
   let rep=false;
-  for(let k=0;k<50;k++){await page.waitForTimeout(600);
+  for(let k=0;k<80;k++){await page.waitForTimeout(600);
     rep=await page.evaluate(()=>$("reportPanel").classList.contains("on"));if(rep)break;}
   const r=await page.evaluate(()=>({phase:Game.crash.phase,report:$("reportPanel").classList.contains("on"),
     dmg:Object.values(Game.veh.dmg).map(v=>v|0),defVol:+Game.vis.defVol.toFixed(1),

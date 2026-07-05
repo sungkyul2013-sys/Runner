@@ -63,6 +63,8 @@ const Game={
     $("menu").classList.remove("on");$("hud").classList.add("on");$("editorScr").classList.remove("on");
     $("pausePanel").classList.remove("on");$("reportPanel").classList.remove("on");$("resultPanel").classList.remove("on");
     $("crashPanel").classList.toggle("on",this.mode==="crash");
+    $("speedo").style.display=this.mode==="crash"?"none":"";
+    $("minimap").style.display=this.mode==="crash"?"none":"";
     $("btnRepair").style.display=(this.mode==="free"||this.mode==="crash"||this.mode==="drift")?"":"none";
     Sfx.resume();
     updateModeWidget();
@@ -279,6 +281,8 @@ const Game={
       // consume impacts → deform + fx
       this.consumeImpacts(this.veh,this.vis,true);
       for(const a of this.ais)this.consumeImpacts(a.veh,a.vis,false);
+      this.vis.updateDeforms(dt*ts);
+      for(const a of this.ais)a.vis.updateDeforms(dt*ts);
       // wheels fx + sound
       this.wheelFx(dt*ts);
       Fx.step(dt*ts,this.world);

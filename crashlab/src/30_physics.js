@@ -9,6 +9,9 @@ const SURF={asphalt:{mu:1.0,col:0x3a3f47},wet:{mu:.7,col:0x2e3640},gravel:{mu:.6
   lane:{mu:1.0,col:0xdfe5ec}};
 const SURF_IDS=Object.keys(SURF);
 const SURF_MU=SURF_IDS.map(k=>SURF[k].mu);
+/* 노면 미세 요철 진폭(m) — 서스펜션이 실제로 반응 */
+const SURF_ROUGH=SURF_IDS.map(k=>({asphalt:.005,lane:.005,wet:.005,walk:.007,curb:.012,
+  gravel:.02,sand:.013,grass:.022,snow:.011,ice:.002}[k]||0));
 
 /* ---------- rigid body ---------- */
 class Body{

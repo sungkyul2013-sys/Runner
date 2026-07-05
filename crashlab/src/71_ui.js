@@ -48,9 +48,12 @@ const UI=(()=>{
   function car(){
     body().innerHTML='<div class="h1">'+MODES.find(m=>m.id===pickMode).name+' <small>차량을 고르세요</small></div>'+
       '<div class="grid big">'+CARS.map((c,i)=>
-        '<button class="card'+(i===pickCar?" sel":"")+'" data-i="'+i+'">'+
+        '<button class="card carCard'+(i===pickCar?" sel":"")+'" data-i="'+i+'">'+
         '<span class="tag">'+c.drive+' · '+c.hp+'hp</span>'+
-        '<span class="ic">'+c.icon+'</span><span class="nm">'+c.name+'</span>'+
+        (typeof CARTHUMBS!=="undefined"&&CARTHUMBS[c.id]?
+          '<img class="carImg" src="'+CARTHUMBS[c.id]+'" alt="">':
+          '<span class="ic">'+c.icon+'</span>')+
+        '<span class="nm">'+c.name+'</span>'+
         '<span class="ds">'+c.desc+'</span>'+
         stat("속도",c.stats.spd)+stat("가속",c.stats.acc)+stat("그립",c.stats.grip)+
         '<span class="ds">0→100 '+c.acc+' · '+c.mass.toLocaleString()+'kg</span>'+

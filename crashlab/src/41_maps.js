@@ -3,13 +3,78 @@
    ============================================================ */
 const SURF_ID={};SURF_IDS.forEach((k,i)=>SURF_ID[k]=i);
 
+const TEX_SIZE=2048;
+const SURF_CSS={};  // surf id → css color (지면 텍스처용, sRGB)
+SURF_IDS.forEach((k,i)=>{const c=new THREE.Color();c.setHex(SURF[k].col);
+  // SURF.col은 linear로 취급돼 왔으므로 캔버스(sRGB)용으로 감마 보정
+  SURF_CSS[i]="rgb("+[c.r,c.g,c.b].map(v=>Math.round(Math.pow(v,1/2.2)*255)).join(",")+")";});
 class MapBuilder{
   constructor(size,res){
     this.world=new World(size,res);
     this.group=new THREE.Group();
     this.mergePos=[];this.mergeNor=[];this.mergeCol=[];
     this.props=[];this.laneDots=[];
+    // 고해상 지면 텍스처 (도로·차선·마킹은 벡터로 선명하게)
+    this.tex=document.createElement("canvas");
+    this.tex.width=this.tex.height=TEX_SIZE;
+    this.tctx=this.tex.getContext("2d");
+    this.overlay=document.createElement("canvas");   // 벡터 마킹 레이어 (finalize에서 합성)
+    this.overlay.width=this.overlay.height=TEX_SIZE;
+    this.octx=this.overlay.getContext("2d");
+    this.ppm=TEX_SIZE/size;               // pixels per meter
   }
+  /* world(x,z) → tex px */
+  tp(x,z){return[(x/this.world.size+.5)*TEX_SIZE,(z/this.world.size+.5)*TEX_SIZE];}
+  texBase(){ // sMap 저해상 → 부드럽게 업스케일 (배경 지형색)
+    const w=this.world,n=w.res+1;
+    const c=document.createElement("canvas");c.width=c.height=n;
+    const x=c.getContext("2d");
+    const img=x.createImageData(n,n);
+    const tmp=new THREE.Color();
+    for(let j=0;j<n;j++)for(let i=0;i<n;i++){
+      tmp.setHex(SURF[SURF_IDS[w.sMap[j*n+i]]].col);
+      const o=(j*n+i)*4;
+      img.data[o]=Math.round(Math.pow(tmp.r,1/2.2)*255);
+      img.data[o+1]=Math.round(Math.pow(tmp.g,1/2.2)*255);
+      img.data[o+2]=Math.round(Math.pow(tmp.b,1/2.2)*255);
+      img.data[o+3]=255;}
+    x.putImageData(img,0,0);
+    this.tctx.imageSmoothingEnabled=true;
+    this.tctx.drawImage(c,0,0,TEX_SIZE,TEX_SIZE);
+  }
+  texPath(pts,widthM,color,dash){ // 벡터 도로 스트로크
+    const ctx=this.octx;
+    ctx.save();
+    ctx.strokeStyle=color;ctx.lineWidth=widthM*this.ppm;
+    ctx.lineJoin="round";ctx.lineCap="round";
+    if(dash)ctx.setLineDash(dash.map(d=>d*this.ppm));
+    ctx.beginPath();
+    for(let i=0;i<pts.length;i++){
+      const[px,py]=this.tp(pts[i].x,pts[i].z);
+      i?ctx.lineTo(px,py):ctx.moveTo(px,py);}
+    ctx.stroke();ctx.restore();}
+  texCircle(x,z,rM,color,lineM){ // 원 (채움 or 스트로크)
+    const ctx=this.octx,[px,py]=this.tp(x,z);
+    ctx.save();
+    ctx.beginPath();ctx.arc(px,py,rM*this.ppm,0,7);
+    if(lineM){ctx.strokeStyle=color;ctx.lineWidth=lineM*this.ppm;ctx.stroke();}
+    else{ctx.fillStyle=color;ctx.fill();}
+    ctx.restore();}
+  texRect(x,z,wM,dM,yaw,color){
+    const ctx=this.octx,[px,py]=this.tp(x,z);
+    ctx.save();ctx.translate(px,py);ctx.rotate(yaw||0);
+    ctx.fillStyle=color;
+    ctx.fillRect(-wM*this.ppm/2,-dM*this.ppm/2,wM*this.ppm,dM*this.ppm);
+    ctx.restore();}
+  texGrain(){ // 노면 질감 노이즈
+    const ctx=this.tctx;
+    let seed=97;const rnd=()=>{seed=(seed*48271)%2147483647;return seed/2147483647;};
+    ctx.save();
+    for(let k=0;k<26000;k++){
+      const x=rnd()*TEX_SIZE,y=rnd()*TEX_SIZE,l=rnd();
+      ctx.fillStyle=l<.5?"rgba(0,0,0,.05)":"rgba(255,255,255,.04)";
+      ctx.fillRect(x,y,1+rnd()*2.5,1+rnd()*2.5);}
+    ctx.restore();}
   fill(fn){ // fn(x,z) -> [height, surfId]
     const w=this.world,r=w.res;
     for(let j=0;j<=r;j++)for(let i=0;i<=r;i++){
@@ -42,6 +107,8 @@ class MapBuilder{
           if(d<=width*.5)w.sMap[idx]=surfId;});
         dist+=len/n;
         if(lane&&(dist%9)<4)this.laneDots.push([x,z]);}}
+    this.texPath(pts,width,SURF_CSS[surfId]);
+    if(lane)this.texPath(pts,.32,"rgba(242,246,252,.9)",[4.5,4.5]);
   }
   paintLanes(){ // 차선은 도로 도색이 모두 끝난 뒤 덧칠
     const w=this.world;
@@ -82,16 +149,28 @@ class MapBuilder{
     for(let i=0;i<p.length;i++){this.mergePos.push(p[i]);this.mergeNor.push(nr[i]);}
     for(let i=0;i<p.length/3;i++)this.mergeCol.push(c.r,c.g,c.b);
     g.dispose();}
-  bump(x,z,yaw,width){ // 과속방지턱: 9cm 낮은 사다리꼴(OBB) + 노랑/검정 표시
+  bump(x,z,yaw,width){ // 한국형 과속방지턱: 폭 3.6m·높이 10cm 완만 아치 + 노랑/흰 사선
     const y=this.world.height(x,z);
-    this.box(x,y+.045,z,width,.09,.85,0xe8b93c,{yaw,mu:1,tag:"bump"});
-    // black stripes (visual only)
-    const n=Math.max(2,Math.round(width/1.6));
-    for(let i=0;i<n;i++){
-      const t=(i+.5)/n-.5;
-      this.visBox(x+Math.cos(yaw)*t*width,y+.095,z-Math.sin(yaw)*t*width,
-        width/n*.5,.012,.86,0x23262c,{yaw});}
+    // physics: 2단 낮은 슬랩으로 아치 근사 (충격 완만)
+    this.box(x,y+.028,z,width,.056,3.2,0,{yaw,mu:1,tag:"bump",noVis:true});
+    this.box(x,y+.05,z,width,.1,1.7,0,{yaw,mu:1,tag:"bump",noVis:true});
+    // visual: 눌린 반원통 아치, 45° 사선 스트라이프
+    const g=new THREE.CylinderGeometry(1.8,1.8,width,14,1,true,0,Math.PI).toNonIndexed();
+    g.rotateZ(Math.PI/2);          // 축 → x(도로 가로)
+    g.scale(1,.058,1);             // 높이 10cm 아치
+    this.pushGeo(g,x,y,z,yaw,(lx,ly,lz)=>{
+      const band=Math.abs(Math.floor((lx+lz*1.04+200)/.5))%2;
+      return band?[.86,.6,.06]:[.8,.82,.85];});
     return this;}
+  pushGeo(geo,x,y,z,yaw,colorFn){ // 임의 지오메트리 병합(버텍스별 색)
+    geo.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0,yaw||0,0)));
+    const p=geo.attributes.position.array,nr=geo.attributes.normal.array;
+    for(let i=0;i<p.length;i+=3){
+      const col=colorFn(p[i],p[i+1],p[i+2]);
+      this.mergePos.push(p[i]+x,p[i+1]+y,p[i+2]+z);
+      this.mergeNor.push(nr[i],nr[i+1],nr[i+2]);
+      this.mergeCol.push(col[0],col[1],col[2]);}
+    geo.dispose();}
   ramp(x,z,yaw,pitchDeg,len,wid,color){ // ramp whose surface rises along +local z
     const pitch=-pitchDeg*DEG,h=.5;
     const rise=Math.sin(-pitch)*len;
@@ -103,22 +182,21 @@ class MapBuilder{
     w.props.push(p);this.group.add(p.mesh);return p;}
   finalize(mapDef){
     const w=this.world;
-    // ground mesh
+    this.texBase();
+    this.tctx.drawImage(this.overlay,0,0);
+    this.texGrain();
+    // ground mesh (고해상 캔버스 텍스처)
     const res=Math.min(w.res,192);
     const g=new THREE.PlaneGeometry(w.size,w.size,res,res);
     g.rotateX(-Math.PI/2);
-    const pos=g.attributes.position,cols=new Float32Array(pos.count*3);
-    const cTmp=new THREE.Color();
-    for(let vi=0;vi<pos.count;vi++){
-      const x=pos.getX(vi),z=pos.getZ(vi);
-      pos.setY(vi,w.height(x,z));
-      const s=w.surf(x,z);
-      cTmp.set(SURF[SURF_IDS[s]].col);
-      const n=.94+.06*Math.sin(x*12.9898+z*78.233);
-      cols[vi*3]=cTmp.r*n;cols[vi*3+1]=cTmp.g*n;cols[vi*3+2]=cTmp.b*n;}
-    g.setAttribute("color",new THREE.BufferAttribute(cols,3));
+    const pos=g.attributes.position;
+    for(let vi=0;vi<pos.count;vi++)
+      pos.setY(vi,w.height(pos.getX(vi),pos.getZ(vi)));
     g.computeVertexNormals();
-    const ground=new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true}));
+    const gtex=new THREE.CanvasTexture(this.tex);
+    gtex.colorSpace=THREE.SRGBColorSpace;
+    gtex.anisotropy=4;
+    const ground=new THREE.Mesh(g,new THREE.MeshLambertMaterial({map:gtex}));
     ground.receiveShadow=true;
     this.group.add(ground);
     // merged static boxes

@@ -174,12 +174,43 @@ addEventListener("error",e=>{
   }catch(_){}});
 addEventListener("unhandledrejection",e=>{console.warn("caught rejection");e.preventDefault();});
 
+/* 차량 3D 프리뷰 썸네일 (차량 선택 카드용) */
+const CARTHUMBS={};
+function makeCarThumbs(){
+  try{
+    const rw=280,rh=168;
+    const r2=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});
+    r2.setSize(rw,rh);r2.setPixelRatio(1.5);
+    r2.toneMapping=THREE.ACESFilmicToneMapping;
+    const sc=new THREE.Scene();
+    const cam2=new THREE.PerspectiveCamera(28,rw/rh,.1,60);
+    sc.add(new THREE.HemisphereLight(0xd8e8ff,0x3a4038,.95));
+    const dl=new THREE.DirectionalLight(0xfff4e0,1.7);dl.position.set(4,7,3);sc.add(dl);
+    for(const spec of CARS){
+      const vis=new CarVisual(spec,spec.colors[0]);
+      for(let i=0;i<4;i++){
+        const m=vis.wheelMeshes[i];
+        m.position.set((i%2?1:-1)*(spec.wheels.trackVis||spec.wheels.track),
+          spec.modelWheelY!==undefined?spec.modelWheelY:spec.wheels.y,
+          i<2?spec.wheels.front:-spec.wheels.rear);}
+      vis.group.rotation.y=-.7;
+      sc.add(vis.group);
+      const L=spec.body.hz+spec.body.hy;
+      cam2.position.set(L*1.35,L*.8,L*1.8);cam2.lookAt(0,-spec.body.hy*.15,0);
+      r2.render(sc,cam2);
+      CARTHUMBS[spec.id]=r2.domElement.toDataURL("image/png");
+      sc.remove(vis.group);vis.dispose();}
+    r2.dispose();
+  }catch(e){console.warn("thumb fail:",e.message);}
+}
+
 /* boot */
 function boot(){
   const steps=[
     ["차량 모델 로드…",()=>{for(const c of CARS)if(!c.modelScale)applyModelSpec(c);}],
     ["렌더러 초기화…",()=>initRenderer()],
     ["입력 시스템…",()=>{Input.init();initHudButtons();initGauge();}],
+    ["차량 프리뷰 렌더링…",()=>makeCarThumbs()],
     ["에디터 준비…",()=>Editor.init()],
     ["메뉴 구성…",()=>{UI.init();$("debugHud").classList.toggle("on",Settings.debug);}],
     ["완료!",()=>{

@@ -17,8 +17,11 @@ const MAPS=[
   for(let j=0;j<=w.res;j++)for(let i=0;i<=w.res;i++){
     const x=i*w.cell-280,z=j*w.cell-280;
     if(Math.abs(x)>half-18||Math.abs(z)>half-18)w.setS(i,j,S_GRS);}
-  // drag strip lane markings (curb stripes)
-  for(let z=-200;z<=200;z+=50)mb.stamp(-80,z,2.2,(i,j)=>w.setS(i,j,S_CRB));
+  // 가속로: 선명한 노면 마킹
+  mb.texPath([{x:-80,z:-225},{x:-80,z:214}],14,"rgb(58,62,70)");
+  mb.texPath([{x:-80,z:-225},{x:-80,z:210}],.35,"rgba(244,248,252,.95)",[3,3]);
+  for(let z=-200;z<=200;z+=50)mb.texRect(-80,z,14,.8,0,"rgba(213,90,80,.9)");
+  mb.texRect(-80,180,14,1.2,0,"rgba(120,220,160,.95)"); // 스피드 트랩 라인
   // crash walls (concrete + barrier) at end of strip
   mb.box(-80,2.2,232,26,4.4,3,0x9aa2ab,{mu:.6,bounce:.05,tag:"wall"});
   mb.box(-40,1,210,14,2,2,0xd8433b,{mu:.5,bounce:.3,tag:"barrier"});
@@ -32,9 +35,10 @@ const MAPS=[
   for(let k=0;k<8;k++)mb.prop("cone",10+((k%2)*8-4),-60-k*22);
   // 과속방지턱 시험 구간
   for(let k=0;k<5;k++)mb.bump(-20,-60-k*16,0,11);
-  // skidpad R30 marking
-  for(let a=0;a<Math.PI*2;a+=.05){
-    mb.stamp(150+Math.cos(a)*30,-120+Math.sin(a)*30,1.6,(i,j)=>w.setS(i,j,S_CRB));}
+  // skidpad R30 (선명한 링 + 중심점)
+  mb.texCircle(150,-120,30,"rgba(244,248,252,.9)",.45);
+  mb.texCircle(150,-120,.7,"rgba(244,248,252,.9)");
+  mb.texPath([{x:10,z:-48},{x:10,z:-228}],.3,"rgba(255,210,80,.75)",[2,2]); // 슬라럼 기준선
   // drop towers 10m & 20m with access ramps
   const tower=(x,z,h)=>{
     mb.box(x,h-.5,z,26,1,26,0x7f8791,{mu:1,tag:"tower"});             // deck
@@ -72,6 +76,19 @@ const MAPS=[
   mb.stamp(0,0,22,(i,j,d)=>{w.setS(i,j,S_ASP);});
   mb.stamp(0,0,9,(i,j,d)=>{w.setS(i,j,S_WLK);});
   mb.baked("fountain",0,0,15,0,{y:0,collide:true,shrink:.75});
+  // 선명한 도로/보도/차선 (벡터)
+  for(let k=-2;k<=2;k++){
+    mb.texPath([{x:-half,z:k*pitch},{x:half,z:k*pitch}],22,SURF_CSS[S_WLK]);
+    mb.texPath([{x:k*pitch,z:-half},{x:k*pitch,z:half}],22,SURF_CSS[S_WLK]);}
+  for(let k=-2;k<=2;k++){
+    mb.texPath([{x:-half,z:k*pitch},{x:half,z:k*pitch}],16,SURF_CSS[S_ASP]);
+    mb.texPath([{x:k*pitch,z:-half},{x:k*pitch,z:half}],16,SURF_CSS[S_ASP]);}
+  for(let k=-2;k<=2;k++){
+    mb.texPath([{x:-half,z:k*pitch},{x:half,z:k*pitch}],.32,"rgba(242,246,252,.9)",[4.5,4.5]);
+    mb.texPath([{x:k*pitch,z:-half},{x:k*pitch,z:half}],.32,"rgba(242,246,252,.9)",[4.5,4.5]);}
+  mb.texCircle(0,0,22,SURF_CSS[S_ASP]);
+  mb.texCircle(0,0,9,SURF_CSS[S_WLK]);
+  mb.texCircle(0,0,15.5,"rgba(242,246,252,.8)",.35);
   // 베이크 건물 (Kenney City Builder Kit)
   let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   const BLD=["bldA","bldB","bldC","bldD","garage"];
@@ -182,10 +199,10 @@ const MAPS=[
     if(d<170)return[0,S_ICE];
     if(d<225)return[.3+(d-170)*.02,S_SNW];
     return[2+(d-225)*.06,S_SNW];});
-  // drift circles
-  for(const r of[35,80])
-    for(let a=0;a<Math.PI*2;a+=.04)
-      mb.stamp(Math.cos(a)*r,Math.sin(a)*r,1.4,(i,j)=>w.setS(i,j,S_CRB));
+  // drift circles (선명한 링)
+  mb.texCircle(0,0,35,"rgba(213,85,75,.85)",1.1);
+  mb.texCircle(0,0,80,"rgba(213,85,75,.7)",1.1);
+  mb.texCircle(0,0,1.2,"rgba(213,85,75,.9)");
   // snow wall ring
   for(let a=0;a<Math.PI*2;a+=Math.PI/26){
     const x=Math.cos(a)*205,z=Math.sin(a)*205;
@@ -228,6 +245,15 @@ const MAPS=[
      const a=rr()*Math.PI*2,r=120+rr()*220;
      const tx=Math.cos(a)*r,tz=Math.sin(a)*r*.9;
      if(w.surf(tx,tz)===S_GRS)mb.baked(rr()<.5?"trees":"treesTall",tx,tz,10+rr()*5,rr()*6,{});}}
+  // 트랙 가장자리 흰 라인
+  {const off=(pts,o)=>pts.map((p,i)=>{const q=pts[(i+1)%pts.length];
+     const dx=q.x-p.x,dz=q.z-p.z,l=Math.hypot(dx,dz)||1;
+     return{x:p.x+dz/l*o,z:p.z-dx/l*o};});
+   mb.texPath(off(road,5.7),.35,"rgba(244,248,252,.85)");
+   mb.texPath(off(road,-5.7),.35,"rgba(244,248,252,.85)");
+   // 스타트/피니시 라인
+   const a=road[0],b=road[4];
+   mb.texRect(a.x,a.z,13,1.6,Math.atan2(b.x-a.x,b.z-a.z),"rgba(240,244,250,.95)");}
   w.checkpoints=pathCheckpoints(road,30,16);
   mb.paintLanes();
   w.waypoints=pathWaypoints(road,true,52);
@@ -285,6 +311,7 @@ MAPS.push(
   // 언덕 비포장길
   const dirt=samplePath([[220,-140],[300,-230],[380,-330],[430,-390]],false,80);
   for(const p of dirt)mb.stamp(p.x,p.z,6,(i,j)=>w.setS(i,j,SURF_ID.gravel));
+  mb.texPath(dirt,11,SURF_CSS[SURF_ID.gravel]);
   // 언덕·호수 나무
   for(let k=0;k<16;k++){
     const tx=240+rnd()*220,tz=-160-rnd()*220;

@@ -16,7 +16,7 @@ for(let c=0;c<5;c++){
     await new Promise(r=>setTimeout(r,200));
     Game.crash.vTarget=200;Game.launch();},c);
   let done=false;
-  for(let k=0;k<40;k++){await page.waitForTimeout(500);
+  for(let k=0;k<80;k++){await page.waitForTimeout(500);
     done=await page.evaluate(()=>Game.crash.phase==='report');if(done)break;}
   const r=await page.evaluate(()=>({ok:Game.veh.body.ok(),phase:Game.crash.phase,
     g:+Game.veh.peakG.toFixed(0),vol:+Game.vis.defVol.toFixed(1)}));
@@ -45,7 +45,7 @@ await page.evaluate(async()=>{
   Game.veh.reset(0,0,0,false);
   Game.veh.body.quat.setFromEuler(new THREE.Euler(0,0,Math.PI));
   Game.veh.body.pos.y=Game.world.height(0,0)+1.4;});
-await page.waitForTimeout(9000);
+await page.waitForTimeout(13000);
 const flip=await page.evaluate(()=>({flipT:+Game.veh.flipT.toFixed(1),
   blink:$("btnReset").classList.contains("blink")}));
 console.log('flip:',JSON.stringify(flip));

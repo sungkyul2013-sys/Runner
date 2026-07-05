@@ -121,6 +121,33 @@ function quantize(soup){
   return out;
 }
 
+function subdivide(soup){ // tri → 4 (부드러운 변형용)
+  const{pos,nrm,col,mask}=soup;
+  const P=[],N=[],C=[],M=[];
+  const n=pos.length/9; // triangles
+  const mid=(A,i,j,k)=>[(A[i*3+k]+A[j*3+k])/2];
+  for(let t=0;t<n;t++){
+    const i0=t*3,i1=t*3+1,i2=t*3+2;
+    const V=idx=>[pos[idx*3],pos[idx*3+1],pos[idx*3+2]];
+    const NN=idx=>[nrm[idx*3],nrm[idx*3+1],nrm[idx*3+2]];
+    const CC=idx=>[col[idx*3],col[idx*3+1],col[idx*3+2]];
+    const v0=V(i0),v1=V(i1),v2=V(i2);
+    const m01=v0.map((v,k)=>(v+v1[k])/2),m12=v1.map((v,k)=>(v+v2[k])/2),m20=v2.map((v,k)=>(v+v0[k])/2);
+    const n0=NN(i0),n1=NN(i1),n2=NN(i2);
+    const nm01=n0.map((v,k)=>(v+n1[k])/2),nm12=n1.map((v,k)=>(v+n2[k])/2),nm20=n2.map((v,k)=>(v+n0[k])/2);
+    const c0=CC(i0),c1=CC(i1),c2=CC(i2);
+    const cm01=c0,cm12=c1,cm20=c2;   // 색은 플랫 유지 (경계 번짐 방지)
+    const tris=[[v0,m01,m20,n0,nm01,nm20,c0,c0,c0],
+                [m01,v1,m12,nm01,n1,nm12,c1,c1,c1],
+                [m20,m12,v2,nm20,nm12,n2,c2,c2,c2],
+                [m01,m12,m20,nm01,nm12,nm20,c0,c1,c2]];
+    const mk=Math.max(mask[i0],mask[i1],mask[i2]);
+    for(const[a,b,c,na,nb,nc,ca,cb,cc]of tris){
+      P.push(...a,...b,...c);N.push(...na,...nb,...nc);
+      C.push(...ca,...cb,...cc);M.push(mk,mk,mk);}}
+  return{pos:P,nrm:N,col:C,mask:M};
+}
+
 const BAKED={};
 /* ---- cars ---- */
 const carFiles={race:"race.glb",raceFuture:"raceFuture.glb",suvLuxury:"suvLuxury.glb",
@@ -153,7 +180,7 @@ for(const[key,file]of Object.entries(carFiles)){
     wheels.push([-lone[0],lone[1],lone[2]]);}
   // order: FL,FR,RL,RR in MODEL space (front = -z)
   wheels.sort((a,b)=>(a[2]-b[2])||(a[0]-b[0]));
-  const entry=quantize(body);
+  const entry=quantize(subdivide(body));   // 차체 4배 세분화 → 슬라임 변형
   entry.wheel=quantize(wheelSoup);
   entry.wheels=wheels;
   BAKED[key]=entry;

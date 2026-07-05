@@ -131,6 +131,11 @@ class Vehicle{
         w.onGround=true;groundCount++;
         const dist=Math.max(_hit.dist,r*.6);
         w.comp=clamp(maxRay-dist,0,susp.travel);
+        // 노면 미세 요철 (표면별 결정론적 노이즈 → 서스펜션 잔진동)
+        if(!_hit.box){
+          const ra=SURF_ROUGH[_hit.surf];
+          if(ra)w.comp=Math.max(0,w.comp+ra*Math.sin(w.cW.x*6.13)*Math.sin(w.cW.z*5.31)
+            +ra*.5*Math.sin(w.cW.x*17.7+w.cW.z*13.1));}
         w.visY=w.local.y-(dist-r);
         w.cW.copy(_vD).addScaledVector(_vE,dist); // contact point
         w.cN.copy(_hit.n);w.surf=_hit.surf;
