@@ -107,9 +107,18 @@ class World{
     this.size=size;this.res=res;this.cell=size/res;
     this.hMap=new Float32Array((res+1)*(res+1));
     this.sMap=new Uint8Array((res+1)*(res+1));
-    this.boxes=[];this.props=[];this.debris=[];
+    this.boxes=[];this.props=[];this.debris=[];this.movers=[];this.t=0;
     this.spawn={x:0,z:0,yaw:0};this.checkpoints=[];this.waypoints=[];
     this.bounds=size*.5-2;
+  }
+  /* 애니메이션 장애물(압착기 등): OBB + 메시를 매 프레임 anim(t)로 이동 */
+  stepMovers(dt){
+    this.t+=dt;
+    for(const m of this.movers){
+      const ny=m.baseY+m.anim(this.t);
+      m.obb.vy=(ny-m.obb.c.y)/Math.max(dt,1e-4);   // 수직 속도(충돌 시 차체에 전달)
+      m.obb.c.y=ny;
+      if(m.mesh)m.mesh.position.y=m.meshY+(ny-m.baseY);}
   }
   idx(i,j){return j*(this.res+1)+i;}
   setH(i,j,h){this.hMap[this.idx(i,j)]=h;}

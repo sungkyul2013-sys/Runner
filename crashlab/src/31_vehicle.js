@@ -3,7 +3,7 @@
    + powertrain + damage model.  Local axes: +Z forward, +Y up.
    ============================================================ */
 const _vA=V3(0,0,0),_vB=V3(0,0,0),_vC=V3(0,0,0),_vD=V3(0,0,0),_vE=V3(0,0,0),
-      _vF=V3(0,0,0),_vG=V3(0,0,0),_vH=V3(0,0,0),_vUp=V3(0,1,0),_vFw=V3(0,0,1);
+      _vF=V3(0,0,0),_vG=V3(0,0,0),_vH=V3(0,0,0),_vUp=V3(0,1,0),_vFw=V3(0,0,1),_vUp2=V3(0,1,0),_vB2=V3(0,0,0);
 const _hit={dist:0,n:V3(0,1,0),mu:1,surf:0,box:null};
 
 function pacejka(a){ // normalized lateral grip vs slip angle(rad); peak ~1.0 @ ~8°
@@ -50,6 +50,18 @@ class Vehicle{
     this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};
     this.flipT=0;this.airT=0;
   }
+  isFlipped(){
+    const u=_vUp2.set(0,1,0).applyQuaternion(this.body.quat);return u.y<.5;}
+  uprightInPlace(){   // 현재 위치에서 똑바로 세우기 (전복 복구)
+    const b=this.body;
+    const f=_vUp2.set(0,0,1).applyQuaternion(b.quat);   // 월드 전방 → yaw
+    let yaw=Math.atan2(f.x,f.z);if(!isFinite(yaw))yaw=0;
+    b.quat.setFromEuler(new THREE.Euler(0,yaw,0));
+    b.pos.y=this.world.height(b.pos.x,b.pos.z)+this.spec.susp.rest+this.spec.body.hy+.1;
+    b.vel.set(0,0,0);b.angVel.set(0,0,0);b.force.set(0,0,0);b.torque.set(0,0,0);
+    this.impacts.length=0;this.flipT=0;this.airT=0;this.throttle=0;this.brake=0;
+    for(const w of this.wheels){w.comp=0;w.prevComp=0;w.skid=0;w.omega=0;w.onGround=false;w.load=0;}
+    this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};}
   clearDamage(){
     this.dmg={f:0,b:0,l:0,r:0};
     this.powerMul=1;this.steerMul=1;this.suspMul=1;this.toe=0;this.defVol=0;
@@ -142,8 +154,10 @@ class Vehicle{
         // suspension (spring+damper) + anti-roll bar
         const other=this.wheels[w.front?(i===0?1:0):(i===2?3:2)];
         const arb=sp.arb*(w.comp-other.comp);
-        let sF=susp.k*kMul*w.comp+susp.c*kMul*(w.comp-w.prevComp)/dt+arb;
-        sF=clamp(sF,0,sp.mass*GRAV*1.6);
+        // 댐퍼 속도 제한: 방지턱 모서리에서 comp가 급변해 코너가 튀어오르며 전복하는 것 방지
+        const cVel=clamp((w.comp-w.prevComp)/dt,-3.5,3.5);
+        let sF=susp.k*kMul*w.comp+susp.c*kMul*cVel+arb;
+        sF=clamp(sF,0,sp.mass*GRAV*1.4);
         w.susF=sF;w.load=lerp(w.load,sF,.5);
         _vF.copy(_hit.n).multiplyScalar(.4).addScaledVector(up,.6).normalize().multiplyScalar(sF);
         _vG.copy(w.cW).sub(b.pos);
@@ -211,6 +225,17 @@ class Vehicle{
       const yawR=b.angVel.dot(up);
       _vA.copy(up).multiplyScalar(-yawR*sp.mass*.55);
       b.torque.add(_vA);}
+    /* ----- 전복 저항 (약한 롤 댐핑 + 임계각 복원) ----- */
+    if(groundCount>0){
+      // 세로축(전방) 기준 롤 각속도 약하게 댐핑 → 범프 스파이크 튐만 억제(코너 롤은 유지)
+      b.vecToWorld(_vFw.set(0,0,1),_vA);
+      const rollR=b.angVel.dot(_vA);
+      b.torque.addScaledVector(_vA,-rollR*sp.mass*.42);
+      // ~37° 이상 크게 기울 때만 tilt²로 복원 토크 → 완전 전복만 방지(일반 코너링 롤은 자유)
+      if(up.y<.8){
+        const tilt=(.8-up.y)/.8;
+        _t2.copy(up).cross(_vUp2.set(0,1,0));      // carUp × worldUp = 복원축
+        b.torque.addScaledVector(_t2,sp.mass*2.9*tilt*tilt);}}
 
     /* ----- gravity ----- */
     b.force.y-=sp.mass*GRAV;
@@ -220,8 +245,18 @@ class Vehicle{
       b.localToWorld(this.hull[i],_vD);
       const ct=world.pointContact(_vD);
       if(ct){
-        const dv=resolvePointContact(b,_vD,ct,0);
-        if(dv>1.4)this.registerImpact(this.hull[i],_vD,ct.n,dv);}}
+        let dv=resolvePointContact(b,_vD,ct,0);
+        // 방지턱·빨래판·연석 등 넘어가는 지형지물은 충돌(손상·표시)로 처리하지 않음
+        const tg=ct.box&&ct.box.tag;
+        const driveOver=tg==="bump"||tg==="slat"||tg==="cobble"||tg==="stair"||tg==="curb"||tg==="ridge"||tg==="plank"||tg==="teeter";
+        // 압착기: 램과 접촉 시 아래로 강하게 눌러 짓눌림 + 큰 변형 (타이밍 무관)
+        if(tg==="crusher"){
+          const rs=Math.max(6,-(ct.box.vy||0));
+          _vG.copy(_vD).sub(b.pos);
+          _vB2.set(0,-rs*sp.mass*.05,0);                 // 하향 임펄스
+          b.applyImpulse(_vB2,_vG);
+          dv=Math.max(dv,rs);}
+        if(dv>1.4&&!driveOver)this.registerImpact(this.hull[i],_vD,ct.n,dv);}}
 
     /* ----- props ----- */
     hitProps(this);

@@ -6,67 +6,114 @@ const S_ASP=SURF_ID.asphalt,S_GRS=SURF_ID.grass,S_SND=SURF_ID.sand,S_GRV=SURF_ID
 
 const MAPS=[
 /* ---------- 1. 프루빙 그라운드 ---------- */
-{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"가속로·충돌벽·램프·슬라럼·스키드패드·낙하 타워",
+{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"가속로·충돌벽·유압 압착기·서스펜션 시험장·러프 오프로드·램프·스키드패드·낙하타워",
  modes:["free","crash","drift"],
  build(){
-  const mb=new MapBuilder(560,224),w=mb.world;
-  mb.fill((x,z)=>[0,S_ASP]);
+  const mb=new MapBuilder(760,256),w=mb.world;
+  const rough=(x,z)=>Math.hypot(x-250,z-250);          // 러프 오프로드 패치(남동)
+  mb.fill((x,z)=>{
+    const rd=rough(x,z);
+    if(rd<105){
+      let h=3.6*Math.sin(x*.055)*Math.cos(z*.05)+1.8*Math.sin(x*.12+1)*Math.cos(z*.1)
+            +.9*Math.sin(x*.26)*Math.cos(z*.23);
+      const e=clamp((105-rd)/22,0,1);
+      return[h*e,rd<70?S_GRV:S_SND];}
+    return[0,S_ASP];});
   // perimeter grass ring
-  mb.fill2=null;
-  const half=270;
+  const half=370;
   for(let j=0;j<=w.res;j++)for(let i=0;i<=w.res;i++){
-    const x=i*w.cell-280,z=j*w.cell-280;
+    const x=i*w.cell-380,z=j*w.cell-380;
     if(Math.abs(x)>half-18||Math.abs(z)>half-18)w.setS(i,j,S_GRS);}
   // 가속로: 선명한 노면 마킹
-  mb.texPath([{x:-80,z:-225},{x:-80,z:214}],14,"rgb(58,62,70)");
-  mb.texPath([{x:-80,z:-225},{x:-80,z:210}],.35,"rgba(244,248,252,.95)",[3,3]);
-  for(let z=-200;z<=200;z+=50)mb.texRect(-80,z,14,.8,0,"rgba(213,90,80,.9)");
-  mb.texRect(-80,180,14,1.2,0,"rgba(120,220,160,.95)"); // 스피드 트랩 라인
+  mb.texPath([{x:-140,z:-300},{x:-140,z:290}],14,"rgb(58,62,70)");
+  mb.texPath([{x:-140,z:-300},{x:-140,z:286}],.35,"rgba(244,248,252,.95)",[3,3]);
+  for(let z=-260;z<=260;z+=50)mb.texRect(-140,z,14,.8,0,"rgba(213,90,80,.9)");
+  mb.texRect(-140,240,14,1.2,0,"rgba(120,220,160,.95)"); // 스피드 트랩 라인
   // crash walls (concrete + barrier) at end of strip
-  mb.box(-80,2.2,232,26,4.4,3,0x9aa2ab,{mu:.6,bounce:.05,tag:"wall"});
-  mb.box(-40,1,210,14,2,2,0xd8433b,{mu:.5,bounce:.3,tag:"barrier"});
-  // speed trap
-  w.triggers=[{x:-80,z:180,r:10,type:"trap"}];
+  mb.box(-140,2.2,300,26,4.4,3,0x9aa2ab,{mu:.6,bounce:.05,tag:"wall"});
+  mb.box(-100,1,278,14,2,2,0xd8433b,{mu:.5,bounce:.3,tag:"barrier"});
+  w.triggers=[{x:-140,z:240,r:10,type:"trap"}];
   // ramps 15/30/45
-  mb.ramp(30,40,0,15,16,10);mb.ramp(52,40,0,30,12,10);mb.ramp(74,40,0,45,9,10);
+  mb.ramp(-30,40,0,15,16,10);mb.ramp(-8,40,0,30,12,10);mb.ramp(14,40,0,45,9,10);
   // 메가 키커 (대형 점프대) + 착지 램프
-  mb.ramp(52,96,0,28,22,12,0xd8433b);
-  mb.ramp(52,150,Math.PI,20,20,12,0xc7742f);
+  mb.ramp(-8,96,0,28,22,12,0xd8433b);
+  mb.ramp(-8,150,Math.PI,20,20,12,0xc7742f);
   // kick ramp (banked → flips)
-  mb.box(30,-0,120,10,1,9,0xc7742f,{pitch:-18*DEG,roll:14*DEG,mu:1,tag:"kick"});
+  mb.box(-30,-0,120,10,1,9,0xc7742f,{pitch:-18*DEG,roll:14*DEG,mu:1,tag:"kick"});
   // 뱅크 하프파이프 벽 (월라이드)
   for(const s of[-1,1])
-    mb.box(96+s*0,1.6,150,3,3.2,40,0x8f98a3,{yaw:0,roll:s*28*DEG,mu:.9,tag:"bank"});
-  // 워시보드(빨래판) 시험 스트립
-  for(let k=0;k<16;k++)mb.box(112,.05,-40+k*2.2,10,.1,.9,0x8f98a3,{mu:1,tag:"slat"});
+    mb.box(40,1.6,150,3,3.2,40,0x8f98a3,{yaw:0,roll:s*28*DEG,mu:.9,tag:"bank"});
+
+  /* === 유압 압착기 (COMPACTOR) === */
+  const cx=110,cz=-40;
+  for(const s of[-1,1])mb.box(cx+s*6,4.2,cz,1.4,8.4,4.4,0x33383f,{tag:"pillar"}); // 기둥
+  mb.box(cx,8.6,cz,15,1.2,4.6,0x2b2f35,{tag:"frame"});                            // 상단 프레임
+  mb.box(cx,.35,cz,11,.7,4.2,0x565b63,{mu:.95,tag:"anvil"});                      // 받침대
+  mb.mover(cx,4.8,cz,10.4,1.6,4,0xb5443c,{mu:.95,tag:"crusher"},                  // 내려찍는 램(급강하 슬램)
+    t=>{const T=4,ph=(t%T)/T;
+      if(ph<.5)return 0;                        // 대기(위) 2s
+      if(ph<.58)return -4*((ph-.5)/.08);        // 급강하 ~0.32s
+      if(ph<.82)return -4;                      // 유지 ~1s(짓눌림)
+      return -4*(1-(ph-.82)/.18);});            // 복귀
+  mb.texRect(cx,cz,12,6,0,"rgba(230,180,40,.5)");
+  mb.texText(cx,cz+5,3.4,"⚠ 압착기 CRUSHER","rgba(240,220,120,.9)");
+
+  /* === 서스펜션 시험장 (5레인) === */
+  const sz0=-260, SX=180;
+  const lanes=[SX-42,SX-14,SX+14,SX+42,SX+70];
+  // 1: 높이별 방지턱 6~30cm
+  [.06,.10,.15,.22,.30].forEach((h,k)=>{mb.bump(lanes[0],sz0+k*22,0,11,h);
+    mb.texText(lanes[0]-8,sz0+k*22-6,2.6,Math.round(h*100)+"cm");});
+  // 2: 빨래판
+  for(let k=0;k<18;k++)mb.box(lanes[1],.05,sz0+k*2,10,.1,.8,0x8f98a3,{mu:1,tag:"slat"});
+  // 3: 모굴(지그재그)
+  for(let k=0;k<12;k++)mb.bump(lanes[2]+((k%3)-1)*3.5,sz0+k*8,0,7,.14+(k%2)*.06);
+  // 4: 트위스트
+  for(let k=0;k<12;k++)mb.bump(lanes[3]+(k%2?-3:3),sz0+k*9,0,7,.16);
+  // 5: 계단·연석
+  for(let k=0;k<5;k++)mb.box(lanes[4],.1+k*.2,sz0+k*2.2,10,.2,2,0x9aa2ab,{mu:1,tag:"stair"});
+  mb.box(lanes[4],.16,sz0+14,10,.32,1,0xb5443c,{mu:1,tag:"curb"});
+  mb.texText(SX+14,sz0-16,5,"SUSPENSION","rgba(240,244,250,.6)");
+
   // slalom cones (지그재그)
-  for(let k=0;k<10;k++)mb.prop("cone",10+((k%2)*10-5),-60-k*20);
-  // 과속방지턱 시험 구간 — 높이별 6~30cm
-  const pbh=[.06,.10,.16,.22,.30];
-  pbh.forEach((h,k)=>mb.bump(-20,-60-k*18,0,12,h));
-  // skidpad R30 (선명한 링 + 중심점)
-  mb.texCircle(150,-120,30,"rgba(244,248,252,.9)",.45);
-  mb.texCircle(150,-120,.7,"rgba(244,248,252,.9)");
-  mb.texPath([{x:10,z:-48},{x:10,z:-228}],.3,"rgba(255,210,80,.75)",[2,2]); // 슬라럼 기준선
+  for(let k=0;k<10;k++)mb.prop("cone",-70+((k%2)*10-5),-60-k*20);
+  // skidpad R30
+  mb.texCircle(-250,-150,30,"rgba(244,248,252,.9)",.45);
+  mb.texCircle(-250,-150,.7,"rgba(244,248,252,.9)");
+  // 러프 오프로드: 바위 흩뿌리기
+  {let sd=61;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<20;k++){
+     const a=rr()*6.28,rd=rr()*85,rx=250+Math.cos(a)*rd,rz=250+Math.sin(a)*rd,sc=1+rr()*2.6;
+     mb.box(rx,w.height(rx,rz)+sc*.3,rz,sc*1.7,sc,sc*1.4,0x7a7169,{yaw:rr()*3,roll:(rr()-.5)*.4,mu:.85,tag:"rock"});}}
+  mb.texText(250,250,7,"OFF-ROAD","rgba(210,190,150,.5)");
   // drop towers 10m & 20m with access ramps
   const tower=(x,z,h)=>{
-    mb.box(x,h-.5,z,26,1,26,0x7f8791,{mu:1,tag:"tower"});             // deck
+    mb.box(x,h-.5,z,26,1,26,0x7f8791,{mu:1,tag:"tower"});
     const rl=h/Math.tan(22*DEG);
     mb.box(x,h*.5-.5,z-13-rl*.5+.2,12,1,rl/Math.cos(22*DEG),0x8f98a3,{pitch:-22*DEG,mu:1,tag:"ramp"});
-    for(const s of[-1,1])mb.box(x+s*13.2,h+.6,z,.4,1.6,26,0xb9c2cc,{mu:.4,tag:"rail"});}; // 전방(+z) 개방 → 낙하
-  tower(160,120,10);tower(220,140,20);
-  // barrels near barrier
-  for(let k=0;k<4;k++)mb.prop("barrel",-40+k*3,200);
-  for(let k=0;k<8;k++)mb.baked(k%2?"trees":"treesTall",-262+k*70,262,11,k,{});
-  w.spawn={x:-80,z:-220,yaw:0};
+    for(const s of[-1,1])mb.box(x+s*13.2,h+.6,z,.4,1.6,26,0xb9c2cc,{mu:.4,tag:"rail"});};
+  tower(-250,130,10);tower(-300,250,20);
+  /* === IIHS 충돌시험 배리어 라인업 (북측) === */
+  const iihs=[[-40,14,"풀오버랩"],[30,4,"25% 스몰오버랩"],[85,.8,"폴 충돌"]];
+  for(const[bx,bw,label]of iihs){
+    mb.box(bx,2.4,320,bw,4.8,4,bw<1?0xb5443c:0x9aa2ab,{mu:.6,bounce:.02,tag:bw<1?"pole":"wall"});
+    for(const s of[-1,1])mb.box(bx+ (bw/2+.6)*s,2.4,320,.4,4.8,4,0x33383f,{tag:"wall"}); // 노란 프레임 대용
+    mb.texRect(bx,300,bw+2,26,0,"rgba(70,74,82,.9)");                                        // 접근로
+    mb.texPath([{x:bx,z:270},{x:bx,z:314}],.3,"rgba(244,248,252,.9)",[3,3]);
+    mb.texText(bx,296,2.6,label,"rgba(240,220,120,.85)");}
+  mb.texText(30,262,4.2,"IIHS CRASH TEST","rgba(240,220,120,.7)");
+  // barrels + trees
+  for(let k=0;k<4;k++)mb.prop("barrel",-100+k*3,268);
+  for(let k=0;k<8;k++)mb.baked(k%2?"trees":"treesTall",-350+k*95,352,11,k,{});
+  w.spawn={x:-140,z:-290,yaw:0};
   return mb.finalize(this);}},
 
 /* ---------- 2. 네오시티 ---------- */
-{id:"city",name:"네오시티",icon:"🏙️",desc:"6×6 블록 시가지 — 골목·고가도로·로터리·파괴 오브젝트",
+{id:"city",name:"네오시티",icon:"🏙️",desc:"대형 시가지 — 다운타운 마천루·골목·고가도로·로터리·공원·스타디움",
  modes:["free","time","race","drift"],
  build(){
-  const mb=new MapBuilder(640,224),w=mb.world;
-  const pitch=96,half=288;
+  const mb=new MapBuilder(840,256),w=mb.world;
+  const pitch=96,half=396;
   mb.fill((x,z)=>{
     // roads on grid lines every 96m, width 16
     const rx=Math.abs(((x%pitch)+pitch*1.5)%pitch-pitch*.5),rz=Math.abs(((z%pitch)+pitch*1.5)%pitch-pitch*.5);
@@ -76,7 +123,7 @@ const MAPS=[
     return[0,road?S_ASP:walk?S_WLK:S_GRS];});
   // 차선 (도로 중앙 점선)
   for(let j=0;j<=w.res;j++)for(let i=0;i<=w.res;i++){
-    const x=i*w.cell-320,z=j*w.cell-320;
+    const x=i*w.cell-w.size*.5,z=j*w.cell-w.size*.5;
     if(Math.abs(x)>half||Math.abs(z)>half)continue;
     if(w.sMap[w.idx(i,j)]!==S_ASP)continue;
     const rx=Math.abs(((x%pitch)+pitch*1.5)%pitch-pitch*.5),rz=Math.abs(((z%pitch)+pitch*1.5)%pitch-pitch*.5);
@@ -86,13 +133,13 @@ const MAPS=[
   mb.stamp(0,0,9,(i,j,d)=>{w.setS(i,j,S_WLK);});
   mb.baked("fountain",0,0,15,0,{y:0,collide:true,shrink:.75});
   // 선명한 도로/보도/차선 (벡터)
-  for(let k=-2;k<=2;k++){
+  for(let k=-4;k<=4;k++){
     mb.texPath([{x:-half,z:k*pitch},{x:half,z:k*pitch}],22,SURF_CSS[S_WLK]);
     mb.texPath([{x:k*pitch,z:-half},{x:k*pitch,z:half}],22,SURF_CSS[S_WLK]);}
-  for(let k=-2;k<=2;k++){
+  for(let k=-4;k<=4;k++){
     mb.texPath([{x:-half,z:k*pitch},{x:half,z:k*pitch}],16,SURF_CSS[S_ASP]);
     mb.texPath([{x:k*pitch,z:-half},{x:k*pitch,z:half}],16,SURF_CSS[S_ASP]);}
-  for(let k=-2;k<=2;k++){
+  for(let k=-4;k<=4;k++){
     mb.texPath([{x:-half,z:k*pitch},{x:half,z:k*pitch}],.32,"rgba(242,246,252,.9)",[4.5,4.5]);
     mb.texPath([{x:k*pitch,z:-half},{x:k*pitch,z:half}],.32,"rgba(242,246,252,.9)",[4.5,4.5]);}
   mb.texCircle(0,0,22,SURF_CSS[S_ASP]);
@@ -101,19 +148,25 @@ const MAPS=[
   // 베이크 건물 (Kenney City Builder Kit)
   let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   const BLD=["bldA","bldB","bldC","bldD","garage"];
-  for(let bx=-2.5;bx<=2.5;bx++)for(let bz=-2.5;bz<=2.5;bz++){
+  for(let bx=-3.5;bx<=3.5;bx++)for(let bz=-3.5;bz<=3.5;bz++){
     if(Math.abs(bx)<1&&Math.abs(bz)<1)continue;
     if(bx===1.5&&bz===1.5)continue;    // 공원 블록
     if(bx===-1.5&&bz===1.5)continue;   // 스타디움 블록
     const cx=bx*pitch,cz=bz*pitch;
+    const downtown=Math.abs(bx)<=1.5&&Math.abs(bz)<=1.5;   // 다운타운 = 마천루
     const n=1+((rnd()*2)|0);
     for(let k=0;k<n;k++){
       const nm=BLD[(rnd()*5)|0];
-      const sc=22+rnd()*16;
+      const sc=(downtown?30:22)+rnd()*(downtown?18:14);
       const ox=cx+(rnd()-.5)*(66-sc),oz=cz+(rnd()-.5)*(66-sc);
-      mb.baked(nm,ox,oz,sc,((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});}
+      mb.baked(nm,ox,oz,sc,((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});
+      // 다운타운: 건물 위에 층 적층 → 마천루
+      if(downtown){const floors=2+((rnd()*3)|0);let yy=BAKED[nm]?(BAKED[nm].bb[4]-BAKED[nm].bb[1])*sc*.92:14;
+        for(let f=0;f<floors;f++){const fs=sc*(.88-f*.12);
+          mb.baked(BLD[(rnd()*4)|0],ox,oz,fs,((rnd()*4)|0)*Math.PI/2,{y:yy,collide:false});
+          yy+=(BAKED[BLD[0]]?18:14)*(fs/sc);}}}
     // 블록 코너 가로수
-    if(rnd()<.75)mb.baked(rnd()<.5?"trees":"treesTall",cx+30,cz+30,11+rnd()*4,rnd()*6,{y:0});}
+    if(rnd()<.7)mb.baked(rnd()<.5?"trees":"treesTall",cx+30,cz+30,11+rnd()*4,rnd()*6,{y:0});}
   // overpass across x axis (z=~ -96 row): ramps + elevated deck
   const oy=7;
   mb.box(-40,oy-.5,-96,160,1,14,0x69707c,{mu:1,tag:"deck"});

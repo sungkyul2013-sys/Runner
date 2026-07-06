@@ -4119,9 +4119,18 @@ class World{
     this.size=size;this.res=res;this.cell=size/res;
     this.hMap=new Float32Array((res+1)*(res+1));
     this.sMap=new Uint8Array((res+1)*(res+1));
-    this.boxes=[];this.props=[];this.debris=[];
+    this.boxes=[];this.props=[];this.debris=[];this.movers=[];this.t=0;
     this.spawn={x:0,z:0,yaw:0};this.checkpoints=[];this.waypoints=[];
     this.bounds=size*.5-2;
+  }
+  /* 애니메이션 장애물(압착기 등): OBB + 메시를 매 프레임 anim(t)로 이동 */
+  stepMovers(dt){
+    this.t+=dt;
+    for(const m of this.movers){
+      const ny=m.baseY+m.anim(this.t);
+      m.obb.vy=(ny-m.obb.c.y)/Math.max(dt,1e-4);   // 수직 속도(충돌 시 차체에 전달)
+      m.obb.c.y=ny;
+      if(m.mesh)m.mesh.position.y=m.meshY+(ny-m.baseY);}
   }
   idx(i,j){return j*(this.res+1)+i;}
   setH(i,j,h){this.hMap[this.idx(i,j)]=h;}
@@ -4215,7 +4224,7 @@ function resolvePointContact(body,pWorld,ct,extraBounce){
    + powertrain + damage model.  Local axes: +Z forward, +Y up.
    ============================================================ */
 const _vA=V3(0,0,0),_vB=V3(0,0,0),_vC=V3(0,0,0),_vD=V3(0,0,0),_vE=V3(0,0,0),
-      _vF=V3(0,0,0),_vG=V3(0,0,0),_vH=V3(0,0,0),_vUp=V3(0,1,0),_vFw=V3(0,0,1);
+      _vF=V3(0,0,0),_vG=V3(0,0,0),_vH=V3(0,0,0),_vUp=V3(0,1,0),_vFw=V3(0,0,1),_vUp2=V3(0,1,0),_vB2=V3(0,0,0);
 const _hit={dist:0,n:V3(0,1,0),mu:1,surf:0,box:null};
 
 function pacejka(a){ // normalized lateral grip vs slip angle(rad); peak ~1.0 @ ~8°
@@ -4262,6 +4271,18 @@ class Vehicle{
     this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};
     this.flipT=0;this.airT=0;
   }
+  isFlipped(){
+    const u=_vUp2.set(0,1,0).applyQuaternion(this.body.quat);return u.y<.5;}
+  uprightInPlace(){   // 현재 위치에서 똑바로 세우기 (전복 복구)
+    const b=this.body;
+    const f=_vUp2.set(0,0,1).applyQuaternion(b.quat);   // 월드 전방 → yaw
+    let yaw=Math.atan2(f.x,f.z);if(!isFinite(yaw))yaw=0;
+    b.quat.setFromEuler(new THREE.Euler(0,yaw,0));
+    b.pos.y=this.world.height(b.pos.x,b.pos.z)+this.spec.susp.rest+this.spec.body.hy+.1;
+    b.vel.set(0,0,0);b.angVel.set(0,0,0);b.force.set(0,0,0);b.torque.set(0,0,0);
+    this.impacts.length=0;this.flipT=0;this.airT=0;this.throttle=0;this.brake=0;
+    for(const w of this.wheels){w.comp=0;w.prevComp=0;w.skid=0;w.omega=0;w.onGround=false;w.load=0;}
+    this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};}
   clearDamage(){
     this.dmg={f:0,b:0,l:0,r:0};
     this.powerMul=1;this.steerMul=1;this.suspMul=1;this.toe=0;this.defVol=0;
@@ -4354,8 +4375,10 @@ class Vehicle{
         // suspension (spring+damper) + anti-roll bar
         const other=this.wheels[w.front?(i===0?1:0):(i===2?3:2)];
         const arb=sp.arb*(w.comp-other.comp);
-        let sF=susp.k*kMul*w.comp+susp.c*kMul*(w.comp-w.prevComp)/dt+arb;
-        sF=clamp(sF,0,sp.mass*GRAV*1.6);
+        // 댐퍼 속도 제한: 방지턱 모서리에서 comp가 급변해 코너가 튀어오르며 전복하는 것 방지
+        const cVel=clamp((w.comp-w.prevComp)/dt,-3.5,3.5);
+        let sF=susp.k*kMul*w.comp+susp.c*kMul*cVel+arb;
+        sF=clamp(sF,0,sp.mass*GRAV*1.4);
         w.susF=sF;w.load=lerp(w.load,sF,.5);
         _vF.copy(_hit.n).multiplyScalar(.4).addScaledVector(up,.6).normalize().multiplyScalar(sF);
         _vG.copy(w.cW).sub(b.pos);
@@ -4423,6 +4446,17 @@ class Vehicle{
       const yawR=b.angVel.dot(up);
       _vA.copy(up).multiplyScalar(-yawR*sp.mass*.55);
       b.torque.add(_vA);}
+    /* ----- 전복 저항 (약한 롤 댐핑 + 임계각 복원) ----- */
+    if(groundCount>0){
+      // 세로축(전방) 기준 롤 각속도 약하게 댐핑 → 범프 스파이크 튐만 억제(코너 롤은 유지)
+      b.vecToWorld(_vFw.set(0,0,1),_vA);
+      const rollR=b.angVel.dot(_vA);
+      b.torque.addScaledVector(_vA,-rollR*sp.mass*.42);
+      // ~37° 이상 크게 기울 때만 tilt²로 복원 토크 → 완전 전복만 방지(일반 코너링 롤은 자유)
+      if(up.y<.8){
+        const tilt=(.8-up.y)/.8;
+        _t2.copy(up).cross(_vUp2.set(0,1,0));      // carUp × worldUp = 복원축
+        b.torque.addScaledVector(_t2,sp.mass*2.9*tilt*tilt);}}
 
     /* ----- gravity ----- */
     b.force.y-=sp.mass*GRAV;
@@ -4432,8 +4466,18 @@ class Vehicle{
       b.localToWorld(this.hull[i],_vD);
       const ct=world.pointContact(_vD);
       if(ct){
-        const dv=resolvePointContact(b,_vD,ct,0);
-        if(dv>1.4)this.registerImpact(this.hull[i],_vD,ct.n,dv);}}
+        let dv=resolvePointContact(b,_vD,ct,0);
+        // 방지턱·빨래판·연석 등 넘어가는 지형지물은 충돌(손상·표시)로 처리하지 않음
+        const tg=ct.box&&ct.box.tag;
+        const driveOver=tg==="bump"||tg==="slat"||tg==="cobble"||tg==="stair"||tg==="curb"||tg==="ridge"||tg==="plank"||tg==="teeter";
+        // 압착기: 램과 접촉 시 아래로 강하게 눌러 짓눌림 + 큰 변형 (타이밍 무관)
+        if(tg==="crusher"){
+          const rs=Math.max(6,-(ct.box.vy||0));
+          _vG.copy(_vD).sub(b.pos);
+          _vB2.set(0,-rs*sp.mass*.05,0);                 // 하향 임펄스
+          b.applyImpulse(_vB2,_vG);
+          dv=Math.max(dv,rs);}
+        if(dv>1.4&&!driveOver)this.registerImpact(this.hull[i],_vD,ct.n,dv);}}
 
     /* ----- props ----- */
     hitProps(this);
@@ -4547,6 +4591,15 @@ const CARS=[
   brakeF:12500,steerLo:.56,steerHi:.13,aero:{cd:1.4,df:0},gripF:1.02,gripR:1.02,
   style:"suv",colors:[0x1c3a2a,0x12161b,0xe9ecee,0x8a929a,0x2a3f66],
   stats:{spd:55,acc:60,grip:74,mass:64}},
+ {id:"maybach",name:"마이바흐 S680",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.5초",top:250,
+  desc:"V12 트윈터보 럭셔리 리무진. 롱휠베이스 · 육중한 질량감 · 최상급 정숙성.",
+  style:"sedan",rollFix:1.2,squashY:1,
+  body:{hx:.98,hy:.66,hz:2.62},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.28},
+  susp:{k:58000,c:6000,travel:.2,rest:.26},arb:22000,
+  engine:{maxT:640,redline:6000,idle:600},gears:[3.4,2.1,1.5,1.15,.88],final:3.5,
+  brakeF:12000,steerLo:.52,steerHi:.12,aero:{cd:1.0,df:0},gripF:1.02,gripR:1.03,
+  colors:[0x0b0d10,0x14203a,0x2a2d31,0x6b7078,0x3a2c1a],
+  stats:{spd:58,acc:62,grip:70,mass:66}},
  {id:"titan",name:"타이탄 카고",icon:"🚚",drive:"RWD",mass:8000,hp:450,acc:"25초",top:120,
   desc:"8톤의 질량. 높은 무게중심 = 전복 장인. 뭐든 밀어버린다.",
   model:"garbageTruck",rollFix:1.12,
@@ -4627,6 +4680,11 @@ function carStations(spec){
     S(1,.78,-.42,.12,.32,.66),S(.96,.95,-.5,.3,.55,.8),S(.88,.96,-.55,.32,.9,.78,0,1),
     S(.72,.96,-.6,.32,.95,.78,1),S(.54,.94,-.62,.3,.9,.76),
     S(.48,.99,-.65,.4,1.02,.92),S(-.9,.99,-.65,.4,1.02,.92),S(-1,.92,-.55,.3,.97,.86)];
+  if(st==="sedan")return[   // 롱휠베이스 럭셔리 세단 (3박스: 롱후드·캐빈·트렁크)
+    S(1,.7,-.52,-.2,-.12,.6),S(.93,.93,-.68,-.06,.03,.78),S(.72,1,-.74,.06,.16,.86),
+    S(.5,1,-.76,.1,.22,.86),S(.34,1,-.76,.12,.9,.6,0,1),S(.2,.995,-.76,.12,1,.58),
+    S(-.14,1,-.76,.12,1.02,.58,1),S(-.4,1,-.76,.12,.98,.58,1,1),S(-.6,.99,-.75,.1,.56,.68),
+    S(-.84,.96,-.68,.02,.34,.66),S(-1,.76,-.54,-.14,.22,.6)];
   /* super */ return[
     S(1,.7,-.8,-.56,-.5,.58),S(.85,.95,-.95,-.42,-.32,.8),S(.5,1,-1,-.3,-.16,.86),
     S(.27,1,-1,-.26,-.1,.86),S(.1,1,-1,-.24,.48,.6,0,1),S(-.02,.995,-1,-.22,.62,.56),
@@ -4920,7 +4978,7 @@ class CarVisual{
 class SoftLattice{
   constructor(spec,meshes){
     const hx=spec.body.hx*1.04,hy=spec.body.hy*1.04,hz=spec.body.hz*1.04;
-    const NX=5,NY=4,NZ=9;
+    const NX=6,NY=4,NZ=11;   // 더 촘촘한 격자 → 부분별 미세 변형(BeamNG식)
     this.NX=NX;this.NY=NY;this.NZ=NZ;
     this.min=[-hx,-hy,-hz];
     this.cell=[2*hx/(NX-1),2*hy/(NY-1),2*hz/(NZ-1)];
@@ -4936,9 +4994,9 @@ class SoftLattice{
       this.home[a]=this.min[0]+i*this.cell[0];
       this.home[a+1]=this.min[1]+j*this.cell[1];
       this.home[a+2]=this.min[2]+k*this.cell[2];
-      // 하부 중앙 = 프레임(강체에 가깝게), 외피는 약한 복원
-      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.3:0;
-      this.anchor[idx(i,j,k)]=.012+frame;}
+      // 하부 중앙 = 프레임(강체에 가깝게), 외피는 약한 복원 (프레임 약화 → 더 많은 부분 변형)
+      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.2:0;
+      this.anchor[idx(i,j,k)]=.01+frame;}
     this.pos.set(this.home);this.prev.set(this.home);
     // beams
     const dirs=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,-1,0],[1,0,1],[1,0,-1],[0,1,1],[0,1,-1],[1,1,1],[1,-1,1]];
@@ -4974,8 +5032,8 @@ class SoftLattice{
     this.binds.push({mesh,orig,bi,bw,vc});
   }
   impact(lp,ln,dv){
-    // 슬라임식 대형 변형: 반경·깊이·전파 모두 강화
-    const R=.86+.055*dv,d=Math.min(1.25,.033*dv);
+    // 속도비례 대형 변형: 저속=경미(범퍼접촉), 고속(200km/h≈55m/s)=형체불명 함몰
+    const R=.78+.055*dv,d=Math.min(2.2,.0009*dv*dv+.015*dv);
     for(let i=0;i<this.n;i++){
       const a=i*3;
       const dx=this.pos[a]-lp.x,dy=this.pos[a+1]-lp.y,dz=this.pos[a+2]-lp.z;
@@ -4986,7 +5044,7 @@ class SoftLattice{
         this.pos[a]+=ln.x*f;this.pos[a+1]+=ln.y*f;this.pos[a+2]+=ln.z*f;
         // 속도 주입 강화 (관성으로 주변까지 물결처럼 전파)
         this.prev[a]-=ln.x*f*.95;this.prev[a+1]-=ln.y*f*.95;this.prev[a+2]-=ln.z*f*.95;}}
-    this.hot=Math.min(this.hot+.6,1.5);this.dirty=true;
+    this.hot=Math.min(this.hot+.5+d*.4,2.4);this.dirty=true;   // 큰 충격일수록 오래 정착
   }
   update(dt){
     if(this.hot<=0){if(this.dirty){this.write();this.dirty=false;}return false;}
@@ -5013,8 +5071,8 @@ class SoftLattice{
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;
           if(it===0){
             const rest0=B[o+3],strain=(len-rest)/rest0;
-            if(Math.abs(strain)>.02){        // 항복 → 소성(영구) 변형: 더 쉽게·더 깊게
-              B[o+2]=clamp(rest+(len-rest)*.78,rest0*.18,rest0*1.6);}}}
+            if(Math.abs(strain)>.018){       // 항복 → 소성(영구) 변형: 더 쉽게·더 깊게 (형체불명 유지)
+              B[o+2]=clamp(rest+(len-rest)*.85,rest0*.1,rest0*1.75);}}}
     }
     this.write();
     return true;
@@ -5400,67 +5458,114 @@ const S_ASP=SURF_ID.asphalt,S_GRS=SURF_ID.grass,S_SND=SURF_ID.sand,S_GRV=SURF_ID
 
 const MAPS=[
 /* ---------- 1. 프루빙 그라운드 ---------- */
-{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"가속로·충돌벽·램프·슬라럼·스키드패드·낙하 타워",
+{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"가속로·충돌벽·유압 압착기·서스펜션 시험장·러프 오프로드·램프·스키드패드·낙하타워",
  modes:["free","crash","drift"],
  build(){
-  const mb=new MapBuilder(560,224),w=mb.world;
-  mb.fill((x,z)=>[0,S_ASP]);
+  const mb=new MapBuilder(760,256),w=mb.world;
+  const rough=(x,z)=>Math.hypot(x-250,z-250);          // 러프 오프로드 패치(남동)
+  mb.fill((x,z)=>{
+    const rd=rough(x,z);
+    if(rd<105){
+      let h=3.6*Math.sin(x*.055)*Math.cos(z*.05)+1.8*Math.sin(x*.12+1)*Math.cos(z*.1)
+            +.9*Math.sin(x*.26)*Math.cos(z*.23);
+      const e=clamp((105-rd)/22,0,1);
+      return[h*e,rd<70?S_GRV:S_SND];}
+    return[0,S_ASP];});
   // perimeter grass ring
-  mb.fill2=null;
-  const half=270;
+  const half=370;
   for(let j=0;j<=w.res;j++)for(let i=0;i<=w.res;i++){
-    const x=i*w.cell-280,z=j*w.cell-280;
+    const x=i*w.cell-380,z=j*w.cell-380;
     if(Math.abs(x)>half-18||Math.abs(z)>half-18)w.setS(i,j,S_GRS);}
   // 가속로: 선명한 노면 마킹
-  mb.texPath([{x:-80,z:-225},{x:-80,z:214}],14,"rgb(58,62,70)");
-  mb.texPath([{x:-80,z:-225},{x:-80,z:210}],.35,"rgba(244,248,252,.95)",[3,3]);
-  for(let z=-200;z<=200;z+=50)mb.texRect(-80,z,14,.8,0,"rgba(213,90,80,.9)");
-  mb.texRect(-80,180,14,1.2,0,"rgba(120,220,160,.95)"); // 스피드 트랩 라인
+  mb.texPath([{x:-140,z:-300},{x:-140,z:290}],14,"rgb(58,62,70)");
+  mb.texPath([{x:-140,z:-300},{x:-140,z:286}],.35,"rgba(244,248,252,.95)",[3,3]);
+  for(let z=-260;z<=260;z+=50)mb.texRect(-140,z,14,.8,0,"rgba(213,90,80,.9)");
+  mb.texRect(-140,240,14,1.2,0,"rgba(120,220,160,.95)"); // 스피드 트랩 라인
   // crash walls (concrete + barrier) at end of strip
-  mb.box(-80,2.2,232,26,4.4,3,0x9aa2ab,{mu:.6,bounce:.05,tag:"wall"});
-  mb.box(-40,1,210,14,2,2,0xd8433b,{mu:.5,bounce:.3,tag:"barrier"});
-  // speed trap
-  w.triggers=[{x:-80,z:180,r:10,type:"trap"}];
+  mb.box(-140,2.2,300,26,4.4,3,0x9aa2ab,{mu:.6,bounce:.05,tag:"wall"});
+  mb.box(-100,1,278,14,2,2,0xd8433b,{mu:.5,bounce:.3,tag:"barrier"});
+  w.triggers=[{x:-140,z:240,r:10,type:"trap"}];
   // ramps 15/30/45
-  mb.ramp(30,40,0,15,16,10);mb.ramp(52,40,0,30,12,10);mb.ramp(74,40,0,45,9,10);
+  mb.ramp(-30,40,0,15,16,10);mb.ramp(-8,40,0,30,12,10);mb.ramp(14,40,0,45,9,10);
   // 메가 키커 (대형 점프대) + 착지 램프
-  mb.ramp(52,96,0,28,22,12,0xd8433b);
-  mb.ramp(52,150,Math.PI,20,20,12,0xc7742f);
+  mb.ramp(-8,96,0,28,22,12,0xd8433b);
+  mb.ramp(-8,150,Math.PI,20,20,12,0xc7742f);
   // kick ramp (banked → flips)
-  mb.box(30,-0,120,10,1,9,0xc7742f,{pitch:-18*DEG,roll:14*DEG,mu:1,tag:"kick"});
+  mb.box(-30,-0,120,10,1,9,0xc7742f,{pitch:-18*DEG,roll:14*DEG,mu:1,tag:"kick"});
   // 뱅크 하프파이프 벽 (월라이드)
   for(const s of[-1,1])
-    mb.box(96+s*0,1.6,150,3,3.2,40,0x8f98a3,{yaw:0,roll:s*28*DEG,mu:.9,tag:"bank"});
-  // 워시보드(빨래판) 시험 스트립
-  for(let k=0;k<16;k++)mb.box(112,.05,-40+k*2.2,10,.1,.9,0x8f98a3,{mu:1,tag:"slat"});
+    mb.box(40,1.6,150,3,3.2,40,0x8f98a3,{yaw:0,roll:s*28*DEG,mu:.9,tag:"bank"});
+
+  /* === 유압 압착기 (COMPACTOR) === */
+  const cx=110,cz=-40;
+  for(const s of[-1,1])mb.box(cx+s*6,4.2,cz,1.4,8.4,4.4,0x33383f,{tag:"pillar"}); // 기둥
+  mb.box(cx,8.6,cz,15,1.2,4.6,0x2b2f35,{tag:"frame"});                            // 상단 프레임
+  mb.box(cx,.35,cz,11,.7,4.2,0x565b63,{mu:.95,tag:"anvil"});                      // 받침대
+  mb.mover(cx,4.8,cz,10.4,1.6,4,0xb5443c,{mu:.95,tag:"crusher"},                  // 내려찍는 램(급강하 슬램)
+    t=>{const T=4,ph=(t%T)/T;
+      if(ph<.5)return 0;                        // 대기(위) 2s
+      if(ph<.58)return -4*((ph-.5)/.08);        // 급강하 ~0.32s
+      if(ph<.82)return -4;                      // 유지 ~1s(짓눌림)
+      return -4*(1-(ph-.82)/.18);});            // 복귀
+  mb.texRect(cx,cz,12,6,0,"rgba(230,180,40,.5)");
+  mb.texText(cx,cz+5,3.4,"⚠ 압착기 CRUSHER","rgba(240,220,120,.9)");
+
+  /* === 서스펜션 시험장 (5레인) === */
+  const sz0=-260, SX=180;
+  const lanes=[SX-42,SX-14,SX+14,SX+42,SX+70];
+  // 1: 높이별 방지턱 6~30cm
+  [.06,.10,.15,.22,.30].forEach((h,k)=>{mb.bump(lanes[0],sz0+k*22,0,11,h);
+    mb.texText(lanes[0]-8,sz0+k*22-6,2.6,Math.round(h*100)+"cm");});
+  // 2: 빨래판
+  for(let k=0;k<18;k++)mb.box(lanes[1],.05,sz0+k*2,10,.1,.8,0x8f98a3,{mu:1,tag:"slat"});
+  // 3: 모굴(지그재그)
+  for(let k=0;k<12;k++)mb.bump(lanes[2]+((k%3)-1)*3.5,sz0+k*8,0,7,.14+(k%2)*.06);
+  // 4: 트위스트
+  for(let k=0;k<12;k++)mb.bump(lanes[3]+(k%2?-3:3),sz0+k*9,0,7,.16);
+  // 5: 계단·연석
+  for(let k=0;k<5;k++)mb.box(lanes[4],.1+k*.2,sz0+k*2.2,10,.2,2,0x9aa2ab,{mu:1,tag:"stair"});
+  mb.box(lanes[4],.16,sz0+14,10,.32,1,0xb5443c,{mu:1,tag:"curb"});
+  mb.texText(SX+14,sz0-16,5,"SUSPENSION","rgba(240,244,250,.6)");
+
   // slalom cones (지그재그)
-  for(let k=0;k<10;k++)mb.prop("cone",10+((k%2)*10-5),-60-k*20);
-  // 과속방지턱 시험 구간 — 높이별 6~30cm
-  const pbh=[.06,.10,.16,.22,.30];
-  pbh.forEach((h,k)=>mb.bump(-20,-60-k*18,0,12,h));
-  // skidpad R30 (선명한 링 + 중심점)
-  mb.texCircle(150,-120,30,"rgba(244,248,252,.9)",.45);
-  mb.texCircle(150,-120,.7,"rgba(244,248,252,.9)");
-  mb.texPath([{x:10,z:-48},{x:10,z:-228}],.3,"rgba(255,210,80,.75)",[2,2]); // 슬라럼 기준선
+  for(let k=0;k<10;k++)mb.prop("cone",-70+((k%2)*10-5),-60-k*20);
+  // skidpad R30
+  mb.texCircle(-250,-150,30,"rgba(244,248,252,.9)",.45);
+  mb.texCircle(-250,-150,.7,"rgba(244,248,252,.9)");
+  // 러프 오프로드: 바위 흩뿌리기
+  {let sd=61;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<20;k++){
+     const a=rr()*6.28,rd=rr()*85,rx=250+Math.cos(a)*rd,rz=250+Math.sin(a)*rd,sc=1+rr()*2.6;
+     mb.box(rx,w.height(rx,rz)+sc*.3,rz,sc*1.7,sc,sc*1.4,0x7a7169,{yaw:rr()*3,roll:(rr()-.5)*.4,mu:.85,tag:"rock"});}}
+  mb.texText(250,250,7,"OFF-ROAD","rgba(210,190,150,.5)");
   // drop towers 10m & 20m with access ramps
   const tower=(x,z,h)=>{
-    mb.box(x,h-.5,z,26,1,26,0x7f8791,{mu:1,tag:"tower"});             // deck
+    mb.box(x,h-.5,z,26,1,26,0x7f8791,{mu:1,tag:"tower"});
     const rl=h/Math.tan(22*DEG);
     mb.box(x,h*.5-.5,z-13-rl*.5+.2,12,1,rl/Math.cos(22*DEG),0x8f98a3,{pitch:-22*DEG,mu:1,tag:"ramp"});
-    for(const s of[-1,1])mb.box(x+s*13.2,h+.6,z,.4,1.6,26,0xb9c2cc,{mu:.4,tag:"rail"});}; // 전방(+z) 개방 → 낙하
-  tower(160,120,10);tower(220,140,20);
-  // barrels near barrier
-  for(let k=0;k<4;k++)mb.prop("barrel",-40+k*3,200);
-  for(let k=0;k<8;k++)mb.baked(k%2?"trees":"treesTall",-262+k*70,262,11,k,{});
-  w.spawn={x:-80,z:-220,yaw:0};
+    for(const s of[-1,1])mb.box(x+s*13.2,h+.6,z,.4,1.6,26,0xb9c2cc,{mu:.4,tag:"rail"});};
+  tower(-250,130,10);tower(-300,250,20);
+  /* === IIHS 충돌시험 배리어 라인업 (북측) === */
+  const iihs=[[-40,14,"풀오버랩"],[30,4,"25% 스몰오버랩"],[85,.8,"폴 충돌"]];
+  for(const[bx,bw,label]of iihs){
+    mb.box(bx,2.4,320,bw,4.8,4,bw<1?0xb5443c:0x9aa2ab,{mu:.6,bounce:.02,tag:bw<1?"pole":"wall"});
+    for(const s of[-1,1])mb.box(bx+ (bw/2+.6)*s,2.4,320,.4,4.8,4,0x33383f,{tag:"wall"}); // 노란 프레임 대용
+    mb.texRect(bx,300,bw+2,26,0,"rgba(70,74,82,.9)");                                        // 접근로
+    mb.texPath([{x:bx,z:270},{x:bx,z:314}],.3,"rgba(244,248,252,.9)",[3,3]);
+    mb.texText(bx,296,2.6,label,"rgba(240,220,120,.85)");}
+  mb.texText(30,262,4.2,"IIHS CRASH TEST","rgba(240,220,120,.7)");
+  // barrels + trees
+  for(let k=0;k<4;k++)mb.prop("barrel",-100+k*3,268);
+  for(let k=0;k<8;k++)mb.baked(k%2?"trees":"treesTall",-350+k*95,352,11,k,{});
+  w.spawn={x:-140,z:-290,yaw:0};
   return mb.finalize(this);}},
 
 /* ---------- 2. 네오시티 ---------- */
-{id:"city",name:"네오시티",icon:"🏙️",desc:"6×6 블록 시가지 — 골목·고가도로·로터리·파괴 오브젝트",
+{id:"city",name:"네오시티",icon:"🏙️",desc:"대형 시가지 — 다운타운 마천루·골목·고가도로·로터리·공원·스타디움",
  modes:["free","time","race","drift"],
  build(){
-  const mb=new MapBuilder(640,224),w=mb.world;
-  const pitch=96,half=288;
+  const mb=new MapBuilder(840,256),w=mb.world;
+  const pitch=96,half=396;
   mb.fill((x,z)=>{
     // roads on grid lines every 96m, width 16
     const rx=Math.abs(((x%pitch)+pitch*1.5)%pitch-pitch*.5),rz=Math.abs(((z%pitch)+pitch*1.5)%pitch-pitch*.5);
@@ -5470,7 +5575,7 @@ const MAPS=[
     return[0,road?S_ASP:walk?S_WLK:S_GRS];});
   // 차선 (도로 중앙 점선)
   for(let j=0;j<=w.res;j++)for(let i=0;i<=w.res;i++){
-    const x=i*w.cell-320,z=j*w.cell-320;
+    const x=i*w.cell-w.size*.5,z=j*w.cell-w.size*.5;
     if(Math.abs(x)>half||Math.abs(z)>half)continue;
     if(w.sMap[w.idx(i,j)]!==S_ASP)continue;
     const rx=Math.abs(((x%pitch)+pitch*1.5)%pitch-pitch*.5),rz=Math.abs(((z%pitch)+pitch*1.5)%pitch-pitch*.5);
@@ -5480,13 +5585,13 @@ const MAPS=[
   mb.stamp(0,0,9,(i,j,d)=>{w.setS(i,j,S_WLK);});
   mb.baked("fountain",0,0,15,0,{y:0,collide:true,shrink:.75});
   // 선명한 도로/보도/차선 (벡터)
-  for(let k=-2;k<=2;k++){
+  for(let k=-4;k<=4;k++){
     mb.texPath([{x:-half,z:k*pitch},{x:half,z:k*pitch}],22,SURF_CSS[S_WLK]);
     mb.texPath([{x:k*pitch,z:-half},{x:k*pitch,z:half}],22,SURF_CSS[S_WLK]);}
-  for(let k=-2;k<=2;k++){
+  for(let k=-4;k<=4;k++){
     mb.texPath([{x:-half,z:k*pitch},{x:half,z:k*pitch}],16,SURF_CSS[S_ASP]);
     mb.texPath([{x:k*pitch,z:-half},{x:k*pitch,z:half}],16,SURF_CSS[S_ASP]);}
-  for(let k=-2;k<=2;k++){
+  for(let k=-4;k<=4;k++){
     mb.texPath([{x:-half,z:k*pitch},{x:half,z:k*pitch}],.32,"rgba(242,246,252,.9)",[4.5,4.5]);
     mb.texPath([{x:k*pitch,z:-half},{x:k*pitch,z:half}],.32,"rgba(242,246,252,.9)",[4.5,4.5]);}
   mb.texCircle(0,0,22,SURF_CSS[S_ASP]);
@@ -5495,19 +5600,25 @@ const MAPS=[
   // 베이크 건물 (Kenney City Builder Kit)
   let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   const BLD=["bldA","bldB","bldC","bldD","garage"];
-  for(let bx=-2.5;bx<=2.5;bx++)for(let bz=-2.5;bz<=2.5;bz++){
+  for(let bx=-3.5;bx<=3.5;bx++)for(let bz=-3.5;bz<=3.5;bz++){
     if(Math.abs(bx)<1&&Math.abs(bz)<1)continue;
     if(bx===1.5&&bz===1.5)continue;    // 공원 블록
     if(bx===-1.5&&bz===1.5)continue;   // 스타디움 블록
     const cx=bx*pitch,cz=bz*pitch;
+    const downtown=Math.abs(bx)<=1.5&&Math.abs(bz)<=1.5;   // 다운타운 = 마천루
     const n=1+((rnd()*2)|0);
     for(let k=0;k<n;k++){
       const nm=BLD[(rnd()*5)|0];
-      const sc=22+rnd()*16;
+      const sc=(downtown?30:22)+rnd()*(downtown?18:14);
       const ox=cx+(rnd()-.5)*(66-sc),oz=cz+(rnd()-.5)*(66-sc);
-      mb.baked(nm,ox,oz,sc,((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});}
+      mb.baked(nm,ox,oz,sc,((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});
+      // 다운타운: 건물 위에 층 적층 → 마천루
+      if(downtown){const floors=2+((rnd()*3)|0);let yy=BAKED[nm]?(BAKED[nm].bb[4]-BAKED[nm].bb[1])*sc*.92:14;
+        for(let f=0;f<floors;f++){const fs=sc*(.88-f*.12);
+          mb.baked(BLD[(rnd()*4)|0],ox,oz,fs,((rnd()*4)|0)*Math.PI/2,{y:yy,collide:false});
+          yy+=(BAKED[BLD[0]]?18:14)*(fs/sc);}}}
     // 블록 코너 가로수
-    if(rnd()<.75)mb.baked(rnd()<.5?"trees":"treesTall",cx+30,cz+30,11+rnd()*4,rnd()*6,{y:0});}
+    if(rnd()<.7)mb.baked(rnd()<.5?"trees":"treesTall",cx+30,cz+30,11+rnd()*4,rnd()*6,{y:0});}
   // overpass across x axis (z=~ -96 row): ramps + elevated deck
   const oy=7;
   mb.box(-40,oy-.5,-96,160,1,14,0x69707c,{mu:1,tag:"deck"});
@@ -6147,6 +6258,12 @@ const MODES=[
  {id:"drift",name:"드리프트 스코어",icon:"🌀",desc:"각도×속도×콤보. 벽 스침 보너스, 스핀하면 콤보 소멸."},
  {id:"editor",name:"맵 에디터",icon:"🛠️",desc:"탑뷰 그리드에 도로·램프·벽 배치. 내 맵에서 바로 주행."},
 ];
+/* 크래시 테스트 타깃 — 프루빙 그라운드 IIHS 배리어 좌표와 일치
+   x:배리어 중심, z:배리어 위치, lx:차량 주행 라인(스몰오버랩은 오프셋으로 25% 중첩) */
+const CRASH_LANES=[
+  {x:-40,z:320,lx:-40, name:"정면 풀오버랩"},
+  {x:30, z:320,lx:32.6,name:"25% 스몰오버랩"},
+  {x:85, z:320,lx:85,  name:"폴 충돌"}];
 
 const Game={
   state:"menu",paused:false,
@@ -6223,17 +6340,16 @@ const Game={
 
   /* ---------- crash test ---------- */
   placeCrashCar(){
-    const lanes=[-80,-40];
-    const x=lanes[this.crash.target];
-    this.veh.reset(x,-140,0,false);this.vis.repair();
+    const L=CRASH_LANES[this.crash.target]||CRASH_LANES[0];
+    this.veh.reset(L.lx,L.z-70,0,false);this.vis.repair();
     this.crash.phase="idle";
     updateModeWidget();},
   launch(){
     const c=this.crash,v=this.veh;
     this.vis.repair();v.clearDamage();
     const v0=c.vTarget/3.6;
-    const lane=[-80,-40][c.target];
-    v.reset(lane,Math.max(216-v0*2.2,-200),0,false);   // catapult: 즉시 목표 속도로 사출
+    const L=CRASH_LANES[c.target]||CRASH_LANES[0];
+    v.reset(L.lx,Math.max(L.z-16-v0*2.2,-220),0,false);   // catapult: 즉시 목표 속도로 사출
     v.body.vel.set(0,0,v0);
     for(const w of v.wheels)w.omega=v0/w.radius;
     c.phase="run";c.peakG=0;c.impactV=0;c.parted=0;c.settleT=0;c.hitDone=false;
@@ -6244,8 +6360,8 @@ const Game={
     if(c.phase==="run"){
       // auto-drive straight
       v.controlLock=true;
-      const lane=[-80,-40][c.target];
-      v.steerIn=clamp((lane-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
+      const L=CRASH_LANES[c.target]||CRASH_LANES[0];
+      v.steerIn=clamp((L.lx-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
       const kmh=v.fwdSpeed()*3.6;
       v.throttle=kmh<c.vTarget?1:0;v.brake=0;v.driveMode="D";
       if(c.hitDone){c.phase="settle";c.settleT=0;}
@@ -6386,6 +6502,7 @@ const Game={
     if(this.mode==="race")this.raceStep(dt);
     if(this.mode==="time")this.timingStep(dt);
     if(this.mode==="drift")this.driftStep(dt);
+    if(this.world.movers.length)this.world.stepMovers(dt);   // 압착기 등 애니메이션 장애물
     v.step(dt);
     for(const a of this.ais){stepAI(a,this.world,dt);a.veh.step(dt);}
     // car-car collisions
@@ -6480,7 +6597,9 @@ const Game={
     else if(this.mode==="crash")this.placeCrashCar();
     else v.reset(sp.x,sp.z,sp.yaw,true);
     toast("리셋");},
-  repair(){this.veh.clearDamage();this.vis.repair();toast("🔧 수리 완료");Sfx.beep(760,.12,.12);},
+  repair(){
+    if(this.veh.isFlipped())this.veh.uprightInPlace();   // 전복 시 정위치 복원
+    this.veh.clearDamage();this.vis.repair();toast("🔧 수리 완료");Sfx.beep(760,.12,.12);},
   togglePause(force){
     if(this.state!=="play")return;
     this.paused=force!==undefined?force:!this.paused;
@@ -6822,7 +6941,8 @@ const Input=(()=>{
       if(fs>1||v.driveMode==="D"&&fs>-.2&&v.speed>1){v.brake=r.brake;v.throttle=r.gas;}
       else{v.driveMode="R";v.throttle=r.brake;v.brake=0;}}
     else{v.brake=0;v.throttle=r.gas;}
-    if(r.gas>0&&v.driveMode==="R"&&fs>-1){v.driveMode="D";v.throttle=r.gas;v.brake=0;}
+    // 가속 페달 = 전진 의도: 후진 중이라도 D로 전환(전진력이 후진을 감속 후 가속)
+    if(r.gas>0&&v.driveMode==="R"){v.driveMode="D";v.throttle=r.gas;v.brake=0;}
   }
   return{init,clear,read,applyTo,updateKnob,applySteerModeUI,requestTilt,state:st};
 })();
@@ -7283,13 +7403,13 @@ function initHudButtons(){
   $("crashSpeed").oninput=e=>{
     $("crashSpeedVal").textContent=e.target.value+" km/h";
     Game.crash.vTarget=+e.target.value;};
-  // crash target select
+  // crash target select — IIHS 배리어
   const seg=$("crashTargetSeg");
-  seg.innerHTML='<button class="sel">콘크리트 벽</button><button>배리어</button>';
-  seg.children[0].onclick=()=>{Game.crash.target=0;seg.children[0].classList.add("sel");
-    seg.children[1].classList.remove("sel");Game.placeCrashCar();};
-  seg.children[1].onclick=()=>{Game.crash.target=1;seg.children[1].classList.add("sel");
-    seg.children[0].classList.remove("sel");Game.placeCrashCar();};
+  seg.innerHTML='<button class="sel">풀오버랩</button><button>스몰오버랩</button><button>폴</button>';
+  for(let ti=0;ti<seg.children.length;ti++)seg.children[ti].onclick=()=>{
+    Game.crash.target=ti;
+    for(let k=0;k<seg.children.length;k++)seg.children[k].classList.toggle("sel",k===ti);
+    Game.placeCrashCar();};
   $("ctlHint").textContent="";
 }
 
@@ -7415,10 +7535,10 @@ function boot(){
   const steps=[
     ["차량 모델 로드…",()=>{for(const c of CARS){
       if(!c.modelScale)applyModelSpec(c);
-      if(!c._tuned){c._tuned=true;                 // 역동적 서스펜션 튜닝
-        c.susp.travel*=1.32;                        // 스트로크 확대 → 범프 흡수·바디 무빙
-        c.susp.c*=.84;                              // 리바운드 완화 → 생동감(다이브/스쿼트/롤)
-        c.arb*=.66;}}}],
+      if(!c._tuned){c._tuned=true;                 // 서스펜션 튜닝(역동적 + 전복 안전)
+        c.susp.travel*=1.22;                        // 스트로크 확대 → 다이브/스쿼트/범프 무빙
+        c.susp.c*=.82;                              // 리바운드 완화 → 생동감(바운스)
+        c.arb*=1.0;}}}],                            // 롤 강성 중립(코너 롤 유지) — 전복은 복원토크가 담당
     ["렌더러 초기화…",()=>initRenderer()],
     ["입력 시스템…",()=>{Input.init();initHudButtons();initGauge();}],
     ["차량 프리뷰 렌더링…",()=>makeCarThumbs()],

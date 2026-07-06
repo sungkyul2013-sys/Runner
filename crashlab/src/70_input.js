@@ -129,7 +129,8 @@ const Input=(()=>{
       if(fs>1||v.driveMode==="D"&&fs>-.2&&v.speed>1){v.brake=r.brake;v.throttle=r.gas;}
       else{v.driveMode="R";v.throttle=r.brake;v.brake=0;}}
     else{v.brake=0;v.throttle=r.gas;}
-    if(r.gas>0&&v.driveMode==="R"&&fs>-1){v.driveMode="D";v.throttle=r.gas;v.brake=0;}
+    // 가속 페달 = 전진 의도: 후진 중이라도 D로 전환(전진력이 후진을 감속 후 가속)
+    if(r.gas>0&&v.driveMode==="R"){v.driveMode="D";v.throttle=r.gas;v.brake=0;}
   }
   return{init,clear,read,applyTo,updateKnob,applySteerModeUI,requestTilt,state:st};
 })();

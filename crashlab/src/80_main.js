@@ -149,13 +149,13 @@ function initHudButtons(){
   $("crashSpeed").oninput=e=>{
     $("crashSpeedVal").textContent=e.target.value+" km/h";
     Game.crash.vTarget=+e.target.value;};
-  // crash target select
+  // crash target select — IIHS 배리어
   const seg=$("crashTargetSeg");
-  seg.innerHTML='<button class="sel">콘크리트 벽</button><button>배리어</button>';
-  seg.children[0].onclick=()=>{Game.crash.target=0;seg.children[0].classList.add("sel");
-    seg.children[1].classList.remove("sel");Game.placeCrashCar();};
-  seg.children[1].onclick=()=>{Game.crash.target=1;seg.children[1].classList.add("sel");
-    seg.children[0].classList.remove("sel");Game.placeCrashCar();};
+  seg.innerHTML='<button class="sel">풀오버랩</button><button>스몰오버랩</button><button>폴</button>';
+  for(let ti=0;ti<seg.children.length;ti++)seg.children[ti].onclick=()=>{
+    Game.crash.target=ti;
+    for(let k=0;k<seg.children.length;k++)seg.children[k].classList.toggle("sel",k===ti);
+    Game.placeCrashCar();};
   $("ctlHint").textContent="";
 }
 
@@ -281,10 +281,10 @@ function boot(){
   const steps=[
     ["차량 모델 로드…",()=>{for(const c of CARS){
       if(!c.modelScale)applyModelSpec(c);
-      if(!c._tuned){c._tuned=true;                 // 역동적 서스펜션 튜닝
-        c.susp.travel*=1.32;                        // 스트로크 확대 → 범프 흡수·바디 무빙
-        c.susp.c*=.84;                              // 리바운드 완화 → 생동감(다이브/스쿼트/롤)
-        c.arb*=.66;}}}],
+      if(!c._tuned){c._tuned=true;                 // 서스펜션 튜닝(역동적 + 전복 안전)
+        c.susp.travel*=1.22;                        // 스트로크 확대 → 다이브/스쿼트/범프 무빙
+        c.susp.c*=.82;                              // 리바운드 완화 → 생동감(바운스)
+        c.arb*=1.0;}}}],                            // 롤 강성 중립(코너 롤 유지) — 전복은 복원토크가 담당
     ["렌더러 초기화…",()=>initRenderer()],
     ["입력 시스템…",()=>{Input.init();initHudButtons();initGauge();}],
     ["차량 프리뷰 렌더링…",()=>makeCarThumbs()],

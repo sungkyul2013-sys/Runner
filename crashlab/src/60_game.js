@@ -9,6 +9,12 @@ const MODES=[
  {id:"drift",name:"드리프트 스코어",icon:"🌀",desc:"각도×속도×콤보. 벽 스침 보너스, 스핀하면 콤보 소멸."},
  {id:"editor",name:"맵 에디터",icon:"🛠️",desc:"탑뷰 그리드에 도로·램프·벽 배치. 내 맵에서 바로 주행."},
 ];
+/* 크래시 테스트 타깃 — 프루빙 그라운드 IIHS 배리어 좌표와 일치
+   x:배리어 중심, z:배리어 위치, lx:차량 주행 라인(스몰오버랩은 오프셋으로 25% 중첩) */
+const CRASH_LANES=[
+  {x:-40,z:320,lx:-40, name:"정면 풀오버랩"},
+  {x:30, z:320,lx:32.6,name:"25% 스몰오버랩"},
+  {x:85, z:320,lx:85,  name:"폴 충돌"}];
 
 const Game={
   state:"menu",paused:false,
@@ -85,17 +91,16 @@ const Game={
 
   /* ---------- crash test ---------- */
   placeCrashCar(){
-    const lanes=[-80,-40];
-    const x=lanes[this.crash.target];
-    this.veh.reset(x,-140,0,false);this.vis.repair();
+    const L=CRASH_LANES[this.crash.target]||CRASH_LANES[0];
+    this.veh.reset(L.lx,L.z-70,0,false);this.vis.repair();
     this.crash.phase="idle";
     updateModeWidget();},
   launch(){
     const c=this.crash,v=this.veh;
     this.vis.repair();v.clearDamage();
     const v0=c.vTarget/3.6;
-    const lane=[-80,-40][c.target];
-    v.reset(lane,Math.max(216-v0*2.2,-200),0,false);   // catapult: 즉시 목표 속도로 사출
+    const L=CRASH_LANES[c.target]||CRASH_LANES[0];
+    v.reset(L.lx,Math.max(L.z-16-v0*2.2,-220),0,false);   // catapult: 즉시 목표 속도로 사출
     v.body.vel.set(0,0,v0);
     for(const w of v.wheels)w.omega=v0/w.radius;
     c.phase="run";c.peakG=0;c.impactV=0;c.parted=0;c.settleT=0;c.hitDone=false;
@@ -106,8 +111,8 @@ const Game={
     if(c.phase==="run"){
       // auto-drive straight
       v.controlLock=true;
-      const lane=[-80,-40][c.target];
-      v.steerIn=clamp((lane-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
+      const L=CRASH_LANES[c.target]||CRASH_LANES[0];
+      v.steerIn=clamp((L.lx-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
       const kmh=v.fwdSpeed()*3.6;
       v.throttle=kmh<c.vTarget?1:0;v.brake=0;v.driveMode="D";
       if(c.hitDone){c.phase="settle";c.settleT=0;}
@@ -248,6 +253,7 @@ const Game={
     if(this.mode==="race")this.raceStep(dt);
     if(this.mode==="time")this.timingStep(dt);
     if(this.mode==="drift")this.driftStep(dt);
+    if(this.world.movers.length)this.world.stepMovers(dt);   // 압착기 등 애니메이션 장애물
     v.step(dt);
     for(const a of this.ais){stepAI(a,this.world,dt);a.veh.step(dt);}
     // car-car collisions
@@ -342,7 +348,9 @@ const Game={
     else if(this.mode==="crash")this.placeCrashCar();
     else v.reset(sp.x,sp.z,sp.yaw,true);
     toast("리셋");},
-  repair(){this.veh.clearDamage();this.vis.repair();toast("🔧 수리 완료");Sfx.beep(760,.12,.12);},
+  repair(){
+    if(this.veh.isFlipped())this.veh.uprightInPlace();   // 전복 시 정위치 복원
+    this.veh.clearDamage();this.vis.repair();toast("🔧 수리 완료");Sfx.beep(760,.12,.12);},
   togglePause(force){
     if(this.state!=="play")return;
     this.paused=force!==undefined?force:!this.paused;

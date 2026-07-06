@@ -7,7 +7,7 @@
 class SoftLattice{
   constructor(spec,meshes){
     const hx=spec.body.hx*1.04,hy=spec.body.hy*1.04,hz=spec.body.hz*1.04;
-    const NX=5,NY=4,NZ=9;
+    const NX=6,NY=4,NZ=11;   // 더 촘촘한 격자 → 부분별 미세 변형(BeamNG식)
     this.NX=NX;this.NY=NY;this.NZ=NZ;
     this.min=[-hx,-hy,-hz];
     this.cell=[2*hx/(NX-1),2*hy/(NY-1),2*hz/(NZ-1)];
@@ -23,9 +23,9 @@ class SoftLattice{
       this.home[a]=this.min[0]+i*this.cell[0];
       this.home[a+1]=this.min[1]+j*this.cell[1];
       this.home[a+2]=this.min[2]+k*this.cell[2];
-      // 하부 중앙 = 프레임(강체에 가깝게), 외피는 약한 복원
-      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.3:0;
-      this.anchor[idx(i,j,k)]=.012+frame;}
+      // 하부 중앙 = 프레임(강체에 가깝게), 외피는 약한 복원 (프레임 약화 → 더 많은 부분 변형)
+      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.2:0;
+      this.anchor[idx(i,j,k)]=.01+frame;}
     this.pos.set(this.home);this.prev.set(this.home);
     // beams
     const dirs=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,-1,0],[1,0,1],[1,0,-1],[0,1,1],[0,1,-1],[1,1,1],[1,-1,1]];
@@ -61,8 +61,8 @@ class SoftLattice{
     this.binds.push({mesh,orig,bi,bw,vc});
   }
   impact(lp,ln,dv){
-    // 슬라임식 대형 변형: 반경·깊이·전파 모두 강화
-    const R=.86+.055*dv,d=Math.min(1.25,.033*dv);
+    // 속도비례 대형 변형: 저속=경미(범퍼접촉), 고속(200km/h≈55m/s)=형체불명 함몰
+    const R=.78+.055*dv,d=Math.min(2.2,.0009*dv*dv+.015*dv);
     for(let i=0;i<this.n;i++){
       const a=i*3;
       const dx=this.pos[a]-lp.x,dy=this.pos[a+1]-lp.y,dz=this.pos[a+2]-lp.z;
@@ -73,7 +73,7 @@ class SoftLattice{
         this.pos[a]+=ln.x*f;this.pos[a+1]+=ln.y*f;this.pos[a+2]+=ln.z*f;
         // 속도 주입 강화 (관성으로 주변까지 물결처럼 전파)
         this.prev[a]-=ln.x*f*.95;this.prev[a+1]-=ln.y*f*.95;this.prev[a+2]-=ln.z*f*.95;}}
-    this.hot=Math.min(this.hot+.6,1.5);this.dirty=true;
+    this.hot=Math.min(this.hot+.5+d*.4,2.4);this.dirty=true;   // 큰 충격일수록 오래 정착
   }
   update(dt){
     if(this.hot<=0){if(this.dirty){this.write();this.dirty=false;}return false;}
@@ -100,8 +100,8 @@ class SoftLattice{
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;
           if(it===0){
             const rest0=B[o+3],strain=(len-rest)/rest0;
-            if(Math.abs(strain)>.02){        // 항복 → 소성(영구) 변형: 더 쉽게·더 깊게
-              B[o+2]=clamp(rest+(len-rest)*.78,rest0*.18,rest0*1.6);}}}
+            if(Math.abs(strain)>.018){       // 항복 → 소성(영구) 변형: 더 쉽게·더 깊게 (형체불명 유지)
+              B[o+2]=clamp(rest+(len-rest)*.85,rest0*.1,rest0*1.75);}}}
     }
     this.write();
     return true;
