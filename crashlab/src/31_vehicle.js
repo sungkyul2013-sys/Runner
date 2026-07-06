@@ -241,22 +241,35 @@ class Vehicle{
     b.force.y-=sp.mass*GRAV;
 
     /* ----- chassis collision ----- */
+    if(this._udT>0)this._udT-=dt;
     for(let i=0;i<this.hull.length;i++){
       b.localToWorld(this.hull[i],_vD);
       const ct=world.pointContact(_vD);
-      if(ct){
-        let dv=resolvePointContact(b,_vD,ct,0);
-        // 방지턱·빨래판·연석 등 넘어가는 지형지물은 충돌(손상·표시)로 처리하지 않음
-        const tg=ct.box&&ct.box.tag;
-        const driveOver=tg==="bump"||tg==="slat"||tg==="cobble"||tg==="stair"||tg==="curb"||tg==="ridge"||tg==="plank"||tg==="teeter";
-        // 압착기: 램과 접촉 시 아래로 강하게 눌러 짓눌림 + 큰 변형 (타이밍 무관)
-        if(tg==="crusher"){
-          const rs=Math.max(6,-(ct.box.vy||0));
-          _vG.copy(_vD).sub(b.pos);
-          _vB2.set(0,-rs*sp.mass*.05,0);                 // 하향 임펄스
-          b.applyImpulse(_vB2,_vG);
-          dv=Math.max(dv,rs);}
-        if(dv>1.4&&!driveOver)this.registerImpact(this.hull[i],_vD,ct.n,dv);}}
+      if(!ct)continue;
+      const tg=ct.box&&ct.box.tag;
+      // 방지턱·빨래판·연석 등 차체보다 낮/높은 지형지물: 강체 충돌(퉁!) 금지
+      const driveOver=tg==="bump"||tg==="slat"||tg==="cobble"||tg==="stair"||tg==="curb"||tg==="ridge"||tg==="plank"||tg==="teeter";
+      if(driveOver){
+        // 부드러운 스프링 통과 + 밑면만 함몰 (차는 그대로 진행)
+        _vG.copy(_vD).sub(b.pos);b.velAt(_vG,_vA);
+        const vn=_vA.dot(ct.n);
+        let f=ct.depth*sp.mass*20;                        // 침투 비례 스프링(위로)
+        if(vn<0)f+=-vn*sp.mass*2.4;                        // 접근 속도 완충
+        b.addForceAt(_vB2.copy(ct.n).multiplyScalar(f),_vG);
+        // 밑면 함몰(레이트 리밋·비손상): 장애물이 차체보다 높으면 살짝 움푹
+        if(ct.depth>.05&&!(this._udT>0)){this._udT=.22;
+          this.registerImpact(this.hull[i],_vD,ct.n,Math.min(4.5,2+ct.depth*26),true);}
+        continue;
+      }
+      let dv=resolvePointContact(b,_vD,ct,0);
+      // 압착기: 램과 접촉 시 아래로 강하게 눌러 짓눌림 + 큰 변형 (타이밍 무관)
+      if(tg==="crusher"){
+        const rs=Math.max(6,-(ct.box.vy||0));
+        _vG.copy(_vD).sub(b.pos);
+        _vB2.set(0,-rs*sp.mass*.05,0);                     // 하향 임펄스
+        b.applyImpulse(_vB2,_vG);
+        dv=Math.max(dv,rs);}
+      if(dv>1.4)this.registerImpact(this.hull[i],_vD,ct.n,dv);}
 
     /* ----- props ----- */
     hitProps(this);
@@ -281,11 +294,11 @@ class Vehicle{
     else if((this._goodT=(this._goodT||0)+dt)>.5){this._goodT=0;
       this.lastGood.pos.copy(b.pos);this.lastGood.quat.copy(b.quat);}
   }
-  registerImpact(lp,wp,n,dv){
+  registerImpact(lp,wp,n,dv,soft){
     this.body.vecToLocal(n,_vA);
-    this.impacts.push({lp:lp.clone(),ln:_vA.clone(),wp:wp.clone(),dv});
+    this.impacts.push({lp:lp.clone(),ln:_vA.clone(),wp:wp.clone(),dv,soft:!!soft});
     if(this.impacts.length>14)this.impacts.shift();
-    this.addDamage(lp,dv);
+    if(!soft)this.addDamage(lp,dv);   // soft=밑면 스침: 손상 카운터/표시 없음
   }
 }
 

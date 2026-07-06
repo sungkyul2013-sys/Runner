@@ -39,15 +39,15 @@ const CARS=[
   brakeF:12500,steerLo:.56,steerHi:.13,aero:{cd:1.4,df:0},gripF:1.02,gripR:1.02,
   style:"suv",colors:[0x1c3a2a,0x12161b,0xe9ecee,0x8a929a,0x2a3f66],
   stats:{spd:55,acc:60,grip:74,mass:64}},
- {id:"maybach",name:"마이바흐 S680",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.5초",top:250,
-  desc:"V12 트윈터보 럭셔리 리무진. 롱휠베이스 · 육중한 질량감 · 최상급 정숙성.",
-  style:"sedan",rollFix:1.2,squashY:1,
-  body:{hx:.98,hy:.66,hz:2.62},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.28},
-  susp:{k:58000,c:6000,travel:.2,rest:.26},arb:22000,
-  engine:{maxT:640,redline:6000,idle:600},gears:[3.4,2.1,1.5,1.15,.88],final:3.5,
-  brakeF:12000,steerLo:.52,steerHi:.12,aero:{cd:1.0,df:0},gripF:1.02,gripR:1.03,
-  colors:[0x0b0d10,0x14203a,0x2a2d31,0x6b7078,0x3a2c1a],
-  stats:{spd:58,acc:62,grip:70,mass:66}},
+ {id:"maybach",name:"메르세데스-마이바흐 GLS",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.9초",top:240,
+  desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
+  model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
+  body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
+  susp:{k:60000,c:6200,travel:.22,rest:.28},arb:16000,
+  engine:{maxT:640,redline:6000,idle:600},gears:[3.5,2.15,1.5,1.15,.9],final:3.9,
+  brakeF:12500,steerLo:.54,steerHi:.13,aero:{cd:1.1,df:0},gripF:1.02,gripR:1.02,
+  colors:[0xe9ecee,0x0b0d10,0x14203a,0x8a929a,0x3a2c1a],
+  stats:{spd:56,acc:60,grip:72,mass:66}},
  {id:"titan",name:"타이탄 카고",icon:"🚚",drive:"RWD",mass:8000,hp:450,acc:"25초",top:120,
   desc:"8톤의 질량. 높은 무게중심 = 전복 장인. 뭐든 밀어버린다.",
   model:"garbageTruck",rollFix:1.12,
@@ -363,6 +363,8 @@ class CarVisual{
   }
   applyImpact(imp,veh){
     const dv=imp.dv;
+    // 밑면 스침(방지턱 등): 약한 함몰만, 부품 손상/탈락 없음
+    if(imp.soft){this.lattice.impact(imp.lp,imp.ln,dv);return;}
     // 슬라임식 대형 크럼플: 부품 변형 깊이·반경·탈락 확대
     const d=Math.min(.72,.026*dv),R=.72+.032*dv;
     // 차체: 노드-빔 소프트바디에 충격 주입 (소성 변형은 격자가 계산)

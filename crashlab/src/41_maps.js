@@ -149,6 +149,17 @@ class MapBuilder{
     for(let i=0;i<p.length;i++){this.mergePos.push(p[i]);this.mergeNor.push(nr[i]);}
     for(let i=0;i<p.length/3;i++)this.mergeCol.push(c.r,c.g,c.b);
     g.dispose();}
+  mover(x,y,z,w,h,d,color,opt,anim){ // 애니메이션 장애물(압착기 램 등): 병합하지 않는 독립 메시+OBB
+    opt=opt||{};
+    const obb=new OBB(x,y,z,w/2,h/2,d/2,opt.yaw||0,0,0,opt);
+    this.world.boxes.push(obb);
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
+      new THREE.MeshLambertMaterial({color}));
+    mesh.position.set(x,y,z);if(opt.yaw)mesh.rotation.y=opt.yaw;
+    mesh.castShadow=mesh.receiveShadow=true;
+    this.group.add(mesh);
+    this.world.movers.push({obb,mesh,baseY:y,meshY:y,anim:anim||(()=>0)});
+    return obb;}
   bump(x,z,yaw,width,h){ // 한국형 과속방지턱 (h: 높이 m, 기본 10cm) + 노랑/흰 사선
     h=h||.1;
     const y=this.world.height(x,z);

@@ -467,7 +467,7 @@ MAPS.push(
 
 /* ---------- 8. 서스펜션 랩 ---------- */
 MAPS.push(
-{id:"susp",name:"서스펜션 랩",icon:"🔩",desc:"높이별 방지턱 6~35cm·빨래판·트위스트·언덕 4단·경사 12/20/30°·모굴·시소·테이블탑 점프·록크롤",
+{id:"susp",name:"서스펜션 랩",icon:"🔩",desc:"높이별 방지턱 6~35cm·빨래판·트위스트·모굴·언덕 4단·경사 15/25/35/45°·시소·테이블탑 점프·록크롤",
  modes:["free","crash"],
  build(){
   const mb=new MapBuilder(760,256),w=mb.world;
@@ -481,15 +481,6 @@ MAPS.push(
       for(const[zc,H]of[[-150,3],[-70,6],[30,11],[150,18]]){
         const s2=(H*2.0)*(H*2.0);
         h+=H*Math.exp(-((z-zc)*(z-zc))/(2*s2))*edge;}}
-    // 경사로 12/20/30° (오르막-정상-내리막 사다리꼴) — 더 높게
-    if(Math.abs(x-RAMPX)<28){
-      const edge=clamp((28-Math.abs(x-RAMPX))/9,0,1);
-      const wedge=(z0,up,top,down,H)=>{
-        if(z<z0||z>z0+up+top+down)return 0;
-        if(z<z0+up)return H*(z-z0)/up;
-        if(z<z0+up+top)return H;
-        return H*(1-(z-z0-up-top)/down);};
-      h+=(wedge(-190,38,14,30,8)+wedge(-90,34,14,26,14)+wedge(10,30,16,24,22))*edge;}
     if(Math.abs(x)>360||Math.abs(z)>360)return[h,S_GRS];
     return[h,S_ASP];});
   // 1레인: 높이별 방지턱 6~35cm (대형)
@@ -507,13 +498,17 @@ MAPS.push(
   for(let k=0;k<12;k++)
     mb.bump(LANES[2]+(k%2?-4:4),-160+k*18,0,8,.18);
   mb.texText(LANES[2],-176,4,"트위스트");
-  mb.texText(HILLX,-176,4,"언덕 3~18m");
-  mb.texText(RAMPX,-176,4,"경사 12/20/30°");
-  // 6레인: 모굴 필드 (지그재그 대형 범프) — 롤·피치 복합
+  // 4레인(-88): 모굴 필드 (지그재그 대형 범프) — 평지, 롤·피치 복합
   for(let k=0;k<16;k++){
     const off=((k%3)-1)*5;
-    mb.bump(LANES[5]+off,-160+k*17,0,7,.14+ (k%2)*.06);}
-  mb.texText(LANES[5],-176,4,"모굴 필드");
+    mb.bump(LANES[3]+off,-160+k*17,0,7,.14+ (k%2)*.06);}
+  mb.texText(LANES[3],-176,4,"모굴 필드");
+  mb.texText(HILLX,-176,4,"언덕 3~18m");
+  // 6레인(72): 경사 램프 각도별 분리 (제대로 기울어진 박스 램프) 15/25/35/45°
+  [[15,-155,20],[25,-95,18],[35,-30,16],[45,40,14]].forEach(([deg,z,len])=>{
+    mb.ramp(RAMPX,z,0,deg,len,14,0xc7742f);
+    mb.texText(RAMPX,z-len*.6,3.4,deg+"°");});
+  mb.texText(RAMPX,-176,4,"경사 15/25/35/45°");
   // 7레인: 시소(테이터) + 흔들다리 슬랫
   mb.box(LANES[6],.02,-140,13,.6,10,0x9aa2ab,{roll:0,pitch:9*DEG,mu:1,tag:"teeter"});
   mb.box(LANES[6],.02,-118,13,.6,10,0x9aa2ab,{pitch:-9*DEG,mu:1,tag:"teeter"});
