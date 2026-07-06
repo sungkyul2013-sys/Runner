@@ -279,7 +279,12 @@ function makeCarThumbs(){ // 메인 렌더러의 렌더타겟 사용 (모바일�
 /* boot */
 function boot(){
   const steps=[
-    ["차량 모델 로드…",()=>{for(const c of CARS)if(!c.modelScale)applyModelSpec(c);}],
+    ["차량 모델 로드…",()=>{for(const c of CARS){
+      if(!c.modelScale)applyModelSpec(c);
+      if(!c._tuned){c._tuned=true;                 // 역동적 서스펜션 튜닝
+        c.susp.travel*=1.32;                        // 스트로크 확대 → 범프 흡수·바디 무빙
+        c.susp.c*=.84;                              // 리바운드 완화 → 생동감(다이브/스쿼트/롤)
+        c.arb*=.66;}}}],
     ["렌더러 초기화…",()=>initRenderer()],
     ["입력 시스템…",()=>{Input.init();initHudButtons();initGauge();}],
     ["차량 프리뷰 렌더링…",()=>makeCarThumbs()],

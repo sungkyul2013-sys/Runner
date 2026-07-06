@@ -61,7 +61,8 @@ class SoftLattice{
     this.binds.push({mesh,orig,bi,bw,vc});
   }
   impact(lp,ln,dv){
-    const R=.72+.042*dv,d=Math.min(.72,.02*dv);
+    // 슬라임식 대형 변형: 반경·깊이·전파 모두 강화
+    const R=.86+.055*dv,d=Math.min(1.25,.033*dv);
     for(let i=0;i<this.n;i++){
       const a=i*3;
       const dx=this.pos[a]-lp.x,dy=this.pos[a+1]-lp.y,dz=this.pos[a+2]-lp.z;
@@ -70,9 +71,9 @@ class SoftLattice{
         const t=1-(dist/R)*(dist/R);
         const f=t*t*d;
         this.pos[a]+=ln.x*f;this.pos[a+1]+=ln.y*f;this.pos[a+2]+=ln.z*f;
-        // 속도도 주입 (관성으로 주변으로 전파)
-        this.prev[a]-=ln.x*f*.75;this.prev[a+1]-=ln.y*f*.75;this.prev[a+2]-=ln.z*f*.75;}}
-    this.hot=Math.min(this.hot+.5,1.1);this.dirty=true;
+        // 속도 주입 강화 (관성으로 주변까지 물결처럼 전파)
+        this.prev[a]-=ln.x*f*.95;this.prev[a+1]-=ln.y*f*.95;this.prev[a+2]-=ln.z*f*.95;}}
+    this.hot=Math.min(this.hot+.6,1.5);this.dirty=true;
   }
   update(dt){
     if(this.hot<=0){if(this.dirty){this.write();this.dirty=false;}return false;}
@@ -99,8 +100,8 @@ class SoftLattice{
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;
           if(it===0){
             const rest0=B[o+3],strain=(len-rest)/rest0;
-            if(Math.abs(strain)>.032){       // 항복 → 소성 변형 (영구)
-              B[o+2]=clamp(rest+(len-rest)*.65,rest0*.28,rest0*1.5);}}}
+            if(Math.abs(strain)>.02){        // 항복 → 소성(영구) 변형: 더 쉽게·더 깊게
+              B[o+2]=clamp(rest+(len-rest)*.78,rest0*.18,rest0*1.6);}}}
     }
     this.write();
     return true;

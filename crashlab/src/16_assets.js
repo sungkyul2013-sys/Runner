@@ -114,5 +114,18 @@ function applyModelSpec(spec){
   spec.wheels.rear=Math.abs((rw[0]?rw[0][2]:len*.35)-spec.modelCz)*s;
   spec.wheels.y=(w[0][1]-spec.modelCy)*s*sq+spec.susp.rest-drop;
   spec.engine.maxT*=wr/oldR;                                     // 휠 반경 변화 보상
+  // 실측(큰) 휠은 기어가 상대적으로 길어져 RPM이 낮게 걸림 → 최종감속비를
+  // 휠 반경에 맞춰 짧게 보정 (변속이 정상 작동, 가속 펀치 확보)
+  if(spec.realWheels)spec.final*=clamp(wr/.28,1,2.2);
   spec.modelWheelY=(w[0][1]-spec.modelCy)*s*sq-drop;
+  // 실측 휠 차량: 충돌 박스 바닥이 타이어 바닥까지 내려가 차대가 지면에 닿아
+  // 휠 접지 하중이 사라지고 주행 불가가 되는 문제 방지 → 휠 지지 평형에서
+  // 차대(박스 바닥)가 지면 위 clr 만큼 뜨도록 hy 상한. (지상고 확보)
+  if(spec.realWheels){
+    const compEq=spec.mass*9.81/(4*spec.susp.k);                 // 정하중 스프링 압축량
+    const maxRay=spec.susp.rest+spec.wheels.radius;
+    const yEq=maxRay-compEq-spec.wheels.y;                       // 휠로 지지될 때 CoM 높이
+    const clr=spec.groundClear!==undefined?spec.groundClear:.16; // 목표 지상고(m)
+    spec.body.hy=Math.min(spec.body.hy,Math.max(.35,yEq-clr));
+  }
 }

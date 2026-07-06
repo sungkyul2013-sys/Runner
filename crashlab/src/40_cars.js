@@ -349,16 +349,17 @@ class CarVisual{
   }
   applyImpact(imp,veh){
     const dv=imp.dv;
-    const d=Math.min(.48,.016*dv),R=.62+.024*dv;
+    // 슬라임식 대형 크럼플: 부품 변형 깊이·반경·탈락 확대
+    const d=Math.min(.72,.026*dv),R=.72+.032*dv;
     // 차체: 노드-빔 소프트바디에 충격 주입 (소성 변형은 격자가 계산)
     this.lattice.impact(imp.lp,imp.ln,dv);
     for(const k in this.parts){
       const p=this.parts[k];
       if(this.detached[k])continue;
-      deformGeo(p,imp.lp,imp.ln,d,R,.4);
+      deformGeo(p,imp.lp,imp.ln,d,R,.62);
       _vA.copy(imp.lp).sub(p.position);
       if(_vA.length()<R+.5){
-        this.partHp[k]-=dv*.02*(k==="fb"||k==="rb"?1.6:(k==="ml"||k==="mr")?3:1);
+        this.partHp[k]-=dv*.028*(k==="fb"||k==="rb"?1.6:(k==="ml"||k==="mr")?3:1);
         if(this.partHp[k]<=0&&veh.damageOn)this.detachPart(k,veh,imp);}}
   }
   updateDeforms(dt){ // 소프트바디 격자 스텝 (충격 후 ~1초간 활성)
