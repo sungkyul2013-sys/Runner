@@ -30,8 +30,8 @@ function png(g,imgIdx){
   const buf=Buffer.from(g.bin.buffer,g.bin.byteOffset+(bv.byteOffset||0),bv.byteLength);
   return PNG.sync.read(buf);
 }
-// node world transforms (TRS, no skins)
-function nodeMatrices(g){
+// node world transforms (TRS, no skins). root: optional 4x4 applied at scene root.
+function nodeMatrices(g,root){
   const out=new Array(g.json.nodes.length).fill(null);
   const mul=(A,B)=>{const M=new Array(16).fill(0);
     for(let r=0;r<4;r++)for(let c=0;c<4;c++)for(let k=0;k<4;k++)M[c*4+r]+=A[k*4+r]*B[c*4+k];return M;};
@@ -49,7 +49,7 @@ function nodeMatrices(g){
     const m=mul(parent,trs(g.json.nodes[idx]));
     out[idx]=m;
     for(const c of g.json.nodes[idx].children||[])walk(c,m);};
-  const I=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+  const I=root||[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
   for(const s of g.json.scenes[g.json.scene||0].nodes)walk(s,I);
   return out;
 }
@@ -60,6 +60,8 @@ const xfn=(m,x,y,z)=>{const v=[m[0]*x+m[4]*y+m[8]*z,m[1]*x+m[5]*y+m[9]*z,m[2]*x+
 /* bake a set of nodes (matching filter) into one soup */
 function bakeNodes(g,mats,filter,opts){
   opts=opts||{};
+  const isPaintMat=opts.isPaintMat||(nm=>nm.startsWith("paint"));
+  const isGlassMat=opts.isGlassMat||(nm=>nm==="window");
   const pos=[],nrm=[],col=[],mask=[];
   let tex=null;
   for(let ni=0;ni<g.json.nodes.length;ni++){
@@ -81,8 +83,8 @@ function bakeNodes(g,mats,filter,opts){
       else if(pbr.baseColorFactor){
         rgb=pbr.baseColorFactor.slice(0,3).map(v=>Math.round(v*255));} // linear 저장 (r152 ColorManagement)
       const nm=(mat.name||"").toLowerCase();
-      if(nm.startsWith("paint"))isPaint=1;
-      if(nm==="window"){rgb=[24,32,44];isPaint|=2;} // bit2 = glass
+      if(isPaintMat(nm))isPaint=1;
+      if(isGlassMat(nm)){if(!useTex)rgb=[24,32,44];isPaint|=2;} // bit2 = glass
       const count=I?I.length:P.count;
       for(let k=0;k<count;k++){
         const vi=I?I[k]:k;
@@ -148,40 +150,92 @@ function subdivide(soup){ // tri → 4 (부드러운 변형용)
   return{pos:P,nrm:N,col:C,mask:M};
 }
 
+// world-space vertex bbox of one node's mesh
+function nodeWorldBB(g,mats,ni){
+  const m=mats[ni],mesh=g.json.meshes[g.json.nodes[ni].mesh];
+  const bb=[1e9,1e9,1e9,-1e9,-1e9,-1e9];
+  for(const prim of mesh.primitives){
+    const P=accessor(g,prim.attributes.POSITION);
+    for(let k=0;k<P.count;k++){
+      const[x,y,z]=xfp(m,P.arr[k*3],P.arr[k*3+1],P.arr[k*3+2]);
+      if(x<bb[0])bb[0]=x;if(y<bb[1])bb[1]=y;if(z<bb[2])bb[2]=z;
+      if(x>bb[3])bb[3]=x;if(y>bb[4])bb[4]=y;if(z>bb[5])bb[5]=z;}}
+  return bb;
+}
+
 const BAKED={};
 /* ---- cars ---- */
-const carFiles={race:"race.glb",raceFuture:"raceFuture.glb",suvLuxury:"suvLuxury.glb",
-  garbageTruck:"garbageTruck.glb",ambulance:"ambulance.glb",tractor:"tractor.glb"};
-for(const[key,file]of Object.entries(carFiles)){
+const carFiles={
+  race:{file:"race.glb"},raceFuture:{file:"raceFuture.glb"},suvLuxury:{file:"suvLuxury.glb"},
+  garbageTruck:{file:"garbageTruck.glb"},ambulance:{file:"ambulance.glb"},tractor:{file:"tractor.glb"},
+  // 사용자 제공 무료 라이선스 Range Rover (팔레트 텍스처 · Tire1~4 롤링휠 · Glass 머티리얼)
+  rangeRover:{file:"Range_Rover.glb",
+    isWheel:n=>/^tire[1-4]/i.test(n.name||""),
+    isPaintMat:nm=>nm==="texture", isGlassMat:nm=>nm==="glass",
+    isExclude:n=>/spare|bag/i.test(n.name||""),   // 후면 스페어타이어·루프백 제거(대칭 실루엣)
+    subdiv:false, wheelCenter:true, yaw180:true, palettePaint:true}};
+for(const[key,cfg]of Object.entries(carFiles)){
+  const file=cfg.file;
   const g=parseGLB(GLB_DIR+file);
-  const mats=nodeMatrices(g);
-  const isWheel=n=>(n.name||"").toLowerCase().includes("wheel");
-  const body=bakeNodes(g,mats,n=>!isWheel(n));
-  // wheels: bake ONE wheel mesh centered at its node origin (strip translation)
-  let wheelNode=null,wheelIdx=-1;
-  g.json.nodes.forEach((n,i)=>{if(isWheel(n)&&wheelNode==null){wheelNode=n;wheelIdx=i;}});
-  const wm=mats[wheelIdx].slice();wm[12]=0;wm[13]=0;wm[14]=0; // drop translation (keep parent scale≈1)
-  const wheelSoup=bakeNodes(g,{[wheelIdx]:wm},(n,i)=>i===wheelIdx);
-  // 휠 지오메트리 재중심화 (안쪽면 원점 → 중심 원점)
-  let wcx=0,wcy=0,wcz=0,wn=wheelSoup.pos.length/3;
-  {let bb=[1e9,1e9,1e9,-1e9,-1e9,-1e9];
-   for(let i=0;i<wn;i++)for(let a=0;a<3;a++){const v=wheelSoup.pos[i*3+a];
-     if(v<bb[a])bb[a]=v;if(v>bb[3+a])bb[3+a]=v;}
-   wcx=(bb[0]+bb[3])/2;wcy=(bb[1]+bb[4])/2;wcz=(bb[2]+bb[5])/2;}
-  for(let i=0;i<wn;i++){wheelSoup.pos[i*3]-=wcx;wheelSoup.pos[i*3+1]-=wcy;wheelSoup.pos[i*3+2]-=wcz;}
-  const wheels=[];
-  g.json.nodes.forEach((n,i)=>{if(isWheel(n)){
-    const m=mats[i];
-    const sx=m[12]<0?-1:1;
-    wheels.push([+(m[12]+sx*Math.abs(wcx)).toFixed(3),+(m[13]+wcy).toFixed(3),+(m[14]+wcz).toFixed(3)]);}});
+  // yaw180: 모델 앞뒤 정렬 보정 (front를 model -z로) → 파이프라인 플립과 일치
+  const root=cfg.yaw180?[-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1]:null;
+  const mats=nodeMatrices(g,root);
+  const isWheel=cfg.isWheel||(n=>(n.name||"").toLowerCase().includes("wheel"));
+  const isExclude=cfg.isExclude||(()=>false);
+  const matOpts={isPaintMat:cfg.isPaintMat,isGlassMat:cfg.isGlassMat};
+  const body=bakeNodes(g,mats,n=>!isWheel(n)&&!isExclude(n),matOpts);
+  // wheels: bake ONE wheel mesh, recenter to its own world bbox center
+  let wheelIdx=-1;
+  g.json.nodes.forEach((n,i)=>{if(n.mesh!=null&&isWheel(n)&&wheelIdx<0)wheelIdx=i;});
+  let wheels;
+  let wheelSoup;
+  if(cfg.wheelCenter){
+    // 강건 경로: 각 휠 노드의 월드 bbox 중심을 그대로 사용 (오프셋 휴리스틱 불필요)
+    const wbb=nodeWorldBB(g,mats,wheelIdx);
+    const wc=[(wbb[0]+wbb[3])/2,(wbb[1]+wbb[4])/2,(wbb[2]+wbb[5])/2];
+    const wm=mats[wheelIdx].slice();wm[12]-=wc[0];wm[13]-=wc[1];wm[14]-=wc[2];
+    wheelSoup=bakeNodes(g,{[wheelIdx]:wm},(n,i)=>i===wheelIdx,matOpts);
+    wheels=[];
+    g.json.nodes.forEach((n,i)=>{if(n.mesh!=null&&isWheel(n)){
+      const b=nodeWorldBB(g,mats,i);
+      wheels.push([+((b[0]+b[3])/2).toFixed(3),+((b[1]+b[4])/2).toFixed(3),+((b[2]+b[5])/2).toFixed(3)]);}});
+  }else{
+    const wm=mats[wheelIdx].slice();wm[12]=0;wm[13]=0;wm[14]=0; // drop translation (keep parent scale≈1)
+    wheelSoup=bakeNodes(g,{[wheelIdx]:wm},(n,i)=>i===wheelIdx,matOpts);
+    // 휠 지오메트리 재중심화 (안쪽면 원점 → 중심 원점)
+    let wcx=0,wcy=0,wcz=0,wn=wheelSoup.pos.length/3;
+    {let bb=[1e9,1e9,1e9,-1e9,-1e9,-1e9];
+     for(let i=0;i<wn;i++)for(let a=0;a<3;a++){const v=wheelSoup.pos[i*3+a];
+       if(v<bb[a])bb[a]=v;if(v>bb[3+a])bb[3+a]=v;}
+     wcx=(bb[0]+bb[3])/2;wcy=(bb[1]+bb[4])/2;wcz=(bb[2]+bb[5])/2;}
+    for(let i=0;i<wn;i++){wheelSoup.pos[i*3]-=wcx;wheelSoup.pos[i*3+1]-=wcy;wheelSoup.pos[i*3+2]-=wcz;}
+    wheels=[];
+    g.json.nodes.forEach((n,i)=>{if(n.mesh!=null&&isWheel(n)){
+      const m=mats[i];
+      const sx=m[12]<0?-1:1;
+      wheels.push([+(m[12]+sx*Math.abs(wcx)).toFixed(3),+(m[13]+wcy).toFixed(3),+(m[14]+wcz).toFixed(3)]);}});
+  }
   if(wheels.length===3){ // raceFuture: 오른쪽 앞바퀴 누락 → 미러 합성
     const zs=wheels.map(w=>w[2]);
     const lone=wheels.find(w=>zs.filter(z=>Math.abs(z-w[2])<.05).length===1);
     wheels.push([-lone[0],lone[1],lone[2]]);}
   // order: FL,FR,RL,RR in MODEL space (front = -z)
   wheels.sort((a,b)=>(a[2]-b[2])||(a[0]-b[0]));
-  const entry=quantize(subdivide(body));   // 차체 4배 세분화 → 슬라임 변형
-  entry.wheel=quantize(wheelSoup);
+  // palettePaint: 팔레트 텍스처 차체의 따뜻한(유채색) 도색 클러스터 평균색 → 런타임 휘도보존 리틴트 기준
+  let paintSrc=null;
+  if(cfg.palettePaint){
+    let sr=0,sg=0,sb=0,c=0;
+    const N=body.col.length/3;
+    for(let i=0;i<N;i++){if(!(body.mask[i]&1))continue;
+      const r=body.col[i*3],g=body.col[i*3+1],b=body.col[i*3+2];
+      const chroma=Math.max(r,g,b)-Math.min(r,g,b);
+      if(chroma>=6&&r>=b){sr+=r;sg+=g;sb+=b;c++;}}
+    if(c)paintSrc=[Math.round(sr/c),Math.round(sg/c),Math.round(sb/c)];
+  }
+  const entry=quantize(cfg.subdiv===false?body:subdivide(body));   // 차체 세분화 → 슬라임 변형
+  if(paintSrc)entry.paintSrc=paintSrc;
+  const qw=quantize(wheelSoup);
+  entry.wheel={v:qw.v,bb:qw.bb};   // 지오메트리는 절차 wheelGeo 사용 → bb만 보관
   entry.wheels=wheels;
   BAKED[key]=entry;
   console.log(key,"body v:",entry.v,"wheel v:",entry.wheel.v,"wheels:",JSON.stringify(wheels),"bb:",entry.bb.map(v=>+v.toFixed(2)));

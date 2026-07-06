@@ -29,12 +29,21 @@ const MAPS=[
   w.triggers=[{x:-80,z:180,r:10,type:"trap"}];
   // ramps 15/30/45
   mb.ramp(30,40,0,15,16,10);mb.ramp(52,40,0,30,12,10);mb.ramp(74,40,0,45,9,10);
+  // 메가 키커 (대형 점프대) + 착지 램프
+  mb.ramp(52,96,0,28,22,12,0xd8433b);
+  mb.ramp(52,150,Math.PI,20,20,12,0xc7742f);
   // kick ramp (banked → flips)
   mb.box(30,-0,120,10,1,9,0xc7742f,{pitch:-18*DEG,roll:14*DEG,mu:1,tag:"kick"});
-  // slalom cones
-  for(let k=0;k<8;k++)mb.prop("cone",10+((k%2)*8-4),-60-k*22);
-  // 과속방지턱 시험 구간
-  for(let k=0;k<5;k++)mb.bump(-20,-60-k*16,0,11);
+  // 뱅크 하프파이프 벽 (월라이드)
+  for(const s of[-1,1])
+    mb.box(96+s*0,1.6,150,3,3.2,40,0x8f98a3,{yaw:0,roll:s*28*DEG,mu:.9,tag:"bank"});
+  // 워시보드(빨래판) 시험 스트립
+  for(let k=0;k<16;k++)mb.box(112,.05,-40+k*2.2,10,.1,.9,0x8f98a3,{mu:1,tag:"slat"});
+  // slalom cones (지그재그)
+  for(let k=0;k<10;k++)mb.prop("cone",10+((k%2)*10-5),-60-k*20);
+  // 과속방지턱 시험 구간 — 높이별 6~30cm
+  const pbh=[.06,.10,.16,.22,.30];
+  pbh.forEach((h,k)=>mb.bump(-20,-60-k*18,0,12,h));
   // skidpad R30 (선명한 링 + 중심점)
   mb.texCircle(150,-120,30,"rgba(244,248,252,.9)",.45);
   mb.texCircle(150,-120,.7,"rgba(244,248,252,.9)");
@@ -94,6 +103,8 @@ const MAPS=[
   const BLD=["bldA","bldB","bldC","bldD","garage"];
   for(let bx=-2.5;bx<=2.5;bx++)for(let bz=-2.5;bz<=2.5;bz++){
     if(Math.abs(bx)<1&&Math.abs(bz)<1)continue;
+    if(bx===1.5&&bz===1.5)continue;    // 공원 블록
+    if(bx===-1.5&&bz===1.5)continue;   // 스타디움 블록
     const cx=bx*pitch,cz=bz*pitch;
     const n=1+((rnd()*2)|0);
     for(let k=0;k<n;k++){
@@ -114,11 +125,22 @@ const MAPS=[
   for(let k=-2;k<=2;k++){
     mb.prop("lamp",12,k*pitch+30,Math.PI);mb.prop("lamp",-12,k*pitch-30,0);
     mb.prop("sign",k*pitch+12,12,0);mb.prop("bench",k*pitch-14,-14,Math.PI/2);}
-  // 과속방지턱: 로터리 진입로 4곳 + 스쿨존 2곳
-  mb.bump(34,0,Math.PI/2,14);mb.bump(-34,0,Math.PI/2,14);
-  mb.bump(0,34,0,14);mb.bump(0,-34,0,14);
-  mb.bump(96,44,0,14);mb.bump(96,-44,0,14);
-  mb.bump(-52,-96,Math.PI/2,14);mb.bump(52,-96,Math.PI/2,14);
+  // 과속방지턱: 로터리 진입로 4곳(대형 16cm) + 스쿨존 2곳(대형 20cm)
+  mb.bump(34,0,Math.PI/2,14,.16);mb.bump(-34,0,Math.PI/2,14,.16);
+  mb.bump(0,34,0,14,.16);mb.bump(0,-34,0,14,.16);
+  mb.bump(96,44,0,14,.2);mb.bump(96,-44,0,14,.2);
+  mb.bump(-52,-96,Math.PI/2,14,.2);mb.bump(52,-96,Math.PI/2,14,.2);
+  // 도심 공원 블록 (144,144): 잔디·연못·가로수
+  mb.stamp(144,144,34,(i,j,d)=>w.setS(i,j,d<15?SURF_ID.wet:S_GRS));
+  mb.texCircle(144,144,15,SURF_CSS[SURF_ID.wet]);
+  for(let k=0;k<10;k++)mb.baked(k%2?"trees":"treesTall",144+Math.cos(k*.9)*26,144+Math.sin(k*.9)*26,11+ (k%3)*3,k,{});
+  for(let k=0;k<4;k++)mb.prop("bench",144+Math.cos(k*1.6)*19,144+Math.sin(k*1.6)*19,k*1.6);
+  // 소형 스타디움 블록 (-144,144): 관중석 링 + 필드
+  {const sx=-144,sz=144;
+   mb.stamp(sx,sz,32,(i,j,d)=>w.setS(i,j,d<20?S_GRS:S_WLK));
+   for(let a=0;a<Math.PI*2;a+=Math.PI/10){
+     const rx=sx+Math.cos(a)*27,rz=sz+Math.sin(a)*27;
+     mb.box(rx,2,rz,7,4,7,0x39424e,{yaw:-a,mu:.5,tag:"stand"});}}
   // city loop route (time attack / race)
   const loop=samplePath([[-96,-192],[96,-192],[192,-96],[192,96],[96,192],[-96,192],[-192,96],[-192,-96]],true,160);
   w.checkpoints=pathCheckpoints(loop,20,15);
@@ -149,11 +171,31 @@ const MAPS=[
   mb.paintPath(road,11,S_ASP,true,true);
   railAlong(mb,road,11,0xc7ccd4);
   {let sd=23;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
-   for(let k=0;k<26;k++){
+   for(let k=0;k<40;k++){
      const p=road[(rr()*road.length)|0];
-     const off=18+rr()*40,ang=rr()*Math.PI*2;
+     const off=18+rr()*48,ang=rr()*Math.PI*2;
      const tx=p.x+Math.cos(ang)*off,tz=p.z+Math.sin(ang)*off;
-     if(w.surf(tx,tz)===S_GRS)mb.baked("treesTall",tx,tz,9+rr()*5,rr()*6,{});}}
+     if(w.surf(tx,tz)===S_GRS)mb.baked("treesTall",tx,tz,9+rr()*5,rr()*6,{});}
+   // 낙석지대: 도로 옆 바위밭
+   for(let k=0;k<22;k++){
+     const p=road[(rr()*road.length)|0];
+     const off=9+rr()*7,side=rr()<.5?-1:1,ang=Math.atan2(0,1);
+     const tx=p.x+side*off,tz=p.z+ (rr()-.5)*14,sc=1.4+rr()*3;
+     mb.box(tx,w.height(tx,tz)+sc*.3,tz,sc*1.8,sc,sc*1.5,0x6f675e,{yaw:rr()*3,roll:(rr()-.5)*.5,mu:.85,tag:"rock"});}}
+  // 터널 (도로 중간 구간을 덮는 갱도) — 벽 2 + 지붕
+  {const ti=Math.floor(road.length*.44),tj=Math.floor(road.length*.56);
+   for(let i=ti;i<tj;i+=3){
+     const a=road[i],b=road[Math.min(i+3,road.length-1)];
+     const dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1,yaw=Math.atan2(dx,dz);
+     const nx=dz/l,nz=-dx/l,y=w.height(a.x,a.z);
+     for(const s of[-1,1])mb.box(a.x+nx*s*7,y+2.4,a.z+nz*s*7,1.2,5,l+1,0x565049,{yaw,mu:.7,tag:"tunnelwall"});
+     mb.box(a.x,y+5,a.z,15.5,1,l+1,0x4a453f,{yaw,mu:.7,tag:"tunnelroof"});}}
+  // 전망대 플랫폼 (계곡 조망)
+  {const p=road[Math.floor(road.length*.3)];
+   const nx=1,ox=p.x+16,oz=p.z+16,oy=w.height(ox,oz);
+   mb.box(ox,oy+.4,oz,20,.8,16,0x8a837a,{mu:.9,tag:"overlook"});
+   for(const s of[-1,1])mb.box(ox+s*9.6,oy+1.3,oz,.4,1.4,16,0xb9c2cc,{mu:.4,tag:"rail"});
+   mb.box(ox,oy+1.3,oz+7.6,20,1.4,.4,0xb9c2cc,{mu:.4,tag:"rail"});}
   mb.paintLanes();
   w.checkpoints=pathCheckpoints(road,42,15);
   w.waypoints=pathWaypoints(road,false,30);
@@ -185,6 +227,19 @@ const MAPS=[
     mb.box(x,w.height(x,z)+sc*.32,z,sc*2,sc,sc*1.6,0x7a7169,{yaw:rnd()*3,roll:(rnd()-.5)*.4,mu:.8,tag:"rock"});}
   // desert ramp + barrels
   mb.ramp(120,0,Math.PI/2,20,14,12,0xa08055);
+  // 메가 점프대 (플래토 절벽에서 도약)
+  mb.ramp(150,-120,Math.PI,26,24,16,0xb5824e);
+  mb.ramp(150,140,0,22,22,16,0xb5824e);
+  // 오아시스 (북서): 물웅덩이 + 야자수 군락
+  mb.stamp(-260,240,40,(i,j,d)=>{if(d<20)w.setS(i,j,S_WET);else if(d<30)w.setS(i,j,S_GRS);});
+  mb.texCircle(-260,240,20,SURF_CSS[S_WET]);
+  for(let k=0;k<8;k++)mb.baked("treesTall",-260+Math.cos(k*.8)*26,240+Math.sin(k*.8)*26,10+ (k%3)*3,k,{});
+  // 바위 아치 (통과형 게이트)
+  for(const[ax,az]of[[-60,-140],[40,180],[-160,40]]){
+    for(const s of[-1,1])mb.box(ax+s*5,w.height(ax,az)+3.5,az,3,8,3.5,0x6f645a,{mu:.85,tag:"rock"});
+    mb.box(ax,w.height(ax,az)+7.4,az,13,3,3.5,0x6f645a,{mu:.85,tag:"rock"});}
+  // 모래 와시(whoops) 연속 둔덕
+  for(let k=0;k<12;k++)mb.bump(-380+k*7,-80,Math.PI/2,12,.22+ (k%2)*.1);
   for(let k=0;k<5;k++)mb.prop("barrel",-40+k*4,60);
   w.spawn={x:-300,z:-300,yaw:Math.PI/4};
   return mb.finalize(this);}},
@@ -207,6 +262,17 @@ const MAPS=[
   for(let a=0;a<Math.PI*2;a+=Math.PI/26){
     const x=Math.cos(a)*205,z=Math.sin(a)*205;
     mb.box(x,w.height(x,z)+.9,z,4,1.8,22,0xf0f4f8,{yaw:-a,mu:.3,bounce:.35,tag:"snow"});}
+  // 얼음 모굴 필드 (저마찰 위 둔덕 → 예측불가 점프)
+  for(let k=0;k<14;k++){
+    const a=k*1.3,r=95+ (k%3)*22;
+    mb.bump(Math.cos(a)*r,Math.sin(a)*r,a,9,.16+ (k%2)*.08);}
+  // 압력 능선 (갈라진 얼음판 융기)
+  for(let k=0;k<7;k++)
+    mb.box(-120+k*40,.12,-30+ (k%2?18:-18),3,.24,26,0xdfe9f2,{yaw:.3*(k%2?1:-1),mu:.16,tag:"ridge"});
+  // 얼음 점프 램프 → 눈벽 착지
+  mb.ramp(0,60,0,16,18,12,0xdce8f2);
+  // 콘 슬라럼 (드리프트 라인)
+  for(let k=0;k<10;k++)mb.prop("cone",((k%2)*16-8),-90+k*16);
   for(let k=0;k<6;k++)mb.prop("cone",Math.cos(k)*35,Math.sin(k)*35);
   w.spawn={x:0,z:-120,yaw:0};
   return mb.finalize(this);}},
@@ -238,8 +304,17 @@ const MAPS=[
     if(cv>.35&&cv<3)for(const s of[-1,1])
       mb.box(mid.x+dz/l*s*13,w.height(mid.x+dz/l*s*13,mid.z-dx/l*s*13)+.5,mid.z-dx/l*s*13,
         1.2,1,7,s>0?0xd8433b:0xe8e8e8,{yaw:ang2,mu:.6,bounce:.3,tag:"tirewall"});}
-  // grandstand + 나무
-  mb.box(-180,4,-268,60,8,10,0x39424e,{mu:.5,tag:"stand"});
+  // 시케인 (스타트 직후 감속 시케인 — 타이어 스택 게이트)
+  {const a=road[6],b=road[10];
+   const dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1,yaw=Math.atan2(dx,dz),nx=dz/l,nz=-dx/l;
+   for(let s=0;s<5;s++){
+     const t=s/4,cx=lerp(a.x,b.x,t),cz=lerp(a.z,b.z,t),off=(s%2?1:-1)*4;
+     mb.box(cx+nx*off,w.height(cx+nx*off,cz+nz*off)+.5,cz+nz*off,1.4,1,3,s%2?0xd8433b:0xe8e8e8,{yaw,mu:.6,bounce:.3,tag:"tirewall"});}}
+  // 피트 박스 (스탠드 앞 정비 구역)
+  for(let k=0;k<5;k++)mb.box(-210+k*16,.06,-250,13,.12,7,0x33393f,{mu:.9,tag:"pit"});
+  // grandstand + 나무 (관중석 3단)
+  for(let t=0;t<3;t++)mb.box(-180,4+t*3,-268-t*4,60+t*8,2.6,7,t?0x2e3640:0x39424e,{mu:.5,tag:"stand"});
+  mb.box(-90,4,-262,44,8,9,0x39424e,{mu:.5,tag:"stand"});
   {let sd=17;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
    for(let k=0;k<22;k++){
      const a=rr()*Math.PI*2,r=120+rr()*220;
@@ -305,9 +380,21 @@ MAPS.push(
   for(let k=0;k<4;k++)
     mb.box(300+k*46,w.height(300+k*46,330)+5,330,38,10,26,0x77808c,{mu:.5,tag:"warehouse"});
   for(let k=0;k<6;k++)mb.prop("barrel",310+k*5,300);
-  // 방지턱: 도심 스쿨존
-  for(const[bx,bz,yaw]of[[45,0,Math.PI/2],[-45,0,Math.PI/2],[0,45,0],[0,-45,0],[90,50,0],[-90,-50,0]])
-    mb.bump(bx,bz,yaw,13);
+  // 방지턱: 도심 스쿨존 (대형 16~22cm)
+  for(const[bx,bz,yaw,h]of[[45,0,Math.PI/2,.16],[-45,0,Math.PI/2,.16],[0,45,0,.16],[0,-45,0,.16],[90,50,0,.22],[-90,-50,0,.22]])
+    mb.bump(bx,bz,yaw,13,h);
+  // 마리나 (북서 호수): 부두 + 정박한 보트
+  {const lx=-350,lz=300;
+   for(let k=0;k<3;k++)mb.box(lx-40+k*40,.2,lz-70,6,.4,60,0x8a6b45,{mu:.8,tag:"dock"});
+   for(let k=0;k<5;k++)mb.box(lx-60+k*30,.5,lz-40-k*8,4,1,9,k%2?0xd8433b:0xe8e8e8,{yaw:.1*k,mu:.5,tag:"boat"});}
+  // 언덕 스위치백 등반로 (북동 언덕 정상까지)
+  {const sb=samplePath([[280,-250],[350,-320],[290,-380],[380,-410],[430,-360]],false,120);
+   mb.paintPath(sb,10,S_ASP,true,true);railAlong(mb,sb,10,0xb9c2cc);}
+  // 공사장 (대형 갭 점프대 + 자재) — 격자와 순환로 사이 공터
+  mb.ramp(250,250,0,24,22,14,0xd8433b);
+  mb.ramp(250,312,Math.PI,20,20,14,0xc7742f);
+  for(let k=0;k<6;k++)mb.box(220+k*7,.6,250,6,1.2,2,0xcaa23a,{yaw:k,mu:.8,tag:"beam"});
+  for(let k=0;k<3;k++)mb.box(210,2.4+k*.1,270+k*4,10,.2,3.6,0x7a828c,{mu:.7,tag:"scaffold"});
   // 언덕 비포장길
   const dirt=samplePath([[220,-140],[300,-230],[380,-330],[430,-390]],false,80);
   for(const p of dirt)mb.stamp(p.x,p.z,6,(i,j)=>w.setS(i,j,SURF_ID.gravel));
@@ -327,62 +414,82 @@ MAPS.push(
 
 /* ---------- 8. 서스펜션 랩 ---------- */
 MAPS.push(
-{id:"susp",name:"서스펜션 랩",icon:"🔩",desc:"높이별 방지턱·빨래판·트위스트·언덕 4단·경사 8/15/25°·자갈밭·계단",
- modes:["free"],
+{id:"susp",name:"서스펜션 랩",icon:"🔩",desc:"높이별 방지턱 6~35cm·빨래판·트위스트·언덕 4단·경사 12/20/30°·모굴·시소·테이블탑 점프·록크롤",
+ modes:["free","crash"],
  build(){
-  const mb=new MapBuilder(600,224),w=mb.world;
-  const LANES=[-150,-90,-30,30,100,170];
+  const mb=new MapBuilder(760,256),w=mb.world;
+  const LANES=[-300,-230,-160,-88,-8,72,150,232,300];
+  const HILLX=-8, RAMPX=72;
   mb.fill((x,z)=>{
     let h=0;
-    // 4레인: 언덕 4단 (가우시안 능선)
-    if(Math.abs(x-30)<26){
-      const edge=clamp((26-Math.abs(x-30))/8,0,1);
-      for(const[zc,H]of[[-120,1.5],[-55,3],[15,5],[100,8]]){
-        const s2=(H*2.2)*(H*2.2);
+    // 언덕 4단 (가우시안 능선) — 훨씬 크게 (3/6/11/18m)
+    if(Math.abs(x-HILLX)<30){
+      const edge=clamp((30-Math.abs(x-HILLX))/9,0,1);
+      for(const[zc,H]of[[-150,3],[-70,6],[30,11],[150,18]]){
+        const s2=(H*2.0)*(H*2.0);
         h+=H*Math.exp(-((z-zc)*(z-zc))/(2*s2))*edge;}}
-    // 5레인: 경사로 8/15/25° (오르막-정상-내리막 사다리꼴)
-    if(Math.abs(x-100)<24){
-      const edge=clamp((24-Math.abs(x-100))/8,0,1);
+    // 경사로 12/20/30° (오르막-정상-내리막 사다리꼴) — 더 높게
+    if(Math.abs(x-RAMPX)<28){
+      const edge=clamp((28-Math.abs(x-RAMPX))/9,0,1);
       const wedge=(z0,up,top,down,H)=>{
         if(z<z0||z>z0+up+top+down)return 0;
         if(z<z0+up)return H*(z-z0)/up;
         if(z<z0+up+top)return H;
         return H*(1-(z-z0-up-top)/down);};
-      h+=(wedge(-160,36,12,26,5)+wedge(-70,30,12,24,8)+wedge(20,26,14,22,12))*edge;}
-    if(Math.abs(x)>282||Math.abs(z)>282)return[h,S_GRS];
+      h+=(wedge(-190,38,14,30,8)+wedge(-90,34,14,26,14)+wedge(10,30,16,24,22))*edge;}
+    if(Math.abs(x)>360||Math.abs(z)>360)return[h,S_GRS];
     return[h,S_ASP];});
-  // 1레인: 높이별 방지턱 4~16cm
-  const hs=[.04,.06,.08,.10,.13,.16];
+  // 1레인: 높이별 방지턱 6~35cm (대형)
+  const hs=[.06,.10,.15,.20,.27,.35];
   hs.forEach((h,k)=>{
-    mb.bump(LANES[0],-140+k*38,0,13,h);
-    mb.texText(LANES[0]-9,-146+k*38,3.2,Math.round(h*100)+"cm");});
-  // 2레인: 빨래판 (슬랫 18개)
-  for(let k=0;k<18;k++)
-    mb.box(LANES[1],w.height(LANES[1],-140+k*1.35)+.018,-140+k*1.35,12,.036,.5,0x8f98a3,{mu:1,tag:"slat"});
-  for(let k=0;k<8;k++)
-    mb.box(LANES[1],.03,-60+k*3.4,12,.06,.9,0x8f98a3,{mu:1,tag:"slat"});
-  mb.texText(LANES[1],-152,3.2,"빨래판");
-  // 3레인: 트위스트 (좌우 엇갈림 → 대각 롤 유발)
+    mb.bump(LANES[0],-150+k*42,0,15,h);
+    mb.texText(LANES[0]-10,-158+k*42,4,Math.round(h*100)+"cm");});
+  // 2레인: 빨래판/워시보드 (슬랫 24개, 더 큼)
+  for(let k=0;k<24;k++)
+    mb.box(LANES[1],w.height(LANES[1],-160+k*1.6)+.03,-160+k*1.6,13,.06,.6,0x8f98a3,{mu:1,tag:"slat"});
   for(let k=0;k<10;k++)
-    mb.bump(LANES[2]+(k%2?-3.2:3.2),-140+k*16,0,7,.11);
-  mb.texText(LANES[2],-152,3.2,"트위스트");
-  mb.texText(30,-152,3.2,"언덕 1.5~8m");
-  mb.texText(100,-152,3.2,"경사 8°/15°/25°");
-  // 6레인: 자갈밭(랜덤 슬랫) + 계단 + 연석 타격
+    mb.box(LANES[1],.055,-40+k*4,13,.11,1.1,0x8f98a3,{mu:1,tag:"slat"});
+  mb.texText(LANES[1],-176,4,"빨래판");
+  // 3레인: 트위스트 (좌우 엇갈림 → 대각 롤) — 더 크게
+  for(let k=0;k<12;k++)
+    mb.bump(LANES[2]+(k%2?-4:4),-160+k*18,0,8,.18);
+  mb.texText(LANES[2],-176,4,"트위스트");
+  mb.texText(HILLX,-176,4,"언덕 3~18m");
+  mb.texText(RAMPX,-176,4,"경사 12/20/30°");
+  // 6레인: 모굴 필드 (지그재그 대형 범프) — 롤·피치 복합
+  for(let k=0;k<16;k++){
+    const off=((k%3)-1)*5;
+    mb.bump(LANES[5]+off,-160+k*17,0,7,.14+ (k%2)*.06);}
+  mb.texText(LANES[5],-176,4,"모굴 필드");
+  // 7레인: 시소(테이터) + 흔들다리 슬랫
+  mb.box(LANES[6],.02,-140,13,.6,10,0x9aa2ab,{roll:0,pitch:9*DEG,mu:1,tag:"teeter"});
+  mb.box(LANES[6],.02,-118,13,.6,10,0x9aa2ab,{pitch:-9*DEG,mu:1,tag:"teeter"});
+  for(let k=0;k<14;k++)
+    mb.box(LANES[6]+(k%2?-2:2),.04+ (k%2)*.16,-80+k*4.2,10,.09,1.2,0xa2842f,{mu:1,tag:"plank"});
+  mb.texText(LANES[6],-176,4,"시소·흔들다리");
+  // 8레인: 테이블탑 점프대 + 갭 점프 (착지 램프)
+  mb.ramp(LANES[7],-150,0,20,20,13,0xc7742f);        // 이륙
+  mb.box(LANES[7],2.4,-110,13,.8,26,0x8f98a3,{mu:1,tag:"table"}); // 상판
+  mb.ramp(LANES[7],-72,Math.PI,20,20,13,0xc7742f);   // 착지(반대 경사)
+  mb.ramp(LANES[7],40,0,26,22,13,0xd8433b);          // 대형 갭 점프대
+  mb.texText(LANES[7],-176,4,"테이블탑·갭 점프");
+  // 9레인: 록크롤 (랜덤 바위 + 계단 + 연석 타격)
   {let sd=41;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
-   for(let k=0;k<46;k++)
-     mb.box(LANES[5]+(rr()-.5)*10,.014,-140+rr()*90,1.2+rr()*1.6,.028+rr()*.03,.8+rr(),0x77808c,
-       {yaw:rr()*3,mu:1,tag:"cobble"});}
-  for(let k=0;k<3;k++)
-    mb.box(LANES[5],.06+k*.12,-20+k*1.4,12,.12,1.4,0x9aa2ab,{mu:1,tag:"stair"});
-  mb.box(LANES[5],.09,30,12,.18,.9,0xb5443c,{mu:1,tag:"curb"});
-  mb.texText(LANES[5],-152,3.2,"자갈·계단·연석");
-  // 레인 구분선 + 출발 안내
+   for(let k=0;k<40;k++)
+     mb.box(LANES[8]+(rr()-.5)*12,w.height(LANES[8],-160+rr()*120)+.1,-160+rr()*120,
+       1.4+rr()*2.2,.2+rr()*.5,1+rr()*1.4,0x77808c,{yaw:rr()*3,roll:(rr()-.5)*.5,mu:.95,tag:"rock"});}
+  for(let k=0;k<5;k++)
+    mb.box(LANES[8],.12+k*.24,-10+k*2,13,.24,2,0x9aa2ab,{mu:1,tag:"stair"});
+  mb.box(LANES[8],.18,40,13,.36,1.2,0xb5443c,{mu:1,tag:"curb"});
+  mb.texText(LANES[8],-176,4,"록크롤·계단·연석");
+  // 레인 구분선
   for(const lx of LANES)
-    mb.texPath([{x:lx,z:-170},{x:lx,z:150}],.3,"rgba(255,210,80,.5)",[2.5,2.5]);
-  mb.texText(0,-210,5,"SUSPENSION LAB","rgba(240,244,250,.85)");
-  for(let k=0;k<4;k++)mb.baked(k%2?"trees":"treesTall",-250+k*160,250,11,k,{});
-  w.spawn={x:0,z:-235,yaw:0};
+    mb.texPath([{x:lx,z:-190},{x:lx,z:180}],.34,"rgba(255,210,80,.5)",[3,3]);
+  mb.texText(0,-250,6,"SUSPENSION LAB","rgba(240,244,250,.85)");
+  // 되돌아오는 스타트 존 + 장식
+  for(let k=0;k<6;k++)mb.baked(k%2?"trees":"treesTall",-320+k*128,320,12,k,{});
+  for(let k=0;k<8;k++)mb.prop("cone",-300+k*80,-270);
+  w.spawn={x:0,z:-300,yaw:0};
   return mb.finalize(this);}});
 
 /* ---------- custom map from editor tiles ---------- */

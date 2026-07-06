@@ -26,11 +26,11 @@ const UI=(()=>{
       '<p class="heroSub">서스펜션·타이어 풀 시뮬레이션 × 충돌 변형 — 박은 자리가 박은 만큼 찌그러진다</p>'+
       '<div class="btnRow" style="margin-top:16px"><button class="btn" id="quickPlay">▶ 바로 주행'+
       (last?' <small style="font-weight:500;opacity:.8">('+esc(CARS[last.carIdx]?.name||"")+')</small>':'')+'</button></div></div>'+
-      '<div class="h1">게임 모드 <small>차량 6종 · 맵 7종 + 커스텀 에디터</small></div>'+
+      '<div class="h1">게임 모드 <small>차량 '+CARS.length+'종 · 맵 '+MAPS.length+'종 + 커스텀 에디터</small></div>'+
       '<div class="grid big">'+MODES.map(m=>
         '<button class="card mode" data-m="'+m.id+'"><span class="ic">'+m.icon+'</span>'+
         '<span class="nm">'+m.name+'</span><span class="ds">'+m.desc+'</span></button>').join("")+'</div>'+
-      '<p class="note">실차 3D 모델(CC0 · Kenney Car Kit) · 물리는 어떤 어시스트에서도 항상 풀 시뮬레이션 · 변형은 수리 전까지 영구 누적</p>';
+      '<p class="note">실차 3D 모델(레인지로버 실측 스캔 + CC0 Kenney Car Kit) · 물리는 어떤 어시스트에서도 항상 풀 시뮬레이션 · 변형은 수리 전까지 영구 누적</p>';
     $("quickPlay").onclick=()=>{
       Sfx.resume();Sfx.click();
       Game.mode="free";

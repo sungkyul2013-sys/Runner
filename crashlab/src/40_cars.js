@@ -30,6 +30,15 @@ const CARS=[
   brakeF:10500,steerLo:.58,steerHi:.15,aero:{cd:1.5,df:0},gripF:.95,gripR:.95,
   style:"suv",colors:[0x5f8b4c,0xc2a368,0x556270,0xb8443c,0x2b2b2b],
   stats:{spd:32,acc:38,grip:60,mass:55}},
+ {id:"rover",name:"레인지로버 오토바이오그래피",icon:"🛻",drive:"4WD",mass:2480,hp:530,acc:"4.4초",top:250,
+  desc:"실차 스캔 3D 모델. 5.0L V8 · 에어 서스펜션. 럭셔리와 오프로드를 한 몸에.",
+  model:"rangeRover",rollFix:1.22,squashY:1,comFromWheels:true,realWheels:true,
+  body:{hx:1.02,hy:.82,hz:2.42},wheels:{track:.95,front:1.45,rear:1.45,y:-.5,radius:.44,width:.32},
+  susp:{k:62000,c:6400,travel:.24,rest:.3},arb:14000,
+  engine:{maxT:620,redline:6500,idle:760},gears:[3.6,2.2,1.5,1.1,.85],final:3.9,
+  brakeF:12500,steerLo:.56,steerHi:.13,aero:{cd:1.4,df:0},gripF:1.02,gripR:1.02,
+  style:"suv",colors:[0x1c3a2a,0x12161b,0xe9ecee,0x8a929a,0x2a3f66],
+  stats:{spd:55,acc:60,grip:74,mass:64}},
  {id:"titan",name:"타이탄 카고",icon:"🚚",drive:"RWD",mass:8000,hp:450,acc:"25초",top:120,
   desc:"8톤의 질량. 높은 무게중심 = 전복 장인. 뭐든 밀어버린다.",
   model:"garbageTruck",rollFix:1.12,
@@ -262,11 +271,15 @@ class CarVisual{
     this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh]);
     const bumpMat=new THREE.MeshPhongMaterial({color:0x191d24,flatShading:true,shininess:18});
     const by=Math.max(spec.modelWheelY,-hy*.62);
+    // 범퍼/미러 파트를 실제 차체 바운딩에 밀착 (모델 중심 오프셋 대응)
+    this.bodyMesh.geometry.computeBoundingBox();
+    const bx=this.bodyMesh.geometry.boundingBox;
+    const zF=bx.max.z,zR=bx.min.z,xR=Math.max(Math.abs(bx.min.x),Math.abs(bx.max.x));
     this.parts={
-      fb:this.mkPart(hx*1.15,hy*.16,.1,0,by,hz-.01,bumpMat),
-      rb:this.mkPart(hx*1.15,hy*.16,.1,0,by,-hz+.01,bumpMat),
-      ml:this.mkPart(.07,.08,.17,-hx*.92,hy*.1,hz*.3,bumpMat),
-      mr:this.mkPart(.07,.08,.17,hx*.92,hy*.1,hz*.3,bumpMat)};
+      fb:this.mkPart(hx*1.02,hy*.15,.09,0,by+hy*.06,zF-.16,bumpMat),
+      rb:this.mkPart(hx*1.02,hy*.15,.09,0,by+hy*.06,zR+.16,bumpMat),
+      ml:this.mkPart(.07,.08,.17,-xR*.96,hy*.1,zF*.34,bumpMat),
+      mr:this.mkPart(.07,.08,.17,xR*.96,hy*.1,zF*.34,bumpMat)};
     this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
     const wg=wheelGeo(spec.wheels.radius,spec.wheels.width);
     const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
