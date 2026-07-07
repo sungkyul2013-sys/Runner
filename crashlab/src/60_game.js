@@ -73,6 +73,8 @@ const Game={
     $("speedo").style.display=this.mode==="crash"?"none":"";
     $("minimap").style.display=this.mode==="crash"?"none":"";
     $("btnRepair").style.display=(this.mode==="free"||this.mode==="crash"||this.mode==="drift")?"":"none";
+    $("btnPlaces").style.display=(this.world.places&&this.mode!=="crash")?"":"none";
+    $("placesPanel").classList.remove("on");
     Sfx.resume();
     updateModeWidget();
     toast(this.mapDef.name+" — "+spec.name,1800);
@@ -348,6 +350,13 @@ const Game={
     else if(this.mode==="crash")this.placeCrashCar();
     else v.reset(sp.x,sp.z,sp.yaw,true);
     toast("리셋");},
+  spawnAt(p){   // 📍 장소 선택 스폰 (오픈월드)
+    if(!p)return;
+    this.veh.reset(p.x,p.z,p.yaw||0,true);this.repairSilent();
+    if(this.cam){const sp=this.world.spawn;
+      this.cam.pos.set(p.x-Math.sin(p.yaw||0)*8,this.world.height(p.x,p.z)+4,p.z-Math.cos(p.yaw||0)*8);}
+    toast("📍 "+p.name);Sfx.beep(680,.1,.14);},
+  repairSilent(){this.veh.clearDamage();this.vis.repair();},
   repair(){
     if(this.veh.isFlipped())this.veh.uprightInPlace();   // 전복 시 정위치 복원
     this.veh.clearDamage();this.vis.repair();toast("🔧 수리 완료");Sfx.beep(760,.12,.12);},

@@ -4,6 +4,7 @@
   <div class="hudTop">
     <div id="modeWidget"></div>
     <div class="hudSpacer"></div>
+    <button class="iconBtn" id="btnPlaces" title="장소 이동" style="display:none">📍</button>
     <button class="iconBtn" id="btnRepair" title="수리">🔧</button>
     <button class="iconBtn" id="btnSlow" title="슬로모션">🐢</button>
     <button class="iconBtn" id="btnCam" title="카메라">🎥</button>
@@ -79,6 +80,11 @@
 
 <div id="reportPanel" class="overlayPanel"><div class="panelBox" id="reportBox"></div></div>
 <div id="resultPanel" class="overlayPanel"><div class="panelBox" id="resultBox"></div></div>
+<div id="placesPanel" class="overlayPanel"><div class="panelBox">
+  <h3 style="margin:0 0 10px">📍 장소 이동</h3>
+  <div id="placesList"></div>
+  <button class="btn sm" id="placesClose" style="margin-top:12px">닫기</button>
+</div></div>
 
 <div id="editorScr" class="screen"><div class="wrap">
   <div id="edLeft">

@@ -145,6 +145,17 @@ function initHudButtons(){
     $("btnSlow").classList.toggle("on",Game.manualSlow);
     toast(Game.manualSlow?"슬로모션 ON":"슬로모션 OFF");};
   $("btnRepair").onclick=()=>{Sfx.click();Game.repair();};
+  // 📍 장소 이동(오픈월드)
+  $("btnPlaces").onclick=()=>{Sfx.click();
+    const ps=Game.world&&Game.world.places;if(!ps)return;
+    const L=$("placesList");L.innerHTML="";
+    ps.forEach(p=>{const b=document.createElement("button");
+      b.className="btn sm";b.style.cssText="display:block;width:100%;margin:4px 0;text-align:left";
+      b.textContent=p.name;
+      b.onclick=()=>{Sfx.click();Game.spawnAt(p);$("placesPanel").classList.remove("on");};
+      L.appendChild(b);});
+    $("placesPanel").classList.add("on");};
+  $("placesClose").onclick=()=>{Sfx.click();$("placesPanel").classList.remove("on");};
   $("btnLaunch").onclick=()=>{Sfx.click();Game.crash.vTarget=+$("crashSpeed").value;Game.launch();};
   $("crashSpeed").oninput=e=>{
     $("crashSpeedVal").textContent=e.target.value+" km/h";

@@ -252,6 +252,11 @@ function samplePath(ctrl,closed,n){
   const pts=[];
   for(let i=0;i<=n;i++){const p=curve.getPoint(i/n);pts.push({x:p.x,y:p.y,z:p.z});}
   return pts;}
+// 지형을 따라가는 도로 y 설정 → 오르막/내리막(경사 완만화 스무딩 포함)
+function followTerrain(w,pts){
+  for(const p of pts)p.y=w.baseHeight(p.x,p.z);
+  for(let s=0;s<4;s++)for(let i=1;i<pts.length-1;i++)pts[i].y=(pts[i-1].y+pts[i].y*2+pts[i+1].y)/4;
+  return pts;}
 function pathWaypoints(pts,closed,vmax){
   const wp=[];
   const N=pts.length-1;
