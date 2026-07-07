@@ -41,7 +41,7 @@ const CARS=[
   stats:{spd:55,acc:60,grip:74,mass:64}},
  {id:"maybach",name:"메르세데스-마이바흐 GLS",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.9초",top:240,
   desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
-  model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
+  model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
   susp:{k:60000,c:6200,travel:.22,rest:.28},arb:16000,
   engine:{maxT:640,redline:6000,idle:600},gears:[3.5,2.15,1.5,1.15,.9],final:3.9,
@@ -195,6 +195,7 @@ function stationLerp(st,z,key){
 }
 
 const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:95,specular:0x6a7078});
+const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:115,specular:0x7a7f88});
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8});
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222});
 let _wheelGeoCache={};
@@ -278,7 +279,7 @@ class CarVisual{
     const e=this.baked,{hx,hy,hz}=spec.body;
     const split=Assets.geoSplit(e,{scale:spec.modelScale,sy:spec.squashY||1,
       cx:spec.modelCx,cy:spec.modelCy,cz:spec.modelCz,paint:new THREE.Color(colorHex)});
-    this.bodyMesh=new THREE.Mesh(split.main,MAT_CAR);
+    this.bodyMesh=new THREE.Mesh(split.main,spec.smoothShade?MAT_CAR_SMOOTH:MAT_CAR);
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
     if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,MAT_GLASS);
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}

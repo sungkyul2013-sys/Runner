@@ -81,7 +81,7 @@ const wheels=cen.map(c=>[+c[0].toFixed(3), +(wr).toFixed(3), +c[1].toFixed(3)]);
 console.log('wheels',JSON.stringify(wheels),'radius',wr.toFixed(3));
 
 // ---- decimate via grid clustering, strip tire geometry ----
-const CELL=0.15;   // 클러스터 셀(작을수록 고해상)
+const CELL=0.105;  // 클러스터 셀(작을수록 고해상) — 실차 품질 우선
 const gi=(x,y,z)=>((Math.round(x/CELL))+2048)*4194304 + ((Math.round(y/CELL))+2048)*2048 + (Math.round(z/CELL)+2048);
 // representative per cell: accumulate
 const cellMap=new Map();
@@ -99,7 +99,12 @@ function inWheel(x,y,z){
   for(const c of cen){const dx=x-c[0],dz=z-c[2];if(dx*dx+dz*dz < (wr*0.98)*(wr*0.98))return true;}
   return false;
 }
-// first pass: assign cells
+// first pass: assign cells + accumulate original normals (smooth shading)
+// 얇은 패널(기둥/미러)에서 앞뒤 노멀이 상쇄돼 검게 되는 문제 방지: 반대편 면은 누적 제외
+const rn=(k,ni)=>{const r=cellMap.get(k);
+  const nx=N[ni*3]||0,ny=N[ni*3+1]||0,nz=N[ni*3+2]||0;
+  if(r.nn>0&&(r.nx*nx+r.ny*ny+r.nz*nz)<0)return;   // 첫 면과 반대 방향 → 무시
+  r.nx+=nx;r.ny+=ny;r.nz+=nz;r.nn=(r.nn||0)+1;};
 const keptTris=[];
 for(const t of tris){
   const ax=V[t.a*3],ay=V[t.a*3+1],az=V[t.a*3+2];
@@ -109,22 +114,20 @@ for(const t of tris){
   if(inWheel(mx,my,mz))continue;   // 타이어 제거 → 절차 휠 사용
   const ka=rep(t.a,t.mat),kb=rep(t.b,t.mat),kc=rep(t.c,t.mat);
   if(ka===kb||kb===kc||ka===kc)continue;   // 붕괴 삼각형 제거
-  keptTris.push([ka,kb,kc,t.mat,t.na,t.nb,t.nc]);
+  rn(ka,t.na);rn(kb,t.nb);rn(kc,t.nc);      // 원본 노멀 누적 → 스무스
+  keptTris.push([ka,kb,kc,t.mat]);
 }
-// finalize cell centroids
-for(const r of cellMap.values()){r.x/=r.n;r.y/=r.n;r.z/=r.n;}
+// finalize cell centroids + smooth normals
+for(const r of cellMap.values()){r.x/=r.n;r.y/=r.n;r.z/=r.n;
+  const l=Math.hypot(r.nx,r.ny,r.nz)||1;r.nx/=l;r.ny/=l;r.nz/=l;}
 console.log('cells',cellMap.size,'kept tris',keptTris.length);
 
-// build soup (non-indexed) with per-vertex color+mask, recompute normals per-face
+// build soup (non-indexed): 스무스 노멀 (셀 평균) → 매끈한 실차 표면
 const pos=[],nrm=[],col=[],mask=[];
-const cellPos=k=>{const r=cellMap.get(k);return[r.x,r.y,r.z];};
 for(const[ka,kb,kc,mat] of keptTris){
-  const A=cellPos(ka),B=cellPos(kb),C=cellPos(kc);
-  // face normal
-  const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2],vx=C[0]-A[0],vy=C[1]-A[1],vz=C[2]-A[2];
-  let nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;const l=Math.hypot(nx,ny,nz)||1;nx/=l;ny/=l;nz/=l;
+  const ra=cellMap.get(ka),rb=cellMap.get(kb),rc=cellMap.get(kc);
   const m=MAT[mat]||MAT.Interior;
-  for(const P of[A,B,C]){pos.push(P[0],P[1],P[2]);nrm.push(nx,ny,nz);col.push(m.c[0],m.c[1],m.c[2]);mask.push(m.paint);}
+  for(const r of[ra,rb,rc]){pos.push(r.x,r.y,r.z);nrm.push(r.nx,r.ny,r.nz);col.push(m.c[0],m.c[1],m.c[2]);mask.push(m.paint);}
 }
 console.log('soup verts',pos.length/3);
 
@@ -182,7 +185,7 @@ function decimateEntry(e,cell){
   return q;
 }
 B[KEY]=entry;
-if(B.rangeRover){const before=B.rangeRover.v;B.rangeRover=decimateEntry(B.rangeRover,0.058);console.log('rangeRover decimated',before,'->',B.rangeRover.v);}
+// RR 데시메이션 제거(사용자 요청: 경량화 금지)
 let outjs='/* Baked CC0 3D assets — Kenney + Range Rover + Mercedes GLS(OBJ) */\n';
 outjs+='const BAKED='+JSON.stringify(B)+';\n';
 writeFileSync(BAKEDJS,outjs);

@@ -46,9 +46,9 @@ const MAPS=[
 
   /* === 유압 압착기 (COMPACTOR) === */
   const cx=110,cz=-40;
-  for(const s of[-1,1])mb.box(cx+s*6,4.2,cz,1.4,8.4,4.4,0x33383f,{tag:"pillar"}); // 기둥
+  for(const s of[-1,1])mb.box(cx+s*6.4,4.2,cz,1.4,8.4,4.4,0x33383f,{tag:"pillar"}); // 기둥(간격 넓힘)
   mb.box(cx,8.6,cz,15,1.2,4.6,0x2b2f35,{tag:"frame"});                            // 상단 프레임
-  mb.box(cx,.35,cz,11,.7,4.2,0x565b63,{mu:.95,tag:"anvil"});                      // 받침대
+  mb.box(cx,.06,cz,11,.12,4.4,0x565b63,{mu:.95,tag:"anvil"});                     // 받침대(평평 → 차 진입 가능)
   mb.mover(cx,4.8,cz,10.4,1.6,4,0xb5443c,{mu:.95,tag:"crusher"},                  // 내려찍는 램(급강하 슬램)
     t=>{const T=4,ph=(t%T)/T;
       if(ph<.5)return 0;                        // 대기(위) 2s
@@ -483,11 +483,12 @@ MAPS.push(
         h+=H*Math.exp(-((z-zc)*(z-zc))/(2*s2))*edge;}}
     if(Math.abs(x)>360||Math.abs(z)>360)return[h,S_GRS];
     return[h,S_ASP];});
-  // 1레인: 높이별 방지턱 6~35cm (대형)
-  const hs=[.06,.10,.15,.20,.27,.35];
-  hs.forEach((h,k)=>{
-    mb.bump(LANES[0],-150+k*42,0,15,h);
-    mb.texText(LANES[0]-10,-158+k*42,4,Math.round(h*100)+"cm");});
+  // 1레인: 방지턱 종류별 (아치·라운드·테이블·샤프·럼블·대형)
+  const bt=[["arch","아치 10",.1],["round","라운드 16",.16],["flat","테이블 12",.12],
+            ["sharp","샤프 14",.14],["rumble","럼블",.05],["arch","대형 30",.30]];
+  bt.forEach(([t,nm,h],k)=>{
+    mb.bump(LANES[0],-150+k*40,0,14,h,t);
+    mb.texText(LANES[0]-10,-160+k*40,3.2,nm);});
   // 2레인: 빨래판/워시보드 (슬랫 24개, 더 큼)
   for(let k=0;k<24;k++)
     mb.box(LANES[1],w.height(LANES[1],-160+k*1.6)+.03,-160+k*1.6,13,.06,.6,0x8f98a3,{mu:1,tag:"slat"});

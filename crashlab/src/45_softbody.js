@@ -23,9 +23,9 @@ class SoftLattice{
       this.home[a]=this.min[0]+i*this.cell[0];
       this.home[a+1]=this.min[1]+j*this.cell[1];
       this.home[a+2]=this.min[2]+k*this.cell[2];
-      // 하부 중앙 = 프레임(강체에 가깝게), 외피는 약한 복원 (프레임 약화 → 더 많은 부분 변형)
-      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.2:0;
-      this.anchor[idx(i,j,k)]=.01+frame;}
+      // 프레임/외피 모두 자유롭게 찌그러지게 — 앵커(복원)를 매우 약하게 → 영구 변형
+      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.03:0;
+      this.anchor[idx(i,j,k)]=.005+frame;}
     this.pos.set(this.home);this.prev.set(this.home);
     // beams
     const dirs=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,-1,0],[1,0,1],[1,0,-1],[0,1,1],[0,1,-1],[1,1,1],[1,-1,1]];
@@ -100,8 +100,8 @@ class SoftLattice{
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;
           if(it===0){
             const rest0=B[o+3],strain=(len-rest)/rest0;
-            if(Math.abs(strain)>.018){       // 항복 → 소성(영구) 변형: 더 쉽게·더 깊게 (형체불명 유지)
-              B[o+2]=clamp(rest+(len-rest)*.85,rest0*.1,rest0*1.75);}}}
+            if(Math.abs(strain)>.012){       // 항복 → 소성(영구) 변형: 매우 쉽게·깊게 자유 크럼플
+              B[o+2]=clamp(rest+(len-rest)*.92,rest0*.05,rest0*1.9);}}}
     }
     this.write();
     return true;

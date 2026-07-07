@@ -281,10 +281,10 @@ function boot(){
   const steps=[
     ["차량 모델 로드…",()=>{for(const c of CARS){
       if(!c.modelScale)applyModelSpec(c);
-      if(!c._tuned){c._tuned=true;                 // 서스펜션 튜닝(역동적 + 전복 안전)
-        c.susp.travel*=1.22;                        // 스트로크 확대 → 다이브/스쿼트/범프 무빙
-        c.susp.c*=.82;                              // 리바운드 완화 → 생동감(바운스)
-        c.arb*=1.0;}}}],                            // 롤 강성 중립(코너 롤 유지) — 전복은 복원토크가 담당
+      if(!c._tuned){c._tuned=true;                 // 서스펜션 튜닝(역동적 상하 + 강한 롤저항)
+        c.susp.travel*=1.2;                         // 스트로크 확대 → 다이브/스쿼트/범프 무빙
+        c.susp.c*=.85;                              // 리바운드 완화 → 생동감(바운스)
+        c.arb*=1.5;}}}],                            // 롤 강성 대폭 상향 → 전복 방지(상하 컴플라이언스는 유지)
     ["렌더러 초기화…",()=>initRenderer()],
     ["입력 시스템…",()=>{Input.init();initHudButtons();initGauge();}],
     ["차량 프리뷰 렌더링…",()=>makeCarThumbs()],
