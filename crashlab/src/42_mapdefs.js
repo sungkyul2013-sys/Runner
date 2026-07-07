@@ -156,17 +156,21 @@ const MAPS=[
     const downtown=Math.abs(bx)<=1.5&&Math.abs(bz)<=1.5;   // 다운타운 = 마천루
     const n=1+((rnd()*2)|0);
     for(let k=0;k<n;k++){
-      const nm=BLD[(rnd()*5)|0];
-      const sc=(downtown?30:22)+rnd()*(downtown?18:14);
-      const ox=cx+(rnd()-.5)*(66-sc),oz=cz+(rnd()-.5)*(66-sc);
-      mb.baked(nm,ox,oz,sc,((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});
-      // 다운타운: 건물 위에 층 적층 → 마천루
-      if(downtown){const floors=2+((rnd()*3)|0);let yy=BAKED[nm]?(BAKED[nm].bb[4]-BAKED[nm].bb[1])*sc*.92:14;
-        for(let f=0;f<floors;f++){const fs=sc*(.88-f*.12);
-          mb.baked(BLD[(rnd()*4)|0],ox,oz,fs,((rnd()*4)|0)*Math.PI/2,{y:yy,collide:false});
-          yy+=(BAKED[BLD[0]]?18:14)*(fs/sc);}}}
+      if(downtown){
+        // 마천루 = 경량 톨 박스 (스카이라인, 성능 최적화)
+        const w2=15+rnd()*9,H=28+rnd()*48;
+        const ox=cx+(rnd()-.5)*(58-w2),oz=cz+(rnd()-.5)*(58-w2);
+        const col=[0x39424e,0x4a5460,0x2e3742,0x5b6673][(rnd()*4)|0];
+        mb.box(ox,H*.5,oz,w2,H,w2,col,{mu:.5,tag:"tower"});
+        // 옥상 디테일
+        mb.box(ox,H+1.2,oz,w2*.4,2.4,w2*.4,0x6b7683,{mu:.5,tag:"tower"});
+      }else{
+        const nm=BLD[(rnd()*5)|0];
+        const sc=22+rnd()*14;
+        const ox=cx+(rnd()-.5)*(66-sc),oz=cz+(rnd()-.5)*(66-sc);
+        mb.baked(nm,ox,oz,sc,((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});}}
     // 블록 코너 가로수
-    if(rnd()<.7)mb.baked(rnd()<.5?"trees":"treesTall",cx+30,cz+30,11+rnd()*4,rnd()*6,{y:0});}
+    if(rnd()<.6)mb.baked(rnd()<.5?"trees":"treesTall",cx+30,cz+30,11+rnd()*4,rnd()*6,{y:0});}
   // overpass across x axis (z=~ -96 row): ramps + elevated deck
   const oy=7;
   mb.box(-40,oy-.5,-96,160,1,14,0x69707c,{mu:1,tag:"deck"});

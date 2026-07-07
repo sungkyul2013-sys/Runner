@@ -23,9 +23,13 @@ class SoftLattice{
       this.home[a]=this.min[0]+i*this.cell[0];
       this.home[a+1]=this.min[1]+j*this.cell[1];
       this.home[a+2]=this.min[2]+k*this.cell[2];
-      // 프레임/외피 모두 자유롭게 찌그러지게 — 앵커(복원)를 매우 약하게 → 영구 변형
-      const frame=(j===0&&i>0&&i<NX-1&&k>0&&k<NZ-1)?.03:0;
-      this.anchor[idx(i,j,k)]=.005+frame;}
+      // 크럼플 존 모델: 앞/뒤 끝은 앵커 거의 0(변형이 소성 빔으로 영구 고정),
+      // 가운데 승객셀만 앵커 강함(강체 유지) → 정면 충돌 시 아코디언 압축(복원·팽창 없음)
+      const zt=NZ>1?k/(NZ-1):.5;                     // 0(앞)~1(뒤)
+      const central=1-Math.min(1,Math.abs(zt-.5)/.30);
+      const cell=.09*central*central;                // 승객셀 강성(가운데)
+      const floor=(j===0)?.015:0;                    // 바닥 프레임 살짝
+      this.anchor[idx(i,j,k)]=.001+cell+floor;}
     this.pos.set(this.home);this.prev.set(this.home);
     // beams
     const dirs=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,-1,0],[1,0,1],[1,0,-1],[0,1,1],[0,1,-1],[1,1,1],[1,-1,1]];
@@ -61,8 +65,9 @@ class SoftLattice{
     this.binds.push({mesh,orig,bi,bw,vc});
   }
   impact(lp,ln,dv){
-    // 속도비례 대형 변형: 저속=경미(범퍼접촉), 고속(200km/h≈55m/s)=형체불명 함몰
-    const R=.78+.055*dv,d=Math.min(2.2,.0009*dv*dv+.015*dv);
+    // 국소·안정 크럼플: 접점 부근만 충격 방향(ln)으로 함몰. 누적으로 깊어짐.
+    // 위로 튀는 성분은 크게 억제 → 앞뒤(아코디언) 압축 유지.
+    const R=.6+.03*dv,d=Math.min(1.9,.0008*dv*dv+.014*dv);
     for(let i=0;i<this.n;i++){
       const a=i*3;
       const dx=this.pos[a]-lp.x,dy=this.pos[a+1]-lp.y,dz=this.pos[a+2]-lp.z;
@@ -70,10 +75,11 @@ class SoftLattice{
       if(dist<R){
         const t=1-(dist/R)*(dist/R);
         const f=t*t*d;
-        this.pos[a]+=ln.x*f;this.pos[a+1]+=ln.y*f;this.pos[a+2]+=ln.z*f;
-        // 속도 주입 강화 (관성으로 주변까지 물결처럼 전파)
-        this.prev[a]-=ln.x*f*.95;this.prev[a+1]-=ln.y*f*.95;this.prev[a+2]-=ln.z*f*.95;}}
-    this.hot=Math.min(this.hot+.5+d*.4,2.4);this.dirty=true;   // 큰 충격일수록 오래 정착
+        const uy=ln.y>0?ln.y*.25:ln.y*.7;   // 상방 성분 억제(위로 말림 방지)
+        this.pos[a]+=ln.x*f;this.pos[a+1]+=uy*f;this.pos[a+2]+=ln.z*f;
+        // 속도 주입 최소 (오버슈트→소성 인장→팽창 방지). 소성 빔이 함몰을 영구 고정.
+        this.prev[a]-=ln.x*f*.12;this.prev[a+2]-=ln.z*f*.12;}}
+    this.hot=Math.min(this.hot+.5+d*.4,2.4);this.dirty=true;
   }
   update(dt){
     if(this.hot<=0){if(this.dirty){this.write();this.dirty=false;}return false;}
@@ -87,7 +93,10 @@ class SoftLattice{
         for(let c=0;c<3;c++){
           const v=(P[a+c]-Q[a+c])*damp;
           Q[a+c]=P[a+c];P[a+c]+=v;
-          P[a+c]+=(H[a+c]-P[a+c])*A[i];}}
+          P[a+c]+=(H[a+c]-P[a+c])*A[i];}
+        // 위로 말려 올라가는 노드 억제 → 크럼플은 앞뒤(아코디언)로 유지
+        const yUp=P[a+1]-H[a+1];
+        if(yUp>.28)P[a+1]-=(yUp-.28)*.5;}
       // beam constraints + plasticity
       for(let it=0;it<3;it++)
         for(let b=0;b<this.nb;b++){
@@ -100,8 +109,8 @@ class SoftLattice{
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;
           if(it===0){
             const rest0=B[o+3],strain=(len-rest)/rest0;
-            if(Math.abs(strain)>.012){       // 항복 → 소성(영구) 변형: 매우 쉽게·깊게 자유 크럼플
-              B[o+2]=clamp(rest+(len-rest)*.92,rest0*.05,rest0*1.9);}}}
+            if(Math.abs(strain)>.012){       // 항복 → 소성(영구) 변형: 압축은 깊게, 인장(늘어남)은 제한
+              B[o+2]=clamp(rest+(len-rest)*.92,rest0*.05,rest0*1.2);}}}
     }
     this.write();
     return true;

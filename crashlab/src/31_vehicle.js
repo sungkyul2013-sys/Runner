@@ -225,17 +225,18 @@ class Vehicle{
       const yawR=b.angVel.dot(up);
       _vA.copy(up).multiplyScalar(-yawR*sp.mass*.55);
       b.torque.add(_vA);}
-    /* ----- 전복 저항 (롤 댐핑 + 기울기 복원) ----- */
-    if(groundCount>0){
-      // 세로축(전방) 기준 롤 각속도 댐핑 → 급격한 롤 억제
+    /* ----- 전복 저항 (롤 댐핑 + 기울기 복원, 공중 자세 안정 포함) ----- */
+    {
       b.vecToWorld(_vFw.set(0,0,1),_vA);
       const rollR=b.angVel.dot(_vA);
-      b.torque.addScaledVector(_vA,-rollR*sp.mass*.95);
-      // ~25° 이상 기울면 복원 토크 (일찍·강하게 개입) → 전복 방지, 일반 코너 롤은 유지
-      if(up.y<.9){
-        const tilt=(.9-up.y)/.9;
+      // 롤 각속도 댐핑 — 접지 시 강하게, 공중에서도 일부(급회전 방지)
+      b.torque.addScaledVector(_vA,-rollR*sp.mass*(groundCount>0?1.15:.5));
+      // 기울기 복원: ~20°부터 강하게 개입 → 전복 억제 (접지 강, 공중 중간)
+      if(up.y<.94){
+        const tilt=(.94-up.y)/.94;
+        const kR=groundCount>0?6.0:2.4;
         _t2.copy(up).cross(_vUp2.set(0,1,0));      // carUp × worldUp = 복원축
-        b.torque.addScaledVector(_t2,sp.mass*4.2*tilt*tilt);}}
+        b.torque.addScaledVector(_t2,sp.mass*kR*tilt*tilt);}}
 
     /* ----- gravity ----- */
     b.force.y-=sp.mass*GRAV;

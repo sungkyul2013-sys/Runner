@@ -75,16 +75,21 @@ await step('time attack raceway',async()=>{
 
 await step('AI race city 3 ai',async()=>{
   await start('race',1,'city',{aiCount:3,laps:1});
-  await page.waitForTimeout(4000); // countdown
+  // 큰 맵 → 헤드리스 CPU 렌더가 느려 카운트다운이 늦음: 시작을 폴링으로 대기(실기기는 즉시)
+  let started=false;
+  for(let k=0;k<30;k++){await page.waitForTimeout(1000);
+    started=await page.evaluate(()=>Game.race.started);if(started)break;}
   await page.keyboard.down('ArrowUp');
-  await page.waitForTimeout(8000);
+  let moving=false;
+  for(let k=0;k<12;k++){await page.waitForTimeout(1000);
+    moving=await page.evaluate(()=>Game.ais.some(a=>a.veh.speed*3.6>5));if(moving)break;}
   await page.keyboard.up('ArrowUp');
   const r=await page.evaluate(()=>({started:Game.race.started,rank:Game.race.rank,
     ais:Game.ais.map(a=>({spd:+(a.veh.speed*3.6).toFixed(0),ok:a.veh.body.ok(),wp:a.wp}))}));
   console.log('  race:',JSON.stringify(r));
   if(!r.started)errors.push('race never started');
   for(const a of r.ais){if(!a.ok)errors.push('AI NaN');}
-  if(r.ais.every(a=>a.spd<5))errors.push('all AIs stationary: '+JSON.stringify(r.ais));
+  if(!moving&&r.ais.every(a=>a.spd<5))errors.push('all AIs stationary: '+JSON.stringify(r.ais));
   await shot('06_race');});
 
 await step('drift GT on proving asphalt',async()=>{
