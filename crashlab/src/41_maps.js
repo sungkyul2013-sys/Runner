@@ -160,39 +160,32 @@ class MapBuilder{
     this.group.add(mesh);
     this.world.movers.push({obb,mesh,baseY:y,meshY:y,anim:anim||(()=>0)});
     return obb;}
-  bump(x,z,yaw,width,h,type){ // 과속방지턱 (type: arch·flat·sharp·round·rumble)
-    h=h||.1;type=type||"arch";
-    const y=this.world.height(x,z),sy=Math.sin(yaw||0),cy=Math.cos(yaw||0);
-    const stripe=(lx,ly,lz)=>{const band=Math.abs(Math.floor((lx+lz*1.04+200)/.5))%2;return band?[.86,.6,.06]:[.8,.82,.85];};
+  bump(x,z,yaw,width,h,type){ // 과속방지턱: 지형 높이에 매끈히 반영(뚝뚝 끊김 없음) + 매칭 비주얼
+    h=h||.1;type=type||"arch";yaw=yaw||0;
+    const hw=width/2, y0=this.world.height(x,z);   // 방지턱 추가 전 지면 높이(더블카운트 방지)
+    const hd=type==="flat"?1.9:type==="sharp"?.72:type==="round"?1.35:1.6; // 프로파일 반폭(진행방향)
     if(type==="rumble"){        // 럼블 스트립: 낮은 리지 다수 → 진동
-      for(let k=-3;k<=3;k++){const px=x+sy*k*.6,pz=z+cy*k*.6;
-        this.box(px,y+.02,pz,width,.045,.3,0,{yaw,mu:1,tag:"bump",noVis:true});
-        const g=new THREE.BoxGeometry(width,.045,.3).toNonIndexed();
-        this.pushGeo(g,px,y+.02,pz,yaw,()=>k%2?[.85,.6,.06]:[.85,.86,.88]);}
+      const si=Math.sin(yaw),co=Math.cos(yaw);
+      for(let k=-3;k<=3;k++){const off=k*.62,bx=x+si*off,bz=z-co*off;
+        this.world.addBump(bx,bz,yaw,hw,.26,.05,"round");
+        this._bumpStrip(bx,bz,yaw,y0,hw,.26,.05,"round",(k&1)?[.85,.6,.06]:[.85,.86,.88]);}
       return this;}
-    if(type==="flat"){          // 스피드 테이블(평탄형): 넓은 평탄 정상 + 완만
-      this.box(x,y+h*.5,z,width,h,3.0,0,{yaw,mu:1,tag:"bump",noVis:true});
-      for(const s of[-1,1])this.box(x+sy*s*2.1,y+h*.28,z+cy*s*2.1,width,h*.56,1.4,0,{yaw,mu:1,tag:"bump",noVis:true});
-      const g=new THREE.BoxGeometry(width,h,2.6).toNonIndexed();
-      this.pushGeo(g,x,y+h*.5,z,yaw,stripe);
-      for(const s of[-1,1]){const wg=new THREE.CylinderGeometry(1.2,1.2,width,10,1,true,0,Math.PI/2).toNonIndexed();
-        wg.rotateZ(Math.PI/2);wg.rotateY(s>0?0:Math.PI);wg.scale(1,h/1.2,1);
-        this.pushGeo(wg,x+sy*s*1.3,y,z+cy*s*1.3,yaw,stripe);}
-      return this;}
-    if(type==="sharp"){         // 급경사 좁은 리지 → 강한 충격
-      this.box(x,y+h*.5,z,width,h,1.0,0,{yaw,mu:1,tag:"bump",noVis:true});
-      const g=new THREE.CylinderGeometry(1.0,1.0,width,10,1,true,0,Math.PI).toNonIndexed();
-      g.rotateZ(Math.PI/2);g.scale(1,.1*h/.1,1);
-      this.pushGeo(g,x,y,z,yaw,stripe);
-      return this;}
-    // arch(기본) / round(더 둥근·높은)
-    const rad=type==="round"?1.3:1.8, dep=type==="round"?2.2:3.2;
-    this.box(x,y+h*.28,z,width,h*.56,dep,0,{yaw,mu:1,tag:"bump",noVis:true});
-    this.box(x,y+h*.5,z,width,h,1.7,0,{yaw,mu:1,tag:"bump",noVis:true});
-    const g=new THREE.CylinderGeometry(rad,rad,width,14,1,true,0,Math.PI).toNonIndexed();
-    g.rotateZ(Math.PI/2);
-    g.scale(1,(type==="round"?.078:.058)*h/.1,1);
-    this.pushGeo(g,x,y,z,yaw,stripe);
+    this.world.addBump(x,z,yaw,hw,hd,h,type);
+    this._bumpStrip(x,z,yaw,y0,hw,hd,h,type);
+    return this;}
+  _bumpStrip(x,z,yaw,y0,hw,hd,h,type,solid){ // 아치 프로파일과 정확히 일치하는 매끈한 비주얼 스트립
+    const NU=3,NV=18,W=NU+1,pos=[],idx=[];
+    for(let iv=0;iv<=NV;iv++){const lz=-hd+2*hd*iv/NV;
+      for(let iu=0;iu<=NU;iu++){const lx=-hw+2*hw*iu/NU;
+        pos.push(lx,h*bumpProfile(lz/hd,type)*bumpTaper(Math.abs(lx),hw),lz);}}
+    for(let iv=0;iv<NV;iv++)for(let iu=0;iu<NU;iu++){
+      const a=iv*W+iu,b=a+1,c=a+W,d=c+1;idx.push(a,c,b,b,c,d);}
+    let g=new THREE.BufferGeometry();
+    g.setAttribute("position",new THREE.BufferAttribute(new Float32Array(pos),3));
+    g.setIndex(idx);g.computeVertexNormals();g=g.toNonIndexed();
+    const stripe=solid?()=>solid:(lx,ly,lz)=>
+      (Math.abs(Math.floor((lx+lz*1.04+200)/.5))%2)?[.9,.68,.09]:[.82,.84,.87];
+    this.pushGeo(g,x,y0,z,yaw,stripe);
     return this;}
   texText(x,z,sizeM,str,color,yaw){ // 노면 텍스트 마킹
     const ctx=this.octx,[px,py]=this.tp(x,z);
@@ -230,7 +223,7 @@ class MapBuilder{
     g.rotateX(-Math.PI/2);
     const pos=g.attributes.position;
     for(let vi=0;vi<pos.count;vi++)
-      pos.setY(vi,w.height(pos.getX(vi),pos.getZ(vi)));
+      pos.setY(vi,w.baseHeight(pos.getX(vi),pos.getZ(vi)));
     g.computeVertexNormals();
     const gtex=new THREE.CanvasTexture(this.tex);
     gtex.colorSpace=THREE.SRGBColorSpace;

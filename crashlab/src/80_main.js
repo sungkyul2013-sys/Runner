@@ -281,10 +281,17 @@ function boot(){
   const steps=[
     ["차량 모델 로드…",()=>{for(const c of CARS){
       if(!c.modelScale)applyModelSpec(c);
-      if(!c._tuned){c._tuned=true;                 // 서스펜션 튜닝(역동적 상하 + 강한 롤저항)
-        c.susp.travel*=1.2;                         // 스트로크 확대 → 다이브/스쿼트/범프 무빙
-        c.susp.c*=.85;                              // 리바운드 완화 → 생동감(바운스)
-        c.arb*=1.5;}}}],                            // 롤 강성 대폭 상향 → 전복 방지(상하 컴플라이언스는 유지)
+      if(!c._tuned){c._tuned=true;                 // 서스펜션 튜닝(차종별 캐릭터 + 강한 롤저항)
+        const sport=c.id==="gt"||c.id==="veloce";  // 스포츠카: 딱딱하게(짧은 스트로크·단단한 스프링)
+        if(sport){
+          c.susp.k*=1.45;                           // 스프링 강성 ↑ → 노면 그대로 전달(딱딱)
+          c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
+          c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
+          c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
+        else{
+          c.susp.travel*=1.2;                       // 컴포트/오프로드: 스트로크 확대(다이브·바운스)
+          c.susp.c*=.85;                            // 리바운드 완화 → 생동감
+          c.arb*=1.5;}}}}],                         // 롤 강성 상향 → 전복 방지
     ["렌더러 초기화…",()=>initRenderer()],
     ["입력 시스템…",()=>{Input.init();initHudButtons();initGauge();}],
     ["차량 프리뷰 렌더링…",()=>makeCarThumbs()],

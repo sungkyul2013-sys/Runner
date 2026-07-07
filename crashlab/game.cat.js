@@ -364,15 +364,40 @@ class OBB{
 const _obbN=V3(0,1,0);
 const _pen={n:V3(0,1,0),depth:0};
 
+/* 과속방지턱 아코디언 프로파일: 격자 해상도와 무관한 매끈한 아치(뚝뚝 끊김 없음).
+   tz∈[-1,1](마루 가로 방향), 반환 0..1 높이 비율. 가장자리서 접선이 지면과 매끈히 만남(C1). */
+function bumpProfile(tz,type){
+  const a=Math.abs(tz);if(a>=1)return 0;
+  if(type==="flat")return a<.5?1:.5*(1+Math.cos((a-.5)/.5*Math.PI)); // 스피드 테이블(평탄정상)
+  const p=.5*(1+Math.cos(tz*Math.PI));                                // 완만한 아치
+  return type==="sharp"?p*p:p;                                        // sharp=뾰족
+}
+function bumpTaper(ax,hw){const e=hw-.6;return ax>=hw?0:ax>e?.5*(1+Math.cos((ax-e)/.6*Math.PI)):1;}
+
 /* ---------- world ---------- */
 class World{
   constructor(size,res){
     this.size=size;this.res=res;this.cell=size/res;
     this.hMap=new Float32Array((res+1)*(res+1));
     this.sMap=new Uint8Array((res+1)*(res+1));
-    this.boxes=[];this.props=[];this.debris=[];this.movers=[];this.t=0;
+    this.boxes=[];this.props=[];this.debris=[];this.movers=[];this.bumps=[];this.t=0;
     this.spawn={x:0,z:0,yaw:0};this.checkpoints=[];this.waypoints=[];
     this.bounds=size*.5-2;
+  }
+  /* 매끈한 과속방지턱을 지형 높이에 직접 반영 → 서스펜션이 자연스레 흡수/충격, 박스 모서리 끊김 없음 */
+  addBump(x,z,yaw,hw,hd,h,type){
+    this.bumps.push({x,z,co:Math.cos(yaw||0),si:Math.sin(yaw||0),hw,hd,h,type:type||"arch",
+      br2:(hw*hw+hd*hd)+1});
+  }
+  bumpH(x,z){
+    const B=this.bumps;if(B.length===0)return 0;let add=0;
+    for(let bi=0;bi<B.length;bi++){
+      const b=B[bi],dx=x-b.x,dz=z-b.z;
+      if(dx*dx+dz*dz>b.br2)continue;
+      const lx=dx*b.co+dz*b.si,lz=-dx*b.si+dz*b.co,ax=Math.abs(lx);
+      if(ax>=b.hw)continue;const tz=lz/b.hd;if(tz<=-1||tz>=1)continue;
+      add+=b.h*bumpProfile(tz,b.type)*bumpTaper(ax,b.hw);}
+    return add;
   }
   /* 애니메이션 장애물(압착기 등): OBB + 메시를 매 프레임 anim(t)로 이동 */
   stepMovers(dt){
@@ -389,10 +414,13 @@ class World{
   gridAt(x,z){
     const g=(x+this.size*.5)/this.cell,gz=(z+this.size*.5)/this.cell;
     return[clamp(g,0,this.res-.001),clamp(gz,0,this.res-.001)];}
-  height(x,z){
+  baseHeight(x,z){   // 방지턱 제외 기본 지형(비주얼 지형 메시용)
     const[g,gz]=this.gridAt(x,z);
     const i=g|0,j=gz|0,fx=g-i,fz=gz-j,m=this.hMap,r=this.res+1,b=j*r+i;
     return m[b]*(1-fx)*(1-fz)+m[b+1]*fx*(1-fz)+m[b+r]*(1-fx)*fz+m[b+r+1]*fx*fz;}
+  height(x,z){
+    const base=this.baseHeight(x,z);
+    return this.bumps.length?base+this.bumpH(x,z):base;}
   normal(x,z,out){
     const e=this.cell;
     out.set(this.height(x-e,z)-this.height(x+e,z),2*e,this.height(x,z-e)-this.height(x,z+e));
@@ -501,6 +529,8 @@ class Vehicle{
     for(const sx of[-1,1])for(const sy of[-1,1])for(const sz of[-1,1])
       this.hull.push(V3(sx*hx,sy*hy,sz*hz));
     this.hull.push(V3(0,-hy*.25,hz),V3(0,-hy*.25,-hz),V3(-hx,-hy*.2,0),V3(hx,-hy*.2,0));
+    // 지붕 상단 점 — 압착기·전복 시 지붕 접촉(짓눌림) 감지
+    this.hull.push(V3(0,hy,0),V3(0,hy,hz*.55),V3(0,hy,-hz*.55));
     this.assists={abs:true,tcs:true,ctr:true,stab:true};
     this.isAI=false;this.controlLock=false;
     this.impacts=[];   // {lp,ln,dv,wp} consumed by visuals each frame
@@ -720,8 +750,10 @@ class Vehicle{
       const ct=world.pointContact(_vD);
       if(!ct)continue;
       const tg=ct.box&&ct.box.tag;
+      // 방지턱(지형 아치) 위에서 차체 바닥이 스치면: 강체 충돌(퉁!) 금지 → 부드럽게 통과
+      const onBump=!ct.box&&world.bumps.length&&world.bumpH(_vD.x,_vD.z)>.05;
       // 방지턱·빨래판·연석 등 차체보다 낮/높은 지형지물: 강체 충돌(퉁!) 금지
-      const driveOver=tg==="bump"||tg==="slat"||tg==="cobble"||tg==="stair"||tg==="curb"||tg==="ridge"||tg==="plank"||tg==="teeter";
+      const driveOver=onBump||tg==="slat"||tg==="cobble"||tg==="stair"||tg==="curb"||tg==="ridge"||tg==="plank"||tg==="teeter";
       if(driveOver){
         // 부드러운 스프링 통과 + 밑면만 함몰 (차는 그대로 진행)
         _vG.copy(_vD).sub(b.pos);b.velAt(_vG,_vA);
@@ -734,14 +766,16 @@ class Vehicle{
           this.registerImpact(this.hull[i],_vD,ct.n,Math.min(4.5,2+ct.depth*26),true);}
         continue;
       }
-      let dv=resolvePointContact(b,_vD,ct,0);
-      // 압착기: 램과 접촉 시 아래로 강하게 눌러 짓눌림 + 큰 변형 (타이밍 무관)
+      // 압착기: 램이 위에서 짓눌러 수직 압착(플래튼). 강체 반발 없이 아래로 고정 + 큰 변형.
       if(tg==="crusher"){
-        const rs=Math.max(6,-(ct.box.vy||0));
+        const ramV=Math.max(0,-(ct.box.vy||0));            // 램 하강 속도
         _vG.copy(_vD).sub(b.pos);
-        _vB2.set(0,-rs*sp.mass*.05,0);                     // 하향 임펄스
-        b.applyImpulse(_vB2,_vG);
-        dv=Math.max(dv,rs);}
+        _vB2.set(0,-sp.mass*(2.4+ramV*.7),0);              // 차를 앤빌에 눌러 붙임
+        b.addForceAt(_vB2,_vG);
+        const pv=13+Math.max(0,ct.depth)*70+ramV*1.6;      // 압착 강도(침투·램속도 비례)
+        this.registerImpact(this.hull[i],_vD,_vC.set(0,-1,0),Math.min(46,pv)); // 월드 하방 압착
+        continue;}
+      let dv=resolvePointContact(b,_vD,ct,0);
       if(dv>1.4)this.registerImpact(this.hull[i],_vD,ct.n,dv);}
 
     /* ----- props ----- */
@@ -1254,6 +1288,7 @@ class SoftLattice{
     this.home=new Float32Array(n*3);
     this.pos=new Float32Array(n*3);
     this.prev=new Float32Array(n*3);
+    this.plast=new Float32Array(n*3);   // 소성(영구) 변형 오프셋: 앵커가 home+plast로 복원 → 찌그러진 형태 영구 유지
     this.anchor=new Float32Array(n);
     const idx=(i,j,k)=>(k*NY+j)*NX+i;
     this.idx=idx;
@@ -1266,9 +1301,9 @@ class SoftLattice{
       // 가운데 승객셀만 앵커 강함(강체 유지) → 정면 충돌 시 아코디언 압축(복원·팽창 없음)
       const zt=NZ>1?k/(NZ-1):.5;                     // 0(앞)~1(뒤)
       const central=1-Math.min(1,Math.abs(zt-.5)/.30);
-      const cell=.09*central*central;                // 승객셀 강성(가운데)
-      const floor=(j===0)?.015:0;                    // 바닥 프레임 살짝
-      this.anchor[idx(i,j,k)]=.001+cell+floor;}
+      const cell=.08*central*central;                // 승객셀 강성(가운데)
+      const floor=(j===0)?.012:0;                    // 바닥 프레임 살짝
+      this.anchor[idx(i,j,k)]=.03+cell+floor;}       // 기본 앵커 ↑ → 소성(plast) 목표 형태를 확실히 유지
     this.pos.set(this.home);this.prev.set(this.home);
     // beams
     const dirs=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,-1,0],[1,0,1],[1,0,-1],[0,1,1],[0,1,-1],[1,1,1],[1,-1,1]];
@@ -1304,35 +1339,63 @@ class SoftLattice{
     this.binds.push({mesh,orig,bi,bw,vc});
   }
   impact(lp,ln,dv){
-    // 국소·안정 크럼플: 접점 부근만 충격 방향(ln)으로 함몰. 누적으로 깊어짐.
-    // 위로 튀는 성분은 크게 억제 → 앞뒤(아코디언) 압축 유지.
-    const R=.6+.03*dv,d=Math.min(1.9,.0008*dv*dv+.014*dv);
+    // 속도비례 크럼플: (1)접점 국소 함몰 + (2)충격축 아코디언 압축.
+    // 저속(방지턱 dv≤5)=거의 무변형, 고속(200km/h dv≈55)=형체불명 압착.
+    // 속도 주입 없이 pos+prev를 함께 이동 → 오버슈트/팽창(스파이럴) 방지. 소성 빔이 영구 고정.
+    const sev=Math.min(1,Math.max(0,(dv-6)/50));      // 0(범프)~1(초고속)
+    if(dv<1.2&&sev<=0)return;
+    let lx=ln.x,ly=ln.y,lz=ln.z;const il=1/(Math.hypot(lx,ly,lz)||1);lx*=il;ly*=il;lz*=il;
+    const hx=-this.min[0],hy=-this.min[1],hz=-this.min[2];
+    const axExt=Math.abs(lx)*hx+Math.abs(ly)*hy+Math.abs(lz)*hz||hz; // 충격축 반경
+    const R=.55+.85*sev+.02*dv;                        // 국소 함몰 반경
+    const dish=.12+1.3*sev*sev;                        // 국소 함몰 깊이
+    const frac=Math.min(.82,sev*.98);                  // 붕괴 비율(고속일수록 크게)
+    const s0=axExt*(.55-.9*sev);                       // 고정 붕괴면(강체 승객셀). 고속일수록 안쪽까지
+    const P=this.pos,Q=this.prev,PL=this.plast;
     for(let i=0;i<this.n;i++){
       const a=i*3;
-      const dx=this.pos[a]-lp.x,dy=this.pos[a+1]-lp.y,dz=this.pos[a+2]-lp.z;
+      // (1) 접점 국소 함몰(영구)
+      const dx=P[a]-lp.x,dy=P[a+1]-lp.y,dz=P[a+2]-lp.z;
       const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
       if(dist<R){
-        const t=1-(dist/R)*(dist/R);
-        const f=t*t*d;
-        const uy=ln.y>0?ln.y*.25:ln.y*.7;   // 상방 성분 억제(위로 말림 방지)
-        this.pos[a]+=ln.x*f;this.pos[a+1]+=uy*f;this.pos[a+2]+=ln.z*f;
-        // 속도 주입 최소 (오버슈트→소성 인장→팽창 방지). 소성 빔이 함몰을 영구 고정.
-        this.prev[a]-=ln.x*f*.12;this.prev[a+2]-=ln.z*f*.12;}}
-    this.hot=Math.min(this.hot+.5+d*.4,2.4);this.dirty=true;
+        const t=1-(dist/R)*(dist/R),f=t*t*dish;
+        const uy=ly>0?ly*.25:ly*.7;
+        P[a]+=lx*f;P[a+1]+=uy*f;P[a+2]+=lz*f;
+        PL[a]+=lx*f;PL[a+1]+=uy*f;PL[a+2]+=lz*f;     // 소성 오프셋에 누적
+        Q[a]-=lx*f*.1;Q[a+2]-=lz*f*.1;}
+      // (2) 아코디언 붕괴: 충격을 받은 앞쪽 영역(s>s0)을 고정면 s0 쪽으로 접음(전체 이동 없음)
+      if(sev>.04){
+        const s=-(P[a]*lx+P[a+1]*ly+P[a+2]*lz);   // 충격 반대(진행/전방) 좌표
+        if(s>s0){
+          const mvs=frac*(s-s0);                   // s를 s0쪽으로 감소 → 앞부분이 뒤로 접힘
+          P[a]+=lx*mvs;P[a+1]+=ly*mvs;P[a+2]+=lz*mvs;
+          PL[a]+=lx*mvs;PL[a+1]+=ly*mvs;PL[a+2]+=lz*mvs; // 영구 오프셋 → 스프링백 없음
+          Q[a]+=lx*mvs;Q[a+1]+=ly*mvs;Q[a+2]+=lz*mvs;}}
+    }
+    // 클램프: 소성 오프셋과 위치 모두 차체 박스 안으로(반복 압착 시 폭주·반전·바닥관통 방지)
+    const H=this.home,mn=this.min,mg=.22,pg=.35;
+    for(let i=0;i<this.n;i++){const a=i*3;
+      PL[a]  =clamp(PL[a],  mn[0]-mg-H[a],  -mn[0]+mg-H[a]);
+      PL[a+1]=clamp(PL[a+1],mn[1]-mg-H[a+1],-mn[1]+mg-H[a+1]);
+      PL[a+2]=clamp(PL[a+2],mn[2]-mg-H[a+2],-mn[2]+mg-H[a+2]);
+      P[a]  =clamp(P[a],  mn[0]-pg,-mn[0]+pg); Q[a]  =clamp(Q[a],  mn[0]-pg,-mn[0]+pg);
+      P[a+1]=clamp(P[a+1],mn[1]-pg,-mn[1]+pg); Q[a+1]=clamp(Q[a+1],mn[1]-pg,-mn[1]+pg);
+      P[a+2]=clamp(P[a+2],mn[2]-pg,-mn[2]+pg); Q[a+2]=clamp(Q[a+2],mn[2]-pg,-mn[2]+pg);}
+    this.hot=Math.min(this.hot+.6+sev*1.6,3.4);this.dirty=true;
   }
   update(dt){
     if(this.hot<=0){if(this.dirty){this.write();this.dirty=false;}return false;}
     this.hot-=dt;
-    const P=this.pos,Q=this.prev,H=this.home,B=this.beams,A=this.anchor;
+    const P=this.pos,Q=this.prev,H=this.home,B=this.beams,A=this.anchor,PL=this.plast;
     const damp=.9;
     for(let s=0;s<2;s++){
-      // verlet + anchor
+      // verlet + anchor(→ home+plast: 소성 변형된 형태로 복원 = 영구 크럼플)
       for(let i=0;i<this.n;i++){
         const a=i*3;
         for(let c=0;c<3;c++){
           const v=(P[a+c]-Q[a+c])*damp;
           Q[a+c]=P[a+c];P[a+c]+=v;
-          P[a+c]+=(H[a+c]-P[a+c])*A[i];}
+          P[a+c]+=(H[a+c]+PL[a+c]-P[a+c])*A[i];}
         // 위로 말려 올라가는 노드 억제 → 크럼플은 앞뒤(아코디언)로 유지
         const yUp=P[a+1]-H[a+1];
         if(yUp>.28)P[a+1]-=(yUp-.28)*.5;}
@@ -1342,14 +1405,14 @@ class SoftLattice{
           const o=b*4,ia=B[o]*3,ib=B[o+1]*3;
           const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
           const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
+          if(it===0){                          // 소성 먼저: 붕괴된 현재 길이로 항복 → 재팽창 전에 영구 단축
+            const rest0=B[o+3],rc=B[o+2],strain=(len-rc)/rest0;
+            if(Math.abs(strain)>.014)           // 항복: 압축은 깊게(rest0*.05까지), 인장은 제한(1.2배)
+              B[o+2]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.2);}
           const rest=B[o+2];
           const diff=(len-rest)/len*.5*.42;
           P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
-          P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;
-          if(it===0){
-            const rest0=B[o+3],strain=(len-rest)/rest0;
-            if(Math.abs(strain)>.012){       // 항복 → 소성(영구) 변형: 압축은 깊게, 인장(늘어남)은 제한
-              B[o+2]=clamp(rest+(len-rest)*.92,rest0*.05,rest0*1.2);}}}
+          P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
     }
     this.write();
     return true;
@@ -1375,7 +1438,7 @@ class SoftLattice{
     return s;
   }
   reset(){
-    this.pos.set(this.home);this.prev.set(this.home);
+    this.pos.set(this.home);this.prev.set(this.home);this.plast.fill(0);
     for(let b=0;b<this.nb;b++)this.beams[b*4+2]=this.beams[b*4+3];
     for(const bd of this.binds){
       bd.mesh.geometry.attributes.position.array.set(bd.orig);
@@ -1546,39 +1609,32 @@ class MapBuilder{
     this.group.add(mesh);
     this.world.movers.push({obb,mesh,baseY:y,meshY:y,anim:anim||(()=>0)});
     return obb;}
-  bump(x,z,yaw,width,h,type){ // 과속방지턱 (type: arch·flat·sharp·round·rumble)
-    h=h||.1;type=type||"arch";
-    const y=this.world.height(x,z),sy=Math.sin(yaw||0),cy=Math.cos(yaw||0);
-    const stripe=(lx,ly,lz)=>{const band=Math.abs(Math.floor((lx+lz*1.04+200)/.5))%2;return band?[.86,.6,.06]:[.8,.82,.85];};
+  bump(x,z,yaw,width,h,type){ // 과속방지턱: 지형 높이에 매끈히 반영(뚝뚝 끊김 없음) + 매칭 비주얼
+    h=h||.1;type=type||"arch";yaw=yaw||0;
+    const hw=width/2, y0=this.world.height(x,z);   // 방지턱 추가 전 지면 높이(더블카운트 방지)
+    const hd=type==="flat"?1.9:type==="sharp"?.72:type==="round"?1.35:1.6; // 프로파일 반폭(진행방향)
     if(type==="rumble"){        // 럼블 스트립: 낮은 리지 다수 → 진동
-      for(let k=-3;k<=3;k++){const px=x+sy*k*.6,pz=z+cy*k*.6;
-        this.box(px,y+.02,pz,width,.045,.3,0,{yaw,mu:1,tag:"bump",noVis:true});
-        const g=new THREE.BoxGeometry(width,.045,.3).toNonIndexed();
-        this.pushGeo(g,px,y+.02,pz,yaw,()=>k%2?[.85,.6,.06]:[.85,.86,.88]);}
+      const si=Math.sin(yaw),co=Math.cos(yaw);
+      for(let k=-3;k<=3;k++){const off=k*.62,bx=x+si*off,bz=z-co*off;
+        this.world.addBump(bx,bz,yaw,hw,.26,.05,"round");
+        this._bumpStrip(bx,bz,yaw,y0,hw,.26,.05,"round",(k&1)?[.85,.6,.06]:[.85,.86,.88]);}
       return this;}
-    if(type==="flat"){          // 스피드 테이블(평탄형): 넓은 평탄 정상 + 완만
-      this.box(x,y+h*.5,z,width,h,3.0,0,{yaw,mu:1,tag:"bump",noVis:true});
-      for(const s of[-1,1])this.box(x+sy*s*2.1,y+h*.28,z+cy*s*2.1,width,h*.56,1.4,0,{yaw,mu:1,tag:"bump",noVis:true});
-      const g=new THREE.BoxGeometry(width,h,2.6).toNonIndexed();
-      this.pushGeo(g,x,y+h*.5,z,yaw,stripe);
-      for(const s of[-1,1]){const wg=new THREE.CylinderGeometry(1.2,1.2,width,10,1,true,0,Math.PI/2).toNonIndexed();
-        wg.rotateZ(Math.PI/2);wg.rotateY(s>0?0:Math.PI);wg.scale(1,h/1.2,1);
-        this.pushGeo(wg,x+sy*s*1.3,y,z+cy*s*1.3,yaw,stripe);}
-      return this;}
-    if(type==="sharp"){         // 급경사 좁은 리지 → 강한 충격
-      this.box(x,y+h*.5,z,width,h,1.0,0,{yaw,mu:1,tag:"bump",noVis:true});
-      const g=new THREE.CylinderGeometry(1.0,1.0,width,10,1,true,0,Math.PI).toNonIndexed();
-      g.rotateZ(Math.PI/2);g.scale(1,.1*h/.1,1);
-      this.pushGeo(g,x,y,z,yaw,stripe);
-      return this;}
-    // arch(기본) / round(더 둥근·높은)
-    const rad=type==="round"?1.3:1.8, dep=type==="round"?2.2:3.2;
-    this.box(x,y+h*.28,z,width,h*.56,dep,0,{yaw,mu:1,tag:"bump",noVis:true});
-    this.box(x,y+h*.5,z,width,h,1.7,0,{yaw,mu:1,tag:"bump",noVis:true});
-    const g=new THREE.CylinderGeometry(rad,rad,width,14,1,true,0,Math.PI).toNonIndexed();
-    g.rotateZ(Math.PI/2);
-    g.scale(1,(type==="round"?.078:.058)*h/.1,1);
-    this.pushGeo(g,x,y,z,yaw,stripe);
+    this.world.addBump(x,z,yaw,hw,hd,h,type);
+    this._bumpStrip(x,z,yaw,y0,hw,hd,h,type);
+    return this;}
+  _bumpStrip(x,z,yaw,y0,hw,hd,h,type,solid){ // 아치 프로파일과 정확히 일치하는 매끈한 비주얼 스트립
+    const NU=3,NV=18,W=NU+1,pos=[],idx=[];
+    for(let iv=0;iv<=NV;iv++){const lz=-hd+2*hd*iv/NV;
+      for(let iu=0;iu<=NU;iu++){const lx=-hw+2*hw*iu/NU;
+        pos.push(lx,h*bumpProfile(lz/hd,type)*bumpTaper(Math.abs(lx),hw),lz);}}
+    for(let iv=0;iv<NV;iv++)for(let iu=0;iu<NU;iu++){
+      const a=iv*W+iu,b=a+1,c=a+W,d=c+1;idx.push(a,c,b,b,c,d);}
+    let g=new THREE.BufferGeometry();
+    g.setAttribute("position",new THREE.BufferAttribute(new Float32Array(pos),3));
+    g.setIndex(idx);g.computeVertexNormals();g=g.toNonIndexed();
+    const stripe=solid?()=>solid:(lx,ly,lz)=>
+      (Math.abs(Math.floor((lx+lz*1.04+200)/.5))%2)?[.9,.68,.09]:[.82,.84,.87];
+    this.pushGeo(g,x,y0,z,yaw,stripe);
     return this;}
   texText(x,z,sizeM,str,color,yaw){ // 노면 텍스트 마킹
     const ctx=this.octx,[px,py]=this.tp(x,z);
@@ -1616,7 +1672,7 @@ class MapBuilder{
     g.rotateX(-Math.PI/2);
     const pos=g.attributes.position;
     for(let vi=0;vi<pos.count;vi++)
-      pos.setY(vi,w.height(pos.getX(vi),pos.getZ(vi)));
+      pos.setY(vi,w.baseHeight(pos.getX(vi),pos.getZ(vi)));
     g.computeVertexNormals();
     const gtex=new THREE.CanvasTexture(this.tex);
     gtex.colorSpace=THREE.SRGBColorSpace;
@@ -3843,10 +3899,17 @@ function boot(){
   const steps=[
     ["차량 모델 로드…",()=>{for(const c of CARS){
       if(!c.modelScale)applyModelSpec(c);
-      if(!c._tuned){c._tuned=true;                 // 서스펜션 튜닝(역동적 상하 + 강한 롤저항)
-        c.susp.travel*=1.2;                         // 스트로크 확대 → 다이브/스쿼트/범프 무빙
-        c.susp.c*=.85;                              // 리바운드 완화 → 생동감(바운스)
-        c.arb*=1.5;}}}],                            // 롤 강성 대폭 상향 → 전복 방지(상하 컴플라이언스는 유지)
+      if(!c._tuned){c._tuned=true;                 // 서스펜션 튜닝(차종별 캐릭터 + 강한 롤저항)
+        const sport=c.id==="gt"||c.id==="veloce";  // 스포츠카: 딱딱하게(짧은 스트로크·단단한 스프링)
+        if(sport){
+          c.susp.k*=1.45;                           // 스프링 강성 ↑ → 노면 그대로 전달(딱딱)
+          c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
+          c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
+          c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
+        else{
+          c.susp.travel*=1.2;                       // 컴포트/오프로드: 스트로크 확대(다이브·바운스)
+          c.susp.c*=.85;                            // 리바운드 완화 → 생동감
+          c.arb*=1.5;}}}}],                         // 롤 강성 상향 → 전복 방지
     ["렌더러 초기화…",()=>initRenderer()],
     ["입력 시스템…",()=>{Input.init();initHudButtons();initGauge();}],
     ["차량 프리뷰 렌더링…",()=>makeCarThumbs()],

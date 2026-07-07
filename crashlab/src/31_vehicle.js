@@ -29,6 +29,8 @@ class Vehicle{
     for(const sx of[-1,1])for(const sy of[-1,1])for(const sz of[-1,1])
       this.hull.push(V3(sx*hx,sy*hy,sz*hz));
     this.hull.push(V3(0,-hy*.25,hz),V3(0,-hy*.25,-hz),V3(-hx,-hy*.2,0),V3(hx,-hy*.2,0));
+    // 지붕 상단 점 — 압착기·전복 시 지붕 접촉(짓눌림) 감지
+    this.hull.push(V3(0,hy,0),V3(0,hy,hz*.55),V3(0,hy,-hz*.55));
     this.assists={abs:true,tcs:true,ctr:true,stab:true};
     this.isAI=false;this.controlLock=false;
     this.impacts=[];   // {lp,ln,dv,wp} consumed by visuals each frame
@@ -248,8 +250,10 @@ class Vehicle{
       const ct=world.pointContact(_vD);
       if(!ct)continue;
       const tg=ct.box&&ct.box.tag;
+      // 방지턱(지형 아치) 위에서 차체 바닥이 스치면: 강체 충돌(퉁!) 금지 → 부드럽게 통과
+      const onBump=!ct.box&&world.bumps.length&&world.bumpH(_vD.x,_vD.z)>.05;
       // 방지턱·빨래판·연석 등 차체보다 낮/높은 지형지물: 강체 충돌(퉁!) 금지
-      const driveOver=tg==="bump"||tg==="slat"||tg==="cobble"||tg==="stair"||tg==="curb"||tg==="ridge"||tg==="plank"||tg==="teeter";
+      const driveOver=onBump||tg==="slat"||tg==="cobble"||tg==="stair"||tg==="curb"||tg==="ridge"||tg==="plank"||tg==="teeter";
       if(driveOver){
         // 부드러운 스프링 통과 + 밑면만 함몰 (차는 그대로 진행)
         _vG.copy(_vD).sub(b.pos);b.velAt(_vG,_vA);
@@ -262,14 +266,16 @@ class Vehicle{
           this.registerImpact(this.hull[i],_vD,ct.n,Math.min(4.5,2+ct.depth*26),true);}
         continue;
       }
-      let dv=resolvePointContact(b,_vD,ct,0);
-      // 압착기: 램과 접촉 시 아래로 강하게 눌러 짓눌림 + 큰 변형 (타이밍 무관)
+      // 압착기: 램이 위에서 짓눌러 수직 압착(플래튼). 강체 반발 없이 아래로 고정 + 큰 변형.
       if(tg==="crusher"){
-        const rs=Math.max(6,-(ct.box.vy||0));
+        const ramV=Math.max(0,-(ct.box.vy||0));            // 램 하강 속도
         _vG.copy(_vD).sub(b.pos);
-        _vB2.set(0,-rs*sp.mass*.05,0);                     // 하향 임펄스
-        b.applyImpulse(_vB2,_vG);
-        dv=Math.max(dv,rs);}
+        _vB2.set(0,-sp.mass*(2.4+ramV*.7),0);              // 차를 앤빌에 눌러 붙임
+        b.addForceAt(_vB2,_vG);
+        const pv=13+Math.max(0,ct.depth)*70+ramV*1.6;      // 압착 강도(침투·램속도 비례)
+        this.registerImpact(this.hull[i],_vD,_vC.set(0,-1,0),Math.min(46,pv)); // 월드 하방 압착
+        continue;}
+      let dv=resolvePointContact(b,_vD,ct,0);
       if(dv>1.4)this.registerImpact(this.hull[i],_vD,ct.n,dv);}
 
     /* ----- props ----- */

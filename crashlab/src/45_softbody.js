@@ -15,6 +15,7 @@ class SoftLattice{
     this.home=new Float32Array(n*3);
     this.pos=new Float32Array(n*3);
     this.prev=new Float32Array(n*3);
+    this.plast=new Float32Array(n*3);   // 소성(영구) 변형 오프셋: 앵커가 home+plast로 복원 → 찌그러진 형태 영구 유지
     this.anchor=new Float32Array(n);
     const idx=(i,j,k)=>(k*NY+j)*NX+i;
     this.idx=idx;
@@ -27,9 +28,9 @@ class SoftLattice{
       // 가운데 승객셀만 앵커 강함(강체 유지) → 정면 충돌 시 아코디언 압축(복원·팽창 없음)
       const zt=NZ>1?k/(NZ-1):.5;                     // 0(앞)~1(뒤)
       const central=1-Math.min(1,Math.abs(zt-.5)/.30);
-      const cell=.09*central*central;                // 승객셀 강성(가운데)
-      const floor=(j===0)?.015:0;                    // 바닥 프레임 살짝
-      this.anchor[idx(i,j,k)]=.001+cell+floor;}
+      const cell=.08*central*central;                // 승객셀 강성(가운데)
+      const floor=(j===0)?.012:0;                    // 바닥 프레임 살짝
+      this.anchor[idx(i,j,k)]=.03+cell+floor;}       // 기본 앵커 ↑ → 소성(plast) 목표 형태를 확실히 유지
     this.pos.set(this.home);this.prev.set(this.home);
     // beams
     const dirs=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,-1,0],[1,0,1],[1,0,-1],[0,1,1],[0,1,-1],[1,1,1],[1,-1,1]];
@@ -65,35 +66,63 @@ class SoftLattice{
     this.binds.push({mesh,orig,bi,bw,vc});
   }
   impact(lp,ln,dv){
-    // 국소·안정 크럼플: 접점 부근만 충격 방향(ln)으로 함몰. 누적으로 깊어짐.
-    // 위로 튀는 성분은 크게 억제 → 앞뒤(아코디언) 압축 유지.
-    const R=.6+.03*dv,d=Math.min(1.9,.0008*dv*dv+.014*dv);
+    // 속도비례 크럼플: (1)접점 국소 함몰 + (2)충격축 아코디언 압축.
+    // 저속(방지턱 dv≤5)=거의 무변형, 고속(200km/h dv≈55)=형체불명 압착.
+    // 속도 주입 없이 pos+prev를 함께 이동 → 오버슈트/팽창(스파이럴) 방지. 소성 빔이 영구 고정.
+    const sev=Math.min(1,Math.max(0,(dv-6)/50));      // 0(범프)~1(초고속)
+    if(dv<1.2&&sev<=0)return;
+    let lx=ln.x,ly=ln.y,lz=ln.z;const il=1/(Math.hypot(lx,ly,lz)||1);lx*=il;ly*=il;lz*=il;
+    const hx=-this.min[0],hy=-this.min[1],hz=-this.min[2];
+    const axExt=Math.abs(lx)*hx+Math.abs(ly)*hy+Math.abs(lz)*hz||hz; // 충격축 반경
+    const R=.55+.85*sev+.02*dv;                        // 국소 함몰 반경
+    const dish=.12+1.3*sev*sev;                        // 국소 함몰 깊이
+    const frac=Math.min(.82,sev*.98);                  // 붕괴 비율(고속일수록 크게)
+    const s0=axExt*(.55-.9*sev);                       // 고정 붕괴면(강체 승객셀). 고속일수록 안쪽까지
+    const P=this.pos,Q=this.prev,PL=this.plast;
     for(let i=0;i<this.n;i++){
       const a=i*3;
-      const dx=this.pos[a]-lp.x,dy=this.pos[a+1]-lp.y,dz=this.pos[a+2]-lp.z;
+      // (1) 접점 국소 함몰(영구)
+      const dx=P[a]-lp.x,dy=P[a+1]-lp.y,dz=P[a+2]-lp.z;
       const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
       if(dist<R){
-        const t=1-(dist/R)*(dist/R);
-        const f=t*t*d;
-        const uy=ln.y>0?ln.y*.25:ln.y*.7;   // 상방 성분 억제(위로 말림 방지)
-        this.pos[a]+=ln.x*f;this.pos[a+1]+=uy*f;this.pos[a+2]+=ln.z*f;
-        // 속도 주입 최소 (오버슈트→소성 인장→팽창 방지). 소성 빔이 함몰을 영구 고정.
-        this.prev[a]-=ln.x*f*.12;this.prev[a+2]-=ln.z*f*.12;}}
-    this.hot=Math.min(this.hot+.5+d*.4,2.4);this.dirty=true;
+        const t=1-(dist/R)*(dist/R),f=t*t*dish;
+        const uy=ly>0?ly*.25:ly*.7;
+        P[a]+=lx*f;P[a+1]+=uy*f;P[a+2]+=lz*f;
+        PL[a]+=lx*f;PL[a+1]+=uy*f;PL[a+2]+=lz*f;     // 소성 오프셋에 누적
+        Q[a]-=lx*f*.1;Q[a+2]-=lz*f*.1;}
+      // (2) 아코디언 붕괴: 충격을 받은 앞쪽 영역(s>s0)을 고정면 s0 쪽으로 접음(전체 이동 없음)
+      if(sev>.04){
+        const s=-(P[a]*lx+P[a+1]*ly+P[a+2]*lz);   // 충격 반대(진행/전방) 좌표
+        if(s>s0){
+          const mvs=frac*(s-s0);                   // s를 s0쪽으로 감소 → 앞부분이 뒤로 접힘
+          P[a]+=lx*mvs;P[a+1]+=ly*mvs;P[a+2]+=lz*mvs;
+          PL[a]+=lx*mvs;PL[a+1]+=ly*mvs;PL[a+2]+=lz*mvs; // 영구 오프셋 → 스프링백 없음
+          Q[a]+=lx*mvs;Q[a+1]+=ly*mvs;Q[a+2]+=lz*mvs;}}
+    }
+    // 클램프: 소성 오프셋과 위치 모두 차체 박스 안으로(반복 압착 시 폭주·반전·바닥관통 방지)
+    const H=this.home,mn=this.min,mg=.22,pg=.35;
+    for(let i=0;i<this.n;i++){const a=i*3;
+      PL[a]  =clamp(PL[a],  mn[0]-mg-H[a],  -mn[0]+mg-H[a]);
+      PL[a+1]=clamp(PL[a+1],mn[1]-mg-H[a+1],-mn[1]+mg-H[a+1]);
+      PL[a+2]=clamp(PL[a+2],mn[2]-mg-H[a+2],-mn[2]+mg-H[a+2]);
+      P[a]  =clamp(P[a],  mn[0]-pg,-mn[0]+pg); Q[a]  =clamp(Q[a],  mn[0]-pg,-mn[0]+pg);
+      P[a+1]=clamp(P[a+1],mn[1]-pg,-mn[1]+pg); Q[a+1]=clamp(Q[a+1],mn[1]-pg,-mn[1]+pg);
+      P[a+2]=clamp(P[a+2],mn[2]-pg,-mn[2]+pg); Q[a+2]=clamp(Q[a+2],mn[2]-pg,-mn[2]+pg);}
+    this.hot=Math.min(this.hot+.6+sev*1.6,3.4);this.dirty=true;
   }
   update(dt){
     if(this.hot<=0){if(this.dirty){this.write();this.dirty=false;}return false;}
     this.hot-=dt;
-    const P=this.pos,Q=this.prev,H=this.home,B=this.beams,A=this.anchor;
+    const P=this.pos,Q=this.prev,H=this.home,B=this.beams,A=this.anchor,PL=this.plast;
     const damp=.9;
     for(let s=0;s<2;s++){
-      // verlet + anchor
+      // verlet + anchor(→ home+plast: 소성 변형된 형태로 복원 = 영구 크럼플)
       for(let i=0;i<this.n;i++){
         const a=i*3;
         for(let c=0;c<3;c++){
           const v=(P[a+c]-Q[a+c])*damp;
           Q[a+c]=P[a+c];P[a+c]+=v;
-          P[a+c]+=(H[a+c]-P[a+c])*A[i];}
+          P[a+c]+=(H[a+c]+PL[a+c]-P[a+c])*A[i];}
         // 위로 말려 올라가는 노드 억제 → 크럼플은 앞뒤(아코디언)로 유지
         const yUp=P[a+1]-H[a+1];
         if(yUp>.28)P[a+1]-=(yUp-.28)*.5;}
@@ -103,14 +132,14 @@ class SoftLattice{
           const o=b*4,ia=B[o]*3,ib=B[o+1]*3;
           const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
           const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
+          if(it===0){                          // 소성 먼저: 붕괴된 현재 길이로 항복 → 재팽창 전에 영구 단축
+            const rest0=B[o+3],rc=B[o+2],strain=(len-rc)/rest0;
+            if(Math.abs(strain)>.014)           // 항복: 압축은 깊게(rest0*.05까지), 인장은 제한(1.2배)
+              B[o+2]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.2);}
           const rest=B[o+2];
           const diff=(len-rest)/len*.5*.42;
           P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
-          P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;
-          if(it===0){
-            const rest0=B[o+3],strain=(len-rest)/rest0;
-            if(Math.abs(strain)>.012){       // 항복 → 소성(영구) 변형: 압축은 깊게, 인장(늘어남)은 제한
-              B[o+2]=clamp(rest+(len-rest)*.92,rest0*.05,rest0*1.2);}}}
+          P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
     }
     this.write();
     return true;
@@ -136,7 +165,7 @@ class SoftLattice{
     return s;
   }
   reset(){
-    this.pos.set(this.home);this.prev.set(this.home);
+    this.pos.set(this.home);this.prev.set(this.home);this.plast.fill(0);
     for(let b=0;b<this.nb;b++)this.beams[b*4+2]=this.beams[b*4+3];
     for(const bd of this.binds){
       bd.mesh.geometry.attributes.position.array.set(bd.orig);

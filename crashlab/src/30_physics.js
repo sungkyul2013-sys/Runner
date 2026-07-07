@@ -101,15 +101,40 @@ class OBB{
 const _obbN=V3(0,1,0);
 const _pen={n:V3(0,1,0),depth:0};
 
+/* 과속방지턱 아코디언 프로파일: 격자 해상도와 무관한 매끈한 아치(뚝뚝 끊김 없음).
+   tz∈[-1,1](마루 가로 방향), 반환 0..1 높이 비율. 가장자리서 접선이 지면과 매끈히 만남(C1). */
+function bumpProfile(tz,type){
+  const a=Math.abs(tz);if(a>=1)return 0;
+  if(type==="flat")return a<.5?1:.5*(1+Math.cos((a-.5)/.5*Math.PI)); // 스피드 테이블(평탄정상)
+  const p=.5*(1+Math.cos(tz*Math.PI));                                // 완만한 아치
+  return type==="sharp"?p*p:p;                                        // sharp=뾰족
+}
+function bumpTaper(ax,hw){const e=hw-.6;return ax>=hw?0:ax>e?.5*(1+Math.cos((ax-e)/.6*Math.PI)):1;}
+
 /* ---------- world ---------- */
 class World{
   constructor(size,res){
     this.size=size;this.res=res;this.cell=size/res;
     this.hMap=new Float32Array((res+1)*(res+1));
     this.sMap=new Uint8Array((res+1)*(res+1));
-    this.boxes=[];this.props=[];this.debris=[];this.movers=[];this.t=0;
+    this.boxes=[];this.props=[];this.debris=[];this.movers=[];this.bumps=[];this.t=0;
     this.spawn={x:0,z:0,yaw:0};this.checkpoints=[];this.waypoints=[];
     this.bounds=size*.5-2;
+  }
+  /* 매끈한 과속방지턱을 지형 높이에 직접 반영 → 서스펜션이 자연스레 흡수/충격, 박스 모서리 끊김 없음 */
+  addBump(x,z,yaw,hw,hd,h,type){
+    this.bumps.push({x,z,co:Math.cos(yaw||0),si:Math.sin(yaw||0),hw,hd,h,type:type||"arch",
+      br2:(hw*hw+hd*hd)+1});
+  }
+  bumpH(x,z){
+    const B=this.bumps;if(B.length===0)return 0;let add=0;
+    for(let bi=0;bi<B.length;bi++){
+      const b=B[bi],dx=x-b.x,dz=z-b.z;
+      if(dx*dx+dz*dz>b.br2)continue;
+      const lx=dx*b.co+dz*b.si,lz=-dx*b.si+dz*b.co,ax=Math.abs(lx);
+      if(ax>=b.hw)continue;const tz=lz/b.hd;if(tz<=-1||tz>=1)continue;
+      add+=b.h*bumpProfile(tz,b.type)*bumpTaper(ax,b.hw);}
+    return add;
   }
   /* 애니메이션 장애물(압착기 등): OBB + 메시를 매 프레임 anim(t)로 이동 */
   stepMovers(dt){
@@ -126,10 +151,13 @@ class World{
   gridAt(x,z){
     const g=(x+this.size*.5)/this.cell,gz=(z+this.size*.5)/this.cell;
     return[clamp(g,0,this.res-.001),clamp(gz,0,this.res-.001)];}
-  height(x,z){
+  baseHeight(x,z){   // 방지턱 제외 기본 지형(비주얼 지형 메시용)
     const[g,gz]=this.gridAt(x,z);
     const i=g|0,j=gz|0,fx=g-i,fz=gz-j,m=this.hMap,r=this.res+1,b=j*r+i;
     return m[b]*(1-fx)*(1-fz)+m[b+1]*fx*(1-fz)+m[b+r]*(1-fx)*fz+m[b+r+1]*fx*fz;}
+  height(x,z){
+    const base=this.baseHeight(x,z);
+    return this.bumps.length?base+this.bumpH(x,z):base;}
   normal(x,z,out){
     const e=this.cell;
     out.set(this.height(x-e,z)-this.height(x+e,z),2*e,this.height(x,z-e)-this.height(x,z+e));
