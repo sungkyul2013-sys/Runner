@@ -145,6 +145,14 @@ function initHudButtons(){
     $("btnSlow").classList.toggle("on",Game.manualSlow);
     toast(Game.manualSlow?"슬로모션 ON":"슬로모션 OFF");};
   $("btnRepair").onclick=()=>{Sfx.click();Game.repair();};
+  // 🏠 홈으로(메인 메뉴)
+  $("btnHome").onclick=()=>{Sfx.click();Game.exitToMenu();};
+  // 🗺️ 미니맵 켜기/끄기
+  $("btnMap").onclick=()=>{Sfx.click();
+    const m=$("minimap");const off=m.dataset.off==="1";
+    m.dataset.off=off?"0":"1";m.style.display=off?"":"none";
+    $("btnMap").classList.toggle("on",!off);
+    toast(off?"미니맵 ON":"미니맵 OFF");};
   // 📍 장소 이동(오픈월드)
   $("btnPlaces").onclick=()=>{Sfx.click();
     const ps=Game.world&&Game.world.places;if(!ps)return;
@@ -299,6 +307,11 @@ function boot(){
           c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
           c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
+        else if(c.id==="maybach"){                  // 마이바흐 GLS: 에어서스 — 충격 흡수·요동 억제·무롤
+          c.susp.k*=.82;                            // 부드러운 스프링 → 요철·포트홀 흡수
+          c.susp.c*=1.7;                            // 강한 댐핑 → 차체 떨림/바운스(요동) 억제
+          c.susp.travel*=1.4;                       // 긴 스트로크 → 큰 충격도 부드럽게
+          c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소
         else{
           c.susp.travel*=1.2;                       // 컴포트/오프로드: 스트로크 확대(다이브·바운스)
           c.susp.c*=.85;                            // 리바운드 완화 → 생동감

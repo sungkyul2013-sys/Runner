@@ -117,7 +117,7 @@ class World{
     this.size=size;this.res=res;this.cell=size/res;
     this.hMap=new Float32Array((res+1)*(res+1));
     this.sMap=new Uint8Array((res+1)*(res+1));
-    this.boxes=[];this.props=[];this.debris=[];this.movers=[];this.bumps=[];this.t=0;
+    this.boxes=[];this.props=[];this.debris=[];this.movers=[];this.bumps=[];this.potholes=[];this.t=0;
     this.spawn={x:0,z:0,yaw:0};this.checkpoints=[];this.waypoints=[];
     this.bounds=size*.5-2;
   }
@@ -126,14 +126,22 @@ class World{
     this.bumps.push({x,z,co:Math.cos(yaw||0),si:Math.sin(yaw||0),hw,hd,h,type:type||"arch",
       br2:(hw*hw+hd*hd)+1});
   }
+  addPothole(x,z,r,depth){this.potholes.push({x,z,r2:r*r,r,depth});}
   bumpH(x,z){
-    const B=this.bumps;if(B.length===0)return 0;let add=0;
+    let add=0;
+    const B=this.bumps;
     for(let bi=0;bi<B.length;bi++){
       const b=B[bi],dx=x-b.x,dz=z-b.z;
       if(dx*dx+dz*dz>b.br2)continue;
       const lx=dx*b.co+dz*b.si,lz=-dx*b.si+dz*b.co,ax=Math.abs(lx);
       if(ax>=b.hw)continue;const tz=lz/b.hd;if(tz<=-1||tz>=1)continue;
       add+=b.h*bumpProfile(tz,b.type)*bumpTaper(ax,b.hw);}
+    const H=this.potholes;                       // 움푹 파인 곳(포트홀): 매끈한 원형 함몰
+    for(let hi=0;hi<H.length;hi++){
+      const h=H[hi],dx=x-h.x,dz=z-h.z,d2=dx*dx+dz*dz;
+      if(d2>=h.r2)continue;
+      const t=Math.sqrt(d2)/h.r;
+      add-=h.depth*.5*(1+Math.cos(t*Math.PI));}   // 중심 최대 → 가장자리 0 (C1 매끈)
     return add;
   }
   /* 애니메이션 장애물(압착기 등): OBB + 메시를 매 프레임 anim(t)로 이동 */
@@ -156,8 +164,11 @@ class World{
     const i=g|0,j=gz|0,fx=g-i,fz=gz-j,m=this.hMap,r=this.res+1,b=j*r+i;
     return m[b]*(1-fx)*(1-fz)+m[b+1]*fx*(1-fz)+m[b+r]*(1-fx)*fz+m[b+r+1]*fx*fz;}
   height(x,z){
-    const base=this.baseHeight(x,z);
-    return this.bumps.length?base+this.bumpH(x,z):base;}
+    let h=this.baseHeight(x,z);
+    if(this.bumps.length||this.potholes.length)h+=this.bumpH(x,z);
+    // 잔요철: 도로가 완전 평면이 아니게(서스펜션이 미세하게 계속 일함)
+    if(this.ripple)h+=this.ripple*(Math.sin(x*.73)*Math.sin(z*.81)+.55*Math.sin(x*1.9+1.3)*Math.cos(z*1.63+.5));
+    return h;}
   normal(x,z,out){
     const e=this.cell;
     out.set(this.height(x-e,z)-this.height(x+e,z),2*e,this.height(x,z-e)-this.height(x,z+e));

@@ -115,6 +115,18 @@ const MAPS=[
   for(let k=0;k<4;k++)mb.prop("barrel",-100+k*3,268);
   for(let k=0;k<8;k++)mb.baked(k%2?"trees":"treesTall",-350+k*95,352,11,k,{});
   w.spawn={x:-140,z:-290,yaw:0};
+  // 📍 프루빙 그라운드 시설 이동
+  w.places=[
+    {name:"🏁 가속로 출발",x:-140,z:-290,yaw:0},
+    {name:"💥 충돌벽",x:-140,z:250,yaw:0},
+    {name:"🗜️ 압착기",x:110,z:-58,yaw:0},
+    {name:"🔩 서스펜션 시험장",x:180,z:-282,yaw:0},
+    {name:"⛰️ 힐클라임 오르막",x:-250,z:12,yaw:Math.PI},
+    {name:"🏔️ 러프 오프로드",x:250,z:250,yaw:0},
+    {name:"🛞 스키드패드",x:-250,z:-150,yaw:0},
+    {name:"🎢 램프·점프대",x:-8,z:20,yaw:0},
+    {name:"🗼 낙하 타워",x:-300,z:230,yaw:0},
+    {name:"🚧 IIHS 충돌시험",x:30,z:270,yaw:0}];
   return mb.finalize(this);}},
 
 /* ---------- 2. 네오시티 ---------- */
@@ -442,12 +454,12 @@ MAPS.push(
         ((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});}
     if(rnd()<.6)mb.baked("trees",cx+26,cz-26,12,rnd()*6,{y:0});}
   // 교외 주택(남서) — 차고 모델 + 나무
-  for(let k=0;k<7;k++){
-    const hx2=-330+((k%3)*36),hz2=-260-((k/3)|0)*40;
+  for(let k=0;k<7;k++){   // 순환로 안쪽(r<400)으로 — 고속도로 위 장애물 금지
+    const hx2=-262+((k%3)*30),hz2=-206-((k/3)|0)*32;
     mb.baked("garage",hx2,hz2,14,((k%4))*Math.PI/2,{collide:true,shrink:.9});
     if(k%2)mb.baked("treesTall",hx2+18,hz2+8,10+(k%3)*2,k,{});}
   for(let k=0;k<4;k++)
-    mb.box(300+k*46,w.height(300+k*46,330)+5,330,38,10,26,0x77808c,{mu:.5,tag:"warehouse"});
+    mb.box(300+k*46,w.height(300+k*46,356)+5,356,38,10,26,0x77808c,{mu:.5,tag:"warehouse"});
   for(let k=0;k<6;k++)mb.prop("barrel",310+k*5,300);
   // 방지턱: 도심 스쿨존 — 종류 다양(arch·round·flat·sharp·rumble)
   for(const[bx,bz,yaw,h,ty]of[
@@ -461,15 +473,15 @@ MAPS.push(
     const yaw=Math.atan2(p2.x-p.x,p2.z-p.z);
     mb.bump(p.x,p.z,yaw,17,.06+.04*((k/44)%2),(k/44)%2?"round":"rumble");}
   // 마리나 (북서 호수): 부두 + 정박한 보트
-  {const lx=-350,lz=300;
-   for(let k=0;k<3;k++)mb.box(lx-40+k*40,.2,lz-70,6,.4,60,0x8a6b45,{mu:.8,tag:"dock"});
-   for(let k=0;k<5;k++)mb.box(lx-60+k*30,.5,lz-40-k*8,4,1,9,k%2?0xd8433b:0xe8e8e8,{yaw:.1*k,mu:.5,tag:"boat"});}
+  {const lx=-350,lz=300;   // 순환로(r≈420) 바깥쪽·호수 북안으로 배치(도로 침범 금지)
+   for(let k=0;k<3;k++)mb.box(lx-40+k*40,.2,lz+55,6,.4,60,0x8a6b45,{mu:.8,tag:"dock"});
+   for(let k=0;k<5;k++)mb.box(lx-70+k*30,.5,lz+24+k*8,4,1,9,k%2?0xd8433b:0xe8e8e8,{yaw:.1*k,mu:.5,tag:"boat"});}
   // 언덕 스위치백 등반로 (북동 산 정상까지) — 지형을 따라 오르막
   {const sb=followTerrain(w,samplePath([[220,-160],[350,-260],[290,-360],[400,-420],[430,-360]],false,120));
    mb.paintPath(sb,10,S_ASP,true,true);railAlong(mb,sb,10,0xb9c2cc);}
   // 공사장 (대형 갭 점프대 + 자재) — 격자와 순환로 사이 공터
-  mb.ramp(250,250,0,24,22,14,0xd8433b);
-  mb.ramp(250,312,Math.PI,20,20,14,0xc7742f);
+  mb.ramp(250,236,0,24,22,14,0xd8433b);
+  mb.ramp(250,296,Math.PI,20,20,14,0xc7742f);   // 착지 램프를 순환로 안쪽으로(고속도로 침범 금지)
   for(let k=0;k<6;k++)mb.box(220+k*7,.6,250,6,1.2,2,0xcaa23a,{yaw:k,mu:.8,tag:"beam"});
   for(let k=0;k<3;k++)mb.box(210,2.4+k*.1,270+k*4,10,.2,3.6,0x7a828c,{mu:.7,tag:"scaffold"});
   // 언덕 비포장길
@@ -510,6 +522,7 @@ MAPS.push(
   {const md=followTerrain(w,samplePath([[430,-360],[470,-300],[430,-230],[500,-180],[560,-260]],false,120));
    mb.paintPath(md,10,S_ASP,true,true);railAlong(mb,md,10,0xb9c2cc);}
 
+  w.ripple=.035;   // 잔요철 — 서스펜션이 미세하게 계속 일함
   w.checkpoints=pathCheckpoints(ring,24,18);
   w.waypoints=pathWaypoints(ring,true,50);
   w.spawn={x:0,z:-60,yaw:0};

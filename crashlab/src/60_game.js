@@ -71,7 +71,8 @@ const Game={
     $("pausePanel").classList.remove("on");$("reportPanel").classList.remove("on");$("resultPanel").classList.remove("on");
     $("crashPanel").classList.toggle("on",this.mode==="crash");
     $("speedo").style.display=this.mode==="crash"?"none":"";
-    $("minimap").style.display=this.mode==="crash"?"none":"";
+    $("minimap").style.display=(this.mode==="crash"||$("minimap").dataset.off==="1")?"none":"";
+    $("btnMap").classList.toggle("on",$("minimap").dataset.off==="1");
     $("btnRepair").style.display=(this.mode==="free"||this.mode==="crash"||this.mode==="drift")?"":"none";
     $("btnPlaces").style.display=(this.world.places&&this.mode!=="crash")?"":"none";
     $("placesPanel").classList.remove("on");
@@ -507,7 +508,8 @@ function updateModeWidget(){
   else if(m==="crash"){
     const c=Game.crash;
     el.innerHTML='<div class="big">'+(c.phase==="run"?(Game.veh.speed*3.6|0)+' km/h':'대기')+'</div>'+
-      '<div class="sub">'+(c.phase==="run"?"주행 중…":"속도 설정 후 발사")+'</div>';}
+      '<div class="sub">'+(c.phase==="run"?"주행 중… 피크 "+(Game.veh.peakG|0)+"G":
+        c.phase!=="idle"?"피크 "+(Game.veh.peakG|0)+"G · 변형 "+Game.vis.defVol.toFixed(1):"속도 설정 후 발사")+'</div>';}
   else{
     const s=SURF_IDS[Game.veh.wheels[0].surf]||"asphalt";
     const names={asphalt:"아스팔트",lane:"아스팔트",wet:"젖은 노면",gravel:"자갈",grass:"잔디",sand:"모래",ice:"빙판",snow:"눈",curb:"연석",walk:"보도"};

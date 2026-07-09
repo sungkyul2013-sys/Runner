@@ -68,6 +68,7 @@ class Vehicle{
     this.dmg={f:0,b:0,l:0,r:0};
     this.powerMul=1;this.steerMul=1;this.suspMul=1;this.toe=0;this.defVol=0;
     this.partHp={fb:1,rb:1,hood:1,trunk:1,dl:1,dr:1};
+    for(const w of this.wheels)if(w.local0)w.local.copy(w.local0);   // 밀려난 휠 마운트 복원
   }
   addDamage(lp,dv){
     if(!this.damageOn)return;
@@ -276,6 +277,8 @@ class Vehicle{
         this.registerImpact(this.hull[i],_vD,_vC.set(0,-1,0),Math.min(46,pv)); // 월드 하방 압착
         continue;}
       let dv=resolvePointContact(b,_vD,ct,0);
+      // 위치 보정: 임펄스만으론 절벽·벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 밀어냄
+      if(ct.depth>.03)b.pos.addScaledVector(ct.n,Math.min(ct.depth*.35,.05));
       if(dv>1.4)this.registerImpact(this.hull[i],_vD,ct.n,dv);}
 
     /* ----- props ----- */

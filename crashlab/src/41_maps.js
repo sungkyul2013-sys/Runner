@@ -60,6 +60,12 @@ class MapBuilder{
     if(lineM){ctx.strokeStyle=color;ctx.lineWidth=lineM*this.ppm;ctx.stroke();}
     else{ctx.fillStyle=color;ctx.fill();}
     ctx.restore();}
+  pothole(x,z,r,depth){ // 움푹 파인 곳: 매끈한 원형 함몰(물리) + 어두운 자국(비주얼)
+    this.world.addPothole(x,z,r,depth||.16);
+    this.texCircle(x,z,r,"rgba(26,27,30,.82)");
+    this.texCircle(x,z,r*.62,"rgba(10,11,13,.9)");
+    this.texCircle(x,z,r,"rgba(60,62,68,.7)",.16);
+    return this;}
   texRect(x,z,wM,dM,yaw,color){
     const ctx=this.octx,[px,py]=this.tp(x,z);
     ctx.save();ctx.translate(px,py);ctx.rotate(yaw||0);
@@ -214,6 +220,16 @@ class MapBuilder{
     w.props.push(p);this.group.add(p.mesh);return p;}
   finalize(mapDef){
     const w=this.world;
+    // 포트홀 자동 산재 — 아스팔트/차선 위, 스폰·장소 주변 제외 (모든 맵에 다수)
+    if(this.noPotholes!==true){
+      let sd=(w.size*7|0)+13,rr=()=>{sd=(sd*1103515245+12345)&0x7fffffff;return sd/0x7fffffff;};
+      const avoid=[w.spawn,...(w.places||[])];
+      const N=Math.round(w.size/22);
+      for(let k=0;k<N;k++){
+        const x=(rr()-.5)*w.size*.9,z=(rr()-.5)*w.size*.9,s=w.surf(x,z);
+        if(s!==SURF_ID.asphalt&&s!==SURF_ID.lane&&s!==SURF_ID.curb)continue;
+        if(avoid.some(a=>a&&Math.hypot(x-a.x,z-a.z)<22))continue;
+        this.pothole(x,z,1.3+rr()*1.9,.1+rr()*.14);}}
     this.texBase();
     this.tctx.drawImage(this.overlay,0,0);
     this.texGrain();

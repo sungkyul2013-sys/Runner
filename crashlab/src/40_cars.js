@@ -298,6 +298,7 @@ class CarVisual{
     this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
     const wg=wheelGeo(spec.wheels.radius,spec.wheels.width);
     const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
+    this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
     this.wheelMeshes=[];
     for(let i=0;i<4;i++){
       const m=new THREE.Mesh(wg,MAT_DETAIL);m.castShadow=true;
@@ -356,6 +357,7 @@ class CarVisual{
     this.wheelMeshes=[];
     const wg=wheelGeo(W.radius,W.width);
     const bg=brakeGeo(W.radius,W.width);
+    this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
     for(let i=0;i<4;i++){
       const m=new THREE.Mesh(wg,MAT_DETAIL);
       const grp=new THREE.Group();grp.add(m);grp.add(new THREE.Mesh(bg,MAT_DETAIL));
@@ -378,6 +380,46 @@ class CarVisual{
       if(_vA.length()<R+.5){
         this.partHp[k]-=dv*.028*(k==="fb"||k==="rb"?1.6:(k==="ml"||k==="mr")?3:1);
         if(this.partHp[k]<=0&&veh.damageOn)this.detachPart(k,veh,imp);}}
+    // 바퀴: 충격과 함께 뒤로 밀려나고(휠 셋백), 아주 강한 충격이면 탈락
+    if(dv>7&&veh.damageOn&&this.wheelOff){
+      const W=this.spec.wheels,tv=(this.baked&&W.trackVis)?W.trackVis:W.track;
+      const wpos=[[-tv,W.front],[tv,W.front],[-tv,-W.rear],[tv,-W.rear]];
+      for(let i=0;i<4;i++){
+        if(this.wheelOff[i])continue;
+        const d=Math.hypot(imp.lp.x-wpos[i][0],imp.lp.z-wpos[i][1]);
+        if(d>=1.45)continue;
+        const w=veh.wheels[i];
+        if(!w.local0)w.local0=w.local.clone();
+        // 충격 방향으로 서스펜션 마운트가 밀림(휠베이스 축소) — 물리·비주얼 모두 반영
+        const push=Math.sqrt(1-d/1.45)*Math.min(.55,dv*.02);
+        w.local.x=clamp(w.local.x+imp.ln.x*push*.5,w.local0.x-.28,w.local0.x+.28);
+        w.local.z=clamp(w.local.z+imp.ln.z*push,w.local0.z-.6,w.local0.z+.6);
+        // 셋백이 한계에 달한 상태에서 또 강타 → 탈락
+        const sb=Math.abs(w.local.z-w.local0.z)+Math.abs(w.local.x-w.local0.x);
+        if(dv>17&&d<1.05+dv*.004&&sb>.25)this.detachWheel(i,veh,imp);}}
+    // 부품 파편 스프레이: 강한 충격 시 잔해가 튀어나감
+    if(dv>12&&veh.damageOn)this.sprayChunks(imp,veh,Math.min(7,(2+dv*.09)|0));
+  }
+  sprayChunks(imp,veh,count){
+    if(!CarVisual._chunkGeo)CarVisual._chunkGeo=new THREE.BoxGeometry(.15,.05,.2);
+    for(let c=0;c<count;c++){
+      const m=new THREE.Mesh(CarVisual._chunkGeo,MAT_DETAIL);
+      m.position.copy(imp.wp);
+      m.position.x+=(Math.random()-.5)*.5;m.position.y+=Math.random()*.4;m.position.z+=(Math.random()-.5)*.5;
+      Fx.addDebris(m,veh,imp);}
+  }
+  detachWheel(i,veh,imp){
+    if(this.wheelOff[i])return;
+    this.wheelOff[i]=true;
+    if(typeof toast==="function"&&veh===Game.veh)toast("💥 바퀴 탈락!");
+    const src=this.wheelMeshes[i];src.visible=false;
+    const dm=new THREE.Mesh(this._wheelGeo,MAT_DETAIL.clone());
+    src.updateWorldMatrix(true,false);
+    dm.position.setFromMatrixPosition(src.matrixWorld);
+    dm.quaternion.setFromRotationMatrix(src.matrixWorld);
+    dm.updateMatrixWorld(true);
+    Fx.addDebris(dm,veh,imp);
+    if(veh.loseWheel)veh.loseWheel(i);   // 물리: 해당 바퀴 접지력 상실(있으면)
   }
   updateDeforms(dt){ // 소프트바디 격자 스텝 (충격 후 ~1초간 활성)
     if(this.lattice.update(dt))this.defVol=this.lattice.totalDisp()*1.3;
@@ -386,10 +428,14 @@ class CarVisual{
     if(this.detached[k])return;
     const p=this.parts[k];this.detached[k]=p;
     Fx.addDebris(p,veh,imp);
+    const nm={fb:"앞 범퍼",rb:"뒤 범퍼",hood:"본닛",trunk:"트렁크",dl:"좌측 도어",dr:"우측 도어",ml:"좌측 미러",mr:"우측 미러"}[k];
+    if(nm&&typeof toast==="function"&&veh===Game.veh)toast("🔩 "+nm+" 탈락!");
   }
   repair(){
     this.lattice.reset();
     this.defVol=0;
+    if(this.wheelOff)for(let i=0;i<4;i++){    // 탈락 바퀴 복원
+      if(this.wheelOff[i]){this.wheelOff[i]=false;this.wheelMeshes[i].visible=true;}}
     for(const k in this.parts){
       const p=this.parts[k];restoreGeo(p);this.partHp[k]=this.hp0[k];
       if(this.detached[k]){Fx.reclaimDebris(p);this.group.add(p);
@@ -405,6 +451,7 @@ class CarVisual{
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
     const tv=this.baked?this.spec.wheels.trackVis:0;
     for(let i=0;i<4;i++){
+      if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함
       const w=veh.wheels[i],m=this.wheelMeshes[i];
       m.position.set(this.baked?(w.left?-tv:tv):w.local.x,w.visY,w.local.z);
       const st=(w.front?veh.steer:0)+(w.left?-veh.toe:veh.toe)*8;

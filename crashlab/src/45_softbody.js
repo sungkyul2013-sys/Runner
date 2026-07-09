@@ -7,7 +7,7 @@
 class SoftLattice{
   constructor(spec,meshes){
     const hx=spec.body.hx*1.04,hy=spec.body.hy*1.04,hz=spec.body.hz*1.04;
-    const NX=6,NY=4,NZ=11;   // 더 촘촘한 격자 → 부분별 미세 변형(BeamNG식)
+    const NX=7,NY=4,NZ=13;   // 잘게 자른 격자(앞뒤·좌우·바닥 세분) → 한 면이 아니라 부위별로 뜯기고 늘어남
     this.NX=NX;this.NY=NY;this.NZ=NZ;
     this.min=[-hx,-hy,-hz];
     this.cell=[2*hx/(NX-1),2*hy/(NY-1),2*hz/(NZ-1)];
@@ -32,6 +32,9 @@ class SoftLattice{
       const floor=(j===0)?.012:0;                    // 바닥 프레임 살짝
       this.anchor[idx(i,j,k)]=.03+cell+floor;}       // 기본 앵커 ↑ → 소성(plast) 목표 형태를 확실히 유지
     this.pos.set(this.home);this.prev.set(this.home);
+    // 노드별 재질 편차(찢김 재현): 같은 충격에도 노드마다 밀리는 양이 달라 면이 아닌 '뜯긴' 형태가 됨
+    this.rag=new Float32Array(n);
+    for(let i=0;i<n;i++){const s=Math.sin(i*127.1+13.7)*43758.5453;this.rag[i]=s-Math.floor(s);}
     // beams
     const dirs=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,-1,0],[1,0,1],[1,0,-1],[0,1,1],[0,1,-1],[1,1,1],[1,-1,1]];
     const beams=[];
@@ -66,37 +69,49 @@ class SoftLattice{
     this.binds.push({mesh,orig,bi,bw,vc});
   }
   impact(lp,ln,dv){
-    // 속도비례 크럼플: (1)접점 국소 함몰 + (2)충격축 아코디언 압축.
-    // 저속(방지턱 dv≤5)=거의 무변형, 고속(200km/h dv≈55)=형체불명 압착.
-    // 속도 주입 없이 pos+prev를 함께 이동 → 오버슈트/팽창(스파이럴) 방지. 소성 빔이 영구 고정.
+    // 현실적 방향성 크럼플:
+    //  (1) 국소 크럼플 — 충돌한 부위만 충격 방향으로 함몰(접점서 거리로 감쇠, 종이처럼 구겨짐).
+    //  (2) 전역 프레임 충격 — 충격축을 따라 차 전체가 약하게 압축(뒷부분 프레임도 손상).
+    // 모두 ln(충격 방향)에 따라 달라짐 → 정면/측면/후면/모서리 충돌이 각기 다르게 변형.
+    // pos+prev 동시 이동(속도 0) + plast(영구 오프셋) → 스프링백 없음.
     const sev=Math.min(1,Math.max(0,(dv-6)/50));      // 0(범프)~1(초고속)
     if(dv<1.2&&sev<=0)return;
     let lx=ln.x,ly=ln.y,lz=ln.z;const il=1/(Math.hypot(lx,ly,lz)||1);lx*=il;ly*=il;lz*=il;
     const hx=-this.min[0],hy=-this.min[1],hz=-this.min[2];
     const axExt=Math.abs(lx)*hx+Math.abs(ly)*hy+Math.abs(lz)*hz||hz; // 충격축 반경
-    const R=.55+.85*sev+.02*dv;                        // 국소 함몰 반경
-    const dish=.12+1.3*sev*sev;                        // 국소 함몰 깊이
-    const frac=Math.min(.82,sev*.98);                  // 붕괴 비율(고속일수록 크게)
-    const s0=axExt*(.55-.9*sev);                       // 고정 붕괴면(강체 승객셀). 고속일수록 안쪽까지
-    const P=this.pos,Q=this.prev,PL=this.plast;
+    // 이방성 국소 크럼플: 충격축(깊이) 방향으로 파고들되, 좌우(수평 직교)는 좁게 국소화
+    // → 스몰오버랩은 부딪힌 쪽(왼쪽 코너)만 파이고, 수직은 바닥(언더바디)까지 도달.
+    const depth=.3+5.4*sev;                            // 접점 함몰 깊이
+    const RH=.55+.34*sev;                              // 수평 직교 반경(좁게 = 부딪힌 부위만)
+    const RV=hy*2.3+.4;                                // 수직 반경(바닥·지붕까지)
+    const crushLen=.5+3.3*sev;                         // 충격축 방향 압축 깊이
+    const gFrac=Math.min(.3,sev*.36);                  // 전역 프레임 충격(뒷부분·프레임도 굽음)
+    const s0=-axExt*1.05;
+    const P=this.pos,Q=this.prev,PL=this.plast,HM=this.home,RG=this.rag;
     for(let i=0;i<this.n;i++){
       const a=i*3;
-      // (1) 접점 국소 함몰(영구)
       const dx=P[a]-lp.x,dy=P[a+1]-lp.y,dz=P[a+2]-lp.z;
-      const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
-      if(dist<R){
-        const t=1-(dist/R)*(dist/R),f=t*t*dish;
-        const uy=ly>0?ly*.25:ly*.7;
-        P[a]+=lx*f;P[a+1]+=uy*f;P[a+2]+=lz*f;
-        PL[a]+=lx*f;PL[a+1]+=uy*f;PL[a+2]+=lz*f;     // 소성 오프셋에 누적
-        Q[a]-=lx*f*.1;Q[a+2]-=lz*f*.1;}
-      // (2) 아코디언 붕괴: 충격을 받은 앞쪽 영역(s>s0)을 고정면 s0 쪽으로 접음(전체 이동 없음)
-      if(sev>.04){
-        const s=-(P[a]*lx+P[a+1]*ly+P[a+2]*lz);   // 충격 반대(진행/전방) 좌표
+      const proj=dx*lx+dy*ly+dz*lz;                    // 충격축 방향(차 안쪽 +)
+      const ex=dx-proj*lx,ey=dy-proj*ly,ez=dz-proj*lz; // 직교 성분
+      const perpH=Math.hypot(ex,ez),perpV=Math.abs(ey);// 수평 직교 / 수직
+      // (1) 국소 크럼플 — 노드별 재질 편차(rag)로 한 면이 아닌 뜯기고 찢긴 형태
+      if(proj>-.65&&proj<crushLen&&perpH<RH&&perpV<RV){
+        const wh=1-perpH/RH,wv=1-perpV/RV;
+        const wl=proj<0?1:1-proj/crushLen;             // 접촉면서 최대 → 안쪽으로 감쇠
+        const f=depth*wh*wh*wv*Math.max(0,wl)*(.55+.9*RG[i]);
+        const uy=ly>0?ly*.3:ly*.72;                    // 위로 솟구침 억제
+        // 포아송 팽출: 앞뒤로 눌린 재료가 위아래로 밀려남 → 프레임이 상하로 약간 늘어남
+        const by=f*.22*(HM[a+1]>.02?1:HM[a+1]<-.02?-1:0)*(1-Math.abs(ly));
+        P[a]+=lx*f;P[a+1]+=uy*f+by;P[a+2]+=lz*f;
+        PL[a]+=lx*f;PL[a+1]+=uy*f+by;PL[a+2]+=lz*f;
+        Q[a]+=lx*f;Q[a+1]+=uy*f+by;Q[a+2]+=lz*f;}
+      // (2) 전역 프레임 충격: 충격축 따라 차 전체 약하게 압축(뒤 프레임도 굽음)
+      if(gFrac>0){
+        const s=-(P[a]*lx+P[a+1]*ly+P[a+2]*lz);
         if(s>s0){
-          const mvs=frac*(s-s0);                   // s를 s0쪽으로 감소 → 앞부분이 뒤로 접힘
+          const mvs=gFrac*(s-s0)*.4;
           P[a]+=lx*mvs;P[a+1]+=ly*mvs;P[a+2]+=lz*mvs;
-          PL[a]+=lx*mvs;PL[a+1]+=ly*mvs;PL[a+2]+=lz*mvs; // 영구 오프셋 → 스프링백 없음
+          PL[a]+=lx*mvs;PL[a+1]+=ly*mvs;PL[a+2]+=lz*mvs;
           Q[a]+=lx*mvs;Q[a+1]+=ly*mvs;Q[a+2]+=lz*mvs;}}
     }
     // 클램프: 소성 오프셋과 위치 모두 차체 박스 안으로(반복 압착 시 폭주·반전·바닥관통 방지)
@@ -134,8 +149,8 @@ class SoftLattice{
           const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
           if(it===0){                          // 소성 먼저: 붕괴된 현재 길이로 항복 → 재팽창 전에 영구 단축
             const rest0=B[o+3],rc=B[o+2],strain=(len-rc)/rest0;
-            if(Math.abs(strain)>.014)           // 항복: 압축은 깊게(rest0*.05까지), 인장은 제한(1.2배)
-              B[o+2]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.2);}
+            if(Math.abs(strain)>.014)           // 항복: 압축은 깊게(rest0*.05까지), 인장은 찢김 허용(1.4배까지 늘어남)
+              B[o+2]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.4);}
           const rest=B[o+2];
           const diff=(len-rest)/len*.5*.42;
           P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
