@@ -399,6 +399,13 @@ class CarVisual{
         if(dv>17&&d<1.05+dv*.004&&sb>.25)this.detachWheel(i,veh,imp);}}
     // 부품 파편 스프레이: 강한 충격 시 잔해가 튀어나감
     if(dv>12&&veh.damageOn)this.sprayChunks(imp,veh,Math.min(7,(2+dv*.09)|0));
+    // 유리 파손: 강충격 시 금 간 우윳빛 유리
+    if(dv>13&&veh.damageOn&&this.glassMesh&&!this._glassCracked){
+      this._glassCracked=true;
+      const gm=this.glassMesh.material=this.glassMesh.material.clone();
+      gm.color=new THREE.Color(.82,.86,.9);gm.shininess=25;gm.specular=new THREE.Color(.3,.3,.32);
+      gm.transparent=true;gm.opacity=.92;
+      if(veh===Game.veh&&typeof toast==="function")toast("🪟 유리 파손!");}
   }
   sprayChunks(imp,veh,count){
     if(!CarVisual._chunkGeo)CarVisual._chunkGeo=new THREE.BoxGeometry(.15,.05,.2);
@@ -436,6 +443,7 @@ class CarVisual{
     this.defVol=0;
     if(this.wheelOff)for(let i=0;i<4;i++){    // 탈락 바퀴 복원
       if(this.wheelOff[i]){this.wheelOff[i]=false;this.wheelMeshes[i].visible=true;}}
+    if(this._glassCracked){this._glassCracked=false;this.glassMesh.material=MAT_GLASS;}   // 유리 교체
     for(const k in this.parts){
       const p=this.parts[k];restoreGeo(p);this.partHp[k]=this.hp0[k];
       if(this.detached[k]){Fx.reclaimDebris(p);this.group.add(p);

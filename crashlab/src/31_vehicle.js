@@ -159,7 +159,9 @@ class Vehicle{
         const arb=sp.arb*(w.comp-other.comp);
         // 댐퍼 속도 제한: 방지턱 모서리에서 comp가 급변해 코너가 튀어오르며 전복하는 것 방지
         const cVel=clamp((w.comp-w.prevComp)/dt,-3.5,3.5);
-        let sF=susp.k*kMul*w.comp+susp.c*kMul*cVel+arb;
+        // 비대칭 댐핑: 리바운드(늘어남)는 압축보다 강하게 → 방지턱 후 위로 튀는 요동 억제(실차 댐퍼)
+        const cAsym=cVel<0?(susp.rebMul||1.5):1;
+        let sF=susp.k*kMul*w.comp+susp.c*kMul*cVel*cAsym+arb;
         sF=clamp(sF,0,sp.mass*GRAV*1.4);
         w.susF=sF;w.load=lerp(w.load,sF,.5);
         _vF.copy(_hit.n).multiplyScalar(.4).addScaledVector(up,.6).normalize().multiplyScalar(sF);

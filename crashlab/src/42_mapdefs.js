@@ -6,7 +6,7 @@ const S_ASP=SURF_ID.asphalt,S_GRS=SURF_ID.grass,S_SND=SURF_ID.sand,S_GRV=SURF_ID
 
 const MAPS=[
 /* ---------- 1. 프루빙 그라운드 ---------- */
-{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"가속로·충돌벽·유압 압착기·서스펜션 시험장(방지턱 5종)·힐클라임 오르막·러프 오프로드·램프·스키드패드·낙하타워·IIHS",
+{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"가속로·충돌벽·압착기·서스펜션 랩(대형턱·급단차·뱅크·잔요철·자갈·젖은노면·오르막턱)·힐클라임·오프로드·램프·스키드패드·낙하타워·IIHS",
  modes:["free","crash","drift"],
  build(){
   const mb=new MapBuilder(760,256),w=mb.world;
@@ -22,6 +22,8 @@ const MAPS=[
     const hd=Math.hypot(x+325,z+30);
     if(hd<95){const e=clamp((95-hd)/95,0,1);
       return[24*e*e+2*Math.sin(x*.05)*Math.cos(z*.05)*e, hd<74?S_GRS:S_GRV];}
+    // 서스 시험 오르막 레인(x≈334): 완만한 언덕 — 방지턱이 경사를 그대로 따라감
+    if(x>320&&x<348&&z>-262&&z<-92){const t=(z+262)/170;return[6.5*Math.sin(Math.PI*t),S_ASP];}
     return[0,S_ASP];});
   // 힐클라임 등반 도로 (지형 따라 오르막→정상→내리막)
   {const hc=followTerrain(w,samplePath([[-250,10],[-300,-10],[-330,-30],[-360,-60],[-320,-70],[-280,-40]],false,100));
@@ -82,7 +84,26 @@ const MAPS=[
   // 5: 계단·연석
   for(let k=0;k<5;k++)mb.box(lanes[4],.1+k*.2,sz0+k*2.2,10,.2,2,0x9aa2ab,{mu:1,tag:"stair"});
   mb.box(lanes[4],.16,sz0+14,10,.32,1,0xb5443c,{mu:1,tag:"curb"});
-  mb.texText(SX+14,sz0-16,5,"SUSPENSION","rgba(240,244,250,.6)");
+  // 6: 대형 턱(35/45cm) + 짧고 날카로운 급단차
+  [.35,.45].forEach((h,k)=>{mb.bump(278,sz0+14+k*30,0,11,h,"round");
+    mb.texText(278-8,sz0+8+k*30,2.6,Math.round(h*100)+"cm");});
+  mb.bump(278,sz0+74,0,11,.12,"sharp");mb.bump(278,sz0+86,0,11,.09,"sharp");
+  // (6b) 기울어진 노면(뱅크 8°) — 좌우 교대, 낮은 진입단차 + 소프트 통과(plank)
+  for(let k=0;k<3;k++)mb.box(278,.3,sz0+112+k*26,11,.16,22,0x8f98a3,{roll:(k%2?-1:1)*.14,mu:1,tag:"plank"});
+  // 7: 불규칙 잔요철(랜덤 소형 턱 다수) + 오프로드 자갈면
+  {let sd=97;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   mb.stamp(306,sz0+40,20,(i,j,d)=>w.setS(i,j,S_GRV));
+   mb.stamp(306,sz0+80,20,(i,j,d)=>w.setS(i,j,S_GRV));
+   for(let k=0;k<16;k++)
+     mb.bump(306+(rr()-.5)*5,sz0+8+k*8+(rr()-.5)*3,(rr()-.5)*.6,7,.03+rr()*.06,rr()<.5?"round":"arch");}
+  // (7b) 미끄러운 노면(젖음) 위 방지턱
+  mb.stamp(306,sz0+150,17,(i,j,d)=>w.setS(i,j,SURF_ID.wet));
+  mb.texCircle(306,sz0+150,16,SURF_CSS[SURF_ID.wet],.8);
+  mb.bump(306,sz0+146,0,11,.14,"round");
+  // 8: 오르막(터레인 경사) 위 방지턱 — 경사를 따라 기울어짐
+  [.1,.16,.22].forEach((h,k)=>mb.bump(334,sz0+26+k*34,0,11,h,k%2?"round":"arch"));
+  mb.texText(334,sz0-6,2.8,"UPHILL","rgba(240,244,250,.7)");
+  mb.texText(SX+56,sz0-16,5,"SUSPENSION LAB","rgba(240,244,250,.6)");
 
   // slalom cones (지그재그)
   for(let k=0;k<10;k++)mb.prop("cone",-70+((k%2)*10-5),-60-k*20);
@@ -439,10 +460,25 @@ MAPS.push(
   // 순환 고속도로 (r≈420) — 언덕을 절개하며 통과
   const ring=samplePath([[420,0],[300,300],[0,420],[-300,300],[-420,0],[-300,-300],[0,-420],[297,-297]],true,360);
   mb.paintPath(ring,19,S_ASP,true,true);
-  railAlong(mb,ring,19,0xb9c2cc);
+  // 가드레일: 연결로·스퍼 교차 지점은 뚫어 둠(진입로 차단 버그 방지)
+  railAlong(mb,ring,19,0xb9c2cc,(a)=>(Math.abs(a.x)<16&&Math.abs(a.z)>396)||(Math.abs(a.z)<16&&Math.abs(a.x)>396));
   // 연결로 4방향
   for(const[a,b]of[[[185,0],[418,0]],[[-185,0],[-418,0]],[[0,185],[0,418]],[[0,-185],[0,-418]]])
     mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],14,S_ASP,true);
+  // 고속도로 연장: 남북 직선 스퍼 + 종점 회차 루프 (남측은 공항 활주로 앞에서 종료)
+  for(const[sgn,end]of[[1,760],[-1,580]]){
+    const sp=samplePath([[0,sgn*424],[0,sgn*(end-36)]],false,40);
+    mb.paintPath(sp,17,S_ASP,true,true);
+    railAlong(mb,sp,17,0xb9c2cc,(a)=>Math.abs(a.z)<440);   // 순환로 교차부는 레일 생략
+    const loop=samplePath([[0,sgn*(end-36)],[26,sgn*(end-12)],[0,sgn*end],[-26,sgn*(end-12)]],true,48);
+    mb.paintPath(loop,12,S_ASP,true,true);}
+  // 🌀 드리프트 광장(도심 서측): 넓은 아스팔트 오픈 스페이스
+  mb.stamp(-280,120,58,(i,j,d)=>{w.setS(i,j,S_ASP);});
+  mb.texCircle(-280,120,56,SURF_CSS[S_ASP]);
+  mb.texCircle(-280,120,26,"rgba(244,248,252,.85)",.4);
+  mb.texCircle(-280,120,1,"rgba(244,248,252,.9)");
+  mb.texText(-280,120-40,6,"DRIFT PLAZA","rgba(244,248,252,.55)");
+  for(let k=0;k<10;k++)mb.prop("cone",-280+Math.cos(k*.628)*50,120+Math.sin(k*.628)*50);
   // 베이크 건물
   let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   const BLD2=["bldA","bldB","bldC","bldD"];
@@ -522,7 +558,7 @@ MAPS.push(
   {const md=followTerrain(w,samplePath([[430,-360],[470,-300],[430,-230],[500,-180],[560,-260]],false,120));
    mb.paintPath(md,10,S_ASP,true,true);railAlong(mb,md,10,0xb9c2cc);}
 
-  w.ripple=.035;   // 잔요철 — 서스펜션이 미세하게 계속 일함
+  w.ripple=.011;   // 잔요철 — 아주 작게(꿀렁임 금지), 서스펜션 미세 작동만
   w.checkpoints=pathCheckpoints(ring,24,18);
   w.waypoints=pathWaypoints(ring,true,50);
   w.spawn={x:0,z:-60,yaw:0};
@@ -532,7 +568,9 @@ MAPS.push(
     {name:"🛣️ 순환 고속도로",x:418,z:0,yaw:0},
     {name:"⛰️ 산 정상(오르막)",x:420,z:-400,yaw:Math.PI},
     {name:"🌊 마리나 호수",x:-350,z:210,yaw:0},
-    {name:"🏘️ 교외 주택가",x:-330,z:-250,yaw:0},
+    {name:"🌀 드리프트 광장",x:-280,z:70,yaw:0},
+    {name:"🛣️ 북부 고속도로",x:0,z:430,yaw:0},
+    {name:"🏘️ 교외 주택가",x:-232,z:-235,yaw:0},
     {name:"🏭 공업지구",x:330,z:340,yaw:Math.PI},
     {name:"🏗️ 공사장 점프대",x:250,z:225,yaw:0},
     {name:"✈️ 공항 활주로",x:-120,z:-656,yaw:Math.PI/2},

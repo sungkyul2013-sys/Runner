@@ -81,7 +81,7 @@ const wheels=cen.map(c=>[+c[0].toFixed(3), +(wr).toFixed(3), +c[1].toFixed(3)]);
 console.log('wheels',JSON.stringify(wheels),'radius',wr.toFixed(3));
 
 // ---- decimate via grid clustering, strip tire geometry ----
-const CELL=0.105;  // 클러스터 셀(작을수록 고해상) — 실차 품질 우선
+const CELL=0.055;  // 클러스터 셀(작을수록 고해상) — 실차 품질 우선
 const gi=(x,y,z)=>((Math.round(x/CELL))+2048)*4194304 + ((Math.round(y/CELL))+2048)*2048 + (Math.round(z/CELL)+2048);
 // representative per cell: accumulate
 const cellMap=new Map();
@@ -106,6 +106,7 @@ const rn=(k,ni)=>{const r=cellMap.get(k);
   if(r.nn>0&&(r.nx*nx+r.ny*ny+r.nz*nz)<0)return;   // 첫 면과 반대 방향 → 무시
   r.nx+=nx;r.ny+=ny;r.nz+=nz;r.nn=(r.nn||0)+1;};
 const keptTris=[];
+const triSeen=new Set();   // 동일 셀 조합 삼각형 중복 제거(오버드로 제거 → 셀 예산을 해상도에 사용)
 for(const t of tris){
   const ax=V[t.a*3],ay=V[t.a*3+1],az=V[t.a*3+2];
   const bx=V[t.b*3],by=V[t.b*3+1],bz=V[t.b*3+2];
@@ -115,6 +116,9 @@ for(const t of tris){
   const ka=rep(t.a,t.mat),kb=rep(t.b,t.mat),kc=rep(t.c,t.mat);
   if(ka===kb||kb===kc||ka===kc)continue;   // 붕괴 삼각형 제거
   rn(ka,t.na);rn(kb,t.nb);rn(kc,t.nc);      // 원본 노멀 누적 → 스무스
+  const sk=[ka,kb,kc].sort().join(',')+'|'+t.mat;
+  if(triSeen.has(sk))continue;
+  triSeen.add(sk);
   keptTris.push([ka,kb,kc,t.mat]);
 }
 // finalize cell centroids + smooth normals

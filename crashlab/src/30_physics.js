@@ -166,8 +166,8 @@ class World{
   height(x,z){
     let h=this.baseHeight(x,z);
     if(this.bumps.length||this.potholes.length)h+=this.bumpH(x,z);
-    // 잔요철: 도로가 완전 평면이 아니게(서스펜션이 미세하게 계속 일함)
-    if(this.ripple)h+=this.ripple*(Math.sin(x*.73)*Math.sin(z*.81)+.55*Math.sin(x*1.9+1.3)*Math.cos(z*1.63+.5));
+    // 잔요철: 미세·고주파(꿀렁임 없이 서스펜션만 잘게 일함)
+    if(this.ripple)h+=this.ripple*(Math.sin(x*2.1)*Math.sin(z*2.3)+.5*Math.sin(x*4.7+1.3)*Math.cos(z*4.1+.5));
     return h;}
   normal(x,z,out){
     const e=this.cell;

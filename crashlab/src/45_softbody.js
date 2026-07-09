@@ -7,7 +7,7 @@
 class SoftLattice{
   constructor(spec,meshes){
     const hx=spec.body.hx*1.04,hy=spec.body.hy*1.04,hz=spec.body.hz*1.04;
-    const NX=7,NY=4,NZ=13;   // 잘게 자른 격자(앞뒤·좌우·바닥 세분) → 한 면이 아니라 부위별로 뜯기고 늘어남
+    const NX=8,NY=5,NZ=15;   // 고해상 격자(600노드) → 부위별 미세 주름·뜯김
     this.NX=NX;this.NY=NY;this.NZ=NZ;
     this.min=[-hx,-hy,-hz];
     this.cell=[2*hx/(NX-1),2*hy/(NY-1),2*hz/(NZ-1)];
@@ -66,7 +66,8 @@ class SoftLattice{
       for(let dk=0;dk<2;dk++)for(let dj=0;dj<2;dj++)for(let di=0;di<2;di++){
         bi[o+c]=this.idx(i+di,j+dj,k+dk);
         bw[o+c]=(di?fx:1-fx)*(dj?fy:1-fy)*(dk?fz:1-fz);c++;}}
-    this.binds.push({mesh,orig,bi,bw,vc});
+    const colAttr=mesh.geometry.attributes.color;
+    this.binds.push({mesh,orig,bi,bw,vc,col:colAttr?colAttr.array.slice():null});
   }
   impact(lp,ln,dv){
     // 현실적 방향성 크럼플:
@@ -142,7 +143,7 @@ class SoftLattice{
         const yUp=P[a+1]-H[a+1];
         if(yUp>.28)P[a+1]-=(yUp-.28)*.5;}
       // beam constraints + plasticity
-      for(let it=0;it<3;it++)
+      for(let it=0;it<4;it++)
         for(let b=0;b<this.nb;b++){
           const o=b*4,ia=B[o]*3,ib=B[o+1]*3;
           const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
@@ -163,13 +164,19 @@ class SoftLattice{
     const P=this.pos,H=this.home;
     for(const bd of this.binds){
       const arr=bd.mesh.geometry.attributes.position.array;
+      const cAttr=bd.col?bd.mesh.geometry.attributes.color:null,cArr=cAttr?cAttr.array:null;
       for(let v=0;v<bd.vc;v++){
         const o=v*8;let dx=0,dy=0,dz=0;
         for(let c=0;c<8;c++){
           const ni=bd.bi[o+c]*3,w=bd.bw[o+c];
           dx+=(P[ni]-H[ni])*w;dy+=(P[ni+1]-H[ni+1])*w;dz+=(P[ni+2]-H[ni+2])*w;}
-        arr[v*3]=bd.orig[v*3]+dx;arr[v*3+1]=bd.orig[v*3+1]+dy;arr[v*3+2]=bd.orig[v*3+2]+dz;}
+        arr[v*3]=bd.orig[v*3]+dx;arr[v*3+1]=bd.orig[v*3+1]+dy;arr[v*3+2]=bd.orig[v*3+2]+dz;
+        if(cArr){ // 구겨진 부위 도장 크리즈(음영): 변형 깊이에 비례해 어두워짐
+          const disp=Math.sqrt(dx*dx+dy*dy+dz*dz);
+          const f=disp<.02?1:Math.max(.42,1-disp*.5);
+          cArr[v*3]=bd.col[v*3]*f;cArr[v*3+1]=bd.col[v*3+1]*f;cArr[v*3+2]=bd.col[v*3+2]*f;}}
       bd.mesh.geometry.attributes.position.needsUpdate=true;
+      if(cAttr)cAttr.needsUpdate=true;
       bd.mesh.geometry.computeVertexNormals();}
   }
   totalDisp(){
@@ -185,6 +192,8 @@ class SoftLattice{
     for(const bd of this.binds){
       bd.mesh.geometry.attributes.position.array.set(bd.orig);
       bd.mesh.geometry.attributes.position.needsUpdate=true;
+      if(bd.col){bd.mesh.geometry.attributes.color.array.set(bd.col);
+        bd.mesh.geometry.attributes.color.needsUpdate=true;}
       bd.mesh.geometry.computeVertexNormals();}
     this.hot=0;this.dirty=false;
   }
