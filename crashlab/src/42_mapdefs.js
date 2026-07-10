@@ -9,14 +9,18 @@ const MAPS=[
 {id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"초대형 뱅크드 오벌·가속로·충돌벽·압착기·서스펜션 랩(대형턱·급단차·뱅크·잔요철·자갈·젖은노면·오르막턱)·힐클라임·오프로드·램프·스키드패드·낙하타워·IIHS",
  modes:["free","crash","drift"],
  build(){
-  const mb=new MapBuilder(980,288),w=mb.world;
+  const mb=new MapBuilder(1020,288),w=mb.world;
   const rough=(x,z)=>Math.hypot(x-250,z-250);          // 러프 오프로드 패치(남동)
   mb.fill((x,z)=>{
-    // 초대형 뱅크드 오벌(남측 신설): 스타디움 루프 — 바깥쪽이 높은 포물선 뱅크(최대 4.5m, 조향 보조)
-    if(z<-290){
-      const sxo=clamp(x-60,-175,175);
-      const dRing=Math.hypot(x-60-sxo,z+390)-85;       // 스타디움 중심선(턴 반경 85)까지 거리
-      if(Math.abs(dRing)<9.5){const t=(dRing+9.5)/19;return[t*t*4.5,S_ASP];}}
+    // 초대형 뱅크드 오벌(남측): 직선 440m + 턴 반경 100m.
+    // 뱅크는 조향이 필요한 턴에서만 높게(최대 7m, 설계속도 ~110km/h 무조향) — 직선은 1.2m
+    if(z<-296){
+      const sxo=clamp(x-60,-220,220);
+      const dRing=Math.hypot(x-60-sxo,z+408)-100;
+      if(Math.abs(dRing)<10.5){
+        const t=(dRing+10.5)/21;
+        const tf=clamp((Math.abs(x-60)-190)/70,0,1);   // 0 직선 → 1 턴
+        return[t*t*(1.2+5.8*tf),S_ASP];}}
     const rd=rough(x,z);
     if(rd<105){
       let h=3.6*Math.sin(x*.055)*Math.cos(z*.05)+1.8*Math.sin(x*.12+1)*Math.cos(z*.1)
@@ -144,17 +148,20 @@ const MAPS=[
   // 뱅크드 오벌 센터라인 마킹(지형 뱅크와 정확히 일치하는 해석적 스타디움 경로)
   {const ovalPts=[];
    const arc=(cx2,a0,a1)=>{for(let k=0;k<=30;k++){const a=a0+(a1-a0)*k/30;
-     ovalPts.push({x:cx2+Math.cos(a)*85,y:0,z:-390+Math.sin(a)*85});}};
-   arc(235,-Math.PI/2,Math.PI/2);                        // 우측 턴(아래→위)
-   for(let k=1;k<12;k++)ovalPts.push({x:235-k*29.2,y:0,z:-305});   // 상단 직선
-   arc(-115,Math.PI/2,Math.PI*1.5);                      // 좌측 턴
-   for(let k=1;k<12;k++)ovalPts.push({x:-115+k*29.2,y:0,z:-475});  // 하단 직선
+     ovalPts.push({x:cx2+Math.cos(a)*100,y:0,z:-408+Math.sin(a)*100});}};
+   arc(280,-Math.PI/2,Math.PI/2);                        // 우측 턴(아래→위)
+   for(let k=1;k<15;k++)ovalPts.push({x:280-k*29.3,y:0,z:-308});   // 상단 직선
+   arc(-160,Math.PI/2,Math.PI*1.5);                      // 좌측 턴
+   for(let k=1;k<15;k++)ovalPts.push({x:-160+k*29.3,y:0,z:-508});  // 하단 직선
    mb.texPath(ovalPts,.4,"rgba(244,248,252,.8)",[5,5]);
-   mb.texText(60,-390,7,"BANKED OVAL","rgba(244,248,252,.5)");}
+   mb.texText(60,-408,7,"BANKED OVAL","rgba(244,248,252,.5)");}
+  // 잔요철 존(프루빙 접근로 2곳 — 실제 도로처럼)
+  w.addRippleZone(-60,-120,42,.012,2.2,1);
+  w.addRippleZone(-260,60,38,.016,2.9,2);
   // 📍 프루빙 그라운드 시설 이동
   w.places=[
     {name:"🏁 가속로 출발",x:-140,z:-290,yaw:0},
-    {name:"🏟️ 뱅크드 오벌",x:60,z:-305,yaw:Math.PI/2},
+    {name:"🏟️ 뱅크드 오벌",x:60,z:-308,yaw:Math.PI/2},
     {name:"💥 충돌벽",x:-140,z:250,yaw:0},
     {name:"🗜️ 압착기",x:110,z:-58,yaw:0},
     {name:"🔩 서스펜션 시험장",x:180,z:-282,yaw:0},
@@ -167,10 +174,14 @@ const MAPS=[
   return mb.finalize(this);}},
 
 /* ---------- 2. 네오시티 ---------- */
-{id:"city",name:"네오시티",icon:"🏙️",desc:"대형 시가지 — 다운타운 마천루·골목·고가도로·로터리·공원·스타디움",
+{id:"city",name:"네오시티",icon:"🏙️",desc:"대형 시가지 — 다운타운 마천루·골목·고가도로·로터리·공원·스타디움·요철 구간",
  modes:["free","time","race","drift"],
  build(){
   const mb=new MapBuilder(840,256),w=mb.world;
+  // 잔요철 존(도로 일부에만, 패턴 3종 — 실제 노후 도로처럼)
+  w.addRippleZone(0,64,40,.012,2.3,1);
+  w.addRippleZone(96,-30,34,.018,2.8,2);
+  w.addRippleZone(-96,-64,38,.014,1.0,3);
   const pitch=96,half=396;
   mb.fill((x,z)=>{
     // roads on grid lines every 96m, width 16

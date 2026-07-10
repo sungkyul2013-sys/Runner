@@ -196,7 +196,8 @@ function stationLerp(st,z,key){
 
 const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:135,specular:0x9aa2ae}); // 클리어코트 광택
 const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:170,specular:0xa8b6c2,side:THREE.DoubleSide}); // 유광 클리어코트 + 양면(패널 틈 메움)
-const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8});
+const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
+  transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222,side:THREE.DoubleSide}); // 양면 → 타이어 측벽이 비쳐 보이지 않음
 let _wheelGeoCache={};
 function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부)
@@ -205,17 +206,20 @@ function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크
     const tw=Math.max(wd*.55,r*.19);
     const items=[
       // 타이어: 토러스(림이 보이는 실제 단면)
-      {geo:new THREE.TorusGeometry(r-tw,tw,9,24),color:0x0d0e10,ry:Math.PI/2,sx:1,sy:1,sz:1},
-      // 림 배럴 (건메탈)
-      {geo:new THREE.CylinderGeometry(r*.62,r*.62,wd*.7,18),color:0x1f2126,rz:Math.PI/2},
-      // 림 디쉬 (밝은 알로이 페이스)
-      {geo:new THREE.CylinderGeometry(r*.6,r*.6,wd*.72,18),color:0x454b54,rz:Math.PI/2},
-      // 림 립
-      {geo:new THREE.TorusGeometry(r*.6,r*.032,6,22),color:0xa7afb9,ry:Math.PI/2},
-      // 센터 캡
-      {geo:new THREE.CylinderGeometry(r*.13,r*.13,wd*.78,10),color:0x8f979f,rz:Math.PI/2}];
-    for(let sp=0;sp<6;sp++)
-      items.push({geo:new THREE.BoxGeometry(wd*.74,r*1.12,r*.1),color:0xa7afb9,rx:sp*Math.PI/6});
+      {geo:new THREE.TorusGeometry(r-tw,tw,10,28),color:0x0c0d0f,ry:Math.PI/2,sx:1,sy:1,sz:1},
+      // 림 배럴 (딥 건메탈)
+      {geo:new THREE.CylinderGeometry(r*.64,r*.64,wd*.66,20),color:0x17191d,rz:Math.PI/2},
+      // 림 디쉬 (다크 알로이 페이스 — AMG 스타일)
+      {geo:new THREE.CylinderGeometry(r*.62,r*.62,wd*.68,20),color:0x2c3138,rz:Math.PI/2},
+      // 폴리시드 림 립(밝은 링)
+      {geo:new THREE.TorusGeometry(r*.62,r*.03,6,26),color:0xc7ced6,ry:Math.PI/2},
+      // 센터 캡 + 허브 링
+      {geo:new THREE.CylinderGeometry(r*.12,r*.12,wd*.74,12),color:0xd8dde3,rz:Math.PI/2},
+      {geo:new THREE.TorusGeometry(r*.2,r*.02,5,16),color:0x8f979f,ry:Math.PI/2}];
+    // 트윈 5-스포크(10개, 폴리시드 페이스 + 얇은 단면)
+    for(let sp=0;sp<10;sp++){
+      const a=sp*Math.PI/5+(sp%2?.11:-.11);
+      items.push({geo:new THREE.BoxGeometry(wd*.62,r*1.16,r*.055),color:sp%2?0xb9c2cc:0xd4dae0,rx:a});}
     _wheelGeoCache[k]=mergeGeoms(items);}
   return _wheelGeoCache[k];
 }
