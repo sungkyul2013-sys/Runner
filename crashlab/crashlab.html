@@ -4909,7 +4909,7 @@ function stationLerp(st,z,key){
 const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:135,specular:0x9aa2ae}); // 클리어코트 광택
 const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:115,specular:0x7a7f88,side:THREE.DoubleSide}); // 양면 → 스캔 패널 틈이 검게 뚫려 보이지 않음(꽉 찬 외관)
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8});
-const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222});
+const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222,side:THREE.DoubleSide}); // 양면 → 타이어 측벽이 비쳐 보이지 않음
 let _wheelGeoCache={};
 function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부)
   const k=(r*100|0)+"_"+(wd*100|0);
@@ -8214,10 +8214,11 @@ function boot(){
           c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
         else if(c.id==="maybach"){                  // 마이바흐 GLS: 에어서스(실차형)
-          c.susp.k*=.78;                            // 부드러운 스프링 → 요철·포트홀 흡수
+          c.susp.k*=.84;                            // 부드러운 스프링 → 요철·포트홀 흡수
           c.susp.c*=.85;                            // 압축 댐핑 낮게 → 방지턱에서 서스가 실제로 눌림(차체로 전달 안 됨)
-          c.susp.rebMul=3.1;                        // 리바운드 댐핑 매우 강함 → 위로 튀지 않고 '딱' 끊어지는 복귀
-          c.susp.travel*=1.9;                       // 위쪽 스트로크 넉넉히 → 큰 턱도 스트로크 안에서 흡수
+          c.susp.rebMul=3.2;                        // 리바운드 댐핑 매우 강함 → 위로 튀지 않고 '딱' 끊어지는 복귀
+          c.susp.rest+=.07;                         // 에어서스 리프트: 정하중 처짐 보상 → 바퀴가 아치에 제대로 보임
+          c.susp.travel*=2.1;                       // 위쪽 스트로크 넉넉히 → 더 높은 방지턱도 스트로크 안에서 흡수
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소
         else{
           c.susp.travel*=1.2;                       // 컴포트/오프로드: 스트로크 확대(다이브·바운스)
