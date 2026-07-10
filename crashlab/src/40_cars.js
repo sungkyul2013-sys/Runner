@@ -41,7 +41,7 @@ const CARS=[
   stats:{spd:55,acc:60,grip:74,mass:64}},
  {id:"maybach",name:"메르세데스-마이바흐 GLS",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.9초",top:240,
   desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
-  model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
+  model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.16,
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
   susp:{k:60000,c:6200,travel:.22,rest:.28},arb:16000,
   engine:{maxT:640,redline:6000,idle:600},gears:[3.5,2.15,1.5,1.15,.9],final:3.9,
@@ -194,8 +194,8 @@ function stationLerp(st,z,key){
   return st[0][key];
 }
 
-const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:95,specular:0x6a7078});
-const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:115,specular:0x7a7f88});
+const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:135,specular:0x9aa2ae}); // 클리어코트 광택
+const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:115,specular:0x7a7f88,side:THREE.DoubleSide}); // 양면 → 스캔 패널 틈이 검게 뚫려 보이지 않음(꽉 찬 외관)
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8});
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222});
 let _wheelGeoCache={};
@@ -299,11 +299,15 @@ class CarVisual{
     const wg=wheelGeo(spec.wheels.radius,spec.wheels.width);
     const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
+    // 휠 아치에 꽉 끼는 시각 스케일(물리는 그대로) — 스캔 차량의 아치 개구부 충전
+    const wf=spec.wheelVisFit||1;
+    this.wheelYOff=(wf-1)*spec.wheels.radius;
     this.wheelMeshes=[];
     for(let i=0;i<4;i++){
       const m=new THREE.Mesh(wg,MAT_DETAIL);m.castShadow=true;
       const br=new THREE.Mesh(bg,MAT_DETAIL);
       const grp=new THREE.Group();grp.add(m);grp.add(br);
+      if(wf!==1)grp.scale.setScalar(wf);
       this.group.add(grp);this.wheelMeshes.push(grp);}
   }
 
@@ -390,13 +394,15 @@ class CarVisual{
         if(d>=1.45)continue;
         const w=veh.wheels[i];
         if(!w.local0)w.local0=w.local.clone();
-        // 충격 방향으로 서스펜션 마운트가 밀림(휠베이스 축소) — 물리·비주얼 모두 반영
+        // 충격 방향으로 서스펜션 마운트가 밀림(휠베이스 축소·측면은 트랙 함몰) — 물리·비주얼 모두 반영
         const push=Math.sqrt(1-d/1.45)*Math.min(.55,dv*.02);
-        w.local.x=clamp(w.local.x+imp.ln.x*push*.5,w.local0.x-.28,w.local0.x+.28);
+        w.local.x=clamp(w.local.x+imp.ln.x*push*.95,w.local0.x-.42,w.local0.x+.42);
         w.local.z=clamp(w.local.z+imp.ln.z*push,w.local0.z-.6,w.local0.z+.6);
-        // 셋백이 한계에 달한 상태에서 또 강타 → 탈락
+        // 서스펜션 기능 손상: 바퀴 강타 시 감쇠·강성 저하(주행에 실제 영향)
+        if(dv>10)veh.suspMul=Math.max(.55,(veh.suspMul||1)-dv*.004);
+        // 셋백이 한계에 달한 상태에서 또 강타 → 탈락(측면 밀림 포함)
         const sb=Math.abs(w.local.z-w.local0.z)+Math.abs(w.local.x-w.local0.x);
-        if(dv>17&&d<1.05+dv*.004&&sb>.25)this.detachWheel(i,veh,imp);}}
+        if(dv>17&&d<1.05+dv*.004&&sb>.22)this.detachWheel(i,veh,imp);}}
     // 부품 파편 스프레이: 강한 충격 시 잔해가 튀어나감(도장색+검정 혼합)
     if(dv>9&&veh.damageOn)this.sprayChunks(imp,veh,Math.min(11,(3+dv*.14)|0));
     // 유리 파손: 강충격 시 금 간 우윳빛 유리
@@ -465,7 +471,7 @@ class CarVisual{
     for(let i=0;i<4;i++){
       if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함
       const w=veh.wheels[i],m=this.wheelMeshes[i];
-      m.position.set(this.baked?(w.left?-tv:tv):w.local.x,w.visY,w.local.z);
+      m.position.set(this.baked?(w.left?-tv:tv):w.local.x,w.visY+(this.wheelYOff||0),w.local.z);
       const st=(w.front?veh.steer:0)+(w.left?-veh.toe:veh.toe)*8;
       m.rotation.set(0,st,0);
       m.children[0].rotation.x=w.spin;}

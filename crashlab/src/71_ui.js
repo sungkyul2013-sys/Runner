@@ -69,7 +69,11 @@ const UI=(()=>{
       if(typeof Showroom!=="undefined")Showroom.show(pickCar,pickColor);
       Sfx.click();car();});
     if(typeof Showroom!=="undefined")Showroom.show(pickCar,pickColor);
-    $("carNext").onclick=()=>{Sfx.click();show("map");};
+    $("carNext").onclick=()=>{Sfx.click();
+      if(pickMode==="lab"){   // 자동차 랩: 맵/옵션 단계 없이 바로 입장
+        Game.mode="lab";Game.opts.carIdx=pickCar;Game.opts.color=pickColor;
+        Game.startGame();return;}
+      show("map");};
   }
   function stat(nm,v){return '<div class="statRow"><em>'+nm+'</em><div class="bar"><i style="width:'+v+'%"></i></div></div>';}
   /* ---------- map ---------- */

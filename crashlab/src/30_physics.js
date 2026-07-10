@@ -127,6 +127,7 @@ class World{
       br2:(hw*hw+hd*hd)+1});
   }
   addPothole(x,z,r,depth){this.potholes.push({x,z,r2:r*r,r,depth});}
+  addRippleZone(x,z,r,amp,f,p){(this.rippleZones||(this.rippleZones=[])).push({x,z,r,r2:r*r,amp,f,p:p||1});}
   bumpH(x,z){
     let add=0;
     const B=this.bumps;
@@ -166,8 +167,14 @@ class World{
   height(x,z){
     let h=this.baseHeight(x,z);
     if(this.bumps.length||this.potholes.length)h+=this.bumpH(x,z);
-    // 잔요철: 미세·고주파(꿀렁임 없이 서스펜션만 잘게 일함)
-    if(this.ripple)h+=this.ripple*(Math.sin(x*2.1)*Math.sin(z*2.3)+.5*Math.sin(x*4.7+1.3)*Math.cos(z*4.1+.5));
+    // 잔요철: 전면이 아니라 '구간별 패치'로, 패턴도 구간마다 다름 (p1 미세요철·p2 워시보드·p3 완만한 물결)
+    if(this.rippleZones)for(let ri=0;ri<this.rippleZones.length;ri++){
+      const rz=this.rippleZones[ri],dx=x-rz.x,dz=z-rz.z,d2=dx*dx+dz*dz;
+      if(d2>=rz.r2)continue;
+      const w=1-Math.sqrt(d2)/rz.r;
+      h+=rz.amp*w*(rz.p===2?Math.sin(z*rz.f)*.9+Math.sin(z*rz.f*2.3)*.3:
+                   rz.p===3?Math.sin(x*rz.f+z*rz.f*.7)*Math.cos(z*rz.f*.45):
+                   Math.sin(x*rz.f)*Math.sin(z*rz.f*1.13)+.5*Math.sin(x*rz.f*2.2+1.3)*Math.cos(z*rz.f*1.9));}
     return h;}
   normal(x,z,out){
     const e=this.cell;

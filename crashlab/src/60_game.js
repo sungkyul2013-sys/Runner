@@ -25,7 +25,7 @@ const Game={
   opts:{tod:"day",damage:true,laps:3,aiCount:3,color:0,carIdx:0,mapId:"proving"},
   physMs:0,shakeT:0,trapCool:0,
   /* mode-specific */
-  crash:{phase:"idle",scen:"wall",target:0,vTarget:60,peakG:0,impactV:0,parted:0,settleT:0,hitDone:false},
+  crash:{phase:"idle",scen:"wall",target:0,vTarget:60,ang:0,off:0,peakG:0,impactV:0,parted:0,settleT:0,hitDone:false},
   drones:[],   // 시나리오용 무인 차량(차대차·샌드위치 등)
   timing:null,race:null,drift:null,
 
@@ -132,25 +132,29 @@ const Game={
     const c=this.crash,v=this.veh;
     this.vis.repair();v.clearDamage();this.clearDrones();
     const v0=c.vTarget/3.6;
+    const ang=(c.ang||0)*DEG,off=c.off||0;       // 세부 설정: 충돌 각도·위치 오프셋
     if(c.scen==="wall"){
       const L=CRASH_LANES[c.target]||CRASH_LANES[0];
-      v.reset(L.lx,Math.max(L.z-16-v0*2.2,-220),0,false);   // catapult: 즉시 목표 속도로 사출
-      v.body.vel.set(0,0,v0);
+      const z0=ang?Math.max(L.z-14-v0*1.1,-100):Math.max(L.z-16-v0*2.2,-220);
+      // 각도 사출 시 시작 x를 역보정 → 궤적이 정확히 배리어(오프셋 지점)를 통과
+      const aimX=L.lx+off-Math.tan(ang)*(L.z-2-z0);
+      v.reset(aimX,z0,ang,false);
+      v.body.vel.set(Math.sin(ang)*v0,0,Math.cos(ang)*v0);
       for(const w of v.wheels)w.omega=v0/w.radius;}
-    else if(c.scen==="head"){                    // 차대차 정면: 서로 마주보고 발사
+    else if(c.scen==="head"){                    // 차대차 정면: 서로 마주보고 발사 (램머=대형트럭)
       v.reset(-140,-40-v0*1.1,0,false);v.body.vel.set(0,0,v0);
       for(const w of v.wheels)w.omega=v0/w.radius;
-      this.spawnDrone("gt",-140,120+v0*1.1,Math.PI,c.vTarget);}
-    else if(c.scen==="tbone"){                   // 측면: 정차한 내 차 옆구리를 들이받음
+      this.spawnDrone("titan",-140+off,120+v0*1.1,Math.PI+ang,c.vTarget);}
+    else if(c.scen==="tbone"){                   // 측면: 정차한 내 차 옆구리를 대형트럭이 강타
       v.reset(-140,40,0,false);
-      this.spawnDrone("offroad",-40-v0*1.4,40,-Math.PI/2,c.vTarget);}
+      this.spawnDrone("titan",-40-v0*1.4,40+off,-Math.PI/2+ang,c.vTarget);}
     else if(c.scen==="rear"){                    // 후방 추돌
       v.reset(-140,40,0,false);
-      this.spawnDrone("gt",-140,-60-v0*1.4,0,c.vTarget);}
+      this.spawnDrone("titan",-140+off,-60-v0*1.4,ang,c.vTarget);}
     else if(c.scen==="sandwich"){                // 덤프 샌드위치: 앞뒤에서 대형트럭이 조임
       v.reset(-140,40,0,false);
-      this.spawnDrone("titan",-140,-70-v0*.9,0,c.vTarget);        // 뒤에서 전진
-      this.spawnDrone("titan",-140,150+v0*.9,Math.PI,c.vTarget);} // 앞에서 후진 방향으로 접근
+      this.spawnDrone("titan",-140+off,-70-v0*.9,ang,c.vTarget);          // 뒤에서 전진
+      this.spawnDrone("titan",-140-off,150+v0*.9,Math.PI-ang,c.vTarget);} // 앞에서 접근
     c.phase="run";c.peakG=0;c.impactV=0;c.parted=0;c.settleT=0;c.hitDone=false;
     v.peakG=0;
     toast("발사! "+c.vTarget+" km/h");Sfx.beep(660,.15,.2);},
@@ -159,9 +163,9 @@ const Game={
     if(c.phase==="run"){
       v.controlLock=true;
       if(c.scen==="wall"||c.scen==="head"){
-        // auto-drive straight
+        // auto-drive straight (각도 설정 시 조향 보정 없이 그 각도로 직진)
         const tx=-140,L=c.scen==="wall"?(CRASH_LANES[c.target]||CRASH_LANES[0]):{lx:tx};
-        v.steerIn=clamp((L.lx-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
+        v.steerIn=c.ang?0:clamp((L.lx-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
         const kmh=v.fwdSpeed()*3.6;
         v.throttle=kmh<c.vTarget?1:0;v.brake=0;v.driveMode="D";}
       else{v.throttle=0;v.brake=.25;v.steerIn=0;}   // 정차 시나리오: 제자리

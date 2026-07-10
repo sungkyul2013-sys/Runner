@@ -56,8 +56,17 @@
     <div class="row"><span style="font-size:13px;font-weight:700;color:var(--tx2)">발사 속도</span>
       <input type="range" id="crashSpeed" min="20" max="200" step="5" value="60">
       <span id="crashSpeedVal">60 km/h</span></div>
+    <div id="crashFine" style="display:none">
+      <div class="row"><span style="font-size:12px;color:var(--tx2)">충돌 각도</span>
+        <input type="range" id="crashAng" min="-30" max="30" step="1" value="0">
+        <span id="crashAngVal" style="font-size:13px;font-weight:800;color:var(--acc2);min-width:44px;text-align:right">0°</span></div>
+      <div class="row"><span style="font-size:12px;color:var(--tx2)">충돌 위치</span>
+        <input type="range" id="crashOff" min="-15" max="15" step="1" value="0">
+        <span id="crashOffVal" style="font-size:13px;font-weight:800;color:var(--acc2);min-width:44px;text-align:right">0.0m</span></div>
+    </div>
     <div class="row" style="margin-bottom:0">
       <div class="seg" id="crashTargetSeg" style="flex:1"></div>
+      <button class="btn sm" id="btnFine">⚙ 세부</button>
       <button class="btn sm" id="btnLaunch">🚀 발사</button>
     </div>
   </div>

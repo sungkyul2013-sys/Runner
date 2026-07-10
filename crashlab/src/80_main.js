@@ -184,6 +184,11 @@ function initHudButtons(){
      for(let k=0;k<scSeg.children.length;k++)scSeg.children[k].classList.toggle("sel",k===si);
      $("crashTargetSeg").style.display=SCENS[si][0]==="wall"?"":"none";
      Game.placeCrashCar();};}
+  // 크래시 세부 설정: 충돌 각도·위치
+  $("btnFine").onclick=()=>{Sfx.click();
+    const f=$("crashFine");f.style.display=f.style.display==="none"?"":"none";};
+  $("crashAng").oninput=e=>{Game.crash.ang=+e.target.value;$("crashAngVal").textContent=e.target.value+"°";};
+  $("crashOff").oninput=e=>{Game.crash.off=+e.target.value*.1;$("crashOffVal").textContent=(+e.target.value*.1).toFixed(1)+"m";};
   // 자동차 랩: 힘 슬라이더·차 넘기기·탭으로 힘 가하기
   $("labForce").oninput=e=>{$("labForceVal").textContent=e.target.value;if(Game.lab)Game.lab.force=+e.target.value;};
   $("labPrev").onclick=()=>{Sfx.click();Game.opts.carIdx=(Game.opts.carIdx-1+CARS.length)%CARS.length;Game.startGame();};
@@ -329,7 +334,7 @@ function boot(){
           c.susp.k*=.78;                            // 부드러운 스프링 → 요철·포트홀 흡수
           c.susp.c*=.85;                            // 압축 댐핑 낮게 → 방지턱에서 서스가 실제로 눌림(차체로 전달 안 됨)
           c.susp.rebMul=3.1;                        // 리바운드 댐핑 매우 강함 → 위로 튀지 않고 '딱' 끊어지는 복귀
-          c.susp.travel*=1.55;                      // 긴 스트로크 → 큰 턱도 스트로크 안에서 흡수
+          c.susp.travel*=1.9;                       // 위쪽 스트로크 넉넉히 → 큰 턱도 스트로크 안에서 흡수
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소
         else{
           c.susp.travel*=1.2;                       // 컴포트/오프로드: 스트로크 확대(다이브·바운스)

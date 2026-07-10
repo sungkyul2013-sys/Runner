@@ -558,7 +558,13 @@ MAPS.push(
   {const md=followTerrain(w,samplePath([[430,-360],[470,-300],[430,-230],[500,-180],[560,-260]],false,120));
    mb.paintPath(md,10,S_ASP,true,true);railAlong(mb,md,10,0xb9c2cc);}
 
-  w.ripple=.011;   // 잔요철 — 아주 작게(꿀렁임 금지), 서스펜션 미세 작동만
+  // 잔요철 패치: 전 도로가 아니라 일부 구간에만, 패턴 다양 (1=미세요철 2=워시보드 3=완만한 물결)
+  w.addRippleZone(0,240,60,.012,2.1,1);      // 북부 연결로: 미세 요철
+  w.addRippleZone(300,300,55,.02,2.8,2);     // 동측 순환로 부근: 워시보드
+  w.addRippleZone(-410,120,70,.016,.9,3);    // 서측 순환로: 완만한 물결
+  w.addRippleZone(90,-90,45,.01,2.4,1);      // 도심 남동 블록: 미세 요철
+  w.addRippleZone(0,-500,60,.018,2.2,2);     // 남부 고속도로: 워시보드
+  w.addRippleZone(-240,-420,55,.015,1.1,3);  // 남서 교외로: 물결
   w.checkpoints=pathCheckpoints(ring,24,18);
   w.waypoints=pathWaypoints(ring,true,50);
   w.spawn={x:0,z:-60,yaw:0};

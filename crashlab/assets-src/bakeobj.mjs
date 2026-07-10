@@ -130,13 +130,13 @@ console.log('cells',cellMap.size,'kept tris',keptTris.length);
 const pos=[],nrm=[],col=[],mask=[];
 // 헤드라이트/테일램프: 전후 끝단 외측 밴드의 비도색 셀을 램프 색으로 (재질 분리가 없는 OBJ 보완)
 let lampN=0;
-const HEAD=[236,233,206].map(srgb2lin),TAIL=[172,26,26].map(srgb2lin);
+const HEAD=[250,246,215].map(srgb2lin),TAIL=[196,24,24].map(srgb2lin);
 const lampCol=(r,mat)=>{   // 모델 원좌표는 전면=-z (인게임에서 yaw 플립)
   const ax=Math.abs(r.x);
   // 헤드라이트: 전면 코너 밴드(도색 재질 포함 — 램프 하우징이 차체 재질로 지정된 모델)
-  if(r.z<-2.52&&r.y>.78&&r.y<1.14&&ax>.46&&ax<1.04)return HEAD;
+  if(r.z<-2.46&&r.y>.74&&r.y<1.2&&ax>.42&&ax<1.1)return HEAD;
+  if(r.z>2.44&&r.y>.98&&r.y<1.26&&ax>.56&&ax<1.06)return TAIL;
   if(mat==='Polar_White'||mat==='Color_M02')return null;
-  if(r.z>2.42&&r.y>.68&&r.y<1.3&&ax>.38)return TAIL;
   return null;};
 for(const[ka,kb,kc,mat] of keptTris){
   const ra=cellMap.get(ka),rb=cellMap.get(kb),rc=cellMap.get(kc);
