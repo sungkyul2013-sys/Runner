@@ -6,12 +6,17 @@ const S_ASP=SURF_ID.asphalt,S_GRS=SURF_ID.grass,S_SND=SURF_ID.sand,S_GRV=SURF_ID
 
 const MAPS=[
 /* ---------- 1. 프루빙 그라운드 ---------- */
-{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"가속로·충돌벽·압착기·서스펜션 랩(대형턱·급단차·뱅크·잔요철·자갈·젖은노면·오르막턱)·힐클라임·오프로드·램프·스키드패드·낙하타워·IIHS",
+{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"초대형 뱅크드 오벌·가속로·충돌벽·압착기·서스펜션 랩(대형턱·급단차·뱅크·잔요철·자갈·젖은노면·오르막턱)·힐클라임·오프로드·램프·스키드패드·낙하타워·IIHS",
  modes:["free","crash","drift"],
  build(){
-  const mb=new MapBuilder(760,256),w=mb.world;
+  const mb=new MapBuilder(980,288),w=mb.world;
   const rough=(x,z)=>Math.hypot(x-250,z-250);          // 러프 오프로드 패치(남동)
   mb.fill((x,z)=>{
+    // 초대형 뱅크드 오벌(남측 신설): 스타디움 루프 — 바깥쪽이 높은 포물선 뱅크(최대 4.5m, 조향 보조)
+    if(z<-290){
+      const sxo=clamp(x-60,-175,175);
+      const dRing=Math.hypot(x-60-sxo,z+390)-85;       // 스타디움 중심선(턴 반경 85)까지 거리
+      if(Math.abs(dRing)<9.5){const t=(dRing+9.5)/19;return[t*t*4.5,S_ASP];}}
     const rd=rough(x,z);
     if(rd<105){
       let h=3.6*Math.sin(x*.055)*Math.cos(z*.05)+1.8*Math.sin(x*.12+1)*Math.cos(z*.1)
@@ -136,9 +141,20 @@ const MAPS=[
   for(let k=0;k<4;k++)mb.prop("barrel",-100+k*3,268);
   for(let k=0;k<8;k++)mb.baked(k%2?"trees":"treesTall",-350+k*95,352,11,k,{});
   w.spawn={x:-140,z:-290,yaw:0};
+  // 뱅크드 오벌 센터라인 마킹(지형 뱅크와 정확히 일치하는 해석적 스타디움 경로)
+  {const ovalPts=[];
+   const arc=(cx2,a0,a1)=>{for(let k=0;k<=30;k++){const a=a0+(a1-a0)*k/30;
+     ovalPts.push({x:cx2+Math.cos(a)*85,y:0,z:-390+Math.sin(a)*85});}};
+   arc(235,-Math.PI/2,Math.PI/2);                        // 우측 턴(아래→위)
+   for(let k=1;k<12;k++)ovalPts.push({x:235-k*29.2,y:0,z:-305});   // 상단 직선
+   arc(-115,Math.PI/2,Math.PI*1.5);                      // 좌측 턴
+   for(let k=1;k<12;k++)ovalPts.push({x:-115+k*29.2,y:0,z:-475});  // 하단 직선
+   mb.texPath(ovalPts,.4,"rgba(244,248,252,.8)",[5,5]);
+   mb.texText(60,-390,7,"BANKED OVAL","rgba(244,248,252,.5)");}
   // 📍 프루빙 그라운드 시설 이동
   w.places=[
     {name:"🏁 가속로 출발",x:-140,z:-290,yaw:0},
+    {name:"🏟️ 뱅크드 오벌",x:60,z:-305,yaw:Math.PI/2},
     {name:"💥 충돌벽",x:-140,z:250,yaw:0},
     {name:"🗜️ 압착기",x:110,z:-58,yaw:0},
     {name:"🔩 서스펜션 시험장",x:180,z:-282,yaw:0},

@@ -75,7 +75,7 @@ class SoftLattice{
     //  (2) 전역 프레임 충격 — 충격축을 따라 차 전체가 약하게 압축(뒷부분 프레임도 손상).
     // 모두 ln(충격 방향)에 따라 달라짐 → 정면/측면/후면/모서리 충돌이 각기 다르게 변형.
     // pos+prev 동시 이동(속도 0) + plast(영구 오프셋) → 스프링백 없음.
-    const sev=Math.min(1,Math.max(0,(dv-6)/50));      // 0(범프)~1(초고속)
+    const sev=Math.min(1,Math.max(0,(dv-6)/64));      // 0(범프)~1(300km/h급) — 충격량은 속도 제곱
     if(dv<1.2&&sev<=0)return;
     let lx=ln.x,ly=ln.y,lz=ln.z;const il=1/(Math.hypot(lx,ly,lz)||1);lx*=il;ly*=il;lz*=il;
     const hx=-this.min[0],hy=-this.min[1],hz=-this.min[2];
@@ -86,11 +86,11 @@ class SoftLattice{
     // 정면/후면(축≈차 길이)은 깊은 아코디언, 측면(축≈차 폭)은 도어 함몰까지만 —
     // 실차처럼 로커·루프레일이 차체를 지지해 옆에서 맞아도 차가 반으로 접히지 않음.
     const axFrac=axExt/hz;                             // 1=종방향, ~0.4=측면
-    const depth=Math.min(.3+5.4*sev,axExt*.8);         // 함몰 깊이 ≤ 구조 깊이의 80%
+    const depth=Math.min(.3+5.4*sev,axExt*.92);        // 함몰 깊이 ≤ 구조 깊이의 92%
     const RH=.55+.34*sev;                              // 수평 직교 반경(좁게 = 부딪힌 부위만)
     const RV=hy*2.3+.4;                                // 수직 반경(바닥·지붕까지)
     const crushLen=Math.min(.5+3.3*sev,axExt*1.1);     // 압축 전파 ≤ 구조 깊이
-    const gFrac=Math.min(.34,sev*.4)*(.35+.65*axFrac); // 전역 굽음: 측면 충돌엔 크게 감소
+    const gFrac=Math.min(.4,sev*sev*.34+sev*.2)*(.48+.52*axFrac); // 전역 프레임 손상: 속도 제곱 성분(고속일수록 전체가 굽음)
     const s0=-axExt*1.05;
     const P=this.pos,Q=this.prev,PL=this.plast,HM=this.home,RG=this.rag;
     for(let i=0;i<this.n;i++){
@@ -161,10 +161,13 @@ class SoftLattice{
           P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
     }
-    this.write();
+    // 메시 반영 스로틀: 2프레임에 1회(노멀은 4프레임에 1회) → 크래시 중 프레임 부드럽게
+    this._wr=(this._wr||0)+1;
+    if(this._wr&1)this.write((this._wr&3)===1);
+    this.dirty=true;   // hot 종료 시 마지막 상태 확정 기록
     return true;
   }
-  write(){
+  write(skipNormals){
     const P=this.pos,H=this.home;
     for(const bd of this.binds){
       const arr=bd.mesh.geometry.attributes.position.array;
@@ -181,7 +184,7 @@ class SoftLattice{
           cArr[v*3]=bd.col[v*3]*f;cArr[v*3+1]=bd.col[v*3+1]*f;cArr[v*3+2]=bd.col[v*3+2]*f;}}
       bd.mesh.geometry.attributes.position.needsUpdate=true;
       if(cAttr)cAttr.needsUpdate=true;
-      bd.mesh.geometry.computeVertexNormals();}
+      if(!skipNormals)bd.mesh.geometry.computeVertexNormals();}
   }
   totalDisp(){
     let s=0;

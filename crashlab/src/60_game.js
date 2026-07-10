@@ -141,25 +141,28 @@ const Game={
       v.reset(aimX,z0,ang,false);
       v.body.vel.set(Math.sin(ang)*v0,0,Math.cos(ang)*v0);
       for(const w of v.wheels)w.omega=v0/w.radius;}
-    else if(c.scen==="head"){                    // 차대차 정면: 서로 마주보고 발사 (램머=대형트럭)
-      v.reset(-140,-40-v0*1.1,0,false);v.body.vel.set(0,0,v0);
-      for(const w of v.wheels)w.omega=v0/w.radius;
-      this.spawnDrone("titan",-140+off,120+v0*1.1,Math.PI+ang,c.vTarget);}
-    else if(c.scen==="tbone"){                   // 측면: 정차한 내 차 옆구리를 대형트럭이 강타
-      v.reset(-140,40,0,false);
-      this.spawnDrone("titan",-40-v0*1.4,40+off,-Math.PI/2+ang,c.vTarget);}
-    else if(c.scen==="rear"){                    // 후방 추돌
-      v.reset(-140,40,0,false);
-      this.spawnDrone("titan",-140+off,-60-v0*1.4,ang,c.vTarget);}
-    else if(c.scen==="sandwich"){                // 덤프 샌드위치: 앞뒤에서 대형트럭이 조임
-      v.reset(-140,40,0,false);
-      this.spawnDrone("titan",-140+off,-70-v0*.9,ang,c.vTarget);          // 뒤에서 전진
-      this.spawnDrone("titan",-140-off,150+v0*.9,Math.PI-ang,c.vTarget);} // 앞에서 접근
+    else{
+      const ram=c.rammer||"titan";               // 세부 설정에서 램머 차량 선택 가능
+      if(c.scen==="head"){                       // 차대차 정면: 서로 마주보고 발사
+        v.reset(-140,-40-v0*1.1,0,false);v.body.vel.set(0,0,v0);
+        for(const w of v.wheels)w.omega=v0/w.radius;
+        this.spawnDrone(ram,-140+off,120+v0*1.1,Math.PI+ang,c.vTarget);}
+      else if(c.scen==="tbone"){                 // 측면: 정차한 내 차 옆구리를 강타
+        v.reset(-140,40,0,false);
+        this.spawnDrone(ram,-40-v0*1.4,40+off,-Math.PI/2+ang,c.vTarget);}
+      else if(c.scen==="rear"){                  // 후방 추돌
+        v.reset(-140,40,0,false);
+        this.spawnDrone(ram,-140+off,-60-v0*1.4,ang,c.vTarget);}
+      else if(c.scen==="sandwich"){              // 샌드위치: 앞뒤에서 조임
+        v.reset(-140,40,0,false);
+        this.spawnDrone(ram,-140+off,-70-v0*.9,ang,c.vTarget);
+        this.spawnDrone(ram,-140-off,150+v0*.9,Math.PI-ang,c.vTarget);}}
     c.phase="run";c.peakG=0;c.impactV=0;c.parted=0;c.settleT=0;c.hitDone=false;
     v.peakG=0;
     toast("발사! "+c.vTarget+" km/h");Sfx.beep(660,.15,.2);},
   crashStep(dt){
     const c=this.crash,v=this.veh;
+    $("crashPanel").classList.toggle("mini",c.phase!=="idle");   // 주행 중 옵션 패널 축소
     if(c.phase==="run"){
       v.controlLock=true;
       if(c.scen==="wall"||c.scen==="head"){
@@ -420,6 +423,28 @@ const Game={
     if(this.cam){const sp=this.world.spawn;
       this.cam.pos.set(p.x-Math.sin(p.yaw||0)*8,this.world.height(p.x,p.z)+4,p.z-Math.cos(p.yaw||0)*8);}
     toast("📍 "+p.name);Sfx.beep(680,.1,.14);},
+  /* ---------- 주행 중 차량 즉시 교체 ---------- */
+  swapCar(i){
+    if(this.state!=="play"||!this.veh)return;
+    const b=this.veh.body;
+    const pos=b.pos.clone(),quat=b.quat.clone(),vel=b.vel.clone(),av=b.angVel.clone();
+    this.opts.carIdx=((i%CARS.length)+CARS.length)%CARS.length;
+    const spec=CARS[this.opts.carIdx];
+    this.vis.dispose();
+    this.veh=new Vehicle(spec,this.world);
+    this.veh.damageOn=this.opts.damage||this.mode==="crash";
+    this.vis=new CarVisual(spec,spec.colors[this.opts.color%spec.colors.length]);
+    this.vis.storeHomes();scene.add(this.vis.group);
+    this.veh.reset(pos.x,pos.z,0,false);
+    b2:{const nb=this.veh.body;
+      nb.pos.copy(pos);nb.pos.y=Math.max(pos.y,this.world.height(pos.x,pos.z)+spec.wheels.radius+.4);
+      nb.quat.copy(quat);nb.vel.copy(vel);nb.angVel.copy(av);}
+    this.applyAssists(this.veh);
+    if(this.mode==="crash")this.placeCrashCar();
+    if(this.mode==="lab")showLabPanel();
+    toast("🚗 "+spec.name);Sfx.beep(880,.08,.12);
+    updateModeWidget();},
+
   /* ---------- 자동차 랩 ---------- */
   setupLab(){
     const v=this.veh;

@@ -126,6 +126,22 @@ for(const r of cellMap.values()){r.x/=r.n;r.y/=r.n;r.z/=r.n;
   const l=Math.hypot(r.nx,r.ny,r.nz)||1;r.nx/=l;r.ny/=l;r.nz/=l;}
 console.log('cells',cellMap.size,'kept tris',keptTris.length);
 
+// ---- 라플라시안 스무딩(2회, λ=0.4): 셀 클러스터 표면의 우글거림 제거 → 하나의 면처럼 매끈 ----
+{const nbm=new Map();
+ const addN=(a,b)=>{let s1=nbm.get(a);if(!s1){s1=new Set();nbm.set(a,s1);}s1.add(b);};
+ for(const[ka,kb,kc] of keptTris){addN(ka,kb);addN(kb,ka);addN(kb,kc);addN(kc,kb);addN(ka,kc);addN(kc,ka);}
+ for(let it=0;it<2;it++){
+   const nx=new Map();
+   for(const[k,r] of cellMap){
+     const ns=nbm.get(k);if(!ns||ns.size<3)continue;
+     let ax=0,ay=0,az=0,n=0;
+     for(const q of ns){const c2=cellMap.get(q);if(!c2)continue;ax+=c2.x;ay+=c2.y;az+=c2.z;n++;}
+     if(n>=3)nx.set(k,[ax/n,ay/n,az/n]);}
+   for(const[k,[ax,ay,az]] of nx){const r=cellMap.get(k);
+     r.x+=(ax-r.x)*.4;r.y+=(ay-r.y)*.4;r.z+=(az-r.z)*.4;}}
+ // 스무딩 후 노멀 재평균은 유지(원본 노멀 기반이 더 정확)
+}
+
 // build soup (non-indexed): 스무스 노멀 (셀 평균) → 매끈한 실차 표면
 const pos=[],nrm=[],col=[],mask=[];
 // 헤드라이트/테일램프: 전후 끝단 외측 밴드의 비도색 셀을 램프 색으로 (재질 분리가 없는 OBJ 보완)
@@ -134,7 +150,7 @@ const HEAD=[250,246,215].map(srgb2lin),TAIL=[196,24,24].map(srgb2lin);
 const lampCol=(r,mat)=>{   // 모델 원좌표는 전면=-z (인게임에서 yaw 플립)
   const ax=Math.abs(r.x);
   // 헤드라이트: 전면 코너 밴드(도색 재질 포함 — 램프 하우징이 차체 재질로 지정된 모델)
-  if(r.z<-2.46&&r.y>.74&&r.y<1.2&&ax>.42&&ax<1.1)return HEAD;
+  if(r.z<-2.5&&r.y>.8&&r.y<1.12&&ax>.5&&ax<1.02)return HEAD;   // 램프 포켓에 딱 맞게
   if(r.z>2.44&&r.y>.98&&r.y<1.26&&ax>.56&&ax<1.06)return TAIL;
   if(mat==='Polar_White'||mat==='Color_M02')return null;
   return null;};

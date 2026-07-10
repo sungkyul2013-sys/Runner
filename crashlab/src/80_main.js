@@ -184,11 +184,18 @@ function initHudButtons(){
      for(let k=0;k<scSeg.children.length;k++)scSeg.children[k].classList.toggle("sel",k===si);
      $("crashTargetSeg").style.display=SCENS[si][0]==="wall"?"":"none";
      Game.placeCrashCar();};}
-  // 크래시 세부 설정: 충돌 각도·위치
+  // 크래시 세부 설정: 충돌 각도·위치·상대 차량
   $("btnFine").onclick=()=>{Sfx.click();
     const f=$("crashFine");f.style.display=f.style.display==="none"?"":"none";};
   $("crashAng").oninput=e=>{Game.crash.ang=+e.target.value;$("crashAngVal").textContent=e.target.value+"°";};
   $("crashOff").oninput=e=>{Game.crash.off=+e.target.value*.1;$("crashOffVal").textContent=(+e.target.value*.1).toFixed(1)+"m";};
+  {const rs=$("crashRamSeg");
+   rs.innerHTML=CARS.map((c,i)=>'<button class="'+(c.id==="titan"?"sel":"")+'" title="'+c.name+'">'+c.icon+'</button>').join('');
+   for(let ri=0;ri<rs.children.length;ri++)rs.children[ri].onclick=()=>{
+     Sfx.click();Game.crash.rammer=CARS[ri].id;
+     for(let k=0;k<rs.children.length;k++)rs.children[k].classList.toggle("sel",k===ri);};}
+  // 주행 중 차량 즉시 교체(다음 차로 순환)
+  $("btnCarSwap").onclick=()=>{Sfx.click();Game.swapCar(Game.opts.carIdx+1);};
   // 자동차 랩: 힘 슬라이더·차 넘기기·탭으로 힘 가하기
   $("labForce").oninput=e=>{$("labForceVal").textContent=e.target.value;if(Game.lab)Game.lab.force=+e.target.value;};
   $("labPrev").onclick=()=>{Sfx.click();Game.opts.carIdx=(Game.opts.carIdx-1+CARS.length)%CARS.length;Game.startGame();};
@@ -328,6 +335,7 @@ function boot(){
         if(sport){
           c.susp.k*=1.45;                           // 스프링 강성 ↑ → 노면 그대로 전달(딱딱)
           c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
+          c.susp.rebMul=1.3;                        // 리바운드 타이트(빠르고 절도있는 복귀 — 실차 스포츠 댐퍼)
           c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
         else if(c.id==="maybach"){                  // 마이바흐 GLS: 에어서스(실차형)
