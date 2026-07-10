@@ -86,7 +86,7 @@ class SoftLattice{
     const RH=.55+.34*sev;                              // 수평 직교 반경(좁게 = 부딪힌 부위만)
     const RV=hy*2.3+.4;                                // 수직 반경(바닥·지붕까지)
     const crushLen=.5+3.3*sev;                         // 충격축 방향 압축 깊이
-    const gFrac=Math.min(.3,sev*.36);                  // 전역 프레임 충격(뒷부분·프레임도 굽음)
+    const gFrac=Math.min(.34,sev*.4);                  // 전역 프레임 충격(모든 부분이 능동적으로 굽음)
     const s0=-axExt*1.05;
     const P=this.pos,Q=this.prev,PL=this.plast,HM=this.home,RG=this.rag;
     for(let i=0;i<this.n;i++){

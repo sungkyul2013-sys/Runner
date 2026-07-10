@@ -248,6 +248,7 @@ class Vehicle{
 
     /* ----- chassis collision ----- */
     if(this._udT>0)this._udT-=dt;
+    const rigidCts=this._rigidCts||(this._rigidCts=[]);rigidCts.length=0;
     for(let i=0;i<this.hull.length;i++){
       b.localToWorld(this.hull[i],_vD);
       const ct=world.pointContact(_vD);
@@ -278,10 +279,21 @@ class Vehicle{
         const pv=13+Math.max(0,ct.depth)*70+ramV*1.6;      // 압착 강도(침투·램속도 비례)
         this.registerImpact(this.hull[i],_vD,_vC.set(0,-1,0),Math.min(46,pv)); // 월드 하방 압착
         continue;}
-      let dv=resolvePointContact(b,_vD,ct,0);
-      // 위치 보정: 임펄스만으론 절벽·벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 밀어냄
-      if(ct.depth>.03)b.pos.addScaledVector(ct.n,Math.min(ct.depth*.35,.05));
-      if(dv>1.4)this.registerImpact(this.hull[i],_vD,ct.n,dv);}
+      // 강체 접촉: 즉시 해결하지 않고 수집 → 사전 접근속도를 함께 기록.
+      // (첫 접점을 먼저 풀면 나머지 접점의 접근속도가 0이 되어, 벽에 정면으로 박아도
+      //  한쪽 모서리만 찌그러지는 순서 의존 비대칭이 생긴다. 수집 후 일괄 처리로 해결.)
+      _vG.copy(_vD).sub(b.pos);b.velAt(_vG,_vA);
+      rigidCts.push({i,wx:_vD.x,wy:_vD.y,wz:_vD.z,
+        n:{x:ct.n.x,y:ct.n.y,z:ct.n.z},depth:ct.depth,mu:ct.mu,bounce:ct.bounce,
+        vn:_vA.dot(ct.n)});}
+    for(const rc of rigidCts){
+      _vD.set(rc.wx,rc.wy,rc.wz);_vC.set(rc.n.x,rc.n.y,rc.n.z);
+      _hit.n.copy(_vC);_hit.mu=rc.mu;
+      const dv=resolvePointContact(b,_vD,{n:_vC,depth:rc.depth,mu:rc.mu,bounce:rc.bounce},0);
+      // 위치 보정: 임펄스만으론 벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 밀어냄
+      if(rc.depth>.03)b.pos.addScaledVector(_vC,Math.min(rc.depth*.35,.05));
+      const useDv=Math.max(dv,-rc.vn);   // 사전 접근속도 기준 → 모든 접점이 동일 강도로 크럼플
+      if(useDv>1.4)this.registerImpact(this.hull[rc.i],_vD,_vC,useDv);}
 
     /* ----- props ----- */
     hitProps(this);

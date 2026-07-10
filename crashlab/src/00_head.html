@@ -198,10 +198,18 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   font-size:12px;pointer-events:none!important;text-shadow:0 1px 4px #000}
 
 /* crash test panel */
-#crashPanel{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 14px);width:min(92vw,420px);
+#crashPanel,#labPanel{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 14px);width:min(92vw,420px);
   background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:none}
-#crashPanel.on{display:block}
-#crashPanel .row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+#crashPanel.on,#labPanel.on{display:block}
+#crashPanel .row,#labPanel .row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+#crashScenSeg{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
+#crashScenSeg button{flex:1;min-width:58px;font-size:11px;padding:6px 4px}
+#labStats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+#labStats .st{background:rgba(255,255,255,.05);border-radius:10px;padding:6px 8px;text-align:center}
+#labStats .st b{display:block;font-size:15px;color:var(--acc2)}
+#labStats .st span{font-size:10px;color:var(--tx2)}
+#labHint{font-size:11px;color:var(--tx2);text-align:center;margin-top:2px}
+#labForceVal{font-size:20px;font-weight:900;color:var(--acc2);min-width:56px;text-align:right}
 #crashSpeedVal{font-size:24px;font-weight:900;color:var(--acc2);min-width:112px;text-align:right;font-variant-numeric:tabular-nums}
 
 /* ---------- panels (pause / report / result) ---------- */

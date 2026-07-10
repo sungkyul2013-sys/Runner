@@ -52,6 +52,7 @@
   <button class="padBtn" id="btnHB">🅿️</button>
   <div id="ctlHint"></div>
   <div id="crashPanel">
+    <div class="seg" id="crashScenSeg"></div>
     <div class="row"><span style="font-size:13px;font-weight:700;color:var(--tx2)">발사 속도</span>
       <input type="range" id="crashSpeed" min="20" max="200" step="5" value="60">
       <span id="crashSpeedVal">60 km/h</span></div>
@@ -59,6 +60,17 @@
       <div class="seg" id="crashTargetSeg" style="flex:1"></div>
       <button class="btn sm" id="btnLaunch">🚀 발사</button>
     </div>
+  </div>
+  <div id="labPanel">
+    <div id="labStats"></div>
+    <div class="row"><span style="font-size:13px;font-weight:700;color:var(--tx2)">가하는 힘</span>
+      <input type="range" id="labForce" min="8" max="60" step="1" value="30">
+      <span id="labForceVal">30</span></div>
+    <div class="row" style="margin-bottom:0">
+      <button class="btn sm" id="labPrev">◀ 이전 차</button>
+      <button class="btn sm" id="labNext">다음 차 ▶</button>
+    </div>
+    <div id="labHint">차체를 탭 = 그 지점에 힘 · 드래그 = 회전 · 🔧 = 복원</div>
   </div>
 </div>
 

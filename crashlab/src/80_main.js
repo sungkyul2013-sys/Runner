@@ -175,6 +175,24 @@ function initHudButtons(){
     Game.crash.target=ti;
     for(let k=0;k<seg.children.length;k++)seg.children[k].classList.toggle("sel",k===ti);
     Game.placeCrashCar();};
+  // crash scenario select — 벽/차대차/측면/후방/샌드위치
+  {const scSeg=$("crashScenSeg");
+   const SCENS=[["wall","🧱 벽"],["head","🚗 차대차"],["tbone","🚙 측면"],["rear","💥 후방"],["sandwich","🚚 샌드위치"]];
+   scSeg.innerHTML=SCENS.map(([id,nm],i)=>'<button class="'+(i?'':'sel')+'">'+nm+'</button>').join('');
+   for(let si=0;si<scSeg.children.length;si++)scSeg.children[si].onclick=()=>{
+     Sfx.click();Game.crash.scen=SCENS[si][0];
+     for(let k=0;k<scSeg.children.length;k++)scSeg.children[k].classList.toggle("sel",k===si);
+     $("crashTargetSeg").style.display=SCENS[si][0]==="wall"?"":"none";
+     Game.placeCrashCar();};}
+  // 자동차 랩: 힘 슬라이더·차 넘기기·탭으로 힘 가하기
+  $("labForce").oninput=e=>{$("labForceVal").textContent=e.target.value;if(Game.lab)Game.lab.force=+e.target.value;};
+  $("labPrev").onclick=()=>{Sfx.click();Game.opts.carIdx=(Game.opts.carIdx-1+CARS.length)%CARS.length;Game.startGame();};
+  $("labNext").onclick=()=>{Sfx.click();Game.opts.carIdx=(Game.opts.carIdx+1)%CARS.length;Game.startGame();};
+  {const gl=$("gl");let px0=0,py0=0,mv=0;
+   gl.addEventListener("pointerdown",e=>{px0=e.clientX;py0=e.clientY;mv=0;});
+   gl.addEventListener("pointermove",e=>{mv=Math.max(mv,Math.hypot(e.clientX-px0,e.clientY-py0));});
+   gl.addEventListener("pointerup",e=>{
+     if(Game.mode==="lab"&&Game.state==="play"&&mv<9)Game.labPoke(e.clientX,e.clientY);});}
   $("ctlHint").textContent="";
 }
 
@@ -307,11 +325,11 @@ function boot(){
           c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
           c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
-        else if(c.id==="maybach"){                  // 마이바흐 GLS: 에어서스(실차형) — 흡수는 부드럽게, 복귀는 절도있게
-          c.susp.k*=.8;                             // 부드러운 스프링 → 요철·포트홀 흡수
-          c.susp.c*=1.5;                            // 압축 댐핑: 충격은 삼키고
-          c.susp.rebMul=2.6;                        // 리바운드 댐핑 매우 강함 → 위로 튀지 않고 '딱' 끊어지는 복귀
-          c.susp.travel*=1.4;                       // 긴 스트로크
+        else if(c.id==="maybach"){                  // 마이바흐 GLS: 에어서스(실차형)
+          c.susp.k*=.78;                            // 부드러운 스프링 → 요철·포트홀 흡수
+          c.susp.c*=.85;                            // 압축 댐핑 낮게 → 방지턱에서 서스가 실제로 눌림(차체로 전달 안 됨)
+          c.susp.rebMul=3.1;                        // 리바운드 댐핑 매우 강함 → 위로 튀지 않고 '딱' 끊어지는 복귀
+          c.susp.travel*=1.55;                      // 긴 스트로크 → 큰 턱도 스트로크 안에서 흡수
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소
         else{
           c.susp.travel*=1.2;                       // 컴포트/오프로드: 스트로크 확대(다이브·바운스)

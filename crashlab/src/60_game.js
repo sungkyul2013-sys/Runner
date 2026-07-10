@@ -3,7 +3,8 @@
    ============================================================ */
 const MODES=[
  {id:"free", name:"자유주행",icon:"🚗",desc:"모든 맵 × 모든 차량. 손상·시간대 설정 자유."},
- {id:"crash",name:"크래시 테스트",icon:"💥",desc:"발사 속도를 정하고 벽에 충돌 — 슬로모 리플레이와 손상 리포트."},
+ {id:"crash",name:"크래시 테스트",icon:"💥",desc:"벽·차대차·측면·후방·샌드위치 — 5가지 시나리오, 슬로모 리플레이와 손상 리포트."},
+ {id:"lab",  name:"자동차 랩",icon:"🔬",desc:"차량 스펙·디자인 감상 + 원하는 지점을 눌러 힘을 가하는 변형 실험."},
  {id:"time", name:"타임어택",icon:"⏱️",desc:"랩타임 · 섹터 기록. 개인 베스트 영구 저장."},
  {id:"race", name:"AI 레이스",icon:"🏆",desc:"AI 3~5대와 접전. AI 차량에도 손상 물리 적용."},
  {id:"drift",name:"드리프트 스코어",icon:"🌀",desc:"각도×속도×콤보. 벽 스침 보너스, 스핀하면 콤보 소멸."},
@@ -24,11 +25,13 @@ const Game={
   opts:{tod:"day",damage:true,laps:3,aiCount:3,color:0,carIdx:0,mapId:"proving"},
   physMs:0,shakeT:0,trapCool:0,
   /* mode-specific */
-  crash:{phase:"idle",target:0,vTarget:60,peakG:0,impactV:0,parted:0,settleT:0,hitDone:false},
+  crash:{phase:"idle",scen:"wall",target:0,vTarget:60,peakG:0,impactV:0,parted:0,settleT:0,hitDone:false},
+  drones:[],   // 시나리오용 무인 차량(차대차·샌드위치 등)
   timing:null,race:null,drift:null,
 
   startGame(){
     const o=this.opts;
+    if(this.mode==="lab")o.mapId="proving";   // 랩은 프루빙 스키드패드를 쇼룸으로 사용
     // build map
     if(this.mapGroup){scene.remove(this.mapGroup);disposeGroup(this.mapGroup);}
     let built;
@@ -54,10 +57,12 @@ const Game={
     // AI
     for(const a of this.ais)a.vis.dispose();
     this.ais=[];
+    this.clearDrones();
     if(this.mode==="race")this.setupRace();
     if(this.mode==="time")this.setupTiming();
     if(this.mode==="drift")this.drift={score:0,run:0,combo:1,driftT:0,idleT:0,best:getRec("drift|"+o.mapId)||0,wallBonus:false};
     if(this.mode==="crash"){this.crash.phase="idle";this.crash.vTarget=parseInt($("crashSpeed").value);this.placeCrashCar();}
+    if(this.mode==="lab")this.setupLab();
     Fx.reset();resetProps(this.world);
     buildMinimap();
     Store.set("lastPlay",{mode:this.mode,carIdx:o.carIdx,mapId:o.mapId,color:o.color,tod:o.tod});
@@ -70,11 +75,16 @@ const Game={
     $("menu").classList.remove("on");$("hud").classList.add("on");$("editorScr").classList.remove("on");
     $("pausePanel").classList.remove("on");$("reportPanel").classList.remove("on");$("resultPanel").classList.remove("on");
     $("crashPanel").classList.toggle("on",this.mode==="crash");
-    $("speedo").style.display=this.mode==="crash"?"none":"";
-    $("minimap").style.display=(this.mode==="crash"||$("minimap").dataset.off==="1")?"none":"";
+    $("labPanel").classList.toggle("on",this.mode==="lab");
+    const noDrive=this.mode==="crash"||this.mode==="lab";
+    $("speedo").style.display=noDrive?"none":"";
+    $("ctlL").style.display=this.mode==="lab"?"none":"";
+    $("ctlR").style.display=this.mode==="lab"?"none":"";
+    $("btnHB").style.display=this.mode==="lab"?"none":"";
+    $("minimap").style.display=(noDrive||$("minimap").dataset.off==="1")?"none":"";
     $("btnMap").classList.toggle("on",$("minimap").dataset.off==="1");
-    $("btnRepair").style.display=(this.mode==="free"||this.mode==="crash"||this.mode==="drift")?"":"none";
-    $("btnPlaces").style.display=(this.world.places&&this.mode!=="crash")?"":"none";
+    $("btnRepair").style.display=(this.mode==="free"||this.mode==="crash"||this.mode==="drift"||this.mode==="lab")?"":"none";
+    $("btnPlaces").style.display=(this.world.places&&!noDrive)?"":"none";
     $("placesPanel").classList.remove("on");
     Sfx.resume();
     updateModeWidget();
@@ -93,32 +103,74 @@ const Game={
     UI.show("home");},
 
   /* ---------- crash test ---------- */
+  spawnDrone(carId,x,z,yaw,kmh){
+    const spec=CARS.find(cc=>cc.id===carId)||CARS[1];
+    const veh=new Vehicle(spec,this.world);
+    veh.isAI=true;veh.isDrone=true;veh.damageOn=true;
+    veh.assists.abs=veh.assists.tcs=veh.assists.ctr=veh.assists.stab=true;
+    veh.reset(x,z,yaw);
+    if(kmh){const v0=kmh/3.6;
+      veh.body.vel.set(Math.sin(yaw)*v0,0,Math.cos(yaw)*v0);
+      for(const w of veh.wheels)w.omega=v0/w.radius;}
+    const vis=new CarVisual(spec,spec.colors[1%spec.colors.length]);
+    vis.storeHomes();scene.add(vis.group);
+    const d={veh,vis,go:!!kmh};
+    this.drones.push(d);return d;},
+  clearDrones(){for(const d of this.drones)d.vis.dispose();this.drones.length=0;},
   placeCrashCar(){
-    const L=CRASH_LANES[this.crash.target]||CRASH_LANES[0];
-    this.veh.reset(L.lx,L.z-70,0,false);this.vis.repair();
-    this.crash.phase="idle";
+    this.clearDrones();
+    const c=this.crash;
+    if(c.scen==="wall"){
+      const L=CRASH_LANES[c.target]||CRASH_LANES[0];
+      this.veh.reset(L.lx,L.z-70,0,false);}
+    else if(c.scen==="head")this.veh.reset(-140,-80,0,false);
+    else this.veh.reset(-140,40,0,false);        // 정차(피충돌) 시나리오
+    this.vis.repair();this.veh.clearDamage();
+    c.phase="idle";
     updateModeWidget();},
   launch(){
     const c=this.crash,v=this.veh;
-    this.vis.repair();v.clearDamage();
+    this.vis.repair();v.clearDamage();this.clearDrones();
     const v0=c.vTarget/3.6;
-    const L=CRASH_LANES[c.target]||CRASH_LANES[0];
-    v.reset(L.lx,Math.max(L.z-16-v0*2.2,-220),0,false);   // catapult: 즉시 목표 속도로 사출
-    v.body.vel.set(0,0,v0);
-    for(const w of v.wheels)w.omega=v0/w.radius;
+    if(c.scen==="wall"){
+      const L=CRASH_LANES[c.target]||CRASH_LANES[0];
+      v.reset(L.lx,Math.max(L.z-16-v0*2.2,-220),0,false);   // catapult: 즉시 목표 속도로 사출
+      v.body.vel.set(0,0,v0);
+      for(const w of v.wheels)w.omega=v0/w.radius;}
+    else if(c.scen==="head"){                    // 차대차 정면: 서로 마주보고 발사
+      v.reset(-140,-40-v0*1.1,0,false);v.body.vel.set(0,0,v0);
+      for(const w of v.wheels)w.omega=v0/w.radius;
+      this.spawnDrone("gt",-140,120+v0*1.1,Math.PI,c.vTarget);}
+    else if(c.scen==="tbone"){                   // 측면: 정차한 내 차 옆구리를 들이받음
+      v.reset(-140,40,0,false);
+      this.spawnDrone("offroad",-40-v0*1.4,40,-Math.PI/2,c.vTarget);}
+    else if(c.scen==="rear"){                    // 후방 추돌
+      v.reset(-140,40,0,false);
+      this.spawnDrone("gt",-140,-60-v0*1.4,0,c.vTarget);}
+    else if(c.scen==="sandwich"){                // 덤프 샌드위치: 양쪽에서 대형트럭
+      v.reset(-140,40,0,false);
+      this.spawnDrone("titan",-190-v0*.8,40,Math.PI/2,c.vTarget);
+      this.spawnDrone("titan",-90+v0*.8,40,-Math.PI/2,c.vTarget);}
     c.phase="run";c.peakG=0;c.impactV=0;c.parted=0;c.settleT=0;c.hitDone=false;
     v.peakG=0;
     toast("발사! "+c.vTarget+" km/h");Sfx.beep(660,.15,.2);},
   crashStep(dt){
     const c=this.crash,v=this.veh;
     if(c.phase==="run"){
-      // auto-drive straight
       v.controlLock=true;
-      const L=CRASH_LANES[c.target]||CRASH_LANES[0];
-      v.steerIn=clamp((L.lx-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
-      const kmh=v.fwdSpeed()*3.6;
-      v.throttle=kmh<c.vTarget?1:0;v.brake=0;v.driveMode="D";
-      if(c.hitDone){c.phase="settle";c.settleT=0;}
+      if(c.scen==="wall"||c.scen==="head"){
+        // auto-drive straight
+        const tx=-140,L=c.scen==="wall"?(CRASH_LANES[c.target]||CRASH_LANES[0]):{lx:tx};
+        v.steerIn=clamp((L.lx-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
+        const kmh=v.fwdSpeed()*3.6;
+        v.throttle=kmh<c.vTarget?1:0;v.brake=0;v.driveMode="D";}
+      else{v.throttle=0;v.brake=.25;v.steerIn=0;}   // 정차 시나리오: 제자리
+      for(const d of this.drones)if(d.go){          // 드론: 전속 직진, 명중 후 브레이크
+        d.veh.controlLock=true;d.veh.driveMode="D";
+        d.veh.throttle=(d.veh.speed*3.6<c.vTarget)?1:0;d.veh.brake=0;
+        if(c.hitDone){d.go=false;}}
+      if(c.hitDone){c.phase="settle";c.settleT=0;
+        for(const d of this.drones)d.go=false;}
     }else if(c.phase==="settle"){
       v.controlLock=true;v.throttle=0;v.brake=.4;
       c.settleT+=dt;
@@ -259,12 +311,16 @@ const Game={
     if(this.world.movers.length)this.world.stepMovers(dt);   // 압착기 등 애니메이션 장애물
     v.step(dt);
     for(const a of this.ais){stepAI(a,this.world,dt);a.veh.step(dt);}
+    for(const d of this.drones){
+      if(!d.go){d.veh.throttle=0;d.veh.brake=1;}
+      d.veh.step(dt);}
     // car-car collisions
-    const all=[v,...this.ais.map(a=>a.veh)];
+    const all=[v,...this.ais.map(a=>a.veh),...this.drones.map(d=>d.veh)];
     for(let i=0;i<all.length;i++)for(let j=i+1;j<all.length;j++)collideCars(all[i],all[j]);
     stepProps(this.world,dt);
     // world bounds / fall (안정성 4)
     for(const cv of all){
+      if(cv.isDrone)continue;
       const p=cv.body.pos;
       if(p.y<-50||Math.abs(p.x)>this.world.bounds+40||Math.abs(p.z)>this.world.bounds+40){
         const sp=this.world.spawn;
@@ -292,8 +348,10 @@ const Game={
       // consume impacts → deform + fx
       this.consumeImpacts(this.veh,this.vis,true);
       for(const a of this.ais)this.consumeImpacts(a.veh,a.vis,false);
+      for(const d of this.drones)this.consumeImpacts(d.veh,d.vis,false);
       this.vis.updateDeforms(dt*ts);
       for(const a of this.ais)a.vis.updateDeforms(dt*ts);
+      for(const d of this.drones)d.vis.updateDeforms(dt*ts);
       // wheels fx + sound
       this.wheelFx(dt*ts);
       Fx.step(dt*ts,this.world);
@@ -311,6 +369,7 @@ const Game={
       camera.fov+=(tgtFov-camera.fov)*Math.min(1,dt*3);camera.updateProjectionMatrix();}
     this.vis.sync(this.veh,this.shakeT);
     for(const a of this.ais)a.vis.sync(a.veh,0);
+    for(const d of this.drones)d.vis.sync(d.veh,0);
     if(this.shakeT>0)this.shakeT-=dt;
     updateHUD(dt);
   },
@@ -357,6 +416,40 @@ const Game={
     if(this.cam){const sp=this.world.spawn;
       this.cam.pos.set(p.x-Math.sin(p.yaw||0)*8,this.world.height(p.x,p.z)+4,p.z-Math.cos(p.yaw||0)*8);}
     toast("📍 "+p.name);Sfx.beep(680,.1,.14);},
+  /* ---------- 자동차 랩 ---------- */
+  setupLab(){
+    const v=this.veh;
+    v.reset(-250,-150,Math.PI*.22,false);      // 스키드패드 = 쇼룸 무대
+    v.controlLock=true;v.damageOn=true;
+    this.cam.mode="orbit";this.cam.dist=7;
+    this.lab={force:30};
+    showLabPanel();},
+  labPoke(px,py){                              // 화면 탭 → 차체 그 지점에 힘 가하기
+    if(this.mode!=="lab"||!this.veh)return;
+    const b=this.veh.body;
+    const nx=px/innerWidth*2-1,ny=1-py/innerHeight*2;
+    const p0=new THREE.Vector3(nx,ny,-1).unproject(camera);
+    const p1=new THREE.Vector3(nx,ny,1).unproject(camera);
+    const rd=p1.sub(p0).normalize();
+    // 레이 → 차체 OBB 슬랩 교차(로컬)
+    const ro=b.worldToLocal(p0,new THREE.Vector3());
+    b.vecToLocal(rd,_vA);const ld=_vA.clone();
+    const h=b.half;let t0=0,t1=1e9;
+    for(const[ax,he]of[["x",h.x],["y",h.y],["z",h.z]]){
+      const o=ro[ax],d=ld[ax];
+      if(Math.abs(d)<1e-8){if(Math.abs(o)>he)return;continue;}
+      let ta=(-he-o)/d,tb=(he-o)/d;if(ta>tb){const tmp=ta;ta=tb;tb=tmp;}
+      t0=Math.max(t0,ta);t1=Math.min(t1,tb);if(t0>t1)return;}
+    const lp=ro.clone().addScaledVector(ld,t0);         // 로컬 접점
+    const ln=ld.clone().negate();                        // 충격 방향(누르는 쪽)
+    const dv=this.lab.force;
+    const wp=new THREE.Vector3(lp.x,lp.y,lp.z);b.localToWorld(lp,wp);
+    this.vis.applyImpact({lp,ln:ln.negate(),wp,dv,soft:false},this.veh);  // 시각 크럼플 파이프라인 전체
+    this.veh.addDamage(lp,dv*.5);
+    b.vecToWorld(ln.negate(),_vA);
+    Fx.impactFx(wp,_vA,dv);
+    Sfx.crash?Sfx.crash(dv/40):Sfx.beep(180,.1,.3);
+    this.slowmoT=Math.max(this.slowmoT,.4);},
   repairSilent(){this.veh.clearDamage();this.vis.repair();},
   repair(){
     if(this.veh.isFlipped())this.veh.uprightInPlace();   // 전복 시 정위치 복원
@@ -523,6 +616,16 @@ let _bigT=null;
 function bigMsg(msg,ms,sub){
   const el=$("bigMsg");el.innerHTML=esc(String(msg))+(sub?"<small>"+esc(sub)+"</small>":"");
   el.classList.add("on");clearTimeout(_bigT);_bigT=setTimeout(()=>el.classList.remove("on"),ms||900);}
+
+/* ---------- 자동차 랩 패널 ---------- */
+function showLabPanel(){
+  const s=Game.veh.spec;
+  const st=(v,l)=>'<div class="st"><b>'+v+'</b><span>'+l+'</span></div>';
+  $("labStats").innerHTML=
+    st(s.hp+"hp","최고출력")+st(s.mass+"kg","공차중량")+st(s.drive,"구동방식")+
+    st(s.top+" km/h","최고속도")+st(s.acc,"0→100")+st((s.body.hz*2).toFixed(1)+" m","전장");
+  $("labForce").value=Game.lab.force;$("labForceVal").textContent=Game.lab.force;
+}
 
 /* ---------- crash report ---------- */
 function showCrashReport(){

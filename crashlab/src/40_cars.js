@@ -261,7 +261,7 @@ function restoreGeo(mesh){
 /* ---------- car visual ---------- */
 class CarVisual{
   constructor(spec,colorHex){
-    this.spec=spec;
+    this.spec=spec;this.colorHex=colorHex;
     this.group=new THREE.Group();
     this.baked=(typeof BAKED!=="undefined")&&BAKED[spec.model]||null;
     if(this.baked)this.buildBaked(spec,colorHex);
@@ -378,7 +378,7 @@ class CarVisual{
       deformGeo(p,imp.lp,imp.ln,d,R,.62);
       _vA.copy(imp.lp).sub(p.position);
       if(_vA.length()<R+.5){
-        this.partHp[k]-=dv*.028*(k==="fb"||k==="rb"?1.6:(k==="ml"||k==="mr")?3:1);
+        this.partHp[k]-=dv*.042*(k==="fb"||k==="rb"?1.6:(k==="ml"||k==="mr")?3:1);
         if(this.partHp[k]<=0&&veh.damageOn)this.detachPart(k,veh,imp);}}
     // 바퀴: 충격과 함께 뒤로 밀려나고(휠 셋백), 아주 강한 충격이면 탈락
     if(dv>7&&veh.damageOn&&this.wheelOff){
@@ -397,8 +397,8 @@ class CarVisual{
         // 셋백이 한계에 달한 상태에서 또 강타 → 탈락
         const sb=Math.abs(w.local.z-w.local0.z)+Math.abs(w.local.x-w.local0.x);
         if(dv>17&&d<1.05+dv*.004&&sb>.25)this.detachWheel(i,veh,imp);}}
-    // 부품 파편 스프레이: 강한 충격 시 잔해가 튀어나감
-    if(dv>12&&veh.damageOn)this.sprayChunks(imp,veh,Math.min(7,(2+dv*.09)|0));
+    // 부품 파편 스프레이: 강한 충격 시 잔해가 튀어나감(도장색+검정 혼합)
+    if(dv>9&&veh.damageOn)this.sprayChunks(imp,veh,Math.min(11,(3+dv*.14)|0));
     // 유리 파손: 강충격 시 금 간 우윳빛 유리
     if(dv>13&&veh.damageOn&&this.glassMesh&&!this._glassCracked){
       this._glassCracked=true;
@@ -409,10 +409,14 @@ class CarVisual{
   }
   sprayChunks(imp,veh,count){
     if(!CarVisual._chunkGeo)CarVisual._chunkGeo=new THREE.BoxGeometry(.15,.05,.2);
+    if(!CarVisual._chunkGeoS)CarVisual._chunkGeoS=new THREE.BoxGeometry(.08,.03,.1);
+    if(!this._paintMat)this._paintMat=new THREE.MeshPhongMaterial({color:this.colorHex||0x999999,shininess:80});
     for(let c=0;c<count;c++){
-      const m=new THREE.Mesh(CarVisual._chunkGeo,MAT_DETAIL);
+      const m=new THREE.Mesh(c%2?CarVisual._chunkGeoS:CarVisual._chunkGeo,
+        c%3===0?MAT_DETAIL:this._paintMat);   // 도장 파편 + 검정 부품 혼합
       m.position.copy(imp.wp);
-      m.position.x+=(Math.random()-.5)*.5;m.position.y+=Math.random()*.4;m.position.z+=(Math.random()-.5)*.5;
+      m.position.x+=(Math.random()-.5)*.6;m.position.y+=Math.random()*.5;m.position.z+=(Math.random()-.5)*.6;
+      m.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3);
       Fx.addDebris(m,veh,imp);}
   }
   detachWheel(i,veh,imp){

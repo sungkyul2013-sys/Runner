@@ -128,12 +128,26 @@ console.log('cells',cellMap.size,'kept tris',keptTris.length);
 
 // build soup (non-indexed): 스무스 노멀 (셀 평균) → 매끈한 실차 표면
 const pos=[],nrm=[],col=[],mask=[];
+// 헤드라이트/테일램프: 전후 끝단 외측 밴드의 비도색 셀을 램프 색으로 (재질 분리가 없는 OBJ 보완)
+let lampN=0;
+const HEAD=[236,233,206].map(srgb2lin),TAIL=[172,26,26].map(srgb2lin);
+const lampCol=(r,mat)=>{   // 모델 원좌표는 전면=-z (인게임에서 yaw 플립)
+  const ax=Math.abs(r.x);
+  // 헤드라이트: 전면 코너 밴드(도색 재질 포함 — 램프 하우징이 차체 재질로 지정된 모델)
+  if(r.z<-2.52&&r.y>.78&&r.y<1.14&&ax>.46&&ax<1.04)return HEAD;
+  if(mat==='Polar_White'||mat==='Color_M02')return null;
+  if(r.z>2.42&&r.y>.68&&r.y<1.3&&ax>.38)return TAIL;
+  return null;};
 for(const[ka,kb,kc,mat] of keptTris){
   const ra=cellMap.get(ka),rb=cellMap.get(kb),rc=cellMap.get(kc);
   const m=MAT[mat]||MAT.Interior;
-  for(const r of[ra,rb,rc]){pos.push(r.x,r.y,r.z);nrm.push(r.nx,r.ny,r.nz);col.push(m.c[0],m.c[1],m.c[2]);mask.push(m.paint);}
+  for(const r of[ra,rb,rc]){
+    const lc=lampCol(r,mat)||m.c;
+    if(lc!==m.c)lampN++;
+    pos.push(r.x,r.y,r.z);nrm.push(r.nx,r.ny,r.nz);col.push(lc[0],lc[1],lc[2]);
+    mask.push(lc===m.c?m.paint:0);}   // 램프 셀은 도색 마스크 해제(리틴트로 덮어써지지 않게)
 }
-console.log('soup verts',pos.length/3);
+console.log('soup verts',pos.length/3,'lamp verts',lampN);
 
 // ---- quantize (matches Assets decoder) ----
 function quantize(pos,nrm,col,mask){
