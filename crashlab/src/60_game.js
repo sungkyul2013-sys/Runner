@@ -147,10 +147,10 @@ const Game={
     else if(c.scen==="rear"){                    // 후방 추돌
       v.reset(-140,40,0,false);
       this.spawnDrone("gt",-140,-60-v0*1.4,0,c.vTarget);}
-    else if(c.scen==="sandwich"){                // 덤프 샌드위치: 양쪽에서 대형트럭
+    else if(c.scen==="sandwich"){                // 덤프 샌드위치: 앞뒤에서 대형트럭이 조임
       v.reset(-140,40,0,false);
-      this.spawnDrone("titan",-190-v0*.8,40,Math.PI/2,c.vTarget);
-      this.spawnDrone("titan",-90+v0*.8,40,-Math.PI/2,c.vTarget);}
+      this.spawnDrone("titan",-140,-70-v0*.9,0,c.vTarget);        // 뒤에서 전진
+      this.spawnDrone("titan",-140,150+v0*.9,Math.PI,c.vTarget);} // 앞에서 후진 방향으로 접근
     c.phase="run";c.peakG=0;c.impactV=0;c.parted=0;c.settleT=0;c.hitDone=false;
     v.peakG=0;
     toast("발사! "+c.vTarget+" km/h");Sfx.beep(660,.15,.2);},

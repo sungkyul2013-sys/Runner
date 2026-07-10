@@ -82,11 +82,15 @@ class SoftLattice{
     const axExt=Math.abs(lx)*hx+Math.abs(ly)*hy+Math.abs(lz)*hz||hz; // 충격축 반경
     // 이방성 국소 크럼플: 충격축(깊이) 방향으로 파고들되, 좌우(수평 직교)는 좁게 국소화
     // → 스몰오버랩은 부딪힌 쪽(왼쪽 코너)만 파이고, 수직은 바닥(언더바디)까지 도달.
-    const depth=.3+5.4*sev;                            // 접점 함몰 깊이
+    // 축 인지 물리: 충격축의 구조 깊이(axExt)가 변형 한계를 정한다.
+    // 정면/후면(축≈차 길이)은 깊은 아코디언, 측면(축≈차 폭)은 도어 함몰까지만 —
+    // 실차처럼 로커·루프레일이 차체를 지지해 옆에서 맞아도 차가 반으로 접히지 않음.
+    const axFrac=axExt/hz;                             // 1=종방향, ~0.4=측면
+    const depth=Math.min(.3+5.4*sev,axExt*.8);         // 함몰 깊이 ≤ 구조 깊이의 80%
     const RH=.55+.34*sev;                              // 수평 직교 반경(좁게 = 부딪힌 부위만)
     const RV=hy*2.3+.4;                                // 수직 반경(바닥·지붕까지)
-    const crushLen=.5+3.3*sev;                         // 충격축 방향 압축 깊이
-    const gFrac=Math.min(.34,sev*.4);                  // 전역 프레임 충격(모든 부분이 능동적으로 굽음)
+    const crushLen=Math.min(.5+3.3*sev,axExt*1.1);     // 압축 전파 ≤ 구조 깊이
+    const gFrac=Math.min(.34,sev*.4)*(.35+.65*axFrac); // 전역 굽음: 측면 충돌엔 크게 감소
     const s0=-axExt*1.05;
     const P=this.pos,Q=this.prev,PL=this.plast,HM=this.home,RG=this.rag;
     for(let i=0;i<this.n;i++){
