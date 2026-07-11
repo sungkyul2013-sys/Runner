@@ -145,6 +145,7 @@ const UI=(()=>{
       tgl2("카메라 셰이크","camShake",S.camShake)+
       tgl2("그림자","shadows",S.shadows)+
       tgl2("자동 슬로모션 (강한 충돌 시)","autoSlowmo",S.autoSlowmo)+
+      tgl2("충돌 리포트 자동 표시","autoReport",S.autoReport!==false)+
       tgl2("디버그 오버레이 (FPS·슬립각·접지력)","debug",S.debug)+
       '<div class="btnRow"><button class="btn danger sm" id="wipe">저장 데이터 초기화</button></div>';
     body().querySelectorAll("[data-seg]").forEach(b=>b.onclick=()=>{

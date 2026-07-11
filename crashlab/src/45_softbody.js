@@ -86,7 +86,9 @@ class SoftLattice{
     // 정면/후면(축≈차 길이)은 깊은 아코디언, 측면(축≈차 폭)은 도어 함몰까지만 —
     // 실차처럼 로커·루프레일이 차체를 지지해 옆에서 맞아도 차가 반으로 접히지 않음.
     const axFrac=axExt/hz;                             // 1=종방향, ~0.4=측면
-    const depth=Math.min(.3+5.4*sev,axExt*.92);        // 함몰 깊이 ≤ 구조 깊이의 92%
+    // 위에서 내리누르는 충격(전복 착지·낙하물·폴 위 구름): 루프는 필러가 꺾이며 깊게 주저앉음
+    const topHit=ly<-.3;
+    const depth=Math.min(.3+5.4*sev,axExt*(topHit?1.4:.92)); // 함몰 깊이 ≤ 구조 깊이(루프는 벨트라인까지 허용)
     const RH=.55+.34*sev;                              // 수평 직교 반경(좁게 = 부딪힌 부위만)
     const RV=hy*2.3+.4;                                // 수직 반경(바닥·지붕까지)
     const crushLen=Math.min(.5+3.3*sev,axExt*1.1);     // 압축 전파 ≤ 구조 깊이

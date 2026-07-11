@@ -647,13 +647,16 @@ function updateModeWidget(){
       (D.wallBonus?" 🔥벽보너스":"")+' · 베스트 '+(D.best|0)+'</div>';}
   else if(m==="crash"){
     const c=Game.crash;
+    const scN={wall:"🧱 벽",head:"🚗 차대차",tbone:"🚙 측면",rear:"💥 후방",sandwich:"🚚 샌드위치",pole:"🗼 측면 폴"}[c.scen]||c.scen;
     el.innerHTML='<div class="big">'+(c.phase==="run"?(Game.veh.speed*3.6|0)+' km/h':'대기')+'</div>'+
-      '<div class="sub">'+(c.phase==="run"?"주행 중… 피크 "+(Game.veh.peakG|0)+"G":
-        c.phase!=="idle"?"피크 "+(Game.veh.peakG|0)+"G · 변형 "+Game.vis.defVol.toFixed(1):"속도 설정 후 발사")+'</div>';}
+      '<div class="sub">'+scN+' · '+(c.phase==="run"?"주행 중… 피크 "+(Game.veh.peakG|0)+"G":
+        c.phase!=="idle"?"피크 "+(Game.veh.peakG|0)+"G · 변형 "+Game.vis.defVol.toFixed(1):c.vTarget+" km/h 대기")+'</div>';}
   else{
     const s=SURF_IDS[Game.veh.wheels[0].surf]||"asphalt";
     const names={asphalt:"아스팔트",lane:"아스팔트",wet:"젖은 노면",gravel:"자갈",grass:"잔디",sand:"모래",ice:"빙판",snow:"눈",curb:"연석",walk:"보도"};
-    el.innerHTML='<div class="big">자유주행</div><div class="sub">'+(names[s]||s)+' · '+Game.mapDef.name+'</div>';}
+    const car=CARS[Game.opts.carIdx]||{};
+    el.innerHTML='<div class="big">자유주행</div><div class="sub">'+(car.icon||"")+' '+
+      (car.name||"").split(" ").slice(-1)[0]+' · '+(names[s]||s)+' · '+Game.mapDef.name+'</div>';}
 }
 let _toastT=null;
 function toast(msg,ms){

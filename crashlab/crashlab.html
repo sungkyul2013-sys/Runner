@@ -291,6 +291,29 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #crashPanel.mini{padding:8px 12px;width:auto;min-width:0}
 #crashPanel.mini .row,#crashPanel.mini #crashScenSeg,#crashPanel.mini #crashFine,#crashPanel.mini #crashTargetSeg,#crashPanel.mini #btnFine{display:none!important}
 #crashPanel.mini .row:last-child{display:flex!important;margin:0}
+/* ===== UI 폴리시 v2.12: 톱바 필·미니맵·게이지·세그·인터랙션 ===== */
+.hudTop{background:linear-gradient(170deg,rgba(24,29,40,.55),rgba(12,15,21,.6));
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.08);border-radius:18px;
+  padding:6px 8px;box-shadow:0 8px 26px rgba(0,0,0,.35)}
+.iconBtn{transition:transform .1s,box-shadow .15s,border-color .15s}
+.iconBtn:active{transform:scale(.9);border-color:var(--acc);
+  box-shadow:0 0 14px rgba(255,122,26,.45)}
+#minimap{border-radius:14px;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 8px 24px rgba(0,0,0,.45),inset 0 0 0 1px rgba(0,0,0,.4)}
+#dmgBox{background:linear-gradient(170deg,rgba(24,29,40,.6),rgba(12,15,21,.65));
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.09);border-radius:12px;
+  box-shadow:0 6px 20px rgba(0,0,0,.4)}
+#speedVal{text-shadow:0 2px 12px rgba(255,150,60,.35)}
+.seg button{transition:background .12s,color .12s,box-shadow .12s}
+.seg button:active{transform:scale(.96)}
+.panelHide{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  box-shadow:0 -4px 14px rgba(0,0,0,.3);transition:color .15s}
+.panelHide:active{color:var(--acc)}
+#bigMsg{text-shadow:0 6px 30px rgba(0,0,0,.6),0 0 40px rgba(255,140,40,.3)}
+input[type=range]{accent-color:var(--acc)}
+input[type=checkbox]{accent-color:var(--acc)}
 </style>
 </head>
 <body>
@@ -4825,7 +4848,7 @@ const CARS=[
   model:"porsche",rollFix:1.34,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
   wheelRadMul:.93,wheelTuck:.05,rimScale:1.22, // 타이어 살짝 작게·안으로 턱인·대구경 휠(림) — 펜더 뚫림 방지
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
-  susp:{k:98000,c:7200,travel:.09,rest:.17},arb:60000,
+  susp:{k:98000,c:7200,travel:.09,rest:.2},arb:60000,
   engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
   brakeF:9200,steerLo:.56,steerHi:.11,aero:{cd:.5,df:55},gripF:1.12,gripR:1.1,
   style:"super",colors:[0xd7dce2,0xd7263d,0xffe600,0x101418,0x00a8e8],
@@ -5096,6 +5119,30 @@ class CarVisual{
       ml:this.mkPart(.07,.08,.17,-xR*.96,hy*.1,zF*.34,bumpMat),
       mr:this.mkPart(.07,.08,.17,xR*.96,hy*.1,zF*.34,bumpMat)};
     this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
+    // 오프로드 몬스터 전용 액세서리(지프 스타일): 불바·루프 LED바·록슬라이더
+    if(spec.id==="offroad"||spec.id==="offroadc"){
+      const topY=bx.max.y,botY=bx.min.y;
+      const acc=[
+        // 프런트 불바(그릴 가드): 가로 튜브 2 + 세로 튜브 2
+        {geo:new THREE.CylinderGeometry(.05,.05,hx*1.55,10),color:0x272c33,rz:Math.PI/2,y:by+hy*.3,z:zF+.12},
+        {geo:new THREE.CylinderGeometry(.042,.042,hx*1.25,10),color:0x272c33,rz:Math.PI/2,y:by+hy*.66,z:zF+.07},
+        {geo:new THREE.CylinderGeometry(.038,.038,hy*.55,8),color:0x272c33,x:-hx*.48,y:by+hy*.48,z:zF+.1},
+        {geo:new THREE.CylinderGeometry(.038,.038,hy*.55,8),color:0x272c33,x:hx*.48,y:by+hy*.48,z:zF+.1},
+        // 루프 LED 라이트바 하우징
+        {geo:new THREE.BoxGeometry(hx*1.5,.1,.13),color:0x14161a,y:topY+.06,z:zF*.32},
+        // 사이드 록슬라이더(양쪽 스텝)
+        {geo:new THREE.BoxGeometry(.11,.08,hz*1.1),color:0x1a1d22,x:-hx*1.04,y:botY+.1},
+        {geo:new THREE.BoxGeometry(.11,.08,hz*1.1),color:0x1a1d22,x:hx*1.04,y:botY+.1},
+        // 리어 견인 후크
+        {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:-hx*.4,y:by+hy*.18,z:zR-.1},
+        {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1}];
+      this.accMesh=new THREE.Mesh(mergeGeoms(acc),MAT_DETAIL);
+      this.accMesh.castShadow=true;this.group.add(this.accMesh);
+      // LED 라이트바 발광 렌즈(자체발광)
+      this.ledMesh=new THREE.Mesh(new THREE.BoxGeometry(hx*1.42,.055,.05),
+        new THREE.MeshBasicMaterial({color:0xfff3c6,toneMapped:false}));
+      this.ledMesh.position.set(0,topY+.06,zF*.32+.06);
+      this.group.add(this.ledMesh);}
     const wg=wheelGeo(spec.wheels.radius,spec.wheels.width,spec.rimScale);
     const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
@@ -5374,7 +5421,9 @@ class SoftLattice{
     // 정면/후면(축≈차 길이)은 깊은 아코디언, 측면(축≈차 폭)은 도어 함몰까지만 —
     // 실차처럼 로커·루프레일이 차체를 지지해 옆에서 맞아도 차가 반으로 접히지 않음.
     const axFrac=axExt/hz;                             // 1=종방향, ~0.4=측면
-    const depth=Math.min(.3+5.4*sev,axExt*.92);        // 함몰 깊이 ≤ 구조 깊이의 92%
+    // 위에서 내리누르는 충격(전복 착지·낙하물·폴 위 구름): 루프는 필러가 꺾이며 깊게 주저앉음
+    const topHit=ly<-.3;
+    const depth=Math.min(.3+5.4*sev,axExt*(topHit?1.4:.92)); // 함몰 깊이 ≤ 구조 깊이(루프는 벨트라인까지 허용)
     const RH=.55+.34*sev;                              // 수평 직교 반경(좁게 = 부딪힌 부위만)
     const RV=hy*2.3+.4;                                // 수직 반경(바닥·지붕까지)
     const crushLen=Math.min(.5+3.3*sev,axExt*1.1);     // 압축 전파 ≤ 구조 깊이
@@ -7557,13 +7606,16 @@ function updateModeWidget(){
       (D.wallBonus?" 🔥벽보너스":"")+' · 베스트 '+(D.best|0)+'</div>';}
   else if(m==="crash"){
     const c=Game.crash;
+    const scN={wall:"🧱 벽",head:"🚗 차대차",tbone:"🚙 측면",rear:"💥 후방",sandwich:"🚚 샌드위치",pole:"🗼 측면 폴"}[c.scen]||c.scen;
     el.innerHTML='<div class="big">'+(c.phase==="run"?(Game.veh.speed*3.6|0)+' km/h':'대기')+'</div>'+
-      '<div class="sub">'+(c.phase==="run"?"주행 중… 피크 "+(Game.veh.peakG|0)+"G":
-        c.phase!=="idle"?"피크 "+(Game.veh.peakG|0)+"G · 변형 "+Game.vis.defVol.toFixed(1):"속도 설정 후 발사")+'</div>';}
+      '<div class="sub">'+scN+' · '+(c.phase==="run"?"주행 중… 피크 "+(Game.veh.peakG|0)+"G":
+        c.phase!=="idle"?"피크 "+(Game.veh.peakG|0)+"G · 변형 "+Game.vis.defVol.toFixed(1):c.vTarget+" km/h 대기")+'</div>';}
   else{
     const s=SURF_IDS[Game.veh.wheels[0].surf]||"asphalt";
     const names={asphalt:"아스팔트",lane:"아스팔트",wet:"젖은 노면",gravel:"자갈",grass:"잔디",sand:"모래",ice:"빙판",snow:"눈",curb:"연석",walk:"보도"};
-    el.innerHTML='<div class="big">자유주행</div><div class="sub">'+(names[s]||s)+' · '+Game.mapDef.name+'</div>';}
+    const car=CARS[Game.opts.carIdx]||{};
+    el.innerHTML='<div class="big">자유주행</div><div class="sub">'+(car.icon||"")+' '+
+      (car.name||"").split(" ").slice(-1)[0]+' · '+(names[s]||s)+' · '+Game.mapDef.name+'</div>';}
 }
 let _toastT=null;
 function toast(msg,ms){
@@ -7916,6 +7968,7 @@ const UI=(()=>{
       tgl2("카메라 셰이크","camShake",S.camShake)+
       tgl2("그림자","shadows",S.shadows)+
       tgl2("자동 슬로모션 (강한 충돌 시)","autoSlowmo",S.autoSlowmo)+
+      tgl2("충돌 리포트 자동 표시","autoReport",S.autoReport!==false)+
       tgl2("디버그 오버레이 (FPS·슬립각·접지력)","debug",S.debug)+
       '<div class="btnRow"><button class="btn danger sm" id="wipe">저장 데이터 초기화</button></div>';
     body().querySelectorAll("[data-seg]").forEach(b=>b.onclick=()=>{
@@ -8434,6 +8487,7 @@ function boot(){
           c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
           c.susp.rebMul=1.3;                        // 리바운드 타이트(빠르고 절도있는 복귀 — 실차 스포츠 댐퍼)
           c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
+          if(c.id==="veloce")c.susp.rest+=.04;      // 포르쉐: 차고 조금 상승(턱 긁힘 여유)
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
         else if(c.id==="maybach"){                  // 마이바흐 GLS: 에어서스(실차형)
           c.susp.k*=.68;                            // 더 부드러운 스프링 → 방지턱에서 스트로크가 크게 움직임
@@ -8443,12 +8497,12 @@ function boot(){
           c.susp.rest+=.07;                         // 에어서스 리프트: 정하중 처짐 보상 → 바퀴가 아치에 제대로 보임
           c.susp.travel*=2.6;                       // 위쪽 스트로크 넉넉히 → 더 높은 방지턱도 스트로크 안에서 흡수
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소
-        else if(c.id==="offroad"||c.id==="offroadc"){ // 오프로드 몬스터(오픈탑·하드탑): 리프트업 + 초롱트래블
+        else if(c.id==="offroad"||c.id==="offroadc"){ // 오프로드 몬스터(오픈탑·하드탑): 지프식 하이 리프트 + 초롱트래블
           c.susp.travel*=2.1;                       // 트래블 엄청 크게(≈53cm) → 록크롤·후프스 흡수
-          c.susp.rest+=.15;                         // 리프트 킷 → 차고 대폭 상승
+          c.susp.rest+=.27;                         // 빅 리프트 킷 → 지프처럼 차고 대폭 상승(바퀴 위 아치갭 큼)
           c.susp.k*=.88;c.susp.c*=.95;              // 부드러운 롱스트로크 세팅
           c.susp.rebMul=1.15;                       // 리바운드 자유롭게 → 바퀴가 지형을 따라감(아티큘레이션)
-          c.arb*=1.9;}                              // 높아진 무게중심 보상(전복 억제)
+          c.arb*=2.3;}                              // 높아진 무게중심 보상(전복 억제)
         else{
           c.susp.travel*=1.2;                       // 컴포트/오프로드: 스트로크 확대(다이브·바운스)
           c.susp.c*=.85;                            // 리바운드 완화 → 생동감

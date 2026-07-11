@@ -73,7 +73,7 @@ const CARS=[
   model:"porsche",rollFix:1.34,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
   wheelRadMul:.93,wheelTuck:.05,rimScale:1.22, // 타이어 살짝 작게·안으로 턱인·대구경 휠(림) — 펜더 뚫림 방지
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
-  susp:{k:98000,c:7200,travel:.09,rest:.17},arb:60000,
+  susp:{k:98000,c:7200,travel:.09,rest:.2},arb:60000,
   engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
   brakeF:9200,steerLo:.56,steerHi:.11,aero:{cd:.5,df:55},gripF:1.12,gripR:1.1,
   style:"super",colors:[0xd7dce2,0xd7263d,0xffe600,0x101418,0x00a8e8],
@@ -344,6 +344,30 @@ class CarVisual{
       ml:this.mkPart(.07,.08,.17,-xR*.96,hy*.1,zF*.34,bumpMat),
       mr:this.mkPart(.07,.08,.17,xR*.96,hy*.1,zF*.34,bumpMat)};
     this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
+    // 오프로드 몬스터 전용 액세서리(지프 스타일): 불바·루프 LED바·록슬라이더
+    if(spec.id==="offroad"||spec.id==="offroadc"){
+      const topY=bx.max.y,botY=bx.min.y;
+      const acc=[
+        // 프런트 불바(그릴 가드): 가로 튜브 2 + 세로 튜브 2
+        {geo:new THREE.CylinderGeometry(.05,.05,hx*1.55,10),color:0x272c33,rz:Math.PI/2,y:by+hy*.3,z:zF+.12},
+        {geo:new THREE.CylinderGeometry(.042,.042,hx*1.25,10),color:0x272c33,rz:Math.PI/2,y:by+hy*.66,z:zF+.07},
+        {geo:new THREE.CylinderGeometry(.038,.038,hy*.55,8),color:0x272c33,x:-hx*.48,y:by+hy*.48,z:zF+.1},
+        {geo:new THREE.CylinderGeometry(.038,.038,hy*.55,8),color:0x272c33,x:hx*.48,y:by+hy*.48,z:zF+.1},
+        // 루프 LED 라이트바 하우징
+        {geo:new THREE.BoxGeometry(hx*1.5,.1,.13),color:0x14161a,y:topY+.06,z:zF*.32},
+        // 사이드 록슬라이더(양쪽 스텝)
+        {geo:new THREE.BoxGeometry(.11,.08,hz*1.1),color:0x1a1d22,x:-hx*1.04,y:botY+.1},
+        {geo:new THREE.BoxGeometry(.11,.08,hz*1.1),color:0x1a1d22,x:hx*1.04,y:botY+.1},
+        // 리어 견인 후크
+        {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:-hx*.4,y:by+hy*.18,z:zR-.1},
+        {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1}];
+      this.accMesh=new THREE.Mesh(mergeGeoms(acc),MAT_DETAIL);
+      this.accMesh.castShadow=true;this.group.add(this.accMesh);
+      // LED 라이트바 발광 렌즈(자체발광)
+      this.ledMesh=new THREE.Mesh(new THREE.BoxGeometry(hx*1.42,.055,.05),
+        new THREE.MeshBasicMaterial({color:0xfff3c6,toneMapped:false}));
+      this.ledMesh.position.set(0,topY+.06,zF*.32+.06);
+      this.group.add(this.ledMesh);}
     const wg=wheelGeo(spec.wheels.radius,spec.wheels.width,spec.rimScale);
     const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
