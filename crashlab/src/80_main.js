@@ -187,8 +187,10 @@ function initHudButtons(){
   // 크래시 세부 설정: 충돌 각도·위치·상대 차량
   $("btnFine").onclick=()=>{Sfx.click();
     const f=$("crashFine");f.style.display=f.style.display==="none"?"":"none";};
-  $("crashAng").oninput=e=>{Game.crash.ang=+e.target.value;$("crashAngVal").textContent=e.target.value+"°";};
-  $("crashOff").oninput=e=>{Game.crash.off=+e.target.value*.1;$("crashOffVal").textContent=(+e.target.value*.1).toFixed(1)+"m";};
+  $("crashAng").oninput=e=>{Game.crash.ang=+e.target.value;$("crashAngVal").textContent=e.target.value+"°";
+    if(Game.crash.phase==="idle")Game.placeCrashCar();};   // 실제 출발 위치·방향 즉시 이동
+  $("crashOff").oninput=e=>{Game.crash.off=+e.target.value*.1;$("crashOffVal").textContent=(+e.target.value*.1).toFixed(1)+"m";
+    if(Game.crash.phase==="idle")Game.placeCrashCar();};
   {const rs=$("crashRamSeg");
    rs.innerHTML=CARS.map((c,i)=>'<button class="'+(c.id==="titan"?"sel":"")+'" title="'+c.name+'">'+c.icon+'</button>').join('');
    for(let ri=0;ri<rs.children.length;ri++)rs.children[ri].onclick=()=>{
@@ -342,6 +344,7 @@ function boot(){
           c.susp.k*=.8;                             // 부드러운 스프링 → 요철·포트홀 흡수
           c.susp.c*=.85;                            // 압축 댐핑 낮게 → 방지턱에서 서스가 실제로 눌림(차체로 전달 안 됨)
           c.susp.rebMul=3.2;                        // 리바운드 댐핑 매우 강함 → 위로 튀지 않고 '딱' 끊어지는 복귀
+          c.susp.sky=2600;                          // 스카이훅 세미액티브(쫀득함): 차체 헤이브 직접 감쇠
           c.susp.rest+=.07;                         // 에어서스 리프트: 정하중 처짐 보상 → 바퀴가 아치에 제대로 보임
           c.susp.travel*=2.3;                       // 위쪽 스트로크 넉넉히 → 더 높은 방지턱도 스트로크 안에서 흡수
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소

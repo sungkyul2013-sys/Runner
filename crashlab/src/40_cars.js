@@ -21,9 +21,9 @@ const CARS=[
   brakeF:7200,steerLo:.6,steerHi:.13,aero:{cd:.6,df:12},gripF:1.06,gripR:.97,
   style:"coupe",colors:[0xff7a1a,0x222831,0xe63946,0xf1f1f1,0x9d4edd],
   stats:{spd:70,acc:72,grip:70,mass:32}},
- {id:"offroad",name:"산악왕 4X4",icon:"🚙",drive:"4WD",mass:2150,hp:210,acc:"11.0초",top:170,
-  desc:"서스펜션 트래블 250mm. 오프로드에서는 지배자.",
-  model:"suvLuxury",rollFix:1.28,squashY:.96,
+ {id:"offroad",name:"오프로드 몬스터",icon:"🚙",drive:"4WD",mass:2150,hp:280,acc:"9.0초",top:160,
+  desc:"사용자 제공 로우폴리 오프로더. 롱트래블 서스 + 라이트 포드 + 루프랙.",
+  model:"offroadx",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
   body:{hx:.95,hy:.75,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -57,14 +57,14 @@ const CARS=[
   brakeF:38000,steerLo:.5,steerHi:.1,aero:{cd:6,df:0},gripF:.85,gripR:.88,
   style:"truck",colors:[0x8899aa,0xcf6a2f,0x3d5a80,0x9b2226,0xdddddd],
   stats:{spd:18,acc:12,grip:35,mass:100}},
- {id:"veloce",name:"벨로체 R",icon:"🏁",drive:"4WD",mass:1480,hp:720,acc:"2.9초",top:330,
-  desc:"720마력 + 다운포스. 시뮬 모드에서 진가를 발휘한다.",
-  model:"raceFuture",rollFix:1.38,squashY:.88,
+ {id:"veloce",name:"포르쉐 911 터보",icon:"🏁",drive:"4WD",mass:1595,hp:520,acc:"3.2초",top:315,
+  desc:"실차 3D 모델(911 터보 2014). 3.8L 수평대향 6기통 트윈터보 · 리어엔진 4WD.",
+  model:"porsche",rollFix:1.34,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
   susp:{k:98000,c:7200,travel:.09,rest:.12},arb:60000,
-  engine:{maxT:780,redline:8500,idle:1100},gears:[3.0,2.05,1.55,1.2,.97],final:3.4,
-  brakeF:8600,steerLo:.56,steerHi:.11,aero:{cd:.42,df:95},gripF:1.16,gripR:1.14,
-  style:"super",colors:[0xd7263d,0x04e762,0xffe600,0x101418,0x00a8e8],
+  engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
+  brakeF:9200,steerLo:.56,steerHi:.11,aero:{cd:.5,df:55},gripF:1.12,gripR:1.1,
+  style:"super",colors:[0xd7dce2,0xd7263d,0xffe600,0x101418,0x00a8e8],
   stats:{spd:100,acc:100,grip:95,mass:35}},
  {id:"tractor",name:"막강 트랙터",icon:"🚜",drive:"4WD",mass:3200,hp:95,acc:"—",top:62,
   desc:"느리지만 절대 멈추지 않는다. 어떤 지형이든 기어오르는 괴물 토크.",
@@ -198,6 +198,8 @@ const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,sh
 const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:170,specular:0xa8b6c2,side:THREE.DoubleSide}); // 유광 클리어코트 + 양면(패널 틈 메움)
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
   transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
+const MAT_LAMP=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:220,specular:0xffffff,
+  emissive:0x35331f,transparent:true,opacity:.85,side:THREE.DoubleSide}); // 투명 발광 램프 렌즈
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222,side:THREE.DoubleSide}); // 양면 → 타이어 측벽이 비쳐 보이지 않음
 let _wheelGeoCache={};
 function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부)
@@ -215,7 +217,9 @@ function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크
       {geo:new THREE.TorusGeometry(r*.62,r*.03,6,26),color:0xc7ced6,ry:Math.PI/2},
       // 센터 캡 + 허브 링
       {geo:new THREE.CylinderGeometry(r*.12,r*.12,wd*.74,12),color:0xd8dde3,rz:Math.PI/2},
-      {geo:new THREE.TorusGeometry(r*.2,r*.02,5,16),color:0x8f979f,ry:Math.PI/2}];
+      {geo:new THREE.TorusGeometry(r*.2,r*.02,5,16),color:0x8f979f,ry:Math.PI/2},
+      // 브레이크 디스크(회전부 — 휠과 함께 돈다)
+      {geo:new THREE.CylinderGeometry(r*.46,r*.46,wd*.3,16),color:0x484d54,rz:Math.PI/2}];
     // 트윈 5-스포크(10개, 폴리시드 페이스 + 얇은 단면)
     for(let sp=0;sp<10;sp++){
       const a=sp*Math.PI/5+(sp%2?.11:-.11);
@@ -224,11 +228,10 @@ function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크
   return _wheelGeoCache[k];
 }
 let _brakeGeoCache={};
-function brakeGeo(r,wd){ // 비회전부: 브레이크 디스크 + 캘리퍼
+function brakeGeo(r,wd){ // 비회전부: 캘리퍼만(디스크는 휠과 함께 회전)
   const k=(r*100|0)+"_"+(wd*100|0);
   if(!_brakeGeoCache[k])
     _brakeGeoCache[k]=mergeGeoms([
-      {geo:new THREE.CylinderGeometry(r*.46,r*.46,wd*.3,16),color:0x484d54,rz:Math.PI/2},
       {geo:new THREE.BoxGeometry(wd*.42,r*.34,r*.24),color:0xb33227,y:r*.28,z:r*.3}]);
   return _brakeGeoCache[k];
 }
@@ -285,9 +288,11 @@ class CarVisual{
       cx:spec.modelCx,cy:spec.modelCy,cz:spec.modelCz,paint:new THREE.Color(colorHex)});
     this.bodyMesh=new THREE.Mesh(split.main,spec.smoothShade?MAT_CAR_SMOOTH:MAT_CAR);
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
+    if(split.lamps){this.lampsMesh=new THREE.Mesh(split.lamps,MAT_LAMP);
+      this.group.add(this.lampsMesh);}
     if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,MAT_GLASS);
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
-    this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh]);
+    this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh,this.lampsMesh]);
     const bumpMat=new THREE.MeshPhongMaterial({color:0x191d24,flatShading:true,shininess:18});
     const by=Math.max(spec.modelWheelY,-hy*.62);
     // 범퍼/미러 파트를 실제 차체 바운딩에 밀착 (모델 중심 오프셋 대응)
@@ -484,6 +489,7 @@ class CarVisual{
     this.group.parent&&this.group.parent.remove(this.group);
     this.bodyMesh.geometry.dispose();
     if(this.glassMesh)this.glassMesh.geometry.dispose();
+    if(this.lampsMesh)this.lampsMesh.geometry.dispose();
     if(this.detailMesh)this.detailMesh.geometry.dispose();
     if(this.lightsMesh)this.lightsMesh.geometry.dispose();
     for(const k in this.parts)this.parts[k].geometry.dispose();

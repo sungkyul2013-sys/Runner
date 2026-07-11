@@ -123,10 +123,10 @@ class SoftLattice{
     const H=this.home,mn=this.min,mg=.22,pg=.35;
     for(let i=0;i<this.n;i++){const a=i*3;
       PL[a]  =clamp(PL[a],  mn[0]-mg-H[a],  -mn[0]+mg-H[a]);
-      PL[a+1]=clamp(PL[a+1],mn[1]-mg-H[a+1],-mn[1]+mg-H[a+1]);
+      PL[a+1]=clamp(PL[a+1],mn[1]-.06-H[a+1],-mn[1]+mg-H[a+1]);
       PL[a+2]=clamp(PL[a+2],mn[2]-mg-H[a+2],-mn[2]+mg-H[a+2]);
       P[a]  =clamp(P[a],  mn[0]-pg,-mn[0]+pg); Q[a]  =clamp(Q[a],  mn[0]-pg,-mn[0]+pg);
-      P[a+1]=clamp(P[a+1],mn[1]-pg,-mn[1]+pg); Q[a+1]=clamp(Q[a+1],mn[1]-pg,-mn[1]+pg);
+      P[a+1]=clamp(P[a+1],mn[1]-.07,-mn[1]+pg); Q[a+1]=clamp(Q[a+1],mn[1]-.07,-mn[1]+pg); // 아래로는 7cm까지만(범퍼가 바닥 밑으로 안 들어감)
       P[a+2]=clamp(P[a+2],mn[2]-pg,-mn[2]+pg); Q[a+2]=clamp(Q[a+2],mn[2]-pg,-mn[2]+pg);}
     this.hot=Math.min(this.hot+.6+sev*1.6,3.4);this.dirty=true;
   }

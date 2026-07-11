@@ -55,15 +55,15 @@ const Assets=(()=>{
     g.setAttribute("normal",new THREE.BufferAttribute(nor,3));
     g.setAttribute("color",new THREE.BufferAttribute(col,3));
     return g;}
-  /* 차체/유리 분리 (유리는 광택 머티리얼) — 삼각형 단위 분류 */
+  /* 차체/유리/램프 분리 — 삼각형 단위 분류 (bit1 도색, bit2 유리, bit4 램프) */
   function geoSplit(e,opt){
     const full=geo(e,opt),A=arrays(e);
-    if(!A.M)return{main:full,glass:null};
+    if(!A.M)return{main:full,glass:null,lamps:null};
     const P=full.attributes.position.array,N=full.attributes.normal.array,C=full.attributes.color.array;
-    const mp=[],mn=[],mc=[],gp=[],gn=[],gc=[];
+    const mp=[],mn=[],mc=[],gp=[],gn=[],gc=[],lp=[],ln=[],lc=[];
     for(let t=0;t<A.n/3;t++){
-      const isG=(A.M[t*3]|A.M[t*3+1]|A.M[t*3+2])&2;
-      const[dp,dn,dc]=isG?[gp,gn,gc]:[mp,mn,mc];
+      const mb=(A.M[t*3]|A.M[t*3+1]|A.M[t*3+2]);
+      const[dp,dn,dc]=(mb&4)?[lp,ln,lc]:(mb&2)?[gp,gn,gc]:[mp,mn,mc];
       for(let k=t*9;k<t*9+9;k++){dp.push(P[k]);dn.push(N[k]);dc.push(C[k]);}}
     full.dispose();
     const mk=(p,n2,c)=>{
@@ -73,7 +73,7 @@ const Assets=(()=>{
       g2.setAttribute("normal",new THREE.Float32BufferAttribute(n2,3));
       g2.setAttribute("color",new THREE.Float32BufferAttribute(c,3));
       return g2;};
-    return{main:mk(mp,mn,mc),glass:mk(gp,gn,gc)};}
+    return{main:mk(mp,mn,mc),glass:mk(gp,gn,gc),lamps:mk(lp,ln,lc)};}
   /* scenery geometry (no flip needed but flip is harmless & keeps one path) */
   function scenery(name,scale){
     const key=name+"@"+scale;

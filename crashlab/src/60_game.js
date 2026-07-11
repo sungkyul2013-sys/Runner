@@ -120,10 +120,11 @@ const Game={
   placeCrashCar(){
     this.clearDrones();
     const c=this.crash;
+    const off=c.off||0,ang=(c.ang||0)*DEG;
     if(c.scen==="wall"){
       const L=CRASH_LANES[c.target]||CRASH_LANES[0];
-      this.veh.reset(L.lx,L.z-70,0,false);}
-    else if(c.scen==="head")this.veh.reset(-140,-80,0,false);
+      this.veh.reset(L.lx+off-Math.tan(ang)*68,L.z-70,ang,false);}   // 세부설정이 실제 출발 위치·각도에 반영
+    else if(c.scen==="head")this.veh.reset(-140+off,-80,ang,false);
     else this.veh.reset(-140,40,0,false);        // 정차(피충돌) 시나리오
     this.vis.repair();this.veh.clearDamage();
     c.phase="idle";
@@ -166,9 +167,10 @@ const Game={
     if(c.phase==="run"){
       v.controlLock=true;
       if(c.scen==="wall"||c.scen==="head"){
-        // auto-drive straight (각도 설정 시 조향 보정 없이 그 각도로 직진)
         const tx=-140,L=c.scen==="wall"?(CRASH_LANES[c.target]||CRASH_LANES[0]):{lx:tx};
-        v.steerIn=c.ang?0:clamp((L.lx-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
+        const userSteer=Input.steerValue?Input.steerValue():0;
+        if(Math.abs(userSteer)>.06)v.steerIn=userSteer;   // 수동 조향 → 물리대로 빗나갈 수 있음
+        else v.steerIn=c.ang?0:clamp((L.lx-v.body.pos.x)*.08-v.body.vel.x*.05,-.3,.3);
         const kmh=v.fwdSpeed()*3.6;
         v.throttle=kmh<c.vTarget?1:0;v.brake=0;v.driveMode="D";}
       else{v.throttle=0;v.brake=.25;v.steerIn=0;}   // 정차 시나리오: 제자리

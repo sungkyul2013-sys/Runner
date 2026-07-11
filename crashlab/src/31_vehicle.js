@@ -162,6 +162,7 @@ class Vehicle{
         // 비대칭 댐핑: 리바운드(늘어남)는 압축보다 강하게 → 방지턱 후 위로 튀는 요동 억제(실차 댐퍼)
         const cAsym=cVel<0?(susp.rebMul||1.5):1;
         let sF=susp.k*kMul*w.comp+susp.c*kMul*cVel*cAsym+arb;
+        if(susp.sky)sF-=b.vel.y*susp.sky;   // 스카이훅(전자제어 에어서스): 차체 상하 요동 직접 감쇠
         sF=clamp(sF,0,sp.mass*GRAV*1.4);
         w.susF=sF;w.load=lerp(w.load,sF,.5);
         _vF.copy(_hit.n).multiplyScalar(.4).addScaledVector(up,.6).normalize().multiplyScalar(sF);
@@ -249,9 +250,21 @@ class Vehicle{
     /* ----- chassis collision ----- */
     if(this._udT>0)this._udT-=dt;
     const rigidCts=this._rigidCts||(this._rigidCts=[]);rigidCts.length=0;
+    const ccd=speed*dt>.28;   // 고속: 한 스텝 이동량이 커 관통 위험 → 예측점 CCD
     for(let i=0;i<this.hull.length;i++){
       b.localToWorld(this.hull[i],_vD);
-      const ct=world.pointContact(_vD);
+      let ct=world.pointContact(_vD);
+      if(!ct&&ccd){
+        _vH.copy(_vD).addScaledVector(b.vel,dt*.6);
+        const c2=world.pointContact(_vH);
+        if(c2){const t2=c2.box&&c2.box.tag;
+          if(!(t2==="bump"||t2==="slat"||t2==="cobble"||t2==="stair"||t2==="curb"||t2==="ridge"||t2==="plank"||t2==="teeter"||t2==="crusher"))
+            ct={n:c2.n,depth:.02,mu:c2.mu,bounce:c2.bounce,box:c2.box};}
+        if(!ct){_vH.copy(_vD).addScaledVector(b.vel,dt*1.2);
+          const c3=world.pointContact(_vH);
+          if(c3){const t3=c3.box&&c3.box.tag;
+            if(!(t3==="bump"||t3==="slat"||t3==="cobble"||t3==="stair"||t3==="curb"||t3==="ridge"||t3==="plank"||t3==="teeter"||t3==="crusher"))
+              ct={n:c3.n,depth:.01,mu:c3.mu,bounce:c3.bounce,box:c3.box};}}}
       if(!ct)continue;
       const tg=ct.box&&ct.box.tag;
       // 방지턱(지형 아치) 위에서 차체 바닥이 스치면: 강체 충돌(퉁!) 금지 → 부드럽게 통과

@@ -132,5 +132,6 @@ const Input=(()=>{
     // 가속 페달 = 전진 의도: 후진 중이라도 D로 전환(전진력이 후진을 감속 후 가속)
     if(r.gas>0&&v.driveMode==="R"){v.driveMode="D";v.throttle=r.gas;v.brake=0;}
   }
-  return{init,clear,read,applyTo,updateKnob,applySteerModeUI,requestTilt,state:st};
+  const steerValue=()=>st.steer;
+  return{init,clear,read,applyTo,updateKnob,applySteerModeUI,requestTilt,steerValue,state:st};
 })();
