@@ -199,8 +199,14 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 
 /* crash test panel */
 #crashPanel,#labPanel{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 14px);width:min(92vw,420px);
-  background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:none}
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:none;
+  transition:transform .28s cubic-bezier(.4,0,.2,1)}
 #crashPanel.on,#labPanel.on{display:block}
+/* 하단 패널 접기: 화면 아래로 슬라이드(핸들 탭만 남음) */
+#crashPanel.tuck,#labPanel.tuck{transform:translate(-50%,calc(100% + var(--sab) + 20px))}
+.panelHide{position:absolute;top:-34px;right:8px;width:44px;height:30px;border-radius:10px 10px 0 0;
+  background:var(--panel);border:1px solid var(--line);border-bottom:none;color:var(--tx2);
+  font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center}
 #crashPanel .row,#labPanel .row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
 #crashScenSeg{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
 #crashScenSeg button{flex:1;min-width:58px;font-size:11px;padding:6px 4px}

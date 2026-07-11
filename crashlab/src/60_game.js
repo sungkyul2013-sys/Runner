@@ -125,6 +125,8 @@ const Game={
       const L=CRASH_LANES[c.target]||CRASH_LANES[0];
       this.veh.reset(L.lx+off-Math.tan(ang)*68,L.z-70,ang,false);}   // 세부설정이 실제 출발 위치·각도에 반영
     else if(c.scen==="head")this.veh.reset(-140+off,-80,ang,false);
+    else if(c.scen==="pole"){const L=CRASH_LANES[2];
+      this.veh.reset(L.lx+off,L.z-40,Math.PI/2+ang,false);}   // 측면 폴: 기둥 옆 대기
     else this.veh.reset(-140,40,0,false);        // 정차(피충돌) 시나리오
     this.vis.repair();this.veh.clearDamage();
     c.phase="idle";
@@ -142,22 +144,29 @@ const Game={
       v.reset(aimX,z0,ang,false);
       v.body.vel.set(Math.sin(ang)*v0,0,Math.cos(ang)*v0);
       for(const w of v.wheels)w.omega=v0/w.radius;}
+    else if(c.scen==="pole"){                    // 측면 폴(IIHS side pole): 옆으로 미끄러져 기둥에 측면 충돌
+      const L=CRASH_LANES[2];
+      v.reset(L.lx+off,L.z-2-2.6,Math.PI/2+ang,false);   // 기둥 바로 옆에서 측면 방향 사출(감속 최소)
+      v.body.vel.set(0,0,v0);
+      for(const w of v.wheels)w.omega=0;}
     else{
       const ram=c.rammer||"titan";               // 세부 설정에서 램머 차량 선택 가능
+      // 드론은 발사 즉시 목표 속도로 출발 → 조주 거리는 상한(장애물·이탈 방지, 대기시간 단축)
+      const run=Math.min(v0*1.2,56);
       if(c.scen==="head"){                       // 차대차 정면: 서로 마주보고 발사
-        v.reset(-140,-40-v0*1.1,0,false);v.body.vel.set(0,0,v0);
+        v.reset(-140,-40-run,0,false);v.body.vel.set(0,0,v0);
         for(const w of v.wheels)w.omega=v0/w.radius;
-        this.spawnDrone(ram,-140+off,120+v0*1.1,Math.PI+ang,c.vTarget);}
+        this.spawnDrone(ram,-140+off,120+run,Math.PI+ang,c.vTarget).aim={x:-140+off};}
       else if(c.scen==="tbone"){                 // 측면: 정차한 내 차 옆구리를 강타
         v.reset(-140,40,0,false);
-        this.spawnDrone(ram,-40-v0*1.4,40+off,-Math.PI/2+ang,c.vTarget);}
+        this.spawnDrone(ram,-40-run,40+off,-Math.PI/2+ang,c.vTarget).aim={z:40+off};}
       else if(c.scen==="rear"){                  // 후방 추돌
         v.reset(-140,40,0,false);
-        this.spawnDrone(ram,-140+off,-60-v0*1.4,ang,c.vTarget);}
+        this.spawnDrone(ram,-140+off,-60-run,ang,c.vTarget).aim={x:-140+off};}
       else if(c.scen==="sandwich"){              // 샌드위치: 앞뒤에서 조임
         v.reset(-140,40,0,false);
-        this.spawnDrone(ram,-140+off,-70-v0*.9,ang,c.vTarget);
-        this.spawnDrone(ram,-140-off,150+v0*.9,Math.PI-ang,c.vTarget);}}
+        this.spawnDrone(ram,-140+off,-70-run,ang,c.vTarget).aim={x:-140+off};
+        this.spawnDrone(ram,-140-off,150+run,Math.PI-ang,c.vTarget).aim={x:-140-off};}}
     c.phase="run";c.peakG=0;c.impactV=0;c.parted=0;c.settleT=0;c.hitDone=false;
     v.peakG=0;
     toast("발사! "+c.vTarget+" km/h");Sfx.beep(660,.15,.2);},
@@ -174,9 +183,14 @@ const Game={
         const kmh=v.fwdSpeed()*3.6;
         v.throttle=kmh<c.vTarget?1:0;v.brake=0;v.driveMode="D";}
       else{v.throttle=0;v.brake=.25;v.steerIn=0;}   // 정차 시나리오: 제자리
-      for(const d of this.drones)if(d.go){          // 드론: 전속 직진, 명중 후 브레이크
+      for(const d of this.drones)if(d.go){          // 드론: 전속 직진 + 목표선 호밍(요철·경사로 어긋나도 명중)
         d.veh.controlLock=true;d.veh.driveMode="D";
         d.veh.throttle=(d.veh.speed*3.6<c.vTarget)?1:0;d.veh.brake=0;
+        if(d.aim){const AV=this._aimV||(this._aimV=new THREE.Vector3()),AL=this._aimL||(this._aimL=new THREE.Vector3());
+          AV.set(d.aim.x!==undefined?d.aim.x:v.body.pos.x,d.veh.body.pos.y,
+                 d.aim.z!==undefined?d.aim.z:v.body.pos.z);
+          d.veh.body.worldToLocal(AV,AL);
+          d.veh.steerIn=AL.z>1?clamp(AL.x*.05,-.35,.35):0;}   // 목표가 전방일 때만 조향
         if(c.hitDone){d.go=false;}}
       if(c.hitDone){c.phase="settle";c.settleT=0;
         for(const d of this.drones)d.go=false;}
@@ -184,7 +198,9 @@ const Game={
       v.controlLock=true;v.throttle=0;v.brake=.4;
       c.settleT+=dt;
       if((v.speed<.4&&c.settleT>1.2)||c.settleT>6){
-        c.phase="report";v.controlLock=false;showCrashReport();}}
+        v.controlLock=false;
+        if(Settings.autoReport===false){c.phase="idle";toast("💥 충돌 완료 — 리포트 OFF (세부 설정에서 켤 수 있음)");updateModeWidget();}
+        else{c.phase="report";showCrashReport();}}}
   },
 
   /* ---------- time attack ---------- */

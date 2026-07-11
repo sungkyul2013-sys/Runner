@@ -31,6 +31,16 @@ const CARS=[
   brakeF:10500,steerLo:.58,steerHi:.15,aero:{cd:1.5,df:0},gripF:.95,gripR:.95,
   style:"suv",colors:[0x5f8b4c,0xc2a368,0x556270,0xb8443c,0x2b2b2b],
   stats:{spd:32,acc:38,grip:60,mass:55}},
+ {id:"offroadc",name:"오프로드 몬스터 하드탑",icon:"🛻",drive:"4WD",mass:2210,hp:280,acc:"9.2초",top:158,
+  desc:"뚜껑(하드탑)을 덮은 버전 — 동일 섀시 클로즈드 캐빈. 롱트래블 리프트업.",
+  model:"offroadc",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
+  wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
+  body:{hx:.95,hy:.78,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
+  susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
+  engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
+  brakeF:10500,steerLo:.58,steerHi:.15,aero:{cd:1.4,df:0},gripF:.95,gripR:.95,
+  style:"suv",colors:[0xb8443c,0x5f8b4c,0x556270,0xc2a368,0x2b2b2b],
+  stats:{spd:32,acc:37,grip:60,mass:56}},
  {id:"rover",name:"레인지로버 오토바이오그래피",icon:"🛻",drive:"4WD",mass:2480,hp:530,acc:"4.4초",top:250,
   desc:"실차 스캔 3D 모델. 5.0L V8 · 에어 서스펜션. 럭셔리와 오프로드를 한 몸에.",
   model:"rangeRover",rollFix:1.22,squashY:1,comFromWheels:true,realWheels:true,
@@ -61,8 +71,9 @@ const CARS=[
  {id:"veloce",name:"포르쉐 911 터보",icon:"🏁",drive:"4WD",mass:1595,hp:520,acc:"3.2초",top:315,
   desc:"실차 3D 모델(911 터보 2014). 3.8L 수평대향 6기통 트윈터보 · 리어엔진 4WD.",
   model:"porsche",rollFix:1.34,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
+  wheelRadMul:.93,wheelTuck:.05,rimScale:1.22, // 타이어 살짝 작게·안으로 턱인·대구경 휠(림) — 펜더 뚫림 방지
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
-  susp:{k:98000,c:7200,travel:.09,rest:.12},arb:60000,
+  susp:{k:98000,c:7200,travel:.09,rest:.17},arb:60000,
   engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
   brakeF:9200,steerLo:.56,steerHi:.11,aero:{cd:.5,df:55},gripF:1.12,gripR:1.1,
   style:"super",colors:[0xd7dce2,0xd7263d,0xffe600,0x101418,0x00a8e8],
@@ -195,27 +206,52 @@ function stationLerp(st,z,key){
   return st[0][key];
 }
 
-const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:135,specular:0x9aa2ae,side:THREE.DoubleSide}); // 클리어코트 광택·양면(베이크 차량 투명 방지)
-const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:170,specular:0xa8b6c2,side:THREE.DoubleSide}); // 유광 클리어코트 + 양면(패널 틈 메움)
+/* 절차 생성 환경맵(하늘·지평선·지면 그라디언트 + 하이라이트 밴드) — 도장·크롬이 실제처럼 비침.
+   슬림 THREE 빌드에 CubeTexture 클래스가 없어 CanvasTexture 인스턴스를 큐브 텍스처로 변환(렌더러는 isCubeTexture 플래그로 분기). */
+function makeCarEnv(){
+  const faces=[];
+  for(let f=0;f<6;f++){
+    const cv=document.createElement("canvas");cv.width=cv.height=64;
+    const g=cv.getContext("2d");
+    const gr=g.createLinearGradient(0,0,0,64);
+    if(f===2){gr.addColorStop(0,"#f2f7fd");gr.addColorStop(1,"#cfe0f2");}       // +Y 하늘
+    else if(f===3){gr.addColorStop(0,"#3a3f47");gr.addColorStop(1,"#282c33");}  // -Y 지면
+    else{gr.addColorStop(0,"#e7eff9");gr.addColorStop(.52,"#a9bccf");
+         gr.addColorStop(.6,"#68737f");gr.addColorStop(1,"#3f454e");}           // 지평선 측면
+    g.fillStyle=gr;g.fillRect(0,0,64,64);
+    if(f!==2&&f!==3){g.fillStyle="rgba(255,255,255,.9)";g.fillRect(0,20,64,4);} // 스튜디오 하이라이트 밴드
+    faces.push(cv);}
+  const t=new THREE.CanvasTexture(faces[0]);
+  t.isCubeTexture=true;t.image=faces;      // 6면 큐브로 재구성
+  t.mapping=301;                           // CubeReflectionMapping
+  t.flipY=false;t.generateMipmaps=false;t.minFilter=1006/*LinearFilter*/;
+  t.needsUpdate=true;return t;}
+const ENV_CAR=(()=>{try{return makeCarEnv();}catch(e){return null;}})();
+const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:135,specular:0x9aa2ae,side:THREE.DoubleSide,
+  envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.12}); // 클리어코트 광택·양면(베이크 차량 투명 방지)
+const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:210,specular:0xc2cdd8,side:THREE.DoubleSide,
+  envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.3}); // 유광 클리어코트+환경반사 — 매끈하게 이어진 표면(포르쉐·GLS), 크롬부는 밝아서 더 강하게 비침
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
   transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
 const MAT_LAMP=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.9,
   side:THREE.DoubleSide,toneMapped:false}); // 자체발광(조명 무시) 투명 렌즈 — 실제 빛나는 램프
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222,side:THREE.DoubleSide}); // 양면 → 타이어 측벽이 비쳐 보이지 않음
 let _wheelGeoCache={};
-function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부)
-  const k=(r*100|0)+"_"+(wd*100|0);
+function wheelGeo(r,wd,rimS){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부). rimS=대구경 휠 배율
+  rimS=Math.min(rimS||1,1.28);
+  const k=(r*100|0)+"_"+(wd*100|0)+"_"+(rimS*100|0);
   if(!_wheelGeoCache[k]){
-    const tw=Math.max(wd*.55,r*.19);
+    const rim=r*.62*rimS;                       // 림 페이스 반경(대구경일수록 사이드월 얇게)
+    const tw=Math.min(Math.max(wd*.55,r*.19),(r-rim)*1.15+.02);
     const items=[
       // 타이어: 토러스(림이 보이는 실제 단면)
       {geo:new THREE.TorusGeometry(r-tw,tw,10,28),color:0x0c0d0f,ry:Math.PI/2,sx:1,sy:1,sz:1},
       // 림 배럴 (딥 건메탈)
-      {geo:new THREE.CylinderGeometry(r*.64,r*.64,wd*.66,20),color:0x17191d,rz:Math.PI/2},
+      {geo:new THREE.CylinderGeometry(rim*1.03,rim*1.03,wd*.66,20),color:0x17191d,rz:Math.PI/2},
       // 림 디쉬 (다크 알로이 페이스 — AMG 스타일)
-      {geo:new THREE.CylinderGeometry(r*.62,r*.62,wd*.68,20),color:0x2c3138,rz:Math.PI/2},
+      {geo:new THREE.CylinderGeometry(rim,rim,wd*.68,20),color:0x2c3138,rz:Math.PI/2},
       // 폴리시드 림 립(밝은 링)
-      {geo:new THREE.TorusGeometry(r*.62,r*.03,6,26),color:0xc7ced6,ry:Math.PI/2},
+      {geo:new THREE.TorusGeometry(rim,r*.03,6,26),color:0xc7ced6,ry:Math.PI/2},
       // 센터 캡 + 허브 링
       {geo:new THREE.CylinderGeometry(r*.12,r*.12,wd*.74,12),color:0xd8dde3,rz:Math.PI/2},
       {geo:new THREE.TorusGeometry(r*.2,r*.02,5,16),color:0x8f979f,ry:Math.PI/2},
@@ -224,7 +260,7 @@ function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크
     // 트윈 5-스포크(10개, 폴리시드 페이스 + 얇은 단면)
     for(let sp=0;sp<10;sp++){
       const a=sp*Math.PI/5+(sp%2?.11:-.11);
-      items.push({geo:new THREE.BoxGeometry(wd*.62,r*1.16,r*.055),color:sp%2?0xb9c2cc:0xd4dae0,rx:a});}
+      items.push({geo:new THREE.BoxGeometry(wd*.62,rim*1.87,r*.055),color:sp%2?0xb9c2cc:0xd4dae0,rx:a});}
     // 밸브 마커(오프센터 포인트) — 회전이 어느 속도에서도 또렷이 보임
     items.push({geo:new THREE.BoxGeometry(wd*.8,r*.09,r*.09),color:0xffd23e,y:r*.48});
     _wheelGeoCache[k]=mergeGeoms(items);}
@@ -308,7 +344,7 @@ class CarVisual{
       ml:this.mkPart(.07,.08,.17,-xR*.96,hy*.1,zF*.34,bumpMat),
       mr:this.mkPart(.07,.08,.17,xR*.96,hy*.1,zF*.34,bumpMat)};
     this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
-    const wg=wheelGeo(spec.wheels.radius,spec.wheels.width);
+    const wg=wheelGeo(spec.wheels.radius,spec.wheels.width,spec.rimScale);
     const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
     // 휠 아치에 꽉 끼는 시각 스케일(물리는 그대로) — 스캔 차량의 아치 개구부 충전
@@ -371,7 +407,7 @@ class CarVisual{
       trunk:this.mkPart(hx*1.35,hy*.55,.05,0,stationLerp(st,-hz*.99,"y1")+hy*.28,-hz-.02,partMat)};
     this.partHp={fb:1,rb:1,hood:1,trunk:1,dl:1,dr:1,ml:.35,mr:.35};
     this.wheelMeshes=[];
-    const wg=wheelGeo(W.radius,W.width);
+    const wg=wheelGeo(W.radius,W.width,spec.rimScale);
     const bg=brakeGeo(W.radius,W.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
     for(let i=0;i<4;i++){

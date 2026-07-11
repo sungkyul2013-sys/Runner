@@ -177,7 +177,7 @@ function initHudButtons(){
     Game.placeCrashCar();};
   // crash scenario select — 벽/차대차/측면/후방/샌드위치
   {const scSeg=$("crashScenSeg");
-   const SCENS=[["wall","🧱 벽"],["head","🚗 차대차"],["tbone","🚙 측면"],["rear","💥 후방"],["sandwich","🚚 샌드위치"]];
+   const SCENS=[["wall","🧱 벽"],["head","🚗 차대차"],["tbone","🚙 측면"],["rear","💥 후방"],["sandwich","🚚 샌드위치"],["pole","🗼 측면 폴"]];
    scSeg.innerHTML=SCENS.map(([id,nm],i)=>'<button class="'+(i?'':'sel')+'">'+nm+'</button>').join('');
    for(let si=0;si<scSeg.children.length;si++)scSeg.children[si].onclick=()=>{
      Sfx.click();Game.crash.scen=SCENS[si][0];
@@ -196,6 +196,16 @@ function initHudButtons(){
    for(let ri=0;ri<rs.children.length;ri++)rs.children[ri].onclick=()=>{
      Sfx.click();Game.crash.rammer=CARS[ri].id;
      for(let k=0;k<rs.children.length;k++)rs.children[k].classList.toggle("sel",k===ri);};}
+  // 크래시 리포트 자동 표시 on/off
+  {const rt=$("crashRepTgl");if(rt){rt.checked=Settings.autoReport!==false;
+    rt.onchange=()=>{Settings.autoReport=rt.checked;saveSettings&&saveSettings();
+      toast(rt.checked?"리포트 자동 표시 ON":"리포트 자동 표시 OFF");};}}
+  // 하단 패널 접기/펼치기(충돌 테스트·자동차 랩)
+  for(const[bid,pid]of[["crashHide","crashPanel"],["labHide","labPanel"]]){
+    const bt=$(bid);if(!bt)continue;
+    bt.onclick=()=>{Sfx.click();
+      const on=$(pid).classList.toggle("tuck");
+      bt.textContent=on?"▴":"▾";};}
   // 크래시 리포트 닫기(X)
   $("repClose").onclick=()=>{Sfx.click();
     $("reportPanel").classList.remove("on");
@@ -346,13 +356,13 @@ function boot(){
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
         else if(c.id==="maybach"){                  // 마이바흐 GLS: 에어서스(실차형)
           c.susp.k*=.68;                            // 더 부드러운 스프링 → 방지턱에서 스트로크가 크게 움직임
-          c.susp.c*=.68;                            // 압축 댐핑 더 낮게 → 서스가 실제로 깊게 눌림(차체로 전달 안 됨)
-          c.susp.rebMul=3.4;                        // 리바운드 댐핑 매우 강함 → 위로 튀지 않고 '딱' 끊어지는 복귀
-          c.susp.sky=2900;                          // 스카이훅 세미액티브(쫀득함): 차체 헤이브 직접 감쇠
+          c.susp.c*=.74;                            // 압축 댐핑 낮게 → 서스가 실제로 깊게 눌림(차체로 전달 안 됨)
+          c.susp.rebMul=3.8;                        // 리바운드 댐핑 매우 강함 → 넘은 뒤 차체가 붕 뜨지 않음
+          c.susp.sky=4300;                          // 스카이훅 강화: 방지턱 이후 차체 헤이브(부양)를 즉시 흡수
           c.susp.rest+=.07;                         // 에어서스 리프트: 정하중 처짐 보상 → 바퀴가 아치에 제대로 보임
           c.susp.travel*=2.6;                       // 위쪽 스트로크 넉넉히 → 더 높은 방지턱도 스트로크 안에서 흡수
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소
-        else if(c.id==="offroad"){                  // 오프로드 몬스터: 리프트업 + 초롱트래블
+        else if(c.id==="offroad"||c.id==="offroadc"){ // 오프로드 몬스터(오픈탑·하드탑): 리프트업 + 초롱트래블
           c.susp.travel*=2.1;                       // 트래블 엄청 크게(≈53cm) → 록크롤·후프스 흡수
           c.susp.rest+=.15;                         // 리프트 킷 → 차고 대폭 상승
           c.susp.k*=.88;c.susp.c*=.95;              // 부드러운 롱스트로크 세팅

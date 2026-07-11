@@ -49,6 +49,7 @@ const Settings=Object.assign({
   camShake:true,shadows:true,quality:"auto", // auto|high|low
   sound:true,volume:0.8,
   autoSlowmo:true,debug:false,
+  autoReport:true,       // 충돌 후 리포트 자동 표시
 },Store.get("settings",{}));
 function applyAssistPreset(p){Settings.assist=p;
   if(p==="casual"){Settings.absOn=Settings.tcsOn=Settings.ctrSteer=Settings.stab=true;}

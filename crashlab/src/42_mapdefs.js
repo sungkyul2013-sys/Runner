@@ -182,6 +182,7 @@ const MAPS=[
   w.addRippleZone(0,64,40,.012,2.3,1);
   w.addRippleZone(96,-30,34,.018,2.8,2);
   w.addRippleZone(-96,-64,38,.014,1.0,3);
+  w.addRippleZone(-96,-180,36,.013,2.0,3);   // 시작(스폰) 구간: 완만한 꿀렁임 조금
   const pitch=96,half=396;
   mb.fill((x,z)=>{
     // roads on grid lines every 96m, width 16
@@ -482,22 +483,23 @@ const MAPS=[
   return mb.finalize(this);}},
 
 /* ---------- 6. 선셋 레이스웨이 ---------- */
-{id:"raceway",name:"선셋 레이스웨이",icon:"🏁",desc:"3.1km 12코너 서킷 — 타임어택 기준 맵",
+{id:"raceway",name:"선셋 레이스웨이",icon:"🏁",desc:"3.4km 플로잉 서킷 — 완만한 10코너·광폭 17m·실제 트랙 레이아웃",
  modes:["free","time","race","drift"],
  build(){
   const mb=new MapBuilder(820,224),w=mb.world;
   mb.fill((x,z)=>[1.5*Math.sin(x*.01)*Math.cos(z*.012),S_GRS]);
-  const ctrl=[[-300,-220],[-60,-300],[140,-260],[240,-140],[160,-40],[260,60],[280,200],[120,290],
-              [-60,230],[-160,290],[-300,220],[-350,60],[-260,-40],[-340,-120]];
-  const road=samplePath(ctrl,true,480);
-  mb.paintPath(road,13,S_ASP,true,true);
+  // 실제 트랙형 레이아웃: 급헤어핀 없이 완만하게 이어지는 스윕 코너(반경 크게)
+  const ctrl=[[-300,-230],[-80,-300],[150,-280],[290,-180],[335,-20],[300,150],[170,270],
+              [-30,305],[-220,270],[-330,140],[-350,-60]];
+  const road=samplePath(ctrl,true,520);
+  mb.paintPath(road,17,S_ASP,true,true);
   // curbs: paint stripe bands at corners (high curvature areas)
   for(let i=2;i<road.length-2;i+=2){
     const a=road[i-2],b=road[i],c=road[i+2];
     const ang=Math.abs(Math.atan2(c.x-b.x,c.z-b.z)-Math.atan2(b.x-a.x,b.z-a.z));
-    if(ang>.045&&ang<3){
+    if(ang>.04&&ang<3){
       const dx=c.x-a.x,dz=c.z-a.z,l=Math.hypot(dx,dz)||1;
-      for(const s of[-1,1])mb.stamp(b.x+dz/l*s*7.2,b.z-dx/l*s*7.2,1.5,(ii,jj)=>w.setS(ii,jj,S_CRB));}}
+      for(const s of[-1,1])mb.stamp(b.x+dz/l*s*9.4,b.z-dx/l*s*9.4,1.5,(ii,jj)=>w.setS(ii,jj,S_CRB));}}
   // tire walls at hard corners
   for(let i=0;i<road.length-4;i+=8){
     const a=road[i],b=road[i+4];
@@ -505,15 +507,9 @@ const MAPS=[
     const mid=road[i+2];
     const dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1;
     const cv=Math.abs(Math.atan2(road[(i+8)%road.length].x-b.x,road[(i+8)%road.length].z-b.z)-ang2);
-    if(cv>.35&&cv<3)for(const s of[-1,1])
-      mb.box(mid.x+dz/l*s*13,w.height(mid.x+dz/l*s*13,mid.z-dx/l*s*13)+.5,mid.z-dx/l*s*13,
+    if(cv>.3&&cv<3)for(const s of[-1,1])
+      mb.box(mid.x+dz/l*s*16,w.height(mid.x+dz/l*s*16,mid.z-dx/l*s*16)+.5,mid.z-dx/l*s*16,
         1.2,1,7,s>0?0xd8433b:0xe8e8e8,{yaw:ang2,mu:.6,bounce:.3,tag:"tirewall"});}
-  // 시케인 (스타트 직후 감속 시케인 — 타이어 스택 게이트)
-  {const a=road[6],b=road[10];
-   const dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1,yaw=Math.atan2(dx,dz),nx=dz/l,nz=-dx/l;
-   for(let s=0;s<5;s++){
-     const t=s/4,cx=lerp(a.x,b.x,t),cz=lerp(a.z,b.z,t),off=(s%2?1:-1)*4;
-     mb.box(cx+nx*off,w.height(cx+nx*off,cz+nz*off)+.5,cz+nz*off,1.4,1,3,s%2?0xd8433b:0xe8e8e8,{yaw,mu:.6,bounce:.3,tag:"tirewall"});}}
   // 피트 박스 (스탠드 앞 정비 구역)
   for(let k=0;k<5;k++)mb.box(-210+k*16,.06,-250,13,.12,7,0x33393f,{mu:.9,tag:"pit"});
   // grandstand + 나무 (관중석 3단)
@@ -528,11 +524,11 @@ const MAPS=[
   {const off=(pts,o)=>pts.map((p,i)=>{const q=pts[(i+1)%pts.length];
      const dx=q.x-p.x,dz=q.z-p.z,l=Math.hypot(dx,dz)||1;
      return{x:p.x+dz/l*o,z:p.z-dx/l*o};});
-   mb.texPath(off(road,5.7),.35,"rgba(244,248,252,.85)");
-   mb.texPath(off(road,-5.7),.35,"rgba(244,248,252,.85)");
+   mb.texPath(off(road,7.7),.35,"rgba(244,248,252,.85)");
+   mb.texPath(off(road,-7.7),.35,"rgba(244,248,252,.85)");
    // 스타트/피니시 라인
    const a=road[0],b=road[4];
-   mb.texRect(a.x,a.z,13,1.6,Math.atan2(b.x-a.x,b.z-a.z),"rgba(240,244,250,.95)");}
+   mb.texRect(a.x,a.z,17,1.6,Math.atan2(b.x-a.x,b.z-a.z),"rgba(240,244,250,.95)");}
   w.checkpoints=pathCheckpoints(road,30,16);
   mb.paintLanes();
   w.waypoints=pathWaypoints(road,true,52);
@@ -671,6 +667,8 @@ MAPS.push(
   w.addRippleZone(300,300,55,.02,2.8,2);     // 동측 순환로 부근: 워시보드
   w.addRippleZone(-410,120,70,.016,.9,3);    // 서측 순환로: 완만한 물결
   w.addRippleZone(90,-90,45,.01,2.4,1);      // 도심 남동 블록: 미세 요철
+  w.addRippleZone(0,-45,38,.013,1.9,3);      // 다운타운 스폰 앞: 완만한 꿀렁임
+  w.addRippleZone(-60,60,34,.011,2.6,1);     // 다운타운 북서 블록: 잔요철
   w.addRippleZone(0,-500,60,.018,2.2,2);     // 남부 고속도로: 워시보드
   w.addRippleZone(-240,-420,55,.015,1.1,3);  // 남서 교외로: 물결
   w.checkpoints=pathCheckpoints(mega,26,20);

@@ -91,6 +91,7 @@ class SoftLattice{
     const RV=hy*2.3+.4;                                // 수직 반경(바닥·지붕까지)
     const crushLen=Math.min(.5+3.3*sev,axExt*1.1);     // 압축 전파 ≤ 구조 깊이
     const gFrac=Math.min(.4,sev*sev*.34+sev*.2)*(.48+.52*axFrac); // 전역 프레임 손상: 속도 제곱 성분(고속일수록 전체가 굽음)
+    const micro=Math.min(.05,Math.max(0,dv-5)*.0011); // 전신 미세 소성: 모든 부품·프레임이 충돌 가속도에 비례해 약간씩 틀어짐
     const s0=-axExt*1.05;
     const P=this.pos,Q=this.prev,PL=this.plast,HM=this.home,RG=this.rag;
     for(let i=0;i<this.n;i++){
@@ -110,6 +111,12 @@ class SoftLattice{
         P[a]+=lx*f;P[a+1]+=uy*f+by;P[a+2]+=lz*f;
         PL[a]+=lx*f;PL[a+1]+=uy*f+by;PL[a+2]+=lz*f;
         Q[a]+=lx*f;Q[a+1]+=uy*f+by;Q[a+2]+=lz*f;}
+      // (3) 전신 미세 소성: 재질 편차(rag)로 노드마다 다르게 → 프레임 전체가 가속도에 비례해 미세하게 뒤틀림
+      if(micro>0){
+        const mj=micro*(.35+.65*RG[i]);
+        P[a]+=lx*mj;P[a+1]+=ly*mj*.5;P[a+2]+=lz*mj;
+        PL[a]+=lx*mj;PL[a+1]+=ly*mj*.5;PL[a+2]+=lz*mj;
+        Q[a]+=lx*mj;Q[a+1]+=ly*mj*.5;Q[a+2]+=lz*mj;}
       // (2) 전역 프레임 충격: 충격축 따라 차 전체 약하게 압축(뒤 프레임도 굽음)
       if(gFrac>0){
         const s=-(P[a]*lx+P[a+1]*ly+P[a+2]*lz);

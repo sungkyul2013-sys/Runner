@@ -103,7 +103,8 @@ function applyModelSpec(spec){
     spec.modelCx=sx/w.length;spec.modelCz=sz/w.length;}
   const oldR=spec.wheels.radius;
   const wrFull=(e.wheel.bb[4]-e.wheel.bb[1])/2*s;
-  const wr=spec.realWheels?wrFull:wrFull*.8;   // 실측 휠은 축소 없이 실제 반경
+  let wr=spec.realWheels?wrFull:wrFull*.8;   // 실측 휠은 축소 없이 실제 반경
+  if(spec.wheelRadMul)wr*=spec.wheelRadMul;  // 타이어 반경 미세 조정(펜더 뚫림 방지)
   const drop=wrFull-wr;                     // 휠 축소분만큼 마운트 하향 → 지상고 유지
   const fw=w.filter(p=>p[2]<spec.modelCz),rw=w.filter(p=>p[2]>=spec.modelCz);
   spec.wheels.radius=wr;
@@ -113,6 +114,7 @@ function applyModelSpec(spec){
   if(spec.wheelOutset){                       // 휠 스페이서: 시각·물리 트랙 모두 바깥으로 (와이드 스탠스)
     spec.wheels.trackVis+=spec.wheelOutset;
     spec.wheels.track+=spec.wheelOutset;}
+  if(spec.wheelTuck)spec.wheels.trackVis-=spec.wheelTuck;  // 시각 트랙만 안으로(펜더 밖 돌출 방지)
   spec.wheels.front=Math.abs((fw[0]?fw[0][2]:-len*.35)-spec.modelCz)*s;
   spec.wheels.rear=Math.abs((rw[0]?rw[0][2]:len*.35)-spec.modelCz)*s;
   spec.wheels.y=(w[0][1]-spec.modelCy)*s*sq+spec.susp.rest-drop;

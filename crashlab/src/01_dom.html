@@ -53,6 +53,7 @@
   <button class="padBtn" id="btnHB">🅿️</button>
   <div id="ctlHint"></div>
   <div id="crashPanel">
+    <button class="panelHide" id="crashHide" title="패널 접기/펼치기">▾</button>
     <div class="seg" id="crashScenSeg"></div>
     <div class="row"><span style="font-size:13px;font-weight:700;color:var(--tx2)">발사 속도</span>
       <input type="range" id="crashSpeed" min="20" max="300" step="5" value="60">
@@ -66,6 +67,8 @@
         <span id="crashOffVal" style="font-size:13px;font-weight:800;color:var(--acc2);min-width:44px;text-align:right">0.0m</span></div>
       <div class="row"><span style="font-size:12px;color:var(--tx2)">상대 차량</span>
         <div class="seg" id="crashRamSeg" style="flex:1"></div></div>
+      <div class="row"><span style="font-size:12px;color:var(--tx2)">충돌 후 리포트 자동 표시</span>
+        <input type="checkbox" id="crashRepTgl" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
     </div>
     <div class="row" style="margin-bottom:0">
       <div class="seg" id="crashTargetSeg" style="flex:1"></div>
@@ -74,6 +77,7 @@
     </div>
   </div>
   <div id="labPanel">
+    <button class="panelHide" id="labHide" title="패널 접기/펼치기">▾</button>
     <div id="labStats"></div>
     <div class="row"><span style="font-size:13px;font-weight:700;color:var(--tx2)">가하는 힘</span>
       <input type="range" id="labForce" min="8" max="60" step="1" value="30">
