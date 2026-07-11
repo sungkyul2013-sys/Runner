@@ -96,8 +96,9 @@ const psign=permSign();
 let wr=.4,cen=[];
 if(tirePts.length){
   const TP=tirePts.map(remap);
-  let maxY=0;for(const p of TP)maxY=Math.max(maxY,p[1]);wr=maxY/2;
-  cen=[[-1,1],[1,1],[-1,-1.5],[1,-1.5]].map(s=>[s[0],wr,s[1]]);
+  let maxY=-1e9,minY=1e9;for(const p of TP){maxY=Math.max(maxY,p[1]);minY=Math.min(minY,p[1]);}
+  wr=(maxY-minY)/2;const cy0=(maxY+minY)/2;
+  cen=[[-1,1],[1,1],[-1,-1.5],[1,-1.5]].map(s=>[s[0],cy0,s[1]]);
   for(let it=0;it<12;it++){
     const a2=cen.map(()=>[0,0,0,0]);
     for(const p of TP){let bi=0,bd=1e9;
@@ -146,7 +147,7 @@ console.log('lamp z',lampN?(lampZ/lampN).toFixed(2):'n/a','flip',flip);
 const pos=[],nrm=[],col=[],mask=[];
 for(const[ka,kb,kc,cls] of keptTris){
   const ra=cellMap.get(ka),rb=cellMap.get(kb),rc=cellMap.get(kc);
-  const ord=(flip*psign===1)?[ra,rc,rb]:[ra,rb,rc];
+  const ord=(flip*psign===-1)?[ra,rc,rb]:[ra,rb,rc];   // 반사(미러) 시 와인딩 스왑 → 백페이스 컬링 정상
   for(const r of ord){
     pos.push(r.x*flip,r.y,r.z*flip);
     nrm.push(r.nx*flip,r.ny,r.nz*flip);

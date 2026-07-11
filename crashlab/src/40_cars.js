@@ -194,7 +194,7 @@ function stationLerp(st,z,key){
   return st[0][key];
 }
 
-const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:135,specular:0x9aa2ae}); // 클리어코트 광택
+const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:135,specular:0x9aa2ae,side:THREE.DoubleSide}); // 클리어코트 광택·양면(베이크 차량 투명 방지)
 const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:170,specular:0xa8b6c2,side:THREE.DoubleSide}); // 유광 클리어코트 + 양면(패널 틈 메움)
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
   transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
@@ -224,6 +224,8 @@ function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크
     for(let sp=0;sp<10;sp++){
       const a=sp*Math.PI/5+(sp%2?.11:-.11);
       items.push({geo:new THREE.BoxGeometry(wd*.62,r*1.16,r*.055),color:sp%2?0xb9c2cc:0xd4dae0,rx:a});}
+    // 밸브 마커(오프센터 포인트) — 회전이 어느 속도에서도 또렷이 보임
+    items.push({geo:new THREE.BoxGeometry(wd*.8,r*.09,r*.09),color:0xffd23e,y:r*.48});
     _wheelGeoCache[k]=mergeGeoms(items);}
   return _wheelGeoCache[k];
 }

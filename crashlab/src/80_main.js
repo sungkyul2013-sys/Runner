@@ -196,6 +196,10 @@ function initHudButtons(){
    for(let ri=0;ri<rs.children.length;ri++)rs.children[ri].onclick=()=>{
      Sfx.click();Game.crash.rammer=CARS[ri].id;
      for(let k=0;k<rs.children.length;k++)rs.children[k].classList.toggle("sel",k===ri);};}
+  // 크래시 리포트 닫기(X)
+  $("repClose").onclick=()=>{Sfx.click();
+    $("reportPanel").classList.remove("on");
+    if(Game.mode==="crash"){Game.crash.phase="idle";Game.placeCrashCar();}};
   // 주행 중 차량 즉시 교체(다음 차로 순환)
   $("btnCarSwap").onclick=()=>{Sfx.click();Game.swapCar(Game.opts.carIdx+1);};
   // 자동차 랩: 힘 슬라이더·차 넘기기·탭으로 힘 가하기
