@@ -373,6 +373,81 @@ const MAPS=[
   w.spawn={x:-300,z:-300,yaw:Math.PI/4};
   return mb.finalize(this);}},
 
+/* ---------- 4.5 극한 오프로드 ---------- */
+{id:"extreme",name:"극한 오프로드",icon:"🪨",desc:"롱트래블 전용 캐년 — 후프스 필드·록가든·진흙 늪·워시보드 러트·V도랑·바위계단·36° 힐클라임·정상 크롤링 능선(30m)",
+ modes:["free"],
+ build(){
+  const mb=new MapBuilder(820,256),w=mb.world;
+  const HX=250,HZ=-40;                                  // 힐클라임 산 중심
+  mb.fill((x,z)=>{
+    // 거친 황무지 기본 굴곡(큰 물결 + 중간 요철)
+    let h=2.4*Math.sin(x*.024)*Math.cos(z*.021)+1.2*Math.sin(x*.061+1)*Math.cos(z*.054+2);
+    let s=S_GRV;
+    // 동쪽 힐클라임 산: 36° 직선 사면(슬로프 0.72) + 평탄한 정상 크롤링 능선
+    const hd=Math.hypot(x-HX,z-HZ);
+    if(hd<150)h+=Math.min(30,(150-hd)*.72);
+    // V도랑(남북으로 굽이침, 깊이 4m): 크로스액슬 — 한쪽 바퀴씩 걸치는 코스
+    const vd=Math.abs(x+16+14*Math.sin(z*.02));
+    if(vd<9&&Math.abs(z)<230&&hd>160)h-=(9-vd)*.46;
+    // 진흙 늪(저지대 웅덩이 2곳): 초저마찰 + 함몰
+    for(const[mx,mz,mr]of[[-120,170,44],[-60,258,32]]){
+      const md=Math.hypot(x-mx,z-mz);
+      if(md<mr){h-=1.3*(1-md/mr);if(md<mr*.82)s=S_WET;}}
+    if(x<-330)s=S_SND;                                  // 서쪽 모래 협곡
+    return[h,s];});
+  // ① 후프스 필드(서쪽): 연속 대형 둔덕 18개 — 롱트래블 서스 시험장
+  for(let k=0;k<18;k++)
+    mb.bump(-290,-200+k*9.5,Math.PI/2,15,.3+(k%3)*.09,k%2?"round":"arch");
+  mb.texText(-290,-224,5,"WHOOPS","rgba(220,200,160,.8)");
+  // ② 록가든(중서부): 랜덤 바위 60개 — 저속 크롤링
+  {let sd=77;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<60;k++){
+     const x=-190+(rr()-.5)*70,z=-160+rr()*260;
+     mb.box(x,w.height(x,z)+.12+rr()*.2,z,1.2+rr()*2.4,.3+rr()*.6,1+rr()*2,0x77706a,
+       {yaw:rr()*3,roll:(rr()-.5)*.5,pitch:(rr()-.5)*.3,mu:.9,tag:"rock"});}
+   mb.texText(-190,-184,5,"ROCK GARDEN","rgba(200,200,205,.8)");
+   // 정상 능선 볼더 필드(크롤링)
+   for(let k=0;k<16;k++){
+     const a=rr()*Math.PI*2,d=20+rr()*38;
+     const x=HX+Math.cos(a)*d,z=HZ+Math.sin(a)*d;
+     mb.box(x,w.height(x,z)+.15,z,1.5+rr()*2,.4+rr()*.5,1.4+rr()*1.6,0x6f6862,
+       {yaw:rr()*3,roll:(rr()-.5)*.4,mu:.9,tag:"rock"});}}
+  // ③ 워시보드 러트(빨래판 흙길): 리플존 강하게 — 트레일 중간 3곳
+  w.addRippleZone(60,120,46,.055,1.6,2);
+  w.addRippleZone(-60,-260,42,.045,1.9,2);
+  w.addRippleZone(120,-180,40,.05,1.2,3);
+  // ④ 바위 계단(힐클라임 남쪽 사면 진입로): 단차 5단 → 턱턱 치고 오르기
+  for(let k=0;k<5;k++){
+    const x=HX-150+k*6,z=HZ+96;
+    mb.box(x,w.height(x,z)+.18,z,6,.36,10,0x8a8178,{mu:1,tag:"stair"});}
+  mb.texText(HX-140,HZ+116,5,"ROCK STEPS","rgba(200,200,205,.8)");
+  // ⑤ 시소 통나무 브리지(V도랑 위)
+  mb.box(-16,w.height(-16,40)+.5,40,10,.5,3.2,0x9a7b4f,{mu:1,tag:"plank"});
+  // 진흙 늪 시각화
+  mb.texCircle(-120,170,36,"rgba(72,58,38,.85)");
+  mb.texCircle(-60,258,26,"rgba(72,58,38,.85)");
+  mb.texText(-120,170,5,"MUD BOG","rgba(240,230,200,.75)");
+  // 메인 트레일: 전 구간을 잇는 자갈길 (스폰→후프스→록가든→진흙→V도랑→계단→정상)
+  {const trail=followTerrain(w,samplePath([[-300,-300],[-290,-120],[-290,40],[-190,120],[-120,170],
+     [-16,120],[-16,-40],[60,-120],[120,-180],[HX-150,HZ+96],[HX-60,HZ+40],[HX,HZ]],false,360));
+   mb.paintPath(trail,8,S_GRV,true,true);}
+  // 장식: 마른 나무·배럴·콘
+  {let sd=91;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<14;k++){
+     const x=(rr()-.5)*700,z=(rr()-.5)*700;
+     if(Math.hypot(x-HX,z-HZ)>170)mb.baked(k%2?"trees":"treesTall",x,z,7+rr()*5,rr()*6,{});}}
+  for(let k=0;k<4;k++)mb.prop("barrel",-260+k*5,-240);
+  mb.texText(0,-330,7,"EXTREME OFFROAD","rgba(240,244,250,.85)");
+  w.spawn={x:-300,z:-320,yaw:0};
+  w.places=[
+    {name:"🌊 후프스 필드",x:-290,z:-220,yaw:0},
+    {name:"🪨 록가든",x:-190,z:-170,yaw:0},
+    {name:"🟤 진흙 늪",x:-120,z:120,yaw:.6},
+    {name:"↯ V도랑 크로스액슬",x:-16,z:-200,yaw:0},
+    {name:"🧗 바위계단·힐클라임",x:HX-190,z:HZ+96,yaw:Math.PI/2},
+    {name:"⛰️ 정상 능선",x:HX,z:HZ-60,yaw:Math.PI}];
+  return mb.finalize(this);}},
+
 /* ---------- 5. 빙판 호수 ---------- */
 {id:"ice",name:"빙판 호수",icon:"❄️",desc:"μ0.15 초저마찰 — 드리프트 서클과 눈벽 안전지대",
  modes:["free","drift"],
@@ -497,7 +572,7 @@ MAPS.push(
   for(const[a,b]of[[[185,0],[418,0]],[[-185,0],[-418,0]],[[0,185],[0,418]],[[0,-185],[0,-418]]])
     mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],14,S_ASP,true);
   // 메가 외곽 고속도로: 지형을 따라 오르막·내리막(산 구간 힐클라임), 남측은 광폭 차선
-  const mega=followTerrain(w,samplePath([[580,20],[470,-350],[200,-545],[-250,-560],[-565,-250],[-585,160],[-330,520],[80,565],[440,420]],true,520));
+  const mega=followTerrain(w,samplePath([[580,20],[470,-350],[200,-545],[-250,-560],[-560,-260],[-610,40],[-500,330],[-230,530],[80,565],[440,420]],true,540));
   mb.paintPath(mega,19,S_ASP,true,true);
   railAlong(mb,mega,19,0xb9c2cc,(a)=>(Math.abs(a.x)<20&&Math.abs(a.z)>380)||(Math.abs(a.z)<20&&Math.abs(a.x)>380));
   {const wide=mega.filter(p=>p.z<-495);            // 남측 광폭 구간

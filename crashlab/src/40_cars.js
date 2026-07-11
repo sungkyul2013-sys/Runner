@@ -24,6 +24,7 @@ const CARS=[
  {id:"offroad",name:"오프로드 몬스터",icon:"🚙",drive:"4WD",mass:2150,hp:280,acc:"9.0초",top:160,
   desc:"사용자 제공 로우폴리 오프로더. 롱트래블 서스 + 라이트 포드 + 루프랙.",
   model:"offroadx",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
+  wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
   body:{hx:.95,hy:.75,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -198,8 +199,8 @@ const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,sh
 const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:170,specular:0xa8b6c2,side:THREE.DoubleSide}); // 유광 클리어코트 + 양면(패널 틈 메움)
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
   transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
-const MAT_LAMP=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:220,specular:0xffffff,
-  emissive:0x35331f,transparent:true,opacity:.85,side:THREE.DoubleSide}); // 투명 발광 램프 렌즈
+const MAT_LAMP=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.9,
+  side:THREE.DoubleSide,toneMapped:false}); // 자체발광(조명 무시) 투명 렌즈 — 실제 빛나는 램프
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222,side:THREE.DoubleSide}); // 양면 → 타이어 측벽이 비쳐 보이지 않음
 let _wheelGeoCache={};
 function wheelGeo(r,wd){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부)

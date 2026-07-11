@@ -110,6 +110,9 @@ function applyModelSpec(spec){
   spec.wheels.width=(e.wheel.bb[3]-e.wheel.bb[0])*s*.92;
   spec.wheels.trackVis=Math.abs(w[0][0])*s;
   spec.wheels.track=Math.abs(w[0][0])*s*(spec.rollFix||1.25);   // 물리 트랙 보정
+  if(spec.wheelOutset){                       // 휠 스페이서: 시각·물리 트랙 모두 바깥으로 (와이드 스탠스)
+    spec.wheels.trackVis+=spec.wheelOutset;
+    spec.wheels.track+=spec.wheelOutset;}
   spec.wheels.front=Math.abs((fw[0]?fw[0][2]:-len*.35)-spec.modelCz)*s;
   spec.wheels.rear=Math.abs((rw[0]?rw[0][2]:len*.35)-spec.modelCz)*s;
   spec.wheels.y=(w[0][1]-spec.modelCy)*s*sq+spec.susp.rest-drop;
