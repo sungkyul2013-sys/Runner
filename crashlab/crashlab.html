@@ -291,11 +291,8 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #crashPanel.mini{padding:8px 12px;width:auto;min-width:0}
 #crashPanel.mini .row,#crashPanel.mini #crashScenSeg,#crashPanel.mini #crashFine,#crashPanel.mini #crashTargetSeg,#crashPanel.mini #btnFine{display:none!important}
 #crashPanel.mini .row:last-child{display:flex!important;margin:0}
-/* ===== UI 폴리시 v2.12: 톱바 필·미니맵·게이지·세그·인터랙션 ===== */
-.hudTop{background:linear-gradient(170deg,rgba(24,29,40,.55),rgba(12,15,21,.6));
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-  border:1px solid rgba(255,255,255,.08);border-radius:18px;
-  padding:6px 8px;box-shadow:0 8px 26px rgba(0,0,0,.35)}
+/* ===== UI 폴리시 v2.12/13: 미니맵·게이지·세그·인터랙션 (톱바 필 제거·버튼 소형화) ===== */
+.hudTop .iconBtn{width:38px;height:38px;border-radius:11px;font-size:16px}
 .iconBtn{transition:transform .1s,box-shadow .15s,border-color .15s}
 .iconBtn:active{transform:scale(.9);border-color:var(--acc);
   box-shadow:0 0 14px rgba(255,122,26,.45)}
@@ -3977,7 +3974,7 @@ function applyModelSpec(spec){
   const drop=wrFull-wr;                     // 휠 축소분만큼 마운트 하향 → 지상고 유지
   const fw=w.filter(p=>p[2]<spec.modelCz),rw=w.filter(p=>p[2]>=spec.modelCz);
   spec.wheels.radius=wr;
-  spec.wheels.width=(e.wheel.bb[3]-e.wheel.bb[0])*s*.92;
+  spec.wheels.width=(e.wheel.bb[3]-e.wheel.bb[0])*s*.92*(spec.wheelWidMul||1);
   spec.wheels.trackVis=Math.abs(w[0][0])*s;
   spec.wheels.track=Math.abs(w[0][0])*s*(spec.rollFix||1.25);   // 물리 트랙 보정
   if(spec.wheelOutset){                       // 휠 스페이서: 시각·물리 트랙 모두 바깥으로 (와이드 스탠스)
@@ -4800,6 +4797,7 @@ const CARS=[
   desc:"사용자 제공 로우폴리 오프로더. 롱트래블 서스 + 라이트 포드 + 루프랙.",
   model:"offroadx",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
   wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
+  wheelRadMul:.92,wheelWidMul:1.4,           // 바퀴 약간 작게 + 아주 굵게(머드 타이어)
   body:{hx:.95,hy:.75,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -4810,6 +4808,7 @@ const CARS=[
   desc:"뚜껑(하드탑)을 덮은 버전 — 동일 섀시 클로즈드 캐빈. 롱트래블 리프트업.",
   model:"offroadc",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
   wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
+  wheelRadMul:.92,wheelWidMul:1.4,           // 바퀴 약간 작게 + 아주 굵게(머드 타이어)
   body:{hx:.95,hy:.78,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -4846,7 +4845,7 @@ const CARS=[
  {id:"veloce",name:"포르쉐 911 터보",icon:"🏁",drive:"4WD",mass:1595,hp:520,acc:"3.2초",top:315,
   desc:"실차 3D 모델(911 터보 2014). 3.8L 수평대향 6기통 트윈터보 · 리어엔진 4WD.",
   model:"porsche",rollFix:1.34,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
-  wheelRadMul:.93,wheelTuck:.05,rimScale:1.22, // 타이어 살짝 작게·안으로 턱인·대구경 휠(림) — 펜더 뚫림 방지
+  wheelRadMul:1.03,wheelTuck:-.04,rimScale:1.28, // 바퀴·림 크게 + 바깥으로(스탠스) — 큰 바퀴만큼 차고도 살짝 상승
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
   susp:{k:98000,c:7200,travel:.09,rest:.2},arb:60000,
   engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
@@ -5103,7 +5102,27 @@ class CarVisual{
     this.bodyMesh=new THREE.Mesh(split.main,spec.smoothShade?MAT_CAR_SMOOTH:MAT_CAR);
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
     if(split.lamps){this.lampsMesh=new THREE.Mesh(split.lamps,MAT_LAMP);
-      this.group.add(this.lampsMesh);}
+      this.group.add(this.lampsMesh);
+      // 전조등 실제 점등: 램프 지오메트리에서 좌/우 전방 램프 앵커 추출 → 스포트라이트 + 글로우 벌브
+      const pa=split.lamps.attributes.position.array;
+      let zMax=-1e9;for(let i=2;i<pa.length;i+=3)if(pa[i]>zMax)zMax=pa[i];
+      let lxS=0,lc=0,rxS=0,rc=0,yS=0,yc=0;
+      for(let i=0;i<pa.length;i+=3)if(pa[i+2]>zMax-.4){
+        const x=pa[i];yS+=pa[i+1];yc++;
+        if(x<-.12){lxS+=x;lc++;}else if(x>.12){rxS+=x;rc++;}}
+      if(lc&&rc){
+        const y=yS/yc,zl=zMax-.02;
+        const mk=(x)=>{
+          const s=new THREE.SpotLight(0xfff0cc,0,30,.52,.42,1.2);
+          s.position.set(x,y,zl);
+          s.target.position.set(x*.5,y-.4,zl+16);
+          this.group.add(s);this.group.add(s.target);
+          const g=new THREE.Mesh(new THREE.SphereGeometry(.075,8,6),
+            new THREE.MeshBasicMaterial({color:0xfff6d8,transparent:true,opacity:.85,
+              blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+          g.scale.z=.4;g.position.set(x,y,zl+.05);g.visible=false;
+          this.group.add(g);return{s,g};};
+        this.hl=[mk(lxS/lc),mk(rxS/rc)];}}
     if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,MAT_GLASS);
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
     this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh,this.lampsMesh]);
@@ -5136,6 +5155,15 @@ class CarVisual{
         // 리어 견인 후크
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:-hx*.4,y:by+hy*.18,z:zR-.1},
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1}];
+      // 하드탑: 짐칸 슬랫 케이지가 훤히 비쳐 보이던 것을 불투명 캐노피 쉘로 밀폐
+      // (랜드로버 디펜더식 컨트라스트 화이트 루프 + 다크 윈도우 스트립)
+      if(spec.id==="offroadc"){
+        const zMid=zR+(zF-zR)*.47,cz=(zR+.05+zMid)/2,cl=zMid-zR-.1;
+        const yTop=topY*.99,yBot=topY*.4,ch=yTop-yBot,cy=(yTop+yBot)/2;
+        acc.push({geo:new THREE.BoxGeometry(hx*1.66,ch,cl),color:0xe6eaee,y:cy,z:cz});
+        for(const s of[-1,1])acc.push({geo:new THREE.BoxGeometry(.03,ch*.4,cl*.68),color:0x141920,x:s*hx*.84,y:cy+ch*.14,z:cz});
+        acc.push({geo:new THREE.BoxGeometry(hx*1.2,ch*.4,.03),color:0x141920,y:cy+ch*.14,z:zR+.03});
+        acc.push({geo:new THREE.BoxGeometry(hx*1.7,.05,cl+.08),color:0xdfe4e9,y:yTop+.02,z:cz});} // 루프 캡
       this.accMesh=new THREE.Mesh(mergeGeoms(acc),MAT_DETAIL);
       this.accMesh.castShadow=true;this.group.add(this.accMesh);
       // LED 라이트바 발광 렌즈(자체발광)
@@ -5150,10 +5178,25 @@ class CarVisual{
     const wf=spec.wheelVisFit||1;
     this.wheelYOff=(wf-1)*spec.wheels.radius;
     this.wheelMeshes=[];
+    // 리프트업 차량: 바퀴가 차체에서 동떨어져 보이지 않게 서스펜션 링크(스트럿+하프샤프트)로 연결
+    const linked=spec.id==="offroad"||spec.id==="offroadc";
+    const linkMat=linked?new THREE.MeshPhongMaterial({color:0x2a2e35,flatShading:true,shininess:26}):null;
+    const susLen=linked?spec.susp.rest*.62:0;   // 허브→차체 바닥까지만(펜더 위로 튀어나오지 않게)
     for(let i=0;i<4;i++){
       const m=new THREE.Mesh(wg,MAT_DETAIL);m.castShadow=true;
       const br=new THREE.Mesh(bg,MAT_DETAIL);
       const grp=new THREE.Group();grp.add(m);grp.add(br);
+      if(linked){
+        const inX=(i%2===0?1:-1)*spec.wheels.radius*.5;         // 차체 안쪽 방향
+        const strut=new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,susLen,8),linkMat);
+        strut.position.set(inX*.4,susLen*.5,0);strut.rotation.z=(i%2===0?-1:1)*.14;
+        grp.add(strut);                                          // 코일오버 스트럿(위로 차체 속까지)
+        const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,spec.wheels.radius*1.6,8),linkMat);
+        shaft.rotation.z=Math.PI/2;shaft.position.set(inX,spec.wheels.radius*.12,0);
+        grp.add(shaft);                                          // 하프샤프트(휠 허브 → 차체)
+        const arm=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,spec.wheels.radius*1.5,8),linkMat);
+        arm.rotation.x=Math.PI/2;arm.position.set(inX*.8,-spec.wheels.radius*.18,spec.wheels.radius*.55);
+        grp.add(arm);}                                           // 트레일링 암
       if(wf!==1)grp.scale.setScalar(wf);
       this.group.add(grp);this.wheelMeshes.push(grp);}
   }
@@ -5314,6 +5357,12 @@ class CarVisual{
     this.group.quaternion.copy(veh.body.quat);
     if(shakeT>0&&Settings.camShake){
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
+    // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게
+    if(this.hl){
+      const on=typeof Game!=="undefined"&&Game.veh===veh;
+      const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
+      if(this._hlI!==inten){this._hlI=inten;
+        for(const h of this.hl){h.s.intensity=inten;h.g.visible=on;}}}
     const tv=this.baked?this.spec.wheels.trackVis:0;
     for(let i=0;i<4;i++){
       if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함
@@ -6314,18 +6363,32 @@ const MAPS=[
   return mb.finalize(this);}},
 
 /* ---------- 4.5 극한 오프로드 ---------- */
-{id:"extreme",name:"극한 오프로드",icon:"🪨",desc:"롱트래블 전용 캐년 — 후프스 필드·록가든·진흙 늪·워시보드 러트·V도랑·바위계단·36° 힐클라임·정상 크롤링 능선(30m)",
+{id:"extreme",name:"극한 오프로드",icon:"🪨",desc:"롱트래블 전용 캐년 — 후프스·록가든·진흙 늪·러트·V도랑·바위계단·36° 힐클라임·테라스 산·협곡·사구·북부 능선까지 복합 지형",
  modes:["free"],
  build(){
   const mb=new MapBuilder(820,256),w=mb.world;
   const HX=250,HZ=-40;                                  // 힐클라임 산 중심
   mb.fill((x,z)=>{
-    // 거친 황무지 기본 굴곡(큰 물결 + 중간 요철)
-    let h=2.4*Math.sin(x*.024)*Math.cos(z*.021)+1.2*Math.sin(x*.061+1)*Math.cos(z*.054+2);
+    // 거친 황무지 기본 굴곡(큰 물결 + 중간 요철 + 잔물결) — 전 구간이 살아있는 지형
+    let h=2.4*Math.sin(x*.024)*Math.cos(z*.021)+1.2*Math.sin(x*.061+1)*Math.cos(z*.054+2)
+         +.6*Math.sin(x*.11+3)*Math.cos(z*.09+1);
     let s=S_GRV;
     // 동쪽 힐클라임 산: 36° 직선 사면(슬로프 0.72) + 평탄한 정상 크롤링 능선
     const hd=Math.hypot(x-HX,z-HZ);
     if(hd<150)h+=Math.min(30,(150-hd)*.72);
+    // 남서쪽 제2 산: 테라스(계단식 단차) — 단을 하나씩 기어오르는 코스 (정상 22m)
+    const td=Math.hypot(x+250,z-240);
+    if(td<130){const raw=Math.min(22,(130-td)*.34);
+      h+=Math.floor(raw/3.2)*3.2+Math.min(1,(raw%3.2))*3.2*.5;}    // 3.2m 단 + 완만한 립
+    // 북쪽 능선 체인: 낮은 산줄기 3봉(넘나드는 새들 구간)
+    if(z<-160){const rd=Math.abs(z+270);
+      h+=Math.max(0,14-rd*.14)*(1+.4*Math.sin(x*.02));}
+    // 중부 협곡(캐년): 동서로 가르는 골짜기 — 절벽 벽 사이 바닥길
+    const cy=Math.abs(z-92+16*Math.sin(x*.014));
+    if(cy<26&&x>-200&&x<170&&hd>150){h-=Math.min(7,(26-cy)*.55);if(cy<18)s=S_GRV;}
+    // 남동쪽 사구 파도: 모래 언덕 물결
+    if(x>60&&z>170){const dn=Math.min((x-60)/60,1)*Math.min((z-170)/60,1);
+      h+=dn*(3.2*Math.sin(x*.05+1)*Math.cos(z*.04)+2);s=dn>.4?S_SND:s;}
     // V도랑(남북으로 굽이침, 깊이 4m): 크로스액슬 — 한쪽 바퀴씩 걸치는 코스
     const vd=Math.abs(x+16+14*Math.sin(z*.02));
     if(vd<9&&Math.abs(z)<230&&hd>160)h-=(9-vd)*.46;
@@ -6333,7 +6396,7 @@ const MAPS=[
     for(const[mx,mz,mr]of[[-120,170,44],[-60,258,32]]){
       const md=Math.hypot(x-mx,z-mz);
       if(md<mr){h-=1.3*(1-md/mr);if(md<mr*.82)s=S_WET;}}
-    if(x<-330)s=S_SND;                                  // 서쪽 모래 협곡
+    if(x<-330&&z<100)s=S_SND;                           // 서쪽 모래 협곡
     return[h,s];});
   // ① 후프스 필드(서쪽): 연속 대형 둔덕 18개 — 롱트래블 서스 시험장
   for(let k=0;k<18;k++)
@@ -6379,13 +6442,31 @@ const MAPS=[
   for(let k=0;k<4;k++)mb.prop("barrel",-260+k*5,-240);
   mb.texText(0,-330,7,"EXTREME OFFROAD","rgba(240,244,250,.85)");
   w.spawn={x:-300,z:-320,yaw:0};
+  // 협곡 림·테라스 단 위 볼더 + 사구 깃발 배럴
+  {let sd=57;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<22;k++){
+     const x=-180+rr()*330,z=92+16*Math.sin(x*.014)+(rr()<.5?-30:30)+(rr()-.5)*8;
+     mb.box(x,w.height(x,z)+.2,z,1.2+rr()*2,.4+rr()*.6,1+rr()*1.8,0x6f6862,
+       {yaw:rr()*3,roll:(rr()-.5)*.4,mu:.9,tag:"rock"});}
+   for(let k=0;k<12;k++){
+     const a=rr()*6.28,d=40+rr()*80,x=-250+Math.cos(a)*d,z=240+Math.sin(a)*d;
+     mb.box(x,w.height(x,z)+.25,z,1.4+rr()*2.2,.5+rr()*.7,1.2+rr()*2,0x77706a,
+       {yaw:rr()*3,roll:(rr()-.5)*.5,mu:.9,tag:"rock"});}}
+  for(let k=0;k<4;k++)mb.prop("barrel",130+k*18,230);
+  mb.texText(-250,240,6,"TERRACE MT","rgba(220,210,190,.7)");
+  mb.texText(0,92,5,"CANYON","rgba(200,200,205,.7)");
+  mb.texText(150,240,5,"DUNES","rgba(230,215,170,.75)");
   w.places=[
     {name:"🌊 후프스 필드",x:-290,z:-220,yaw:0},
     {name:"🪨 록가든",x:-190,z:-170,yaw:0},
     {name:"🟤 진흙 늪",x:-120,z:120,yaw:.6},
     {name:"↯ V도랑 크로스액슬",x:-16,z:-200,yaw:0},
     {name:"🧗 바위계단·힐클라임",x:HX-190,z:HZ+96,yaw:Math.PI/2},
-    {name:"⛰️ 정상 능선",x:HX,z:HZ-60,yaw:Math.PI}];
+    {name:"⛰️ 정상 능선",x:HX,z:HZ-60,yaw:Math.PI},
+    {name:"🏔️ 테라스 산(계단식)",x:-250,z:120,yaw:Math.PI},
+    {name:"🏜️ 사구 파도",x:120,z:210,yaw:.8},
+    {name:"🏞️ 협곡 바닥길",x:-160,z:92,yaw:Math.PI/2},
+    {name:"⛰️ 북부 능선 새들",x:0,z:-270,yaw:Math.PI/2}];
   return mb.finalize(this);}},
 
 /* ---------- 5. 빙판 호수 ---------- */
@@ -8499,10 +8580,10 @@ function boot(){
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소
         else if(c.id==="offroad"||c.id==="offroadc"){ // 오프로드 몬스터(오픈탑·하드탑): 지프식 하이 리프트 + 초롱트래블
           c.susp.travel*=2.1;                       // 트래블 엄청 크게(≈53cm) → 록크롤·후프스 흡수
-          c.susp.rest+=.27;                         // 빅 리프트 킷 → 지프처럼 차고 대폭 상승(바퀴 위 아치갭 큼)
-          c.susp.k*=.88;c.susp.c*=.95;              // 부드러운 롱스트로크 세팅
+          c.susp.rest+=.44;                         // 메가 리프트 킷 → 차고 극대화(모노스터 트럭 스탠스)
+          c.susp.k*=.92;c.susp.c*=1.0;              // 롱스트로크 세팅(리프트 안정 보강)
           c.susp.rebMul=1.15;                       // 리바운드 자유롭게 → 바퀴가 지형을 따라감(아티큘레이션)
-          c.arb*=2.3;}                              // 높아진 무게중심 보상(전복 억제)
+          c.arb*=2.8;}                              // 높아진 무게중심 보상(전복 억제)
         else{
           c.susp.travel*=1.2;                       // 컴포트/오프로드: 스트로크 확대(다이브·바운스)
           c.susp.c*=.85;                            // 리바운드 완화 → 생동감

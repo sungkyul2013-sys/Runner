@@ -25,6 +25,7 @@ const CARS=[
   desc:"사용자 제공 로우폴리 오프로더. 롱트래블 서스 + 라이트 포드 + 루프랙.",
   model:"offroadx",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
   wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
+  wheelRadMul:.92,wheelWidMul:1.4,           // 바퀴 약간 작게 + 아주 굵게(머드 타이어)
   body:{hx:.95,hy:.75,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -35,6 +36,7 @@ const CARS=[
   desc:"뚜껑(하드탑)을 덮은 버전 — 동일 섀시 클로즈드 캐빈. 롱트래블 리프트업.",
   model:"offroadc",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
   wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
+  wheelRadMul:.92,wheelWidMul:1.4,           // 바퀴 약간 작게 + 아주 굵게(머드 타이어)
   body:{hx:.95,hy:.78,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -71,7 +73,7 @@ const CARS=[
  {id:"veloce",name:"포르쉐 911 터보",icon:"🏁",drive:"4WD",mass:1595,hp:520,acc:"3.2초",top:315,
   desc:"실차 3D 모델(911 터보 2014). 3.8L 수평대향 6기통 트윈터보 · 리어엔진 4WD.",
   model:"porsche",rollFix:1.34,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
-  wheelRadMul:.93,wheelTuck:.05,rimScale:1.22, // 타이어 살짝 작게·안으로 턱인·대구경 휠(림) — 펜더 뚫림 방지
+  wheelRadMul:1.03,wheelTuck:-.04,rimScale:1.28, // 바퀴·림 크게 + 바깥으로(스탠스) — 큰 바퀴만큼 차고도 살짝 상승
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
   susp:{k:98000,c:7200,travel:.09,rest:.2},arb:60000,
   engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
@@ -328,7 +330,27 @@ class CarVisual{
     this.bodyMesh=new THREE.Mesh(split.main,spec.smoothShade?MAT_CAR_SMOOTH:MAT_CAR);
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
     if(split.lamps){this.lampsMesh=new THREE.Mesh(split.lamps,MAT_LAMP);
-      this.group.add(this.lampsMesh);}
+      this.group.add(this.lampsMesh);
+      // 전조등 실제 점등: 램프 지오메트리에서 좌/우 전방 램프 앵커 추출 → 스포트라이트 + 글로우 벌브
+      const pa=split.lamps.attributes.position.array;
+      let zMax=-1e9;for(let i=2;i<pa.length;i+=3)if(pa[i]>zMax)zMax=pa[i];
+      let lxS=0,lc=0,rxS=0,rc=0,yS=0,yc=0;
+      for(let i=0;i<pa.length;i+=3)if(pa[i+2]>zMax-.4){
+        const x=pa[i];yS+=pa[i+1];yc++;
+        if(x<-.12){lxS+=x;lc++;}else if(x>.12){rxS+=x;rc++;}}
+      if(lc&&rc){
+        const y=yS/yc,zl=zMax-.02;
+        const mk=(x)=>{
+          const s=new THREE.SpotLight(0xfff0cc,0,30,.52,.42,1.2);
+          s.position.set(x,y,zl);
+          s.target.position.set(x*.5,y-.4,zl+16);
+          this.group.add(s);this.group.add(s.target);
+          const g=new THREE.Mesh(new THREE.SphereGeometry(.075,8,6),
+            new THREE.MeshBasicMaterial({color:0xfff6d8,transparent:true,opacity:.85,
+              blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+          g.scale.z=.4;g.position.set(x,y,zl+.05);g.visible=false;
+          this.group.add(g);return{s,g};};
+        this.hl=[mk(lxS/lc),mk(rxS/rc)];}}
     if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,MAT_GLASS);
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
     this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh,this.lampsMesh]);
@@ -361,6 +383,15 @@ class CarVisual{
         // 리어 견인 후크
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:-hx*.4,y:by+hy*.18,z:zR-.1},
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1}];
+      // 하드탑: 짐칸 슬랫 케이지가 훤히 비쳐 보이던 것을 불투명 캐노피 쉘로 밀폐
+      // (랜드로버 디펜더식 컨트라스트 화이트 루프 + 다크 윈도우 스트립)
+      if(spec.id==="offroadc"){
+        const zMid=zR+(zF-zR)*.47,cz=(zR+.05+zMid)/2,cl=zMid-zR-.1;
+        const yTop=topY*.99,yBot=topY*.4,ch=yTop-yBot,cy=(yTop+yBot)/2;
+        acc.push({geo:new THREE.BoxGeometry(hx*1.66,ch,cl),color:0xe6eaee,y:cy,z:cz});
+        for(const s of[-1,1])acc.push({geo:new THREE.BoxGeometry(.03,ch*.4,cl*.68),color:0x141920,x:s*hx*.84,y:cy+ch*.14,z:cz});
+        acc.push({geo:new THREE.BoxGeometry(hx*1.2,ch*.4,.03),color:0x141920,y:cy+ch*.14,z:zR+.03});
+        acc.push({geo:new THREE.BoxGeometry(hx*1.7,.05,cl+.08),color:0xdfe4e9,y:yTop+.02,z:cz});} // 루프 캡
       this.accMesh=new THREE.Mesh(mergeGeoms(acc),MAT_DETAIL);
       this.accMesh.castShadow=true;this.group.add(this.accMesh);
       // LED 라이트바 발광 렌즈(자체발광)
@@ -375,10 +406,25 @@ class CarVisual{
     const wf=spec.wheelVisFit||1;
     this.wheelYOff=(wf-1)*spec.wheels.radius;
     this.wheelMeshes=[];
+    // 리프트업 차량: 바퀴가 차체에서 동떨어져 보이지 않게 서스펜션 링크(스트럿+하프샤프트)로 연결
+    const linked=spec.id==="offroad"||spec.id==="offroadc";
+    const linkMat=linked?new THREE.MeshPhongMaterial({color:0x2a2e35,flatShading:true,shininess:26}):null;
+    const susLen=linked?spec.susp.rest*.62:0;   // 허브→차체 바닥까지만(펜더 위로 튀어나오지 않게)
     for(let i=0;i<4;i++){
       const m=new THREE.Mesh(wg,MAT_DETAIL);m.castShadow=true;
       const br=new THREE.Mesh(bg,MAT_DETAIL);
       const grp=new THREE.Group();grp.add(m);grp.add(br);
+      if(linked){
+        const inX=(i%2===0?1:-1)*spec.wheels.radius*.5;         // 차체 안쪽 방향
+        const strut=new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,susLen,8),linkMat);
+        strut.position.set(inX*.4,susLen*.5,0);strut.rotation.z=(i%2===0?-1:1)*.14;
+        grp.add(strut);                                          // 코일오버 스트럿(위로 차체 속까지)
+        const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,spec.wheels.radius*1.6,8),linkMat);
+        shaft.rotation.z=Math.PI/2;shaft.position.set(inX,spec.wheels.radius*.12,0);
+        grp.add(shaft);                                          // 하프샤프트(휠 허브 → 차체)
+        const arm=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,spec.wheels.radius*1.5,8),linkMat);
+        arm.rotation.x=Math.PI/2;arm.position.set(inX*.8,-spec.wheels.radius*.18,spec.wheels.radius*.55);
+        grp.add(arm);}                                           // 트레일링 암
       if(wf!==1)grp.scale.setScalar(wf);
       this.group.add(grp);this.wheelMeshes.push(grp);}
   }
@@ -539,6 +585,12 @@ class CarVisual{
     this.group.quaternion.copy(veh.body.quat);
     if(shakeT>0&&Settings.camShake){
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
+    // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게
+    if(this.hl){
+      const on=typeof Game!=="undefined"&&Game.veh===veh;
+      const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
+      if(this._hlI!==inten){this._hlI=inten;
+        for(const h of this.hl){h.s.intensity=inten;h.g.visible=on;}}}
     const tv=this.baked?this.spec.wheels.trackVis:0;
     for(let i=0;i<4;i++){
       if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함

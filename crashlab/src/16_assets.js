@@ -108,7 +108,7 @@ function applyModelSpec(spec){
   const drop=wrFull-wr;                     // 휠 축소분만큼 마운트 하향 → 지상고 유지
   const fw=w.filter(p=>p[2]<spec.modelCz),rw=w.filter(p=>p[2]>=spec.modelCz);
   spec.wheels.radius=wr;
-  spec.wheels.width=(e.wheel.bb[3]-e.wheel.bb[0])*s*.92;
+  spec.wheels.width=(e.wheel.bb[3]-e.wheel.bb[0])*s*.92*(spec.wheelWidMul||1);
   spec.wheels.trackVis=Math.abs(w[0][0])*s;
   spec.wheels.track=Math.abs(w[0][0])*s*(spec.rollFix||1.25);   // 물리 트랙 보정
   if(spec.wheelOutset){                       // 휠 스페이서: 시각·물리 트랙 모두 바깥으로 (와이드 스탠스)

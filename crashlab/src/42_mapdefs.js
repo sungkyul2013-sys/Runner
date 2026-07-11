@@ -375,18 +375,32 @@ const MAPS=[
   return mb.finalize(this);}},
 
 /* ---------- 4.5 극한 오프로드 ---------- */
-{id:"extreme",name:"극한 오프로드",icon:"🪨",desc:"롱트래블 전용 캐년 — 후프스 필드·록가든·진흙 늪·워시보드 러트·V도랑·바위계단·36° 힐클라임·정상 크롤링 능선(30m)",
+{id:"extreme",name:"극한 오프로드",icon:"🪨",desc:"롱트래블 전용 캐년 — 후프스·록가든·진흙 늪·러트·V도랑·바위계단·36° 힐클라임·테라스 산·협곡·사구·북부 능선까지 복합 지형",
  modes:["free"],
  build(){
   const mb=new MapBuilder(820,256),w=mb.world;
   const HX=250,HZ=-40;                                  // 힐클라임 산 중심
   mb.fill((x,z)=>{
-    // 거친 황무지 기본 굴곡(큰 물결 + 중간 요철)
-    let h=2.4*Math.sin(x*.024)*Math.cos(z*.021)+1.2*Math.sin(x*.061+1)*Math.cos(z*.054+2);
+    // 거친 황무지 기본 굴곡(큰 물결 + 중간 요철 + 잔물결) — 전 구간이 살아있는 지형
+    let h=2.4*Math.sin(x*.024)*Math.cos(z*.021)+1.2*Math.sin(x*.061+1)*Math.cos(z*.054+2)
+         +.6*Math.sin(x*.11+3)*Math.cos(z*.09+1);
     let s=S_GRV;
     // 동쪽 힐클라임 산: 36° 직선 사면(슬로프 0.72) + 평탄한 정상 크롤링 능선
     const hd=Math.hypot(x-HX,z-HZ);
     if(hd<150)h+=Math.min(30,(150-hd)*.72);
+    // 남서쪽 제2 산: 테라스(계단식 단차) — 단을 하나씩 기어오르는 코스 (정상 22m)
+    const td=Math.hypot(x+250,z-240);
+    if(td<130){const raw=Math.min(22,(130-td)*.34);
+      h+=Math.floor(raw/3.2)*3.2+Math.min(1,(raw%3.2))*3.2*.5;}    // 3.2m 단 + 완만한 립
+    // 북쪽 능선 체인: 낮은 산줄기 3봉(넘나드는 새들 구간)
+    if(z<-160){const rd=Math.abs(z+270);
+      h+=Math.max(0,14-rd*.14)*(1+.4*Math.sin(x*.02));}
+    // 중부 협곡(캐년): 동서로 가르는 골짜기 — 절벽 벽 사이 바닥길
+    const cy=Math.abs(z-92+16*Math.sin(x*.014));
+    if(cy<26&&x>-200&&x<170&&hd>150){h-=Math.min(7,(26-cy)*.55);if(cy<18)s=S_GRV;}
+    // 남동쪽 사구 파도: 모래 언덕 물결
+    if(x>60&&z>170){const dn=Math.min((x-60)/60,1)*Math.min((z-170)/60,1);
+      h+=dn*(3.2*Math.sin(x*.05+1)*Math.cos(z*.04)+2);s=dn>.4?S_SND:s;}
     // V도랑(남북으로 굽이침, 깊이 4m): 크로스액슬 — 한쪽 바퀴씩 걸치는 코스
     const vd=Math.abs(x+16+14*Math.sin(z*.02));
     if(vd<9&&Math.abs(z)<230&&hd>160)h-=(9-vd)*.46;
@@ -394,7 +408,7 @@ const MAPS=[
     for(const[mx,mz,mr]of[[-120,170,44],[-60,258,32]]){
       const md=Math.hypot(x-mx,z-mz);
       if(md<mr){h-=1.3*(1-md/mr);if(md<mr*.82)s=S_WET;}}
-    if(x<-330)s=S_SND;                                  // 서쪽 모래 협곡
+    if(x<-330&&z<100)s=S_SND;                           // 서쪽 모래 협곡
     return[h,s];});
   // ① 후프스 필드(서쪽): 연속 대형 둔덕 18개 — 롱트래블 서스 시험장
   for(let k=0;k<18;k++)
@@ -440,13 +454,31 @@ const MAPS=[
   for(let k=0;k<4;k++)mb.prop("barrel",-260+k*5,-240);
   mb.texText(0,-330,7,"EXTREME OFFROAD","rgba(240,244,250,.85)");
   w.spawn={x:-300,z:-320,yaw:0};
+  // 협곡 림·테라스 단 위 볼더 + 사구 깃발 배럴
+  {let sd=57;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<22;k++){
+     const x=-180+rr()*330,z=92+16*Math.sin(x*.014)+(rr()<.5?-30:30)+(rr()-.5)*8;
+     mb.box(x,w.height(x,z)+.2,z,1.2+rr()*2,.4+rr()*.6,1+rr()*1.8,0x6f6862,
+       {yaw:rr()*3,roll:(rr()-.5)*.4,mu:.9,tag:"rock"});}
+   for(let k=0;k<12;k++){
+     const a=rr()*6.28,d=40+rr()*80,x=-250+Math.cos(a)*d,z=240+Math.sin(a)*d;
+     mb.box(x,w.height(x,z)+.25,z,1.4+rr()*2.2,.5+rr()*.7,1.2+rr()*2,0x77706a,
+       {yaw:rr()*3,roll:(rr()-.5)*.5,mu:.9,tag:"rock"});}}
+  for(let k=0;k<4;k++)mb.prop("barrel",130+k*18,230);
+  mb.texText(-250,240,6,"TERRACE MT","rgba(220,210,190,.7)");
+  mb.texText(0,92,5,"CANYON","rgba(200,200,205,.7)");
+  mb.texText(150,240,5,"DUNES","rgba(230,215,170,.75)");
   w.places=[
     {name:"🌊 후프스 필드",x:-290,z:-220,yaw:0},
     {name:"🪨 록가든",x:-190,z:-170,yaw:0},
     {name:"🟤 진흙 늪",x:-120,z:120,yaw:.6},
     {name:"↯ V도랑 크로스액슬",x:-16,z:-200,yaw:0},
     {name:"🧗 바위계단·힐클라임",x:HX-190,z:HZ+96,yaw:Math.PI/2},
-    {name:"⛰️ 정상 능선",x:HX,z:HZ-60,yaw:Math.PI}];
+    {name:"⛰️ 정상 능선",x:HX,z:HZ-60,yaw:Math.PI},
+    {name:"🏔️ 테라스 산(계단식)",x:-250,z:120,yaw:Math.PI},
+    {name:"🏜️ 사구 파도",x:120,z:210,yaw:.8},
+    {name:"🏞️ 협곡 바닥길",x:-160,z:92,yaw:Math.PI/2},
+    {name:"⛰️ 북부 능선 새들",x:0,z:-270,yaw:Math.PI/2}];
   return mb.finalize(this);}},
 
 /* ---------- 5. 빙판 호수 ---------- */
