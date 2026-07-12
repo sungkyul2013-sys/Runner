@@ -147,7 +147,13 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #gearVal{position:absolute;right:-30px;top:6px;font-size:18px;font-weight:900;color:var(--acc2)}
 #minimap{position:absolute;left:calc(var(--sal) + 12px);top:calc(var(--sat) + 158px);
   width:118px;height:118px;border-radius:50%;background:rgba(12,15,21,.72);
-  border:2px solid rgba(255,255,255,.16);box-shadow:0 6px 18px rgba(0,0,0,.4);pointer-events:none}
+  border:2px solid rgba(255,255,255,.16);box-shadow:0 6px 18px rgba(0,0,0,.4);cursor:pointer}
+#minimapHide{position:absolute;left:calc(var(--sal) + 108px);top:calc(var(--sat) + 156px);
+  width:24px;height:24px;border-radius:50%;z-index:2;
+  background:rgba(20,24,32,.92);border:1px solid rgba(255,255,255,.22);color:var(--tx2);
+  font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.5)}
+#minimapHide:active{color:var(--acc);transform:scale(.9)}
 
 #dmgBox{position:absolute;left:calc(var(--sal) + 14px);top:calc(var(--sat) + 68px);width:44px;height:74px;opacity:.92;pointer-events:none}
 #dmgBox .z{position:absolute;background:var(--ok);transition:background .3s}
@@ -375,6 +381,7 @@ input[type=checkbox]{accent-color:var(--acc)}
     <div class="u">KM/H</div>
   </div>
   <canvas id="minimap" width="150" height="150"></canvas>
+  <button id="minimapHide" title="미니맵 숨기기">✕</button>
   <div id="ctlL">
     <div id="steerZone"><div id="steerTrack"></div><div id="steerKnob">⇔</div></div>
     <div id="steerBtns"><button class="padBtn" id="btnStL">◀</button><button class="padBtn" id="btnStR">▶</button></div>
@@ -4074,6 +4081,7 @@ const Settings=Object.assign({
   sound:true,volume:0.8,
   autoSlowmo:true,debug:false,
   autoReport:true,       // 충돌 후 리포트 자동 표시
+  minimapOn:true,        // 코너 미니맵 표시
 },Store.get("settings",{}));
 function applyAssistPreset(p){Settings.assist=p;
   if(p==="casual"){Settings.absOn=Settings.tcsOn=Settings.ctrSteer=Settings.stab=true;}
@@ -4867,7 +4875,7 @@ const CARS=[
  {id:"veloce",name:"포르쉐 911 터보",icon:"🏁",drive:"4WD",mass:1595,hp:520,acc:"3.2초",top:315,
   desc:"실차 3D 모델(911 터보 2014). 3.8L 수평대향 6기통 트윈터보 · 리어엔진 4WD.",
   model:"porsche",rollFix:1.34,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
-  wheelRadMul:1.03,wheelTuck:-.04,rimScale:1.28, // 바퀴·림 크게 + 바깥으로(스탠스) — 큰 바퀴만큼 차고도 살짝 상승
+  wheelRadMul:1.03,wheelTuck:.01,rimScale:1.28,  // 바퀴·림 크게 + 살짝 안으로(펜더 안쪽으로 5cm 인셋)
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
   susp:{k:98000,c:7200,travel:.09,rest:.2},arb:60000,
   engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
@@ -7222,8 +7230,8 @@ const Game={
     $("ctlL").style.display=this.mode==="lab"?"none":"";
     $("ctlR").style.display=this.mode==="lab"?"none":"";
     $("btnHB").style.display=this.mode==="lab"?"none":"";
-    $("minimap").style.display=(noDrive||$("minimap").dataset.off==="1")?"none":"";
-    $("btnMap").classList.toggle("on",$("minimap").dataset.off==="1");
+    $("minimap").style.display=(noDrive||!Settings.minimapOn)?"none":"";
+    $("minimapHide").style.display=(noDrive||!Settings.minimapOn)?"none":"";
     $("btnRepair").style.display=(this.mode==="free"||this.mode==="crash"||this.mode==="drift"||this.mode==="lab")?"":"none";
     $("btnPlaces").style.display=(this.world.places&&!noDrive)?"":"none";
     $("placesPanel").classList.remove("on");
@@ -7792,6 +7800,8 @@ function updateHUD(dt){
   if(GAUGE.ready){
     $("gArc").style.strokeDashoffset=GAUGE.sL*(1-clamp(kmh/(v.spec.top+30),0,1));
     $("gArcRpm").style.strokeDashoffset=GAUGE.rL*(1-clamp(v.rpm/v.spec.engine.redline,0,1));}
+  {const mmShow=Settings.minimapOn&&Game.mode!=="crash"&&Game.mode!=="lab";  // 설정 즉시 반영
+   $("minimap").style.display=mmShow?"":"none";$("minimapHide").style.display=mmShow?"":"none";}
   drawMinimap(.06);
   if(Game.mapOpen)drawBigMap();
   const dz=(el,val)=>{el.style.background=val>66?"var(--bad)":val>33?"var(--warn)":"var(--ok)";};
@@ -8186,6 +8196,7 @@ const UI=(()=>{
       tgl2("그림자","shadows",S.shadows)+
       tgl2("자동 슬로모션 (강한 충돌 시)","autoSlowmo",S.autoSlowmo)+
       tgl2("충돌 리포트 자동 표시","autoReport",S.autoReport!==false)+
+      tgl2("코너 미니맵 표시","minimapOn",S.minimapOn!==false)+
       tgl2("디버그 오버레이 (FPS·슬립각·접지력)","debug",S.debug)+
       '<div class="btnRow"><button class="btn danger sm" id="wipe">저장 데이터 초기화</button></div>';
     body().querySelectorAll("[data-seg]").forEach(b=>b.onclick=()=>{
@@ -8502,6 +8513,11 @@ function initHudButtons(){
   $("btnMap").onclick=()=>{Sfx.click();openMapOverview();};
   $("minimap").addEventListener("click",()=>{Sfx.click();openMapOverview();});
   $("mapClose").onclick=()=>{Sfx.click();closeMapOverview();};
+  // 코너 미니맵 숨기기(✕) — 설정에서 다시 켤 수 있음
+  $("minimapHide").onclick=(e)=>{e.stopPropagation();Sfx.click();
+    Settings.minimapOn=false;saveSettings();
+    $("minimap").style.display="none";$("minimapHide").style.display="none";
+    toast("미니맵 숨김 — 설정에서 다시 켜기");};
   // 📍 장소 이동(오픈월드)
   $("btnPlaces").onclick=()=>{Sfx.click();
     const ps=Game.world&&Game.world.places;if(!ps)return;
@@ -8700,7 +8716,8 @@ function boot(){
         if(sport){
           c.susp.k*=1.45;                           // 스프링 강성 ↑ → 노면 그대로 전달(딱딱)
           c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
-          c.susp.rebMul=1.3;                        // 리바운드 타이트(빠르고 절도있는 복귀 — 실차 스포츠 댐퍼)
+          c.susp.rebMul=1.7;                        // 리바운드 댐핑 ↑ → 방지턱 후 차체가 위로 튀지 않게(뜸 억제)
+          c.susp.sky=1900;                          // 스카이훅: 차체 헤이브 감쇠 → 범프에서 붕 뜨지 않음(코너 성능은 유지)
           c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
           if(c.id==="veloce")c.susp.rest+=.1;       // 포르쉐: 차고 상승 — 대구경 휠이 펜더와 겹치지 않게
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)

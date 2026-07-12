@@ -81,8 +81,8 @@ const Game={
     $("ctlL").style.display=this.mode==="lab"?"none":"";
     $("ctlR").style.display=this.mode==="lab"?"none":"";
     $("btnHB").style.display=this.mode==="lab"?"none":"";
-    $("minimap").style.display=(noDrive||$("minimap").dataset.off==="1")?"none":"";
-    $("btnMap").classList.toggle("on",$("minimap").dataset.off==="1");
+    $("minimap").style.display=(noDrive||!Settings.minimapOn)?"none":"";
+    $("minimapHide").style.display=(noDrive||!Settings.minimapOn)?"none":"";
     $("btnRepair").style.display=(this.mode==="free"||this.mode==="crash"||this.mode==="drift"||this.mode==="lab")?"":"none";
     $("btnPlaces").style.display=(this.world.places&&!noDrive)?"":"none";
     $("placesPanel").classList.remove("on");
@@ -651,6 +651,8 @@ function updateHUD(dt){
   if(GAUGE.ready){
     $("gArc").style.strokeDashoffset=GAUGE.sL*(1-clamp(kmh/(v.spec.top+30),0,1));
     $("gArcRpm").style.strokeDashoffset=GAUGE.rL*(1-clamp(v.rpm/v.spec.engine.redline,0,1));}
+  {const mmShow=Settings.minimapOn&&Game.mode!=="crash"&&Game.mode!=="lab";  // 설정 즉시 반영
+   $("minimap").style.display=mmShow?"":"none";$("minimapHide").style.display=mmShow?"":"none";}
   drawMinimap(.06);
   if(Game.mapOpen)drawBigMap();
   const dz=(el,val)=>{el.style.background=val>66?"var(--bad)":val>33?"var(--warn)":"var(--ok)";};

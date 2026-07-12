@@ -151,6 +151,11 @@ function initHudButtons(){
   $("btnMap").onclick=()=>{Sfx.click();openMapOverview();};
   $("minimap").addEventListener("click",()=>{Sfx.click();openMapOverview();});
   $("mapClose").onclick=()=>{Sfx.click();closeMapOverview();};
+  // 코너 미니맵 숨기기(✕) — 설정에서 다시 켤 수 있음
+  $("minimapHide").onclick=(e)=>{e.stopPropagation();Sfx.click();
+    Settings.minimapOn=false;saveSettings();
+    $("minimap").style.display="none";$("minimapHide").style.display="none";
+    toast("미니맵 숨김 — 설정에서 다시 켜기");};
   // 📍 장소 이동(오픈월드)
   $("btnPlaces").onclick=()=>{Sfx.click();
     const ps=Game.world&&Game.world.places;if(!ps)return;
@@ -349,7 +354,8 @@ function boot(){
         if(sport){
           c.susp.k*=1.45;                           // 스프링 강성 ↑ → 노면 그대로 전달(딱딱)
           c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
-          c.susp.rebMul=1.3;                        // 리바운드 타이트(빠르고 절도있는 복귀 — 실차 스포츠 댐퍼)
+          c.susp.rebMul=1.7;                        // 리바운드 댐핑 ↑ → 방지턱 후 차체가 위로 튀지 않게(뜸 억제)
+          c.susp.sky=1900;                          // 스카이훅: 차체 헤이브 감쇠 → 범프에서 붕 뜨지 않음(코너 성능은 유지)
           c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
           if(c.id==="veloce")c.susp.rest+=.1;       // 포르쉐: 차고 상승 — 대구경 휠이 펜더와 겹치지 않게
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)

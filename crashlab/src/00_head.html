@@ -144,7 +144,13 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #gearVal{position:absolute;right:-30px;top:6px;font-size:18px;font-weight:900;color:var(--acc2)}
 #minimap{position:absolute;left:calc(var(--sal) + 12px);top:calc(var(--sat) + 158px);
   width:118px;height:118px;border-radius:50%;background:rgba(12,15,21,.72);
-  border:2px solid rgba(255,255,255,.16);box-shadow:0 6px 18px rgba(0,0,0,.4);pointer-events:none}
+  border:2px solid rgba(255,255,255,.16);box-shadow:0 6px 18px rgba(0,0,0,.4);cursor:pointer}
+#minimapHide{position:absolute;left:calc(var(--sal) + 108px);top:calc(var(--sat) + 156px);
+  width:24px;height:24px;border-radius:50%;z-index:2;
+  background:rgba(20,24,32,.92);border:1px solid rgba(255,255,255,.22);color:var(--tx2);
+  font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.5)}
+#minimapHide:active{color:var(--acc);transform:scale(.9)}
 
 #dmgBox{position:absolute;left:calc(var(--sal) + 14px);top:calc(var(--sat) + 68px);width:44px;height:74px;opacity:.92;pointer-events:none}
 #dmgBox .z{position:absolute;background:var(--ok);transition:background .3s}
