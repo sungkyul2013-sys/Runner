@@ -4721,8 +4721,9 @@ class Vehicle{
       _vD.set(rc.wx,rc.wy,rc.wz);_vC.set(rc.n.x,rc.n.y,rc.n.z);
       _hit.n.copy(_vC);_hit.mu=rc.mu;
       const dv=resolvePointContact(b,_vD,{n:_vC,depth:rc.depth,mu:rc.mu,bounce:rc.bounce},0);
-      // 위치 보정: 임펄스만으론 벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 밀어냄
-      if(rc.depth>.03)b.pos.addScaledVector(_vC,Math.min(rc.depth*.35,.05));
+      // 위치 보정: 임펄스만으론 벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 밀어냄.
+      // 깊게 박히면 더 강하게 밀어내 벽에 끼어 못 빠져나오는 문제 방지(끝벽 탈출).
+      if(rc.depth>.03)b.pos.addScaledVector(_vC,Math.min(rc.depth*.5,.14));
       const useDv=Math.max(dv,-rc.vn);   // 사전 접근속도 기준 → 모든 접점이 동일 강도로 크럼플
       // 전복 시 루프(상단 프레임)도 물리대로 손상: 지붕 접점은 문턱 낮게 + 압궤 가중
       const roofPt=this.hull[rc.i].y>sp.body.hy*.55;
@@ -4826,8 +4827,8 @@ const CARS=[
  {id:"offroad",name:"오프로드 몬스터",icon:"🚙",drive:"4WD",mass:2150,hp:280,acc:"9.0초",top:160,
   desc:"사용자 제공 로우폴리 오프로더. 롱트래블 서스 + 라이트 포드 + 루프랙.",
   model:"offroadx",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
-  wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
-  wheelRadMul:.92,wheelWidMul:1.4,           // 바퀴 약간 작게 + 아주 굵게(머드 타이어)
+  wheelOutset:.13,groundClear:.54,           // 와이드 스탠스 + 아주 높은 차고(빅 리프트업)
+  wheelRadMul:1.06,wheelWidMul:1.42,         // 바퀴 크고(빅) + 아주 굵게(머드 타이어)
   body:{hx:.95,hy:.75,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -4837,8 +4838,8 @@ const CARS=[
  {id:"offroadc",name:"오프로드 몬스터 하드탑",icon:"🛻",drive:"4WD",mass:2210,hp:280,acc:"9.2초",top:158,
   desc:"뚜껑(하드탑)을 덮은 버전 — 동일 섀시 클로즈드 캐빈. 롱트래블 리프트업.",
   model:"offroadc",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
-  wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
-  wheelRadMul:.92,wheelWidMul:1.4,           // 바퀴 약간 작게 + 아주 굵게(머드 타이어)
+  wheelOutset:.13,groundClear:.54,           // 와이드 스탠스 + 아주 높은 차고(빅 리프트업)
+  wheelRadMul:1.06,wheelWidMul:1.42,         // 바퀴 크고(빅) + 아주 굵게(머드 타이어)
   body:{hx:.95,hy:.78,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -5174,15 +5175,19 @@ class CarVisual{
         // 리어 견인 후크
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:-hx*.4,y:by+hy*.18,z:zR-.1},
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1}];
-      // 하드탑: 짐칸 슬랫 케이지가 훤히 비쳐 보이던 것을 불투명 캐노피 쉘로 밀폐
-      // (랜드로버 디펜더식 컨트라스트 화이트 루프 + 다크 윈도우 스트립)
+      // 하드탑: 컴팩트 지프풍 캐빈 하드탑(짧고 낮게·멋지게) — 캐빈만 덮어 짐칸은 개방
       if(spec.id==="offroadc"){
-        const zMid=zR+(zF-zR)*.47,cz=(zR+.05+zMid)/2,cl=zMid-zR-.1;
-        const yTop=topY*.99,yBot=topY*.4,ch=yTop-yBot,cy=(yTop+yBot)/2;
-        acc.push({geo:new THREE.BoxGeometry(hx*1.66,ch,cl),color:0xe6eaee,y:cy,z:cz});
-        for(const s of[-1,1])acc.push({geo:new THREE.BoxGeometry(.03,ch*.4,cl*.68),color:0x141920,x:s*hx*.84,y:cy+ch*.14,z:cz});
-        acc.push({geo:new THREE.BoxGeometry(hx*1.2,ch*.4,.03),color:0x141920,y:cy+ch*.14,z:zR+.03});
-        acc.push({geo:new THREE.BoxGeometry(hx*1.7,.05,cl+.08),color:0xdfe4e9,y:yTop+.02,z:cz});} // 루프 캡
+        const zMid=zR+(zF-zR)*.34,cz=(zR+.12+zMid)/2,cl=zMid-zR-.16;  // 더 짧게(캐빈만)
+        const yTop=topY*.9,yBot=topY*.42,ch=yTop-yBot,cy=(yTop+yBot)/2; // 더 낮게(슬릭)
+        acc.push({geo:new THREE.BoxGeometry(hx*1.5,ch,cl),color:0x2b3138,y:cy,z:cz});             // 다크 하드탑 쉘
+        // 사이드 윈도우(틴티드) + 리어 윈도우
+        for(const s of[-1,1])acc.push({geo:new THREE.BoxGeometry(.025,ch*.44,cl*.66),color:0x0e1216,x:s*hx*.76,y:cy+ch*.1,z:cz});
+        acc.push({geo:new THREE.BoxGeometry(hx*1.1,ch*.44,.025),color:0x0e1216,y:cy+ch*.1,z:zR+.06});
+        // 루프 레일(양측 크로스바) — 지프풍 디테일
+        acc.push({geo:new THREE.BoxGeometry(hx*1.56,.05,cl+.1),color:0x3a4149,y:yTop+.03,z:cz});    // 루프 캡
+        for(let cb=0;cb<2;cb++)acc.push({geo:new THREE.BoxGeometry(hx*1.5,.05,.06),color:0x14181d,y:yTop+.08,z:cz-cl*.3+cb*cl*.6});
+        // 스노클(우측 A필러) — 오프로드 포인트
+        acc.push({geo:new THREE.CylinderGeometry(.05,.05,ch*1.5,8),color:0x14181d,x:hx*.92,y:cy+ch*.2,z:zMid-.05});}
       this.accMesh=new THREE.Mesh(mergeGeoms(acc),MAT_DETAIL);
       this.accMesh.castShadow=true;this.group.add(this.accMesh);
       // LED 라이트바 발광 렌즈(자체발광)
@@ -5934,6 +5939,13 @@ function railAlong(mb,pts,width,color,skip){ // guardrails both sides
       const y=mb.world.height(px,pz);
       mb.box(px,y+.45,pz,.25,.7,len+.4,color||0xb9c2cc,{yaw,mu:.4,bounce:.25,tag:"rail"});}}
 }
+// 계곡 메우기: 도로 y-프로파일의 깊은 골(급강하→급상승)을 최대 경사 maxG로 완만화 —
+// 골 바닥을 끌어올려 도로가 계곡을 넘어가는 완만한 둑 형태(차가 곤두박질치는 구덩이 제거).
+function bridgeValleys(pts,maxG){
+  const seg=(a,b)=>Math.hypot(b.x-a.x,b.z-a.z)||1;
+  for(let i=1;i<pts.length;i++){const m=maxG*seg(pts[i-1],pts[i]);if(pts[i].y<pts[i-1].y-m)pts[i].y=pts[i-1].y-m;}
+  for(let i=pts.length-2;i>=0;i--){const m=maxG*seg(pts[i],pts[i+1]);if(pts[i].y<pts[i+1].y-m)pts[i].y=pts[i+1].y-m;}
+  return pts;}
 // 넓은 도로 절개(코리도어 정지작업): 좁은 paintPath flatten이 남기는 잔여 언덕/절벽을
 // 제거 — 경로 폭 halfW를 목표 y로 평탄화 + blend 폭으로 지형에 부드럽게 접합.
 function flattenCorridor(mb,pts,halfW,blend,getY){
@@ -6340,16 +6352,13 @@ const MAPS=[
     let h=200*clamp(1-d,0,1);
     h+=8*Math.sin(x*.02)*Math.cos(z*.023)+4*Math.sin(x*.07+1)*Math.sin(z*.06);
     return[h,S_GRS];});
-  // switchback road: hairpins descending
-  const ctrl=[];let e=190;
-  const xs=[-320,60,-40,120,-90,160,-140,200,-180,240];
-  for(let k=0;k<xs.length;k++){
-    const z=-330+k*68;e-=19;
-    ctrl.push([xs[k],z,Math.max(e,2)]);}
-  ctrl.push([320,330,2]);
-  const road=samplePath(ctrl.map(c=>[c[0],c[1],c[2]]),false,420);
-  mb.paintPath(road,11,S_ASP,true,true);
-  railAlong(mb,road,11,0xc7ccd4);
+  // switchback road: 완만한 스위핑 헤어핀 다운힐(급커브 완화) — 넓은 코리도어 정지작업으로
+  // 산 사면을 확실히 절개해 도로가 막히지 않게(가드레일·지형벽에 길 막힘 방지)
+  const road=followTerrain(w,samplePath([[-300,-320],[-70,-300],[130,-210],[10,-70],
+              [-210,-10],[-70,140],[150,230],[340,340]],false,420));
+  flattenCorridor(mb,road,9,20);   // 지형을 따르는 도로를 넓게 사면 절개(길 막힘 방지)
+  mb.paintPath(road,13,S_ASP,true,true);
+  railAlong(mb,road,13,0xc7ccd4);
   {let sd=23;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
    for(let k=0;k<40;k++){
      const p=road[(rr()*road.length)|0];
@@ -6361,14 +6370,14 @@ const MAPS=[
   {const trail=followTerrain(w,samplePath([[-60,-60],[-150,-120],[-240,-200],[-310,-280],[-350,-340],[-300,-300],[-250,-250]],false,220));
    mb.paintPath(trail,7,S_GRV,true,true);
    mb.texText(-150,-120,4,"OFFROAD TRAIL","rgba(210,190,150,.7)");}
-  // 터널 (도로 중간 구간을 덮는 갱도) — 벽 2 + 지붕
-  {const ti=Math.floor(road.length*.44),tj=Math.floor(road.length*.56);
+  // 터널 (직선 구간을 덮는 갱도) — 도로에서 넉넉히 떨어진 벽(±10) + 높은 지붕(길 막힘 방지)
+  {const ti=Math.floor(road.length*.30),tj=Math.floor(road.length*.40);   // 3번째 스트레이트(완만)
    for(let i=ti;i<tj;i+=3){
      const a=road[i],b=road[Math.min(i+3,road.length-1)];
      const dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1,yaw=Math.atan2(dx,dz);
      const nx=dz/l,nz=-dx/l,y=w.height(a.x,a.z);
-     for(const s of[-1,1])mb.box(a.x+nx*s*7,y+2.4,a.z+nz*s*7,1.2,5,l+1,0x565049,{yaw,mu:.7,tag:"tunnelwall"});
-     mb.box(a.x,y+5,a.z,15.5,1,l+1,0x4a453f,{yaw,mu:.7,tag:"tunnelroof"});}}
+     for(const s of[-1,1])mb.box(a.x+nx*s*10,y+2.6,a.z+nz*s*10,1.2,5.4,l+1,0x565049,{yaw,mu:.7,tag:"tunnelwall"});
+     mb.box(a.x,y+5.6,a.z,21,1,l+1,0x4a453f,{yaw,mu:.7,tag:"tunnelroof"});}}
   // 전망대 플랫폼 (계곡 조망)
   {const p=road[Math.floor(road.length*.3)];
    const nx=1,ox=p.x+16,oz=p.z+16,oy=w.height(ox,oz);
@@ -6640,10 +6649,10 @@ MAPS.push(
     else if(ld<115){h*=.3;s=S_SND;}
     if(x>690){s=x>735?S_WET:S_SND;h=x>735?Math.min(h,-.3):h*.3;}      // 동측 해안
     return[h,s];});
-  // 도심 격자 (pitch 90, 5x5)
-  for(let k=-2;k<=2;k++){
-    mb.paintPath([{x:-185,y:0,z:k*90},{x:185,y:0,z:k*90}],14,S_ASP,true,true);
-    mb.paintPath([{x:k*90,y:0,z:-185},{x:k*90,y:0,z:185}],14,S_ASP,true,true);}
+  // 도심 격자 (pitch 90, 7x7 — 약간 더 큰 다운타운)
+  for(let k=-3;k<=3;k++){
+    mb.paintPath([{x:-275,y:0,z:k*90},{x:275,y:0,z:k*90}],14,S_ASP,true,true);
+    mb.paintPath([{x:k*90,y:0,z:-275},{x:k*90,y:0,z:275}],14,S_ASP,true,true);}
   // 순환 고속도로 (r≈420) — 언덕을 절개하며 통과
   const ring=samplePath([[420,0],[300,300],[0,420],[-300,300],[-420,0],[-300,-300],[0,-420],[297,-297]],true,360);
   // 산 구간 잔여 언덕/절벽 제거: 넓은 코리도어 정지작업으로 노면을 완전 평탄화(장애물 해소)
@@ -6654,22 +6663,17 @@ MAPS.push(
   // 연결로 4방향
   for(const[a,b]of[[[185,0],[418,0]],[[-185,0],[-418,0]],[[0,185],[0,418]],[[0,-185],[0,-418]]])
     mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],14,S_ASP,true);
-  // 메가 외곽 고속도로: 지형을 따라 오르막·내리막(산 구간 힐클라임), 남측은 광폭 차선
+  // 메가 외곽 고속도로: 지형을 따라 오르막·내리막(산 구간 힐클라임), 남측은 광폭 차선.
+  // 깊은 계곡(지형 0m으로 곤두박질치던 구덩이)은 bridgeValleys로 완만한 둑을 만들고
+  // flattenCorridor로 노면을 그 프로파일에 맞춰 메워 — 어디서든 매끈히 주행 가능(구덩이 제거).
   const mega=followTerrain(w,samplePath([[580,20],[470,-350],[200,-545],[-250,-560],[-560,-260],[-610,40],[-500,330],[-230,530],[80,565],[440,420]],true,540));
+  bridgeValleys(mega,.1);
+  flattenCorridor(mb,mega,11,18);
   mb.paintPath(mega,19,S_ASP,true,true);
-  railAlong(mb,mega,19,0xb9c2cc,(a)=>(Math.abs(a.x)<20&&Math.abs(a.z)>380)||(Math.abs(a.z)<20&&Math.abs(a.x)>380)
-    ||(a.x>500&&a.z>-280&&a.z<-130));   // 다리 구간은 별도 난간 → 지형 난간 생략
+  railAlong(mb,mega,19,0xb9c2cc,(a)=>(Math.abs(a.x)<20&&Math.abs(a.z)>380)||(Math.abs(a.z)<20&&Math.abs(a.x)>380));
   {const wide=mega.filter(p=>p.z<-495);            // 남측 광폭 구간
    if(wide.length>4)mb.paintPath(wide,27,S_ASP,true);}
-  // 🌉 메가 하이웨이 협곡 대교: 북동 산과 평지 사이 깊은 계곡(지형 0m)을 고가교로 연결
-  // (기존엔 도로가 계곡으로 곤두박질쳐 차가 못 넘던 절벽 구간)
-  {const bi0=20,bi1=42;
-   const y0=mega[bi0].y,y1=mega[bi1].y;
-   const deck=[];
-   for(let i=bi0;i<=bi1;i++){const t=(i-bi0)/(bi1-bi0),ts=t*t*(3-2*t);
-     deck.push({x:mega[i].x,z:mega[i].z,y:lerp(y0,y1,ts)+.25});}
-   bridgeDeck(mb,deck,22,{deck:0x525863,rail:0xd8433b});
-   mb.texText((mega[bi0].x+mega[bi1].x)/2+30,(mega[bi0].z+mega[bi1].z)/2,7,"CANYON BRIDGE","rgba(240,244,250,.5)");}
+  mb.texText(540,-200,7,"MOUNTAIN HWY","rgba(240,244,250,.45)");
   // 내부 순환로 ↔ 메가 연결 스포크(4방향)
   for(const[a2,b2]of[[[434,0],[575,15]],[[-434,0],[-580,150]],[[0,434],[60,560]],[[0,-434],[-40,-552]]])
     mb.paintPath([{x:a2[0],y:0,z:a2[1]},{x:b2[0],y:0,z:b2[1]}],14,S_ASP,true,true);
@@ -6680,41 +6684,49 @@ MAPS.push(
   mb.texCircle(-280,120,1,"rgba(244,248,252,.9)");
   mb.texText(-280,120-40,6,"DRIFT PLAZA","rgba(244,248,252,.55)");
   for(let k=0;k<10;k++)mb.prop("cone",-280+Math.cos(k*.628)*50,120+Math.sin(k*.628)*50);
-  // ⛲ 분수 광장(도심 중앙 개방공간): 원형 보행 광장 + 분수 + 벤치 링
-  {const fx=0,fz=140;
-   mb.stamp(fx,fz,40,(i,j,d)=>w.setS(i,j,d<32?S_WLK:S_ASP));
-   mb.texCircle(fx,fz,38,SURF_CSS[S_WLK]);
-   mb.texCircle(fx,fz,10,SURF_CSS[SURF_ID.wet]);
+  // ⛲🅿️ 도심 중앙 광장: 분수 + 대형 주차장(사용자 요청 — 다운타운 중심). 넓게 개방.
+  {const fx=0,fz=0;
+   mb.stamp(fx,fz,88,(i,j,d)=>w.setS(i,j,d<40?S_WLK:S_ASP));   // 안쪽 보행광장 + 바깥 주차 아스팔트
+   mb.texCircle(fx,fz,86,SURF_CSS[S_ASP]);
+   mb.texCircle(fx,fz,40,SURF_CSS[S_WLK]);
+   mb.texCircle(fx,fz,9,SURF_CSS[SURF_ID.wet]);
    mb.baked("fountain",fx,fz,7,0,{y:0});
-   for(let k=0;k<3;k++)mb.box(fx,.3+k*.35,fz,7-k*2,.7,7-k*2,k%2?0x9aa2ab:0x87919c,{mu:.7,tag:"fountain"}); // 분수 단
-   for(let k=0;k<12;k++){const a=k/12*6.283;mb.box(fx+Math.cos(a)*30,.25,fz+Math.sin(a)*30,2.4,.5,.8,0x6f5a3f,{yaw:-a,mu:.8,tag:"bench"});}
-   mb.texText(fx,fz-46,5,"CENTRAL PLAZA","rgba(240,244,250,.5)");}
-  // 🅿️ 대형 주차장(도심 남서 개방공간): 평탄 아스팔트 + 주차 구획선 + 주차된 차 몇 대
-  {const px0=-150,pz0=150;
-   mb.stamp(px0,pz0,52,(i,j,d)=>w.setS(i,j,S_ASP));
-   mb.texCircle(px0,pz0,52,SURF_CSS[S_ASP]);
-   for(let r2=0;r2<4;r2++)for(let c=0;c<10;c++){
-     const sx=px0-45+c*10,sz=pz0-30+r2*20;
-     mb.texRect(sx,sz,.3,9,0,"rgba(244,248,252,.6)");            // 구획선
-     if((r2*10+c)%5===2)mb.box(sx+2.5,.5,sz,4.4,1.3,2,[0x9b2226,0x3d5a80,0x4a5a40][(r2+c)%3],{mu:.5,tag:"parkedcar"});}
-   mb.texText(px0,pz0-58,5,"🅿 PARKING","rgba(240,244,250,.5)");}
-  // 🌉 도심 플라이오버(위로 올라갔다 내려오는 고가): 도심 격자 위를 넘는 오버패스
-  {const hS=w.height(-140,-140),hE=w.height(140,-140);
-   const fo=[];for(let k=0;k<=14;k++){const t=k/14;const x=-140+t*280,z=-140;
-     const y=lerp(hS,hE,t)+Math.sin(t*Math.PI)*7.5;              // 지면서 위로 솟았다 내려오는 아치
-     fo.push({x,z,y});}
-   bridgeDeck(mb,fo,15,{deck:0x5a616c,rail:0xb9c2cc});
-   mb.texText(0,-150,5,"OVERPASS","rgba(240,244,250,.45)");}
-  // 베이크 건물
+   for(let k=0;k<3;k++)mb.box(fx,.3+k*.35,fz,7-k*2,.7,7-k*2,k%2?0x9aa2ab:0x87919c,{mu:.7,tag:"fountain"});
+   for(let k=0;k<12;k++){const a=k/12*6.283;mb.box(fx+Math.cos(a)*24,.25,fz+Math.sin(a)*24,2.2,.5,.8,0x6f5a3f,{yaw:-a,mu:.8,tag:"bench"});}
+   // 분수 주변 링 주차장(구획선 + 주차 차량)
+   for(let ring2=0;ring2<2;ring2++){const rr2=54+ring2*20,n=ring2?30:26;
+     for(let k=0;k<n;k++){const a=k/n*6.283,sx=fx+Math.cos(a)*rr2,sz=fz+Math.sin(a)*rr2;
+       mb.texRect(sx,sz,.3,7,-a,"rgba(244,248,252,.55)");
+       if(k%4===1)mb.box(sx,.5,sz,4.2,1.3,1.9,[0x9b2226,0x3d5a80,0x4a5a40,0xcfc9bd][k%4],{yaw:-a,mu:.5,tag:"parkedcar"});}}
+   mb.texText(fx,fz-52,6,"⛲🅿 CENTRAL PLAZA","rgba(240,244,250,.5)");}
+  // 🌉 도심 플라이오버(위로 솟았다 내려오는 고가): 동서 오버패스 — 격자 도로 위(건물 미접촉)
+  {const z0=90,fo=[];for(let k=0;k<=16;k++){const t=k/16,x=-185+t*370;
+     const y=w.height(x,z0)*(1-Math.sin(t*Math.PI))+Math.sin(t*Math.PI)*7.5;
+     fo.push({x,z:z0,y});}
+   bridgeDeck(mb,fo,14,{deck:0x5a616c,rail:0xb9c2cc});
+   mb.texText(0,z0-11,5,"OVERPASS",'rgba(240,244,250,.45)');}
+  // 🚧 시작점(스폰 0,-60) 근처 오르내림·요철·방지턱
+  w.addRippleZone(0,-90,40,.014,2.2,3);      // 스폰 앞 완만한 꿀렁임
+  w.addRippleZone(0,-150,34,.012,2.6,1);     // 스폰 뒤 잔요철
+  for(const[bx2,bz2,h,ty]of[[0,-40,.13,"round"],[0,-118,.16,"arch"],[-90,-60,.12,"flat"],[90,-60,.14,"sharp"]])
+    mb.bump(bx2,bz2,0,13,h,ty);
+  // 베이크 건물 — 중앙 광장(r110)·플라이오버 라인 비우고, 종류·높이 다양하게(더 큰 도심)
   let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   const BLD2=["bldA","bldB","bldC","bldD"];
-  for(let bx=-2;bx<2;bx++)for(let bz=-2;bz<2;bz++){
+  for(let bx=-3;bx<=2;bx++)for(let bz=-3;bz<=2;bz++){
     const cx=bx*90+45,cz=bz*90+45;
-    for(let k=0;k<2;k++){
-      const sc=20+rnd()*16;
-      mb.baked(BLD2[(rnd()*4)|0],cx+(rnd()-.5)*(60-sc),cz+(rnd()-.5)*(60-sc),sc,
+    if(Math.hypot(cx,cz)<110)continue;                 // 중앙 광장 비움(개방)
+    if(Math.abs(cz-90)<24)continue;                    // 플라이오버 라인 비움
+    const dense=Math.hypot(cx,cz)<250;                 // 중심부는 고층 밀집, 외곽은 저층
+    for(let k=0;k<(dense?2:1);k++){
+      const sc=(dense?24:16)+rnd()*(dense?20:12);
+      mb.baked(BLD2[(rnd()*4)|0],cx+(rnd()-.5)*(64-sc),cz+(rnd()-.5)*(64-sc),sc,
         ((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});}
-    if(rnd()<.6)mb.baked("trees",cx+26,cz-26,12,rnd()*6,{y:0});}
+    if(rnd()<.5)mb.baked(rnd()<.5?"trees":"treesTall",cx+28,cz-28,10+rnd()*4,rnd()*6,{y:0});}
+  // 랜드마크 타워(도심 남동) + 소공원(도심 북서)
+  mb.baked("bldA",250,250,58,0,{y:0,collide:true,shrink:.9});
+  mb.stamp(-250,-250,44,(i,j,d)=>w.setS(i,j,d<40?S_GRS:S_ASP));
+  for(let k=0;k<7;k++)mb.baked("treesTall",-250+Math.cos(k)*30,-250+Math.sin(k*1.3)*30,11,k,{});
   // 교외 주택(남서) — 차고 모델 + 나무
   for(let k=0;k<7;k++){   // 순환로 안쪽(r<400)으로 — 고속도로 위 장애물 금지
     const hx2=-262+((k%3)*30),hz2=-206-((k/3)|0)*32;
@@ -6739,8 +6751,10 @@ MAPS.push(
    for(let k=0;k<3;k++)mb.box(lx-40+k*40,.2,lz+55,6,.4,60,0x8a6b45,{mu:.8,tag:"dock"});
    for(let k=0;k<5;k++)mb.box(lx-70+k*30,.5,lz+24+k*8,4,1,9,k%2?0xd8433b:0xe8e8e8,{yaw:.1*k,mu:.5,tag:"boat"});}
   // 언덕 스위치백 등반로 (북동 산 정상까지) — 지형을 따라 오르막
+  // 순환로(r≈420)를 가로지르는 지점에는 가드레일 생략(순환로를 막던 '도로 장벽' 제거)
   {const sb=followTerrain(w,samplePath([[220,-160],[350,-260],[290,-360],[400,-420],[430,-360]],false,120));
-   mb.paintPath(sb,10,S_ASP,true,true);railAlong(mb,sb,10,0xb9c2cc);}
+   mb.paintPath(sb,10,S_ASP,true,true);
+   railAlong(mb,sb,10,0xb9c2cc,(a)=>{const r=Math.hypot(a.x,a.z);return r>394&&r<446;});}
   // 공사장 (대형 갭 점프대 + 자재) — 격자와 순환로 사이 공터
   mb.ramp(250,236,0,24,22,14,0xd8433b);
   mb.ramp(250,296,Math.PI,20,20,14,0xc7742f);   // 착지 램프를 순환로 안쪽으로(고속도로 침범 금지)
@@ -6750,9 +6764,10 @@ MAPS.push(
   const dirt=samplePath([[220,-140],[300,-230],[380,-330],[430,-390]],false,80);
   for(const p of dirt)mb.stamp(p.x,p.z,6,(i,j)=>w.setS(i,j,SURF_ID.gravel));
   mb.texPath(dirt,11,SURF_CSS[SURF_ID.gravel]);
-  // 언덕·호수 나무
+  // 언덕·호수 나무 — 순환로(r≈420) 노면 위엔 배치 금지(도로 위 나무 제거)
   for(let k=0;k<16;k++){
-    const tx=240+rnd()*220,tz=-160-rnd()*220;
+    const tx=240+rnd()*220,tz=-160-rnd()*220,r=Math.hypot(tx,tz);
+    if(r>398&&r<452)continue;
     mb.baked(rnd()<.5?"trees":"treesTall",tx,tz,10+rnd()*5,rnd()*6,{});}
   for(let k=0;k<6;k++)mb.baked("treesTall",-350+Math.cos(k*1.05)*130,300+Math.sin(k*1.05)*130,11,k,{});
   // 가로등·표지판
@@ -6767,10 +6782,12 @@ MAPS.push(
    for(let k=0;k<3;k++)mb.box(ax-180+k*70,7,az-40,44,14,30,0x6f7883,{mu:.5,tag:"hangar"});
    // 접근 연결로 (도심 → 공항)
    mb.paintPath([{x:0,y:0,z:-418},{x:-40,y:0,z:-540},{x:ax,y:0,z:az-4}],13,S_ASP,true,true);}
-  // 해안도로 (동측) — 완만한 곡선 코스탈
-  {const coast=samplePath([[560,-360],[640,-120],[660,120],[600,360],[500,520]],false,140);
+  // 해안도로 (동측) — 지형을 따르는 코스탈(sea-level 강제 절개 금지 → 산악 하이웨이 계곡 안 침범)
+  {const coast=bridgeValleys(followTerrain(w,samplePath([[560,-360],[640,-120],[660,120],[600,360],[500,520]],false,140)),.12);
    mb.paintPath(coast,12,S_ASP,true,true);railAlong(mb,coast,12,0xb9c2cc);
-   mb.paintPath([{x:418,y:0,z:0},{x:520,y:0,z:-40},{x:560,y:0,z:-360}],12,S_ASP,true,true);
+   // 순환로→해안 연결로: 메가 계곡(x≤548) 동쪽으로 우회 + 지형 추종(계곡 파괴 방지)
+   const cc=bridgeValleys(followTerrain(w,samplePath([[418,0],[500,20],[590,-140],[600,-280],[560,-360]],false,110)),.12);
+   mb.paintPath(cc,12,S_ASP,true,true);
    for(let k=0;k<8;k++)mb.baked("treesTall",600+Math.sin(k)*30,-300+k*100,10,k,{});
    mb.texText(640,0,12,"COAST HWY","rgba(240,244,250,.45)");}
   // 스타디움 (남서 언덕 옆)
@@ -8731,7 +8748,7 @@ function boot(){
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소
         else if(c.id==="offroad"||c.id==="offroadc"){ // 오프로드 몬스터(오픈탑·하드탑): 지프식 하이 리프트 + 초롱트래블
           c.susp.travel*=2.1;                       // 트래블 엄청 크게(≈53cm) → 록크롤·후프스 흡수
-          c.susp.rest+=.44;                         // 메가 리프트 킷 → 차고 극대화(모노스터 트럭 스탠스)
+          c.susp.rest+=.58;                         // 메가 리프트 킷 → 차고 극대화(휠-차체 아치갭 큼 = 리프트 룩)
           c.susp.k*=.92;c.susp.c*=1.0;              // 롱스트로크 세팅(리프트 안정 보강)
           c.susp.rebMul=1.15;                       // 리바운드 자유롭게 → 바퀴가 지형을 따라감(아티큘레이션)
           c.arb*=2.8;}                              // 높아진 무게중심 보상(전복 억제)

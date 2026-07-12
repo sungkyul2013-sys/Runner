@@ -24,8 +24,8 @@ const CARS=[
  {id:"offroad",name:"오프로드 몬스터",icon:"🚙",drive:"4WD",mass:2150,hp:280,acc:"9.0초",top:160,
   desc:"사용자 제공 로우폴리 오프로더. 롱트래블 서스 + 라이트 포드 + 루프랙.",
   model:"offroadx",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
-  wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
-  wheelRadMul:.92,wheelWidMul:1.4,           // 바퀴 약간 작게 + 아주 굵게(머드 타이어)
+  wheelOutset:.13,groundClear:.54,           // 와이드 스탠스 + 아주 높은 차고(빅 리프트업)
+  wheelRadMul:1.06,wheelWidMul:1.42,         // 바퀴 크고(빅) + 아주 굵게(머드 타이어)
   body:{hx:.95,hy:.75,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -35,8 +35,8 @@ const CARS=[
  {id:"offroadc",name:"오프로드 몬스터 하드탑",icon:"🛻",drive:"4WD",mass:2210,hp:280,acc:"9.2초",top:158,
   desc:"뚜껑(하드탑)을 덮은 버전 — 동일 섀시 클로즈드 캐빈. 롱트래블 리프트업.",
   model:"offroadc",rollFix:1.3,squashY:1,comFromWheels:true,realWheels:true,
-  wheelOutset:.12,groundClear:.42,           // 와이드 스탠스 + 높은 차고(리프트업)
-  wheelRadMul:.92,wheelWidMul:1.4,           // 바퀴 약간 작게 + 아주 굵게(머드 타이어)
+  wheelOutset:.13,groundClear:.54,           // 와이드 스탠스 + 아주 높은 차고(빅 리프트업)
+  wheelRadMul:1.06,wheelWidMul:1.42,         // 바퀴 크고(빅) + 아주 굵게(머드 타이어)
   body:{hx:.95,hy:.78,hz:2.2},wheels:{track:.88,front:1.4,rear:1.4,y:-.5,radius:.42,width:.3},
   susp:{k:56000,c:5600,travel:.25,rest:.3},arb:9000,
   engine:{maxT:400,redline:5200,idle:800},gears:[3.8,2.3,1.6,1.15,.9],final:4.0,
@@ -372,15 +372,19 @@ class CarVisual{
         // 리어 견인 후크
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:-hx*.4,y:by+hy*.18,z:zR-.1},
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1}];
-      // 하드탑: 짐칸 슬랫 케이지가 훤히 비쳐 보이던 것을 불투명 캐노피 쉘로 밀폐
-      // (랜드로버 디펜더식 컨트라스트 화이트 루프 + 다크 윈도우 스트립)
+      // 하드탑: 컴팩트 지프풍 캐빈 하드탑(짧고 낮게·멋지게) — 캐빈만 덮어 짐칸은 개방
       if(spec.id==="offroadc"){
-        const zMid=zR+(zF-zR)*.47,cz=(zR+.05+zMid)/2,cl=zMid-zR-.1;
-        const yTop=topY*.99,yBot=topY*.4,ch=yTop-yBot,cy=(yTop+yBot)/2;
-        acc.push({geo:new THREE.BoxGeometry(hx*1.66,ch,cl),color:0xe6eaee,y:cy,z:cz});
-        for(const s of[-1,1])acc.push({geo:new THREE.BoxGeometry(.03,ch*.4,cl*.68),color:0x141920,x:s*hx*.84,y:cy+ch*.14,z:cz});
-        acc.push({geo:new THREE.BoxGeometry(hx*1.2,ch*.4,.03),color:0x141920,y:cy+ch*.14,z:zR+.03});
-        acc.push({geo:new THREE.BoxGeometry(hx*1.7,.05,cl+.08),color:0xdfe4e9,y:yTop+.02,z:cz});} // 루프 캡
+        const zMid=zR+(zF-zR)*.34,cz=(zR+.12+zMid)/2,cl=zMid-zR-.16;  // 더 짧게(캐빈만)
+        const yTop=topY*.9,yBot=topY*.42,ch=yTop-yBot,cy=(yTop+yBot)/2; // 더 낮게(슬릭)
+        acc.push({geo:new THREE.BoxGeometry(hx*1.5,ch,cl),color:0x2b3138,y:cy,z:cz});             // 다크 하드탑 쉘
+        // 사이드 윈도우(틴티드) + 리어 윈도우
+        for(const s of[-1,1])acc.push({geo:new THREE.BoxGeometry(.025,ch*.44,cl*.66),color:0x0e1216,x:s*hx*.76,y:cy+ch*.1,z:cz});
+        acc.push({geo:new THREE.BoxGeometry(hx*1.1,ch*.44,.025),color:0x0e1216,y:cy+ch*.1,z:zR+.06});
+        // 루프 레일(양측 크로스바) — 지프풍 디테일
+        acc.push({geo:new THREE.BoxGeometry(hx*1.56,.05,cl+.1),color:0x3a4149,y:yTop+.03,z:cz});    // 루프 캡
+        for(let cb=0;cb<2;cb++)acc.push({geo:new THREE.BoxGeometry(hx*1.5,.05,.06),color:0x14181d,y:yTop+.08,z:cz-cl*.3+cb*cl*.6});
+        // 스노클(우측 A필러) — 오프로드 포인트
+        acc.push({geo:new THREE.CylinderGeometry(.05,.05,ch*1.5,8),color:0x14181d,x:hx*.92,y:cy+ch*.2,z:zMid-.05});}
       this.accMesh=new THREE.Mesh(mergeGeoms(acc),MAT_DETAIL);
       this.accMesh.castShadow=true;this.group.add(this.accMesh);
       // LED 라이트바 발광 렌즈(자체발광)

@@ -303,8 +303,9 @@ class Vehicle{
       _vD.set(rc.wx,rc.wy,rc.wz);_vC.set(rc.n.x,rc.n.y,rc.n.z);
       _hit.n.copy(_vC);_hit.mu=rc.mu;
       const dv=resolvePointContact(b,_vD,{n:_vC,depth:rc.depth,mu:rc.mu,bounce:rc.bounce},0);
-      // 위치 보정: 임펄스만으론 벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 밀어냄
-      if(rc.depth>.03)b.pos.addScaledVector(_vC,Math.min(rc.depth*.35,.05));
+      // 위치 보정: 임펄스만으론 벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 밀어냄.
+      // 깊게 박히면 더 강하게 밀어내 벽에 끼어 못 빠져나오는 문제 방지(끝벽 탈출).
+      if(rc.depth>.03)b.pos.addScaledVector(_vC,Math.min(rc.depth*.5,.14));
       const useDv=Math.max(dv,-rc.vn);   // 사전 접근속도 기준 → 모든 접점이 동일 강도로 크럼플
       // 전복 시 루프(상단 프레임)도 물리대로 손상: 지붕 접점은 문턱 낮게 + 압궤 가중
       const roofPt=this.hull[rc.i].y>sp.body.hy*.55;

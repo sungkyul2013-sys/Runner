@@ -304,6 +304,13 @@ function railAlong(mb,pts,width,color,skip){ // guardrails both sides
       const y=mb.world.height(px,pz);
       mb.box(px,y+.45,pz,.25,.7,len+.4,color||0xb9c2cc,{yaw,mu:.4,bounce:.25,tag:"rail"});}}
 }
+// 계곡 메우기: 도로 y-프로파일의 깊은 골(급강하→급상승)을 최대 경사 maxG로 완만화 —
+// 골 바닥을 끌어올려 도로가 계곡을 넘어가는 완만한 둑 형태(차가 곤두박질치는 구덩이 제거).
+function bridgeValleys(pts,maxG){
+  const seg=(a,b)=>Math.hypot(b.x-a.x,b.z-a.z)||1;
+  for(let i=1;i<pts.length;i++){const m=maxG*seg(pts[i-1],pts[i]);if(pts[i].y<pts[i-1].y-m)pts[i].y=pts[i-1].y-m;}
+  for(let i=pts.length-2;i>=0;i--){const m=maxG*seg(pts[i],pts[i+1]);if(pts[i].y<pts[i+1].y-m)pts[i].y=pts[i+1].y-m;}
+  return pts;}
 // 넓은 도로 절개(코리도어 정지작업): 좁은 paintPath flatten이 남기는 잔여 언덕/절벽을
 // 제거 — 경로 폭 halfW를 목표 y로 평탄화 + blend 폭으로 지형에 부드럽게 접합.
 function flattenCorridor(mb,pts,halfW,blend,getY){
