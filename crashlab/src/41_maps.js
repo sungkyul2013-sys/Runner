@@ -304,6 +304,41 @@ function railAlong(mb,pts,width,color,skip){ // guardrails both sides
       const y=mb.world.height(px,pz);
       mb.box(px,y+.45,pz,.25,.7,len+.4,color||0xb9c2cc,{yaw,mu:.4,bounce:.25,tag:"rail"});}}
 }
+// 넓은 도로 절개(코리도어 정지작업): 좁은 paintPath flatten이 남기는 잔여 언덕/절벽을
+// 제거 — 경로 폭 halfW를 목표 y로 평탄화 + blend 폭으로 지형에 부드럽게 접합.
+function flattenCorridor(mb,pts,halfW,blend,getY){
+  const w=mb.world;
+  for(let k=0;k<pts.length-1;k++){
+    const a=pts[k],b=pts[k+1];
+    const len=Math.hypot(b.x-a.x,b.z-a.z),n=Math.max(1,Math.ceil(len/(w.cell*.5)));
+    for(let s=0;s<=n;s++){
+      const t=s/n,x=lerp(a.x,b.x,t),z=lerp(a.z,b.z,t),y=getY?getY(x,z):lerp(a.y,b.y,t);
+      mb.stamp(x,z,halfW+blend,(i,j,d)=>{
+        const idx=w.idx(i,j),f=clamp((d-halfW)/blend,0,1);
+        w.hMap[idx]=lerp(y,w.hMap[idx],f*f);});}}
+}
+// 고가교(다리): 계곡/절벽 위로 도로를 띄워 연결. pts=[{x,y,z}] 데크 상면 높이(부드러운 경사).
+// 데크 위를 주행(강체 상판) + 교각(기둥) + 양측 난간.
+function bridgeDeck(mb,pts,width,opt){
+  opt=opt||{};
+  const w=mb.world,th=opt.thick||.55;
+  const deckC=opt.deck||0x555b66,railC=opt.rail||0xc7ccd4,pillC=opt.pillar||0x6b727c;
+  for(let k=0;k<pts.length-1;k++){
+    const a=pts[k],b=pts[k+1];
+    const dx=b.x-a.x,dz=b.z-a.z,dy=b.y-a.y;
+    const hlen=Math.hypot(dx,dz)||1,len3=Math.hypot(hlen,dy);
+    const yaw=Math.atan2(dx,dz),pitch=-Math.atan2(dy,hlen);
+    const cx=(a.x+b.x)/2,cz=(a.z+b.z)/2,cy=(a.y+b.y)/2-th*.5;
+    mb.box(cx,cy,cz,width,th,len3+.4,deckC,{yaw,pitch,mu:1,tag:"bridge"});   // 상판(주행면)
+    const nx=dz/hlen,nz=-dx/hlen;
+    for(const s of[-1,1])
+      mb.box(cx+nx*s*(width/2),cy+th*.5+.5,cz+nz*s*(width/2),.22,1.0,len3+.4,railC,{yaw,pitch,mu:.4,bounce:.2,tag:"rail"});
+    if(k%3===0){                                             // 교각
+      const terr=w.height(cx,cz),top=cy-th*.5,ph=top-terr;
+      if(ph>2.2)mb.box(cx,(top+terr)/2,cz,1.7,ph,1.7,pillC,{mu:.6,tag:"pillar"});}
+  }
+  return pts;
+}
 
 /* ---------- props ---------- */
 const PROP_DEFS={

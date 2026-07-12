@@ -308,4 +308,22 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #bigMsg{text-shadow:0 6px 30px rgba(0,0,0,.6),0 0 40px rgba(255,140,40,.3)}
 input[type=range]{accent-color:var(--acc)}
 input[type=checkbox]{accent-color:var(--acc)}
+/* ===== 전체 지도 오버뷰 ===== */
+#mapPanel{align-items:center;justify-content:center;background:rgba(6,8,12,.86);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#mapWrap{position:relative;width:min(88vw,88vh);height:min(88vw,88vh);
+  border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 24px 70px rgba(0,0,0,.6)}
+#bigmap{width:100%;height:100%;display:block;background:#0d1017}
+#mapMarks{position:absolute;inset:0;pointer-events:none}
+#mapMarks .mk{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;
+  display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+#mapMarks .mk .dot{width:11px;height:11px;border-radius:50%;background:var(--acc);
+  border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.6)}
+#mapMarks .mk .lb{font-size:10px;font-weight:700;color:#fff;white-space:nowrap;
+  background:rgba(12,15,21,.8);padding:1px 5px;border-radius:6px;text-shadow:0 1px 2px #000}
+#mapMarks .mk:active .dot{transform:scale(1.3)}
+#mapHint{position:absolute;bottom:calc(var(--sab) + 18px);left:50%;transform:translateX(-50%);
+  font-size:13px;color:var(--tx2);background:rgba(12,15,21,.7);padding:6px 14px;border-radius:20px}
+#mapClose{position:absolute;top:calc(var(--sat) + 14px);right:14px;z-index:5}
 </style>

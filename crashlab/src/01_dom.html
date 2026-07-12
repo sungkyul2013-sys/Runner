@@ -5,7 +5,7 @@
     <div id="modeWidget"></div>
     <div class="hudSpacer"></div>
     <button class="iconBtn" id="btnHome" title="홈으로">🏠</button>
-    <button class="iconBtn" id="btnMap" title="미니맵 켜기/끄기">🗺️</button>
+    <button class="iconBtn" id="btnMap" title="전체 지도 보기">🗺️</button>
     <button class="iconBtn" id="btnPlaces" title="장소 이동" style="display:none">📍</button>
     <button class="iconBtn" id="btnRepair" title="수리">🔧</button>
     <button class="iconBtn" id="btnCarSwap" title="차량 교체">🚗</button>
@@ -108,6 +108,10 @@
   <div class="stack" id="pauseBtns"></div>
 </div></div>
 
+<div id="mapPanel" class="overlayPanel"><button class="iconBtn" id="mapClose" title="닫기">✕</button>
+  <div id="mapWrap"><canvas id="bigmap" width="720" height="720"></canvas><div id="mapMarks"></div></div>
+  <div id="mapHint">📍 장소를 탭하면 즉시 이동</div>
+</div>
 <div id="reportPanel" class="overlayPanel"><button class="iconBtn" id="repClose" title="닫기">✕</button><div class="panelBox" id="reportBox"></div></div>
 <div id="resultPanel" class="overlayPanel"><div class="panelBox" id="resultBox"></div></div>
 <div id="placesPanel" class="overlayPanel"><div class="panelBox">

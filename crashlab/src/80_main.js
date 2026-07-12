@@ -147,12 +147,10 @@ function initHudButtons(){
   $("btnRepair").onclick=()=>{Sfx.click();Game.repair();};
   // 🏠 홈으로(메인 메뉴)
   $("btnHome").onclick=()=>{Sfx.click();Game.exitToMenu();};
-  // 🗺️ 미니맵 켜기/끄기
-  $("btnMap").onclick=()=>{Sfx.click();
-    const m=$("minimap");const off=m.dataset.off==="1";
-    m.dataset.off=off?"0":"1";m.style.display=off?"":"none";
-    $("btnMap").classList.toggle("on",!off);
-    toast(off?"미니맵 ON":"미니맵 OFF");};
+  // 🗺️ 전체 지도 오버뷰(맵 한눈에 보기) — 버튼·미니맵 탭으로 열기
+  $("btnMap").onclick=()=>{Sfx.click();openMapOverview();};
+  $("minimap").addEventListener("click",()=>{Sfx.click();openMapOverview();});
+  $("mapClose").onclick=()=>{Sfx.click();closeMapOverview();};
   // 📍 장소 이동(오픈월드)
   $("btnPlaces").onclick=()=>{Sfx.click();
     const ps=Game.world&&Game.world.places;if(!ps)return;
@@ -353,13 +351,13 @@ function boot(){
           c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
           c.susp.rebMul=1.3;                        // 리바운드 타이트(빠르고 절도있는 복귀 — 실차 스포츠 댐퍼)
           c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
-          if(c.id==="veloce")c.susp.rest+=.04;      // 포르쉐: 차고 조금 상승(턱 긁힘 여유)
+          if(c.id==="veloce")c.susp.rest+=.1;       // 포르쉐: 차고 상승 — 대구경 휠이 펜더와 겹치지 않게
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
         else if(c.id==="maybach"){                  // 마이바흐 GLS: 에어서스(실차형)
           c.susp.k*=.68;                            // 더 부드러운 스프링 → 방지턱에서 스트로크가 크게 움직임
-          c.susp.c*=.74;                            // 압축 댐핑 낮게 → 서스가 실제로 깊게 눌림(차체로 전달 안 됨)
-          c.susp.rebMul=3.8;                        // 리바운드 댐핑 매우 강함 → 넘은 뒤 차체가 붕 뜨지 않음
-          c.susp.sky=4300;                          // 스카이훅 강화: 방지턱 이후 차체 헤이브(부양)를 즉시 흡수
+          c.susp.c*=.8;                             // 압축 댐핑: 착지 시 부드럽게 한 번 눌렸다 정착(쫀득)
+          c.susp.rebMul=2.4;                        // 리바운드 댐핑: 착지 후 살짝 '띠용'하며 정착(과제동 X, 부양 X)
+          c.susp.sky=3200;                          // 스카이훅: 요동은 억제하되 착지 압축은 살짝 허용(임계감쇠 느낌)
           c.susp.rest+=.07;                         // 에어서스 리프트: 정하중 처짐 보상 → 바퀴가 아치에 제대로 보임
           c.susp.travel*=2.6;                       // 위쪽 스트로크 넉넉히 → 더 높은 방지턱도 스트로크 안에서 흡수
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소

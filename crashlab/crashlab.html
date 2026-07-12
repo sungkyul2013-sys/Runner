@@ -311,6 +311,24 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #bigMsg{text-shadow:0 6px 30px rgba(0,0,0,.6),0 0 40px rgba(255,140,40,.3)}
 input[type=range]{accent-color:var(--acc)}
 input[type=checkbox]{accent-color:var(--acc)}
+/* ===== 전체 지도 오버뷰 ===== */
+#mapPanel{align-items:center;justify-content:center;background:rgba(6,8,12,.86);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#mapWrap{position:relative;width:min(88vw,88vh);height:min(88vw,88vh);
+  border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 24px 70px rgba(0,0,0,.6)}
+#bigmap{width:100%;height:100%;display:block;background:#0d1017}
+#mapMarks{position:absolute;inset:0;pointer-events:none}
+#mapMarks .mk{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;
+  display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+#mapMarks .mk .dot{width:11px;height:11px;border-radius:50%;background:var(--acc);
+  border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.6)}
+#mapMarks .mk .lb{font-size:10px;font-weight:700;color:#fff;white-space:nowrap;
+  background:rgba(12,15,21,.8);padding:1px 5px;border-radius:6px;text-shadow:0 1px 2px #000}
+#mapMarks .mk:active .dot{transform:scale(1.3)}
+#mapHint{position:absolute;bottom:calc(var(--sab) + 18px);left:50%;transform:translateX(-50%);
+  font-size:13px;color:var(--tx2);background:rgba(12,15,21,.7);padding:6px 14px;border-radius:20px}
+#mapClose{position:absolute;top:calc(var(--sat) + 14px);right:14px;z-index:5}
 </style>
 </head>
 <body>
@@ -321,7 +339,7 @@ input[type=checkbox]{accent-color:var(--acc)}
     <div id="modeWidget"></div>
     <div class="hudSpacer"></div>
     <button class="iconBtn" id="btnHome" title="홈으로">🏠</button>
-    <button class="iconBtn" id="btnMap" title="미니맵 켜기/끄기">🗺️</button>
+    <button class="iconBtn" id="btnMap" title="전체 지도 보기">🗺️</button>
     <button class="iconBtn" id="btnPlaces" title="장소 이동" style="display:none">📍</button>
     <button class="iconBtn" id="btnRepair" title="수리">🔧</button>
     <button class="iconBtn" id="btnCarSwap" title="차량 교체">🚗</button>
@@ -424,6 +442,10 @@ input[type=checkbox]{accent-color:var(--acc)}
   <div class="stack" id="pauseBtns"></div>
 </div></div>
 
+<div id="mapPanel" class="overlayPanel"><button class="iconBtn" id="mapClose" title="닫기">✕</button>
+  <div id="mapWrap"><canvas id="bigmap" width="720" height="720"></canvas><div id="mapMarks"></div></div>
+  <div id="mapHint">📍 장소를 탭하면 즉시 이동</div>
+</div>
 <div id="reportPanel" class="overlayPanel"><button class="iconBtn" id="repClose" title="닫기">✕</button><div class="panelBox" id="reportBox"></div></div>
 <div id="resultPanel" class="overlayPanel"><div class="panelBox" id="resultBox"></div></div>
 <div id="placesPanel" class="overlayPanel"><div class="panelBox">
@@ -5103,26 +5125,15 @@ class CarVisual{
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
     if(split.lamps){this.lampsMesh=new THREE.Mesh(split.lamps,MAT_LAMP);
       this.group.add(this.lampsMesh);
-      // 전조등 실제 점등: 램프 지오메트리에서 좌/우 전방 램프 앵커 추출 → 스포트라이트 + 글로우 벌브
+      // 전조등 앵커만 계산해 저장(실제 SpotLight는 플레이어 차에서만 지연 생성 →
+      // 썸네일·AI 차량에 광원이 붙어 셰이더가 재컴파일돼 부팅이 느려지는 문제 방지)
       const pa=split.lamps.attributes.position.array;
       let zMax=-1e9;for(let i=2;i<pa.length;i+=3)if(pa[i]>zMax)zMax=pa[i];
       let lxS=0,lc=0,rxS=0,rc=0,yS=0,yc=0;
       for(let i=0;i<pa.length;i+=3)if(pa[i+2]>zMax-.4){
         const x=pa[i];yS+=pa[i+1];yc++;
         if(x<-.12){lxS+=x;lc++;}else if(x>.12){rxS+=x;rc++;}}
-      if(lc&&rc){
-        const y=yS/yc,zl=zMax-.02;
-        const mk=(x)=>{
-          const s=new THREE.SpotLight(0xfff0cc,0,30,.52,.42,1.2);
-          s.position.set(x,y,zl);
-          s.target.position.set(x*.5,y-.4,zl+16);
-          this.group.add(s);this.group.add(s.target);
-          const g=new THREE.Mesh(new THREE.SphereGeometry(.075,8,6),
-            new THREE.MeshBasicMaterial({color:0xfff6d8,transparent:true,opacity:.85,
-              blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
-          g.scale.z=.4;g.position.set(x,y,zl+.05);g.visible=false;
-          this.group.add(g);return{s,g};};
-        this.hl=[mk(lxS/lc),mk(rxS/rc)];}}
+      if(lc&&rc)this.hlAnchor=[[lxS/lc,yS/yc,zMax-.02],[rxS/rc,yS/yc,zMax-.02]];}
     if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,MAT_GLASS);
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
     this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh,this.lampsMesh]);
@@ -5357,12 +5368,23 @@ class CarVisual{
     this.group.quaternion.copy(veh.body.quat);
     if(shakeT>0&&Settings.camShake){
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
-    // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게
-    if(this.hl){
+    // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게. SpotLight는 최초 1회 지연 생성.
+    if(this.hlAnchor){
       const on=typeof Game!=="undefined"&&Game.veh===veh;
-      const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
-      if(this._hlI!==inten){this._hlI=inten;
-        for(const h of this.hl){h.s.intensity=inten;h.g.visible=on;}}}
+      if(on&&!this.hl){                                    // 플레이어가 됐을 때 최초 생성
+        this.hl=this.hlAnchor.map(([x,y,zl])=>{
+          const s=new THREE.SpotLight(0xfff0cc,0,30,.52,.42,1.2);
+          s.position.set(x,y,zl);s.target.position.set(x*.5,y-.4,zl+16);
+          this.group.add(s);this.group.add(s.target);
+          const g=new THREE.Mesh(new THREE.SphereGeometry(.075,8,6),
+            new THREE.MeshBasicMaterial({color:0xfff6d8,transparent:true,opacity:.85,
+              blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+          g.scale.z=.4;g.position.set(x,y,zl+.05);g.visible=false;this.group.add(g);
+          return{s,g};});}
+      if(this.hl){
+        const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
+        if(this._hlI!==inten){this._hlI=inten;
+          for(const h of this.hl){h.s.intensity=inten;h.g.visible=on&&inten>0;}}}}
     const tv=this.baked?this.spec.wheels.trackVis:0;
     for(let i=0;i<4;i++){
       if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함
@@ -5903,6 +5925,41 @@ function railAlong(mb,pts,width,color,skip){ // guardrails both sides
       const px=(a.x+b.x)/2+nx*s*(width/2+.6),pz=(a.z+b.z)/2+nz*s*(width/2+.6);
       const y=mb.world.height(px,pz);
       mb.box(px,y+.45,pz,.25,.7,len+.4,color||0xb9c2cc,{yaw,mu:.4,bounce:.25,tag:"rail"});}}
+}
+// 넓은 도로 절개(코리도어 정지작업): 좁은 paintPath flatten이 남기는 잔여 언덕/절벽을
+// 제거 — 경로 폭 halfW를 목표 y로 평탄화 + blend 폭으로 지형에 부드럽게 접합.
+function flattenCorridor(mb,pts,halfW,blend,getY){
+  const w=mb.world;
+  for(let k=0;k<pts.length-1;k++){
+    const a=pts[k],b=pts[k+1];
+    const len=Math.hypot(b.x-a.x,b.z-a.z),n=Math.max(1,Math.ceil(len/(w.cell*.5)));
+    for(let s=0;s<=n;s++){
+      const t=s/n,x=lerp(a.x,b.x,t),z=lerp(a.z,b.z,t),y=getY?getY(x,z):lerp(a.y,b.y,t);
+      mb.stamp(x,z,halfW+blend,(i,j,d)=>{
+        const idx=w.idx(i,j),f=clamp((d-halfW)/blend,0,1);
+        w.hMap[idx]=lerp(y,w.hMap[idx],f*f);});}}
+}
+// 고가교(다리): 계곡/절벽 위로 도로를 띄워 연결. pts=[{x,y,z}] 데크 상면 높이(부드러운 경사).
+// 데크 위를 주행(강체 상판) + 교각(기둥) + 양측 난간.
+function bridgeDeck(mb,pts,width,opt){
+  opt=opt||{};
+  const w=mb.world,th=opt.thick||.55;
+  const deckC=opt.deck||0x555b66,railC=opt.rail||0xc7ccd4,pillC=opt.pillar||0x6b727c;
+  for(let k=0;k<pts.length-1;k++){
+    const a=pts[k],b=pts[k+1];
+    const dx=b.x-a.x,dz=b.z-a.z,dy=b.y-a.y;
+    const hlen=Math.hypot(dx,dz)||1,len3=Math.hypot(hlen,dy);
+    const yaw=Math.atan2(dx,dz),pitch=-Math.atan2(dy,hlen);
+    const cx=(a.x+b.x)/2,cz=(a.z+b.z)/2,cy=(a.y+b.y)/2-th*.5;
+    mb.box(cx,cy,cz,width,th,len3+.4,deckC,{yaw,pitch,mu:1,tag:"bridge"});   // 상판(주행면)
+    const nx=dz/hlen,nz=-dx/hlen;
+    for(const s of[-1,1])
+      mb.box(cx+nx*s*(width/2),cy+th*.5+.5,cz+nz*s*(width/2),.22,1.0,len3+.4,railC,{yaw,pitch,mu:.4,bounce:.2,tag:"rail"});
+    if(k%3===0){                                             // 교각
+      const terr=w.height(cx,cz),top=cy-th*.5,ph=top-terr;
+      if(ph>2.2)mb.box(cx,(top+terr)/2,cz,1.7,ph,1.7,pillC,{mu:.6,tag:"pillar"});}
+  }
+  return pts;
 }
 
 /* ---------- props ---------- */
@@ -6581,6 +6638,8 @@ MAPS.push(
     mb.paintPath([{x:k*90,y:0,z:-185},{x:k*90,y:0,z:185}],14,S_ASP,true,true);}
   // 순환 고속도로 (r≈420) — 언덕을 절개하며 통과
   const ring=samplePath([[420,0],[300,300],[0,420],[-300,300],[-420,0],[-300,-300],[0,-420],[297,-297]],true,360);
+  // 산 구간 잔여 언덕/절벽 제거: 넓은 코리도어 정지작업으로 노면을 완전 평탄화(장애물 해소)
+  flattenCorridor(mb,ring,11,16,()=>0);
   mb.paintPath(ring,19,S_ASP,true,true);
   // 가드레일: 연결로·스퍼 교차 지점은 뚫어 둠(진입로 차단 버그 방지)
   railAlong(mb,ring,19,0xb9c2cc,(a)=>(Math.abs(a.x)<16&&Math.abs(a.z)>396)||(Math.abs(a.z)<16&&Math.abs(a.x)>396));
@@ -6590,9 +6649,19 @@ MAPS.push(
   // 메가 외곽 고속도로: 지형을 따라 오르막·내리막(산 구간 힐클라임), 남측은 광폭 차선
   const mega=followTerrain(w,samplePath([[580,20],[470,-350],[200,-545],[-250,-560],[-560,-260],[-610,40],[-500,330],[-230,530],[80,565],[440,420]],true,540));
   mb.paintPath(mega,19,S_ASP,true,true);
-  railAlong(mb,mega,19,0xb9c2cc,(a)=>(Math.abs(a.x)<20&&Math.abs(a.z)>380)||(Math.abs(a.z)<20&&Math.abs(a.x)>380));
+  railAlong(mb,mega,19,0xb9c2cc,(a)=>(Math.abs(a.x)<20&&Math.abs(a.z)>380)||(Math.abs(a.z)<20&&Math.abs(a.x)>380)
+    ||(a.x>500&&a.z>-280&&a.z<-130));   // 다리 구간은 별도 난간 → 지형 난간 생략
   {const wide=mega.filter(p=>p.z<-495);            // 남측 광폭 구간
    if(wide.length>4)mb.paintPath(wide,27,S_ASP,true);}
+  // 🌉 메가 하이웨이 협곡 대교: 북동 산과 평지 사이 깊은 계곡(지형 0m)을 고가교로 연결
+  // (기존엔 도로가 계곡으로 곤두박질쳐 차가 못 넘던 절벽 구간)
+  {const bi0=20,bi1=42;
+   const y0=mega[bi0].y,y1=mega[bi1].y;
+   const deck=[];
+   for(let i=bi0;i<=bi1;i++){const t=(i-bi0)/(bi1-bi0),ts=t*t*(3-2*t);
+     deck.push({x:mega[i].x,z:mega[i].z,y:lerp(y0,y1,ts)+.25});}
+   bridgeDeck(mb,deck,22,{deck:0x525863,rail:0xd8433b});
+   mb.texText((mega[bi0].x+mega[bi1].x)/2+30,(mega[bi0].z+mega[bi1].z)/2,7,"CANYON BRIDGE","rgba(240,244,250,.5)");}
   // 내부 순환로 ↔ 메가 연결 스포크(4방향)
   for(const[a2,b2]of[[[434,0],[575,15]],[[-434,0],[-580,150]],[[0,434],[60,560]],[[0,-434],[-40,-552]]])
     mb.paintPath([{x:a2[0],y:0,z:a2[1]},{x:b2[0],y:0,z:b2[1]}],14,S_ASP,true,true);
@@ -6603,6 +6672,31 @@ MAPS.push(
   mb.texCircle(-280,120,1,"rgba(244,248,252,.9)");
   mb.texText(-280,120-40,6,"DRIFT PLAZA","rgba(244,248,252,.55)");
   for(let k=0;k<10;k++)mb.prop("cone",-280+Math.cos(k*.628)*50,120+Math.sin(k*.628)*50);
+  // ⛲ 분수 광장(도심 중앙 개방공간): 원형 보행 광장 + 분수 + 벤치 링
+  {const fx=0,fz=140;
+   mb.stamp(fx,fz,40,(i,j,d)=>w.setS(i,j,d<32?S_WLK:S_ASP));
+   mb.texCircle(fx,fz,38,SURF_CSS[S_WLK]);
+   mb.texCircle(fx,fz,10,SURF_CSS[SURF_ID.wet]);
+   mb.baked("fountain",fx,fz,7,0,{y:0});
+   for(let k=0;k<3;k++)mb.box(fx,.3+k*.35,fz,7-k*2,.7,7-k*2,k%2?0x9aa2ab:0x87919c,{mu:.7,tag:"fountain"}); // 분수 단
+   for(let k=0;k<12;k++){const a=k/12*6.283;mb.box(fx+Math.cos(a)*30,.25,fz+Math.sin(a)*30,2.4,.5,.8,0x6f5a3f,{yaw:-a,mu:.8,tag:"bench"});}
+   mb.texText(fx,fz-46,5,"CENTRAL PLAZA","rgba(240,244,250,.5)");}
+  // 🅿️ 대형 주차장(도심 남서 개방공간): 평탄 아스팔트 + 주차 구획선 + 주차된 차 몇 대
+  {const px0=-150,pz0=150;
+   mb.stamp(px0,pz0,52,(i,j,d)=>w.setS(i,j,S_ASP));
+   mb.texCircle(px0,pz0,52,SURF_CSS[S_ASP]);
+   for(let r2=0;r2<4;r2++)for(let c=0;c<10;c++){
+     const sx=px0-45+c*10,sz=pz0-30+r2*20;
+     mb.texRect(sx,sz,.3,9,0,"rgba(244,248,252,.6)");            // 구획선
+     if((r2*10+c)%5===2)mb.box(sx+2.5,.5,sz,4.4,1.3,2,[0x9b2226,0x3d5a80,0x4a5a40][(r2+c)%3],{mu:.5,tag:"parkedcar"});}
+   mb.texText(px0,pz0-58,5,"🅿 PARKING","rgba(240,244,250,.5)");}
+  // 🌉 도심 플라이오버(위로 올라갔다 내려오는 고가): 도심 격자 위를 넘는 오버패스
+  {const hS=w.height(-140,-140),hE=w.height(140,-140);
+   const fo=[];for(let k=0;k<=14;k++){const t=k/14;const x=-140+t*280,z=-140;
+     const y=lerp(hS,hE,t)+Math.sin(t*Math.PI)*7.5;              // 지면서 위로 솟았다 내려오는 아치
+     fo.push({x,z,y});}
+   bridgeDeck(mb,fo,15,{deck:0x5a616c,rail:0xb9c2cc});
+   mb.texText(0,-150,5,"OVERPASS","rgba(240,244,250,.45)");}
   // 베이크 건물
   let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   const BLD2=["bldA","bldB","bldC","bldD"];
@@ -6691,6 +6785,9 @@ MAPS.push(
   w.addRippleZone(-60,60,34,.011,2.6,1);     // 다운타운 북서 블록: 잔요철
   w.addRippleZone(0,-500,60,.018,2.2,2);     // 남부 고속도로: 워시보드
   w.addRippleZone(-240,-420,55,.015,1.1,3);  // 남서 교외로: 물결
+  w.addRippleZone(-150,150,50,.014,2.0,2);   // 주차장 진입로: 워시보드
+  w.addRippleZone(-70,0,40,.012,2.5,1);      // 도심 중앙로: 미세 요철
+  w.addRippleZone(140,60,42,.016,1.3,3);     // 도심 동측: 완만한 물결
   w.checkpoints=pathCheckpoints(mega,26,20);
   w.waypoints=pathWaypoints(mega,true,56);
   w.spawn={x:0,z:-60,yaw:0};
@@ -6708,7 +6805,11 @@ MAPS.push(
     {name:"🏗️ 공사장 점프대",x:250,z:225,yaw:0},
     {name:"✈️ 공항 활주로",x:-120,z:-656,yaw:Math.PI/2},
     {name:"🌅 해안 도로",x:640,z:0,yaw:0},
-    {name:"🏟️ 스타디움",x:-560,z:590,yaw:0}];
+    {name:"🏟️ 스타디움",x:-560,z:590,yaw:0},
+    {name:"⛲ 분수 광장",x:0,z:180,yaw:Math.PI},
+    {name:"🅿️ 대형 주차장",x:-150,z:150,yaw:0},
+    {name:"🌉 협곡 대교",x:557,z:-156,yaw:Math.PI*.75},
+    {name:"🌉 도심 플라이오버",x:-150,z:-140,yaw:0}];
   mb.paintLanes();
   return mb.finalize(this);}});
 
@@ -7647,6 +7748,40 @@ function drawMinimap(dt){
   ctx.fillStyle="#ffb25e";ctx.strokeStyle="#0b0e13";ctx.lineWidth=2;
   ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(6,7);ctx.lineTo(-6,7);ctx.closePath();
   ctx.fill();ctx.stroke();ctx.restore();}
+/* ---------- 전체 지도 오버뷰 (맵 한눈에 보기) ---------- */
+function openMapOverview(){
+  if(!Game.mm||!Game.world)return;
+  $("mapPanel").classList.add("on");Game.mapOpen=true;
+  const marks=$("mapMarks");marks.innerHTML="";
+  const places=Game.world.places||[];
+  for(const pl of places){
+    const px=(pl.x/Game.mm.size+.5)*100,py=(pl.z/Game.mm.size+.5)*100;
+    const el=document.createElement("div");el.className="mk";
+    el.style.left=px+"%";el.style.top=py+"%";
+    el.innerHTML='<div class="dot"></div><div class="lb">'+esc(pl.name)+'</div>';
+    el.onclick=()=>{Sfx.click();if(Game.spawnAt)Game.spawnAt(pl);closeMapOverview();};
+    marks.appendChild(el);}
+  $("mapHint").style.display=places.length?"":"none";
+  drawBigMap();}
+function drawBigMap(){
+  if(!Game.mapOpen||!Game.mm||!Game.veh)return;
+  const cv=$("bigmap"),ctx=cv.getContext("2d"),S=cv.width;
+  ctx.clearRect(0,0,S,S);ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(Game.mm.cnv,0,0,S,S);
+  const toPx=(x,z)=>[(x/Game.mm.size+.5)*S,(z/Game.mm.size+.5)*S];
+  // AI/드론 점
+  ctx.fillStyle="#ff5252";
+  for(const a of Game.ais){const[ax,ay]=toPx(a.veh.body.pos.x,a.veh.body.pos.z);
+    ctx.beginPath();ctx.arc(ax,ay,6,0,7);ctx.fill();}
+  // 플레이어 화살표
+  const b=Game.veh.body;
+  const yaw=Math.atan2(2*(b.quat.w*b.quat.y+b.quat.x*b.quat.z),1-2*(b.quat.y*b.quat.y+b.quat.x*b.quat.x));
+  const[px,py]=toPx(b.pos.x,b.pos.z);
+  ctx.save();ctx.translate(px,py);ctx.rotate(-yaw);
+  ctx.fillStyle="#ffb25e";ctx.strokeStyle="#0b0e13";ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(0,-17);ctx.lineTo(12,13);ctx.lineTo(-12,13);ctx.closePath();
+  ctx.fill();ctx.stroke();ctx.restore();}
+function closeMapOverview(){$("mapPanel").classList.remove("on");Game.mapOpen=false;}
 let _hudT=0;
 function updateHUD(dt){
   const v=Game.veh;if(!v)return;
@@ -7658,6 +7793,7 @@ function updateHUD(dt){
     $("gArc").style.strokeDashoffset=GAUGE.sL*(1-clamp(kmh/(v.spec.top+30),0,1));
     $("gArcRpm").style.strokeDashoffset=GAUGE.rL*(1-clamp(v.rpm/v.spec.engine.redline,0,1));}
   drawMinimap(.06);
+  if(Game.mapOpen)drawBigMap();
   const dz=(el,val)=>{el.style.background=val>66?"var(--bad)":val>33?"var(--warn)":"var(--ok)";};
   dz($("dmgF"),v.dmg.f);dz($("dmgB"),v.dmg.b);dz($("dmgL"),v.dmg.l);dz($("dmgR"),v.dmg.r);
   updateModeWidget();
@@ -8362,12 +8498,10 @@ function initHudButtons(){
   $("btnRepair").onclick=()=>{Sfx.click();Game.repair();};
   // 🏠 홈으로(메인 메뉴)
   $("btnHome").onclick=()=>{Sfx.click();Game.exitToMenu();};
-  // 🗺️ 미니맵 켜기/끄기
-  $("btnMap").onclick=()=>{Sfx.click();
-    const m=$("minimap");const off=m.dataset.off==="1";
-    m.dataset.off=off?"0":"1";m.style.display=off?"":"none";
-    $("btnMap").classList.toggle("on",!off);
-    toast(off?"미니맵 ON":"미니맵 OFF");};
+  // 🗺️ 전체 지도 오버뷰(맵 한눈에 보기) — 버튼·미니맵 탭으로 열기
+  $("btnMap").onclick=()=>{Sfx.click();openMapOverview();};
+  $("minimap").addEventListener("click",()=>{Sfx.click();openMapOverview();});
+  $("mapClose").onclick=()=>{Sfx.click();closeMapOverview();};
   // 📍 장소 이동(오픈월드)
   $("btnPlaces").onclick=()=>{Sfx.click();
     const ps=Game.world&&Game.world.places;if(!ps)return;
@@ -8568,13 +8702,13 @@ function boot(){
           c.susp.c*=1.25;                           // 댐핑 ↑ → 출렁임 억제
           c.susp.rebMul=1.3;                        // 리바운드 타이트(빠르고 절도있는 복귀 — 실차 스포츠 댐퍼)
           c.susp.travel*=.72;                       // 스트로크 짧게 → 방지턱 충격 그대로 느낌
-          if(c.id==="veloce")c.susp.rest+=.04;      // 포르쉐: 차고 조금 상승(턱 긁힘 여유)
+          if(c.id==="veloce")c.susp.rest+=.1;       // 포르쉐: 차고 상승 — 대구경 휠이 펜더와 겹치지 않게
           c.arb*=2.1;}                              // 롤 강성 매우 높게(코너 평탄·전복 억제)
         else if(c.id==="maybach"){                  // 마이바흐 GLS: 에어서스(실차형)
           c.susp.k*=.68;                            // 더 부드러운 스프링 → 방지턱에서 스트로크가 크게 움직임
-          c.susp.c*=.74;                            // 압축 댐핑 낮게 → 서스가 실제로 깊게 눌림(차체로 전달 안 됨)
-          c.susp.rebMul=3.8;                        // 리바운드 댐핑 매우 강함 → 넘은 뒤 차체가 붕 뜨지 않음
-          c.susp.sky=4300;                          // 스카이훅 강화: 방지턱 이후 차체 헤이브(부양)를 즉시 흡수
+          c.susp.c*=.8;                             // 압축 댐핑: 착지 시 부드럽게 한 번 눌렸다 정착(쫀득)
+          c.susp.rebMul=2.4;                        // 리바운드 댐핑: 착지 후 살짝 '띠용'하며 정착(과제동 X, 부양 X)
+          c.susp.sky=3200;                          // 스카이훅: 요동은 억제하되 착지 압축은 살짝 허용(임계감쇠 느낌)
           c.susp.rest+=.07;                         // 에어서스 리프트: 정하중 처짐 보상 → 바퀴가 아치에 제대로 보임
           c.susp.travel*=2.6;                       // 위쪽 스트로크 넉넉히 → 더 높은 방지턱도 스트로크 안에서 흡수
           c.arb*=2.6;}                              // 매우 높은 롤 강성 → 롤·가속 쏠림 최소

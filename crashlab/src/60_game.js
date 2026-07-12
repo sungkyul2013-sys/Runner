@@ -607,6 +607,40 @@ function drawMinimap(dt){
   ctx.fillStyle="#ffb25e";ctx.strokeStyle="#0b0e13";ctx.lineWidth=2;
   ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(6,7);ctx.lineTo(-6,7);ctx.closePath();
   ctx.fill();ctx.stroke();ctx.restore();}
+/* ---------- 전체 지도 오버뷰 (맵 한눈에 보기) ---------- */
+function openMapOverview(){
+  if(!Game.mm||!Game.world)return;
+  $("mapPanel").classList.add("on");Game.mapOpen=true;
+  const marks=$("mapMarks");marks.innerHTML="";
+  const places=Game.world.places||[];
+  for(const pl of places){
+    const px=(pl.x/Game.mm.size+.5)*100,py=(pl.z/Game.mm.size+.5)*100;
+    const el=document.createElement("div");el.className="mk";
+    el.style.left=px+"%";el.style.top=py+"%";
+    el.innerHTML='<div class="dot"></div><div class="lb">'+esc(pl.name)+'</div>';
+    el.onclick=()=>{Sfx.click();if(Game.spawnAt)Game.spawnAt(pl);closeMapOverview();};
+    marks.appendChild(el);}
+  $("mapHint").style.display=places.length?"":"none";
+  drawBigMap();}
+function drawBigMap(){
+  if(!Game.mapOpen||!Game.mm||!Game.veh)return;
+  const cv=$("bigmap"),ctx=cv.getContext("2d"),S=cv.width;
+  ctx.clearRect(0,0,S,S);ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(Game.mm.cnv,0,0,S,S);
+  const toPx=(x,z)=>[(x/Game.mm.size+.5)*S,(z/Game.mm.size+.5)*S];
+  // AI/드론 점
+  ctx.fillStyle="#ff5252";
+  for(const a of Game.ais){const[ax,ay]=toPx(a.veh.body.pos.x,a.veh.body.pos.z);
+    ctx.beginPath();ctx.arc(ax,ay,6,0,7);ctx.fill();}
+  // 플레이어 화살표
+  const b=Game.veh.body;
+  const yaw=Math.atan2(2*(b.quat.w*b.quat.y+b.quat.x*b.quat.z),1-2*(b.quat.y*b.quat.y+b.quat.x*b.quat.x));
+  const[px,py]=toPx(b.pos.x,b.pos.z);
+  ctx.save();ctx.translate(px,py);ctx.rotate(-yaw);
+  ctx.fillStyle="#ffb25e";ctx.strokeStyle="#0b0e13";ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(0,-17);ctx.lineTo(12,13);ctx.lineTo(-12,13);ctx.closePath();
+  ctx.fill();ctx.stroke();ctx.restore();}
+function closeMapOverview(){$("mapPanel").classList.remove("on");Game.mapOpen=false;}
 let _hudT=0;
 function updateHUD(dt){
   const v=Game.veh;if(!v)return;
@@ -618,6 +652,7 @@ function updateHUD(dt){
     $("gArc").style.strokeDashoffset=GAUGE.sL*(1-clamp(kmh/(v.spec.top+30),0,1));
     $("gArcRpm").style.strokeDashoffset=GAUGE.rL*(1-clamp(v.rpm/v.spec.engine.redline,0,1));}
   drawMinimap(.06);
+  if(Game.mapOpen)drawBigMap();
   const dz=(el,val)=>{el.style.background=val>66?"var(--bad)":val>33?"var(--warn)":"var(--ok)";};
   dz($("dmgF"),v.dmg.f);dz($("dmgB"),v.dmg.b);dz($("dmgL"),v.dmg.l);dz($("dmgR"),v.dmg.r);
   updateModeWidget();

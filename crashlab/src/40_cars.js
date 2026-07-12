@@ -331,26 +331,15 @@ class CarVisual{
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
     if(split.lamps){this.lampsMesh=new THREE.Mesh(split.lamps,MAT_LAMP);
       this.group.add(this.lampsMesh);
-      // 전조등 실제 점등: 램프 지오메트리에서 좌/우 전방 램프 앵커 추출 → 스포트라이트 + 글로우 벌브
+      // 전조등 앵커만 계산해 저장(실제 SpotLight는 플레이어 차에서만 지연 생성 →
+      // 썸네일·AI 차량에 광원이 붙어 셰이더가 재컴파일돼 부팅이 느려지는 문제 방지)
       const pa=split.lamps.attributes.position.array;
       let zMax=-1e9;for(let i=2;i<pa.length;i+=3)if(pa[i]>zMax)zMax=pa[i];
       let lxS=0,lc=0,rxS=0,rc=0,yS=0,yc=0;
       for(let i=0;i<pa.length;i+=3)if(pa[i+2]>zMax-.4){
         const x=pa[i];yS+=pa[i+1];yc++;
         if(x<-.12){lxS+=x;lc++;}else if(x>.12){rxS+=x;rc++;}}
-      if(lc&&rc){
-        const y=yS/yc,zl=zMax-.02;
-        const mk=(x)=>{
-          const s=new THREE.SpotLight(0xfff0cc,0,30,.52,.42,1.2);
-          s.position.set(x,y,zl);
-          s.target.position.set(x*.5,y-.4,zl+16);
-          this.group.add(s);this.group.add(s.target);
-          const g=new THREE.Mesh(new THREE.SphereGeometry(.075,8,6),
-            new THREE.MeshBasicMaterial({color:0xfff6d8,transparent:true,opacity:.85,
-              blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
-          g.scale.z=.4;g.position.set(x,y,zl+.05);g.visible=false;
-          this.group.add(g);return{s,g};};
-        this.hl=[mk(lxS/lc),mk(rxS/rc)];}}
+      if(lc&&rc)this.hlAnchor=[[lxS/lc,yS/yc,zMax-.02],[rxS/rc,yS/yc,zMax-.02]];}
     if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,MAT_GLASS);
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
     this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh,this.lampsMesh]);
@@ -585,12 +574,23 @@ class CarVisual{
     this.group.quaternion.copy(veh.body.quat);
     if(shakeT>0&&Settings.camShake){
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
-    // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게
-    if(this.hl){
+    // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게. SpotLight는 최초 1회 지연 생성.
+    if(this.hlAnchor){
       const on=typeof Game!=="undefined"&&Game.veh===veh;
-      const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
-      if(this._hlI!==inten){this._hlI=inten;
-        for(const h of this.hl){h.s.intensity=inten;h.g.visible=on;}}}
+      if(on&&!this.hl){                                    // 플레이어가 됐을 때 최초 생성
+        this.hl=this.hlAnchor.map(([x,y,zl])=>{
+          const s=new THREE.SpotLight(0xfff0cc,0,30,.52,.42,1.2);
+          s.position.set(x,y,zl);s.target.position.set(x*.5,y-.4,zl+16);
+          this.group.add(s);this.group.add(s.target);
+          const g=new THREE.Mesh(new THREE.SphereGeometry(.075,8,6),
+            new THREE.MeshBasicMaterial({color:0xfff6d8,transparent:true,opacity:.85,
+              blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+          g.scale.z=.4;g.position.set(x,y,zl+.05);g.visible=false;this.group.add(g);
+          return{s,g};});}
+      if(this.hl){
+        const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
+        if(this._hlI!==inten){this._hlI=inten;
+          for(const h of this.hl){h.s.intensity=inten;h.g.visible=on&&inten>0;}}}}
     const tv=this.baked?this.spec.wheels.trackVis:0;
     for(let i=0;i<4;i++){
       if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함
