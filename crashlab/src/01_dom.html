@@ -110,9 +110,11 @@
 </div></div>
 
 <div id="mapPanel" class="overlayPanel"><button class="iconBtn" id="mapClose" title="닫기">✕</button>
+  <button class="btn" id="map3dBtn" title="맵 전체 3D 탐색">🛰️ 3D 탐색</button>
   <div id="mapWrap"><canvas id="bigmap" width="720" height="720"></canvas><div id="mapMarks"></div></div>
-  <div id="mapHint">📍 장소를 탭하면 즉시 이동</div>
+  <div id="mapHint">📍 장소를 탭하면 즉시 이동 · 🛰️ 3D 탐색으로 실사 뷰</div>
 </div>
+<div id="exploreBar"><span id="exploreHint">🛰️ 3D 탐색 — 한 손가락 회전 · 두 손가락 이동/확대 (WASD·화살표 이동)</span><button class="btn" id="exploreExit">✕ 나가기</button></div>
 <div id="reportPanel" class="overlayPanel"><button class="iconBtn" id="repClose" title="닫기">✕</button><div class="panelBox" id="reportBox"></div></div>
 <div id="resultPanel" class="overlayPanel"><div class="panelBox" id="resultBox"></div></div>
 <div id="placesPanel" class="overlayPanel"><div class="panelBox">

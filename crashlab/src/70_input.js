@@ -8,7 +8,7 @@ const Input=(()=>{
   let steerPtr=null,tiltVal=0;
   let whPtr=null,whAngle=0,whLast=0;      // steering wheel state (rad)
   const WH_MAX=2.4;                        // 잠금까지 ±137°
-  const camPtrs=new Map();let pinchD=0;
+  const camPtrs=new Map();let pinchD=0;const panC={x:null,y:null};
 
   function hookBtn(el,on,off){
     el.addEventListener("pointerdown",e=>{e.preventDefault();el.setPointerCapture(e.pointerId);
@@ -56,18 +56,26 @@ const Input=(()=>{
       camPtrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
       if(camPtrs.size===2){
         const a=[...camPtrs.values()];
-        pinchD=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);}});
+        pinchD=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+        panC.x=(a[0].x+a[1].x)/2;panC.y=(a[0].y+a[1].y)/2;}});
     gl.addEventListener("pointermove",e=>{
       const p=camPtrs.get(e.pointerId);if(!p)return;
-      if(camPtrs.size===1&&Game.cam){
-        Game.cam.onDrag(e.clientX-p.x,e.clientY-p.y);}
-      p.x=e.clientX;p.y=e.clientY;
-      if(camPtrs.size===2&&Game.cam){
+      const prevX=p.x,prevY=p.y;p.x=e.clientX;p.y=e.clientY;
+      if(!Game.cam)return;
+      if(camPtrs.size===1){
+        Game.cam.onDrag(e.clientX-prevX,e.clientY-prevY);}
+      else if(camPtrs.size===2){
         const a=[...camPtrs.values()];
         const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
         if(pinchD>0)Game.cam.onPinch(d/pinchD);
-        pinchD=d;}});
-    const camEnd=e=>{camPtrs.delete(e.pointerId);pinchD=0;};
+        pinchD=d;
+        const cx=(a[0].x+a[1].x)/2,cy=(a[0].y+a[1].y)/2;   // 두 손가락 평행이동 → 탐색 팬
+        if(panC.x!==null&&Game.cam.onPan)Game.cam.onPan(cx-panC.x,cy-panC.y);
+        panC.x=cx;panC.y=cy;}});
+    // 데스크톱: 휠로 탐색 줌
+    gl.addEventListener("wheel",e=>{if(Game.exploreOn&&Game.cam){e.preventDefault();
+      Game.cam.onPinch(e.deltaY<0?1.12:1/1.12);}},{passive:false});
+    const camEnd=e=>{camPtrs.delete(e.pointerId);pinchD=0;if(camPtrs.size<2)panC.x=null;};
     gl.addEventListener("pointerup",camEnd);gl.addEventListener("pointercancel",camEnd);
     // keyboard (desktop testing)
     addEventListener("keydown",e=>{keys[e.code]=true;
@@ -75,6 +83,14 @@ const Input=(()=>{
       if(e.code==="KeyP"||e.code==="Escape")Game.togglePause();
       if(e.code==="KeyR")Game.state==="play"&&!Game.paused&&Game.resetCar();
       if(e.code==="KeyC")Game.state==="play"&&toast("카메라: "+Game.cam.cycle());
+      if(Game.exploreOn&&Game.cam){const c=Game.cam;
+        if(e.code==="KeyW"||e.code==="ArrowUp")c.panMove(1,0);
+        else if(e.code==="KeyS"||e.code==="ArrowDown")c.panMove(-1,0);
+        else if(e.code==="KeyA"||e.code==="ArrowLeft")c.panMove(0,-1);
+        else if(e.code==="KeyD"||e.code==="ArrowRight")c.panMove(0,1);
+        else if(e.code==="Equal"||e.code==="NumpadAdd")c.onPinch(1.14);
+        else if(e.code==="Minus"||e.code==="NumpadSubtract")c.onPinch(1/1.14);
+        else if(e.code==="Escape")exitExplore();}
       Sfx.resume();});
     addEventListener("keyup",e=>{keys[e.code]=false;});
     // tilt
@@ -101,6 +117,7 @@ const Input=(()=>{
     for(const k in keys)keys[k]=false;
     document.querySelectorAll(".padBtn.press").forEach(b=>b.classList.remove("press"));}
   function read(){
+    if(Game.exploreOn)return{steer:0,gas:0,brake:1,hb:true};   // 탐색 중 차량 정지
     let steer=st.steer,gas=st.gas,brake=st.brake,hb=st.hb;
     if(Settings.steerMode==="tilt")steer=tiltVal;
     if(Settings.steerMode==="wheel")steer=clamp(whAngle/WH_MAX,-1,1);

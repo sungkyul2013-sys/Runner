@@ -147,15 +147,20 @@ function initHudButtons(){
   $("btnRepair").onclick=()=>{Sfx.click();Game.repair();};
   // 🏠 홈으로(메인 메뉴)
   $("btnHome").onclick=()=>{Sfx.click();Game.exitToMenu();};
-  // 🗺️ 전체 지도 오버뷰(맵 한눈에 보기) — 버튼·미니맵 탭으로 열기
-  $("btnMap").onclick=()=>{Sfx.click();openMapOverview();};
+  // 🗺️ 지도 버튼 = 미니맵 표시/숨김 토글
+  function setMinimap(on){Settings.minimapOn=on;saveSettings();
+    $("minimap").style.display=on?"":"none";$("minimapHide").style.display=on?"":"none";}
+  $("btnMap").onclick=()=>{Sfx.click();setMinimap(Settings.minimapOn===false);
+    toast(Settings.minimapOn===false?"미니맵 숨김":"미니맵 표시");};
+  // 미니맵 클릭 = 상세보기(전체 지도 오버뷰)
   $("minimap").addEventListener("click",()=>{Sfx.click();openMapOverview();});
   $("mapClose").onclick=()=>{Sfx.click();closeMapOverview();};
-  // 코너 미니맵 숨기기(✕) — 설정에서 다시 켤 수 있음
-  $("minimapHide").onclick=(e)=>{e.stopPropagation();Sfx.click();
-    Settings.minimapOn=false;saveSettings();
-    $("minimap").style.display="none";$("minimapHide").style.display="none";
-    toast("미니맵 숨김 — 설정에서 다시 켜기");};
+  // 🛰️ 상세보기의 3D 탐색 버튼 / 탐색 나가기
+  $("map3dBtn").onclick=()=>{Sfx.click();enterExplore();};
+  $("exploreExit").onclick=()=>{Sfx.click();exitExplore();};
+  // 코너 미니맵 숨기기(✕)
+  $("minimapHide").onclick=(e)=>{e.stopPropagation();Sfx.click();setMinimap(false);
+    toast("미니맵 숨김 — 지도 버튼으로 다시 표시");};
   // 📍 장소 이동(오픈월드)
   $("btnPlaces").onclick=()=>{Sfx.click();
     const ps=Game.world&&Game.world.places;if(!ps)return;

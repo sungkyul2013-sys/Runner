@@ -155,15 +155,44 @@ class GameCamera{
     this.orbitYaw=0;this.orbitPitch=.32;this.dist=7;
     this.userT=0;this.shake=0;
     this.pos=V3(0,8,-10);this.look=V3(0,0,0);
+    // 🛰️ 맵 전체 3D 탐색(플라이오버) 상태
+    this.exTarget=V3(0,0,0);this.exYaw=0;this.exPitch=.62;this.exDist=420;this.exMax=900;
   }
   cycle(){this.mode=this.modes[(this.modes.indexOf(this.mode)+1)%this.modes.length];
     return this.modeNames[this.mode];}
   onDrag(dx,dy){
+    if(this.mode==="explore"){this.exYaw-=dx*.006;
+      this.exPitch=clamp(this.exPitch+dy*.004,12*DEG,86*DEG);return;}
     this.orbitYaw-=dx*.008;
     this.orbitPitch=clamp(this.orbitPitch+dy*.006,5*DEG,80*DEG);
     this.userT=2.2;}
-  onPinch(scale){this.dist=clamp(this.dist/scale,3,14);this.userT=2.2;}
+  onPan(dx,dy){ // 두 손가락 이동: 탐색 타깃 평행이동(카메라 상대)
+    if(this.mode!=="explore")return;
+    const s=this.exDist*.0016,cy=Math.cos(this.exYaw),sy=Math.sin(this.exYaw);
+    this.exTarget.x-=(cy*dx - sy*dy)*s;
+    this.exTarget.z-=(-sy*dx - cy*dy)*s;
+    this.clampTarget();}
+  panMove(fwd,right){ // 키보드 탐색 이동
+    const cy=Math.cos(this.exYaw),sy=Math.sin(this.exYaw),s=this.exDist*.02;
+    this.exTarget.x+=(sy*fwd+cy*right)*s;
+    this.exTarget.z+=(cy*fwd-sy*right)*s;
+    this.clampTarget();}
+  clampTarget(){const m=(this._mapHalf||800);
+    this.exTarget.x=clamp(this.exTarget.x,-m,m);this.exTarget.z=clamp(this.exTarget.z,-m,m);}
+  onPinch(scale){
+    if(this.mode==="explore"){this.exDist=clamp(this.exDist/scale,30,this.exMax);return;}
+    this.dist=clamp(this.dist/scale,3,14);this.userT=2.2;}
   update(dt,veh,world){
+    if(this.mode==="explore"){
+      const t=this.exTarget,ci=Math.cos(this.exPitch);
+      let gx=t.x-Math.sin(this.exYaw)*ci*this.exDist;
+      let gz=t.z-Math.cos(this.exYaw)*ci*this.exDist;
+      let gy=(world?world.height(t.x,t.z):0)+Math.sin(this.exPitch)*this.exDist;
+      this.pos.set(gx,gy,gz);
+      if(world){const h=world.height(gx,gz)+6;if(this.pos.y<h)this.pos.y=h;}
+      this.cam.position.copy(this.pos);
+      this.cam.lookAt(t.x,(world?world.height(t.x,t.z):0)+2,t.z);
+      return;}
     const b=veh.body,sp=veh.speed;
     this.userT=Math.max(0,this.userT-dt);
     if(this.shake>0)this.shake=Math.max(0,this.shake-dt*2.4);

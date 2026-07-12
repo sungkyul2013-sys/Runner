@@ -641,6 +641,22 @@ function drawBigMap(){
   ctx.beginPath();ctx.moveTo(0,-17);ctx.lineTo(12,13);ctx.lineTo(-12,13);ctx.closePath();
   ctx.fill();ctx.stroke();ctx.restore();}
 function closeMapOverview(){$("mapPanel").classList.remove("on");Game.mapOpen=false;}
+// 🛰️ 맵 전체 3D 탐색(플라이오버) 진입/종료
+function enterExplore(){
+  if(!Game.cam||!Game.world)return;
+  closeMapOverview();
+  const c=Game.cam;c._prevMode=c.mode;c.mode="explore";
+  c._mapHalf=(Game.mm?Game.mm.size:1600)*.5;
+  c.exMax=Math.min(1400,(Game.mm?Game.mm.size:1600)*.9);
+  // 현재 차량 위치를 중심으로 시작
+  const p=Game.veh?Game.veh.body.pos:{x:0,z:0};
+  c.exTarget.set(p.x,0,p.z);c.exYaw=0;c.exPitch=.6;c.exDist=Math.min(c.exMax,360);
+  Game.exploreOn=true;
+  $("hud").style.display="none";$("exploreBar").classList.add("on");}
+function exitExplore(){
+  const c=Game.cam;if(c){c.mode=c._prevMode||"chase";}
+  Game.exploreOn=false;
+  $("hud").style.display="";$("exploreBar").classList.remove("on");}
 let _hudT=0;
 function updateHUD(dt){
   const v=Game.veh;if(!v)return;
@@ -689,11 +705,14 @@ function updateModeWidget(){
       '<div class="sub">'+scN+' · '+(c.phase==="run"?"주행 중… 피크 "+(Game.veh.peakG|0)+"G":
         c.phase!=="idle"?"피크 "+(Game.veh.peakG|0)+"G · 변형 "+Game.vis.defVol.toFixed(1):c.vTarget+" km/h 대기")+'</div>';}
   else{
-    const s=SURF_IDS[Game.veh.wheels[0].surf]||"asphalt";
-    const names={asphalt:"아스팔트",lane:"아스팔트",wet:"젖은 노면",gravel:"자갈",grass:"잔디",sand:"모래",ice:"빙판",snow:"눈",curb:"연석",walk:"보도"};
     const car=CARS[Game.opts.carIdx]||{};
-    el.innerHTML='<div class="big">자유주행</div><div class="sub">'+(car.icon||"")+' '+
-      (car.name||"").split(" ").slice(-1)[0]+' · '+(names[s]||s)+' · '+Game.mapDef.name+'</div>';}
+    // 현재 위치(가장 가까운 장소) — 지면 대신 위치 표시
+    let loc="";const ps=Game.world&&Game.world.places;
+    if(ps&&ps.length){const p=Game.veh.body.pos;let bd=1e9;
+      for(const q of ps){const d=Math.hypot(p.x-q.x,p.z-q.z);if(d<bd){bd=d;loc=q.name;}}}
+    const tail=(car.name||"").split(" ").slice(-1)[0];
+    el.innerHTML='<div class="big">자유주행</div><div class="sub">'+(car.icon||"")+' '+tail+
+      ' · '+(loc||Game.mapDef.name)+'</div>';}
 }
 let _toastT=null;
 function toast(msg,ms){

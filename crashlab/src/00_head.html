@@ -332,4 +332,13 @@ input[type=checkbox]{accent-color:var(--acc)}
 #mapHint{position:absolute;bottom:calc(var(--sab) + 18px);left:50%;transform:translateX(-50%);
   font-size:13px;color:var(--tx2);background:rgba(12,15,21,.7);padding:6px 14px;border-radius:20px}
 #mapClose{position:absolute;top:calc(var(--sat) + 14px);right:14px;z-index:5}
+#map3dBtn{position:absolute;top:calc(var(--sat) + 14px);left:14px;z-index:5;
+  background:linear-gradient(135deg,#2a6df4,#7a3df4);color:#fff;border:none;font-weight:800}
+#exploreBar{position:absolute;top:calc(var(--sat) + 12px);left:50%;transform:translateX(-50%);
+  z-index:36;display:none;align-items:center;gap:12px;background:rgba(12,15,21,.82);
+  padding:8px 14px;border-radius:24px;border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#exploreBar.on{display:flex}
+#exploreHint{font-size:12px;color:var(--tx2);max-width:62vw}
+#exploreExit{background:rgba(255,90,90,.9);color:#fff;border:none;font-weight:800;padding:6px 12px}
 </style>

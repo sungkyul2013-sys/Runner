@@ -556,6 +556,10 @@ class Vehicle{
     this.hull.push(V3(0,-hy*.25,hz),V3(0,-hy*.25,-hz),V3(-hx,-hy*.2,0),V3(hx,-hy*.2,0));
     // 지붕 상단 점 — 압착기·전복 시 지붕 접촉(짓눌림) 감지
     this.hull.push(V3(0,hy,0),V3(0,hy,hz*.55),V3(0,hy,-hz*.55));
+    // 프레임 전역 접점 확충 — 부딪힌 어느 부위든 그 자리가 함몰(측면 상부·전후 상부·루프 레일)
+    this.hull.push(V3(-hx,hy*.42,hz*.5),V3(hx,hy*.42,hz*.5),V3(-hx,hy*.42,-hz*.5),V3(hx,hy*.42,-hz*.5)); // 도어 상단/필러
+    this.hull.push(V3(0,hy*.55,hz),V3(0,hy*.55,-hz));       // 윈드실드/리어글래스 프레임 상단
+    this.hull.push(V3(-hx*.72,hy,0),V3(hx*.72,hy,0));       // 루프 좌우 레일
     this.assists={abs:true,tcs:true,ctr:true,stab:true};
     this.isAI=false;this.controlLock=false;
     this.impacts=[];   // {lp,ln,dv,wp} consumed by visuals each frame
@@ -828,9 +832,11 @@ class Vehicle{
       _vD.set(rc.wx,rc.wy,rc.wz);_vC.set(rc.n.x,rc.n.y,rc.n.z);
       _hit.n.copy(_vC);_hit.mu=rc.mu;
       const dv=resolvePointContact(b,_vD,{n:_vC,depth:rc.depth,mu:rc.mu,bounce:rc.bounce},0);
-      // 위치 보정: 임펄스만으론 벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 밀어냄.
-      // 깊게 박히면 더 강하게 밀어내 벽에 끼어 못 빠져나오는 문제 방지(끝벽 탈출).
-      if(rc.depth>.03)b.pos.addScaledVector(_vC,Math.min(rc.depth*.5,.14));
+      // 위치 보정: 임펄스만으론 벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 강하게 밀어냄.
+      // 벽 경계를 확실히: 깊게 박혀도 즉시 이탈(끼임 방지) + 벽 안쪽으로 향하는 속도성분 제거.
+      if(rc.depth>.02){
+        b.pos.addScaledVector(_vC,Math.min(rc.depth*.85,.4));
+        const vin=b.vel.dot(_vC);if(vin<0)b.vel.addScaledVector(_vC,-vin);}   // 파고드는 속도 상쇄
       const useDv=Math.max(dv,-rc.vn);   // 사전 접근속도 기준 → 모든 접점이 동일 강도로 크럼플
       // 전복 시 루프(상단 프레임)도 물리대로 손상: 지붕 접점은 문턱 낮게 + 압궤 가중
       const roofPt=this.hull[rc.i].y>sp.body.hy*.55;
@@ -2550,13 +2556,13 @@ const MAPS=[
   const mb=new MapBuilder(820,256),w=mb.world;
   const HX=250,HZ=-40;                                  // 힐클라임 산 중심
   mb.fill((x,z)=>{
-    // 거친 황무지 기본 굴곡(큰 물결 + 중간 요철 + 잔물결) — 전 구간이 살아있는 지형
-    let h=2.4*Math.sin(x*.024)*Math.cos(z*.021)+1.2*Math.sin(x*.061+1)*Math.cos(z*.054+2)
-         +.6*Math.sin(x*.11+3)*Math.cos(z*.09+1);
+    // 거친 황무지 기본 굴곡(더 극한 — 큰 물결·중간 요철·잔물결 증폭) — 전 구간이 살아있는 지형
+    let h=3.6*Math.sin(x*.024)*Math.cos(z*.021)+1.9*Math.sin(x*.061+1)*Math.cos(z*.054+2)
+         +.95*Math.sin(x*.11+3)*Math.cos(z*.09+1)+.5*Math.sin(x*.19+2)*Math.cos(z*.17);
     let s=S_GRV;
-    // 동쪽 힐클라임 산: 36° 직선 사면(슬로프 0.72) + 평탄한 정상 크롤링 능선
+    // 동쪽 힐클라임 산: 더 가파른 사면(슬로프 0.8≈39°) + 평탄한 정상 크롤링 능선(정상 40m)
     const hd=Math.hypot(x-HX,z-HZ);
-    if(hd<150)h+=Math.min(30,(150-hd)*.72);
+    if(hd<160)h+=Math.min(40,(160-hd)*.8);
     // 남서쪽 제2 산: 테라스(계단식 단차) — 단을 하나씩 기어오르는 코스 (정상 22m)
     const td=Math.hypot(x+250,z-240);
     if(td<130){const raw=Math.min(22,(130-td)*.34);
@@ -2579,10 +2585,14 @@ const MAPS=[
       if(md<mr){h-=1.3*(1-md/mr);if(md<mr*.82)s=S_WET;}}
     if(x<-330&&z<100)s=S_SND;                           // 서쪽 모래 협곡
     return[h,s];});
-  // ① 후프스 필드(서쪽): 연속 대형 둔덕 18개 — 롱트래블 서스 시험장
-  for(let k=0;k<18;k++)
-    mb.bump(-290,-200+k*9.5,Math.PI/2,15,.3+(k%3)*.09,k%2?"round":"arch");
-  mb.texText(-290,-224,5,"WHOOPS","rgba(220,200,160,.8)");
+  // ① 후프스 필드(서쪽): 연속 대형 둔덕 22개 — 더 크고 깊게(롱트래블 서스 한계)
+  for(let k=0;k<22;k++)
+    mb.bump(-290,-210+k*9,Math.PI/2,15,.42+(k%3)*.13,k%2?"round":"arch");
+  mb.texText(-290,-234,5,"WHOOPS","rgba(220,200,160,.8)");
+  // ①-b 대형 테이블탑 점프 + 착지 경사(서중부) — 공중 점프 구간
+  mb.ramp(-150,-80,0,26,20,16,0x8a7b5a);
+  mb.ramp(-150,-8,Math.PI,24,18,14,0x7a6a4a);
+  mb.texText(-150,-44,6,"BIG JUMP","rgba(240,230,200,.8)");
   // ② 록가든(중서부): 랜덤 바위 60개 — 저속 크롤링
   {let sd=77;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
    for(let k=0;k<60;k++){
@@ -2845,9 +2855,7 @@ MAPS.push(
    for(let k=0;k<8;k++){const a=(k+.5)/8*6.283,px=fx+Math.cos(a)*60,pz=fz+Math.sin(a)*60;
      mb.box(px,.4,pz,7,.8,7,0x8a7a5c,{yaw:-a,mu:.7,tag:"planter"});
      mb.box(px,1.0,pz,6,.8,6,0x3f6b3a,{yaw:-a,mu:.7,tag:"hedge"});}
-   // 벤치 링 + 가로등 + 수목
-   for(let k=0;k<16;k++){const a=k/16*6.283;
-     mb.box(fx+Math.cos(a)*30,.25,fz+Math.sin(a)*30,2.2,.5,.8,0x6f5a3f,{yaw:-a,mu:.8,tag:"bench"});}
+   // 가로등 + 수목 (도로 위 벤치는 제거 — 주행 방해)
    for(let k=0;k<8;k++){const a=(k+.5)/8*6.283;mb.prop("lamp",fx+Math.cos(a)*74,fz+Math.sin(a)*74,-a);}
    for(let k=0;k<6;k++){const a=k/6*6.283+.3;mb.baked("treesTall",fx+Math.cos(a)*82,fz+Math.sin(a)*82,10,a,{});}
    mb.texText(fx,fz-70,7,"⛲ CENTRAL PLAZA","rgba(240,244,250,.5)");}
@@ -2867,36 +2875,44 @@ MAPS.push(
    mb.texText(px0,pz0-40,6,"🅿 PARKING","rgba(240,244,250,.5)");}
   let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   const BLD2=["bldA","bldB","bldC","bldD"];
-  // 🌉 어퍼 빌리지(고가 마을): 서→동 직선 도로가 다리처럼 위로 올라가, 도심 도로들 위를
-  //  높게(≈11m) 가로질러(밑으로 지상 도로가 통과) 상부 마을을 지나 반대편으로 내려감.
-  {const UY=11,VZ=225;                                   // 상부 높이 / 뷰덕트 z축(도심 도로 사이)
-   // ① 올라가는 램프(서, 짧고 높게): 지상(x=-238)→상부(x=-190)
-   const up=[];for(let k=0;k<=8;k++){const t=k/8;up.push({x:-238+t*48,z:VZ,y:t*UY});}
-   bridgeDeck(mb,up,13,{deck:0x5a616c,rail:0xb9c2cc});
-   // ② 상부 직선 도로(엘리베이티드) — 도심 세로도로(x=-90/0/90) 위를 높게 통과
-   mb.box(0,UY-.3,VZ,380,.6,24,0x50575f,{mu:1,tag:"bridge"});
-   // 중앙 마을 플랫폼(넓힌 데크) + 소규모 마을 건물
-   mb.box(0,UY-.3,VZ,96,.6,74,0x50575f,{mu:1,tag:"bridge"});
-   for(const[bx,bz]of[[-32,VZ-24],[32,VZ-24],[-32,VZ+24],[32,VZ+24]])
-     mb.baked(BLD2[((bx+bz+99)|0)%4],bx,bz,13,0,{y:UY,collide:true,shrink:.9});
-   // 교각(세로도로 사이에만 — 도로 위 침범 X): x=±135,±45, z를 도로 밖으로 오프셋
-   for(const px of[-135,-45,45,135])for(const s of[-1,1])
-     mb.box(px,UY/2,VZ+s*10.5,3,UY,3,0x6b727c,{mu:.6,tag:"pillar"});
-   // ③ 내려가는 램프(동): 상부(x=190)→지상(x=238)
-   const dn=[];for(let k=0;k<=8;k++){const t=k/8;dn.push({x:190+t*48,z:VZ,y:UY*(1-t)});}
-   bridgeDeck(mb,dn,13,{deck:0x5a616c,rail:0xb9c2cc});
-   mb.texText(0,VZ-42,7,"UPPER VILLAGE","rgba(240,244,250,.55)");}
-  // 🚧 시작점(스폰 0,-60) 근처 요철·방지턱(높낮이는 평평 + 잔물결만)
-  w.addRippleZone(0,-90,40,.014,2.2,3);
-  w.addRippleZone(0,-150,34,.012,2.6,1);
-  for(const[bx2,bz2,h,ty]of[[0,-40,.13,"round"],[0,-118,.16,"arch"],[-90,-60,.12,"flat"],[90,-60,.14,"sharp"]])
+  // 🌉 스폰 인터체인지 — 스폰(0,-60) 바로 옆 다단 고가(연쇄 업앤다운)·난간 완비·아래 촘촘히 채움·지하도
+  //   L1(하부 고가, 동서 z=-30): 물결형 업다운, 지상 x=0 도로 위를 지나 언더패스 형성
+  //   L2(상부 고가, 동서 z=-96): 더 높게(고가 위 또 고가 느낌) + 상부 소규모 마을
+  //   연결 램프로 L1↔L2 체인(업앤다운), 완만한 경사·전 구간 난간(bridgeDeck)
+  const heightAt=(pts,x)=>{for(let s=0;s<pts.length-1;s++){const a=pts[s],b=pts[s+1];
+    if((x>=a.x&&x<=b.x)||(x<=a.x&&x>=b.x)){const t=(x-a.x)/((b.x-a.x)||1);return a.y+(b.y-a.y)*t;}}return 0;};
+  {const Z1=-30, l1=[[-178,0],[-124,9],[-64,4],[0,12],[64,4],[124,9],[178,0]].map(([px,py])=>({x:px,z:Z1,y:py}));
+   bridgeDeck(mb,l1,15,{deck:0x565d68,rail:0xc9ced6});                 // 하부 고가(난간 포함)
+   const Z2=-96, l2=[[-152,0],[-96,10],[-58,19],[58,19],[96,10],[152,0]].map(([px,py])=>({x:px,z:Z2,y:py}));
+   bridgeDeck(mb,l2,15,{deck:0x50565f,rail:0xbfc4cc});                 // 상부 고가(더 높음)
+   // 연결 램프: L1 동단(≈9m) → L2(≈19m) — 체인 업(연쇄 업앤다운)
+   bridgeDeck(mb,[{x:150,z:-42,y:8},{x:150,z:-66,y:13},{x:128,z:-90,y:19}],13,{deck:0x5a616c,rail:0xc9ced6});
+   // 촘촘한 교각(고가 아래를 꽉 채움) — 데크 높이에 맞춰 기둥 배치
+   for(const[pts,zc]of[[l1,Z1],[l2,Z2]])
+     for(let x=-150;x<=150;x+=20){const dy=heightAt(pts,x);
+       if(dy>2.4){const terr=w.height(x,zc);
+         for(const zo of[-5.5,0,5.5])mb.box(x,(dy+terr)/2,zc+zo,1.5,dy-terr,1.5,zo?0x616872:0x6b727c,{mu:.6,tag:"pillar"});}}
+   // 상부 마을(L2 데크 위 소규모 건물) — 고가 위 마을
+   for(const bx of[-34,34])mb.baked(BLD2[(bx+9)&3],bx,-96,12,0,{y:19,collide:true,shrink:.9});
+   // 지하도(언더패스): 지상 x=0 도로가 L1 밑을 통과 — 포털 측벽 + 조명
+   for(const s of[-1,1]){mb.box(s*10,2.2,-30,1.2,4.4,11,0x3a4048,{mu:.7,tag:"portal"});mb.prop("lamp",s*8,-30,0);}
+   mb.texText(0,-14,6,"UNDERPASS","rgba(240,244,250,.5)");
+   mb.texText(0,-96,7,"SPAWN INTERCHANGE","rgba(240,244,250,.5)");}
+  // 🚧 시작점(스폰 0,-60) 근처 방지턱 — 두 개는 멀리 떨어뜨리고 전체적으로 추가
+  w.addRippleZone(0,-150,40,.014,2.2,3);
+  w.addRippleZone(0,-220,34,.012,2.6,1);
+  for(const[bx2,bz2,h,ty]of[
+      [0,-150,.13,"round"],[0,-220,.16,"arch"],       // 스폰 뒤 직선: 두 방지턱을 멀리 이격
+      [0,55,.12,"flat"],[0,130,.15,"sharp"],           // 언더패스 북측
+      [-90,-45,.12,"round"],[90,-45,.14,"rumble"],     // 좌우 세로도로
+      [-90,60,.13,"arch"],[90,60,.12,"flat"]])
     mb.bump(bx2,bz2,0,13,h,ty);
   // 베이크 건물(지상) — 중앙 광장(r110)·뷰덕트 라인(x=VX, z>190) 비우고 종류·높이 다양하게
   for(let bx=-3;bx<=2;bx++)for(let bz=-3;bz<=2;bz++){
     const cx=bx*90+45,cz=bz*90+45;
     if(Math.hypot(cx,cz)<110)continue;                 // 중앙 광장 비움
     if(Math.hypot(cx+150,cz-150)<58)continue;          // 대형 주차장 블록 비움
-    if(Math.abs(cz-225)<46)continue;                   // 어퍼 빌리지 뷰덕트 라인(z=225) 비움
+    if(cz<-8&&cz>-132&&Math.abs(cx)<172)continue;      // 스폰 인터체인지 풋프린트 비움(방해 건물 제거)
     const dense=Math.hypot(cx,cz)<250;
     for(let k=0;k<(dense?2:1);k++){
       const sc=(dense?24:16)+rnd()*(dense?20:12);
@@ -3030,7 +3046,7 @@ MAPS.push(
   // 📍 장소(스폰 포인트) — HUD에서 선택 시 즉시 이동
   w.places=[
     {name:"🏙️ 다운타운",x:0,z:-60,yaw:0},
-    {name:"🌉 어퍼 빌리지(고가)",x:-238,z:225,yaw:Math.PI/2},
+    {name:"🌉 스폰 고가(인터체인지)",x:-178,z:-30,yaw:Math.PI/2},
     {name:"🛣️ 순환 고속도로",x:418,z:0,yaw:0},
     {name:"⛰️ 산 정상(오르막)",x:420,z:-400,yaw:Math.PI},
     {name:"🌊 레이크사이드",x:-350,z:172,yaw:0},
@@ -3046,7 +3062,7 @@ MAPS.push(
     {name:"⛲ 분수 광장",x:0,z:90,yaw:Math.PI},
     {name:"🅿️ 대형 주차장",x:-150,z:186,yaw:Math.PI},
     {name:"🌉 협곡 대교",x:557,z:-156,yaw:Math.PI*.75},
-    {name:"🌉 도심 플라이오버",x:-150,z:-140,yaw:0}];
+    {name:"🌉 상부 고가(고가 위 마을)",x:-152,z:-96,yaw:Math.PI/2}];
   mb.paintLanes();
   return mb.finalize(this);}});
 
@@ -3330,15 +3346,44 @@ class GameCamera{
     this.orbitYaw=0;this.orbitPitch=.32;this.dist=7;
     this.userT=0;this.shake=0;
     this.pos=V3(0,8,-10);this.look=V3(0,0,0);
+    // 🛰️ 맵 전체 3D 탐색(플라이오버) 상태
+    this.exTarget=V3(0,0,0);this.exYaw=0;this.exPitch=.62;this.exDist=420;this.exMax=900;
   }
   cycle(){this.mode=this.modes[(this.modes.indexOf(this.mode)+1)%this.modes.length];
     return this.modeNames[this.mode];}
   onDrag(dx,dy){
+    if(this.mode==="explore"){this.exYaw-=dx*.006;
+      this.exPitch=clamp(this.exPitch+dy*.004,12*DEG,86*DEG);return;}
     this.orbitYaw-=dx*.008;
     this.orbitPitch=clamp(this.orbitPitch+dy*.006,5*DEG,80*DEG);
     this.userT=2.2;}
-  onPinch(scale){this.dist=clamp(this.dist/scale,3,14);this.userT=2.2;}
+  onPan(dx,dy){ // 두 손가락 이동: 탐색 타깃 평행이동(카메라 상대)
+    if(this.mode!=="explore")return;
+    const s=this.exDist*.0016,cy=Math.cos(this.exYaw),sy=Math.sin(this.exYaw);
+    this.exTarget.x-=(cy*dx - sy*dy)*s;
+    this.exTarget.z-=(-sy*dx - cy*dy)*s;
+    this.clampTarget();}
+  panMove(fwd,right){ // 키보드 탐색 이동
+    const cy=Math.cos(this.exYaw),sy=Math.sin(this.exYaw),s=this.exDist*.02;
+    this.exTarget.x+=(sy*fwd+cy*right)*s;
+    this.exTarget.z+=(cy*fwd-sy*right)*s;
+    this.clampTarget();}
+  clampTarget(){const m=(this._mapHalf||800);
+    this.exTarget.x=clamp(this.exTarget.x,-m,m);this.exTarget.z=clamp(this.exTarget.z,-m,m);}
+  onPinch(scale){
+    if(this.mode==="explore"){this.exDist=clamp(this.exDist/scale,30,this.exMax);return;}
+    this.dist=clamp(this.dist/scale,3,14);this.userT=2.2;}
   update(dt,veh,world){
+    if(this.mode==="explore"){
+      const t=this.exTarget,ci=Math.cos(this.exPitch);
+      let gx=t.x-Math.sin(this.exYaw)*ci*this.exDist;
+      let gz=t.z-Math.cos(this.exYaw)*ci*this.exDist;
+      let gy=(world?world.height(t.x,t.z):0)+Math.sin(this.exPitch)*this.exDist;
+      this.pos.set(gx,gy,gz);
+      if(world){const h=world.height(gx,gz)+6;if(this.pos.y<h)this.pos.y=h;}
+      this.cam.position.copy(this.pos);
+      this.cam.lookAt(t.x,(world?world.height(t.x,t.z):0)+2,t.z);
+      return;}
     const b=veh.body,sp=veh.speed;
     this.userT=Math.max(0,this.userT-dt);
     if(this.shake>0)this.shake=Math.max(0,this.shake-dt*2.4);
@@ -4019,6 +4064,22 @@ function drawBigMap(){
   ctx.beginPath();ctx.moveTo(0,-17);ctx.lineTo(12,13);ctx.lineTo(-12,13);ctx.closePath();
   ctx.fill();ctx.stroke();ctx.restore();}
 function closeMapOverview(){$("mapPanel").classList.remove("on");Game.mapOpen=false;}
+// 🛰️ 맵 전체 3D 탐색(플라이오버) 진입/종료
+function enterExplore(){
+  if(!Game.cam||!Game.world)return;
+  closeMapOverview();
+  const c=Game.cam;c._prevMode=c.mode;c.mode="explore";
+  c._mapHalf=(Game.mm?Game.mm.size:1600)*.5;
+  c.exMax=Math.min(1400,(Game.mm?Game.mm.size:1600)*.9);
+  // 현재 차량 위치를 중심으로 시작
+  const p=Game.veh?Game.veh.body.pos:{x:0,z:0};
+  c.exTarget.set(p.x,0,p.z);c.exYaw=0;c.exPitch=.6;c.exDist=Math.min(c.exMax,360);
+  Game.exploreOn=true;
+  $("hud").style.display="none";$("exploreBar").classList.add("on");}
+function exitExplore(){
+  const c=Game.cam;if(c){c.mode=c._prevMode||"chase";}
+  Game.exploreOn=false;
+  $("hud").style.display="";$("exploreBar").classList.remove("on");}
 let _hudT=0;
 function updateHUD(dt){
   const v=Game.veh;if(!v)return;
@@ -4067,11 +4128,14 @@ function updateModeWidget(){
       '<div class="sub">'+scN+' · '+(c.phase==="run"?"주행 중… 피크 "+(Game.veh.peakG|0)+"G":
         c.phase!=="idle"?"피크 "+(Game.veh.peakG|0)+"G · 변형 "+Game.vis.defVol.toFixed(1):c.vTarget+" km/h 대기")+'</div>';}
   else{
-    const s=SURF_IDS[Game.veh.wheels[0].surf]||"asphalt";
-    const names={asphalt:"아스팔트",lane:"아스팔트",wet:"젖은 노면",gravel:"자갈",grass:"잔디",sand:"모래",ice:"빙판",snow:"눈",curb:"연석",walk:"보도"};
     const car=CARS[Game.opts.carIdx]||{};
-    el.innerHTML='<div class="big">자유주행</div><div class="sub">'+(car.icon||"")+' '+
-      (car.name||"").split(" ").slice(-1)[0]+' · '+(names[s]||s)+' · '+Game.mapDef.name+'</div>';}
+    // 현재 위치(가장 가까운 장소) — 지면 대신 위치 표시
+    let loc="";const ps=Game.world&&Game.world.places;
+    if(ps&&ps.length){const p=Game.veh.body.pos;let bd=1e9;
+      for(const q of ps){const d=Math.hypot(p.x-q.x,p.z-q.z);if(d<bd){bd=d;loc=q.name;}}}
+    const tail=(car.name||"").split(" ").slice(-1)[0];
+    el.innerHTML='<div class="big">자유주행</div><div class="sub">'+(car.icon||"")+' '+tail+
+      ' · '+(loc||Game.mapDef.name)+'</div>';}
 }
 let _toastT=null;
 function toast(msg,ms){
@@ -4150,7 +4214,7 @@ const Input=(()=>{
   let steerPtr=null,tiltVal=0;
   let whPtr=null,whAngle=0,whLast=0;      // steering wheel state (rad)
   const WH_MAX=2.4;                        // 잠금까지 ±137°
-  const camPtrs=new Map();let pinchD=0;
+  const camPtrs=new Map();let pinchD=0;const panC={x:null,y:null};
 
   function hookBtn(el,on,off){
     el.addEventListener("pointerdown",e=>{e.preventDefault();el.setPointerCapture(e.pointerId);
@@ -4198,18 +4262,26 @@ const Input=(()=>{
       camPtrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
       if(camPtrs.size===2){
         const a=[...camPtrs.values()];
-        pinchD=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);}});
+        pinchD=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+        panC.x=(a[0].x+a[1].x)/2;panC.y=(a[0].y+a[1].y)/2;}});
     gl.addEventListener("pointermove",e=>{
       const p=camPtrs.get(e.pointerId);if(!p)return;
-      if(camPtrs.size===1&&Game.cam){
-        Game.cam.onDrag(e.clientX-p.x,e.clientY-p.y);}
-      p.x=e.clientX;p.y=e.clientY;
-      if(camPtrs.size===2&&Game.cam){
+      const prevX=p.x,prevY=p.y;p.x=e.clientX;p.y=e.clientY;
+      if(!Game.cam)return;
+      if(camPtrs.size===1){
+        Game.cam.onDrag(e.clientX-prevX,e.clientY-prevY);}
+      else if(camPtrs.size===2){
         const a=[...camPtrs.values()];
         const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
         if(pinchD>0)Game.cam.onPinch(d/pinchD);
-        pinchD=d;}});
-    const camEnd=e=>{camPtrs.delete(e.pointerId);pinchD=0;};
+        pinchD=d;
+        const cx=(a[0].x+a[1].x)/2,cy=(a[0].y+a[1].y)/2;   // 두 손가락 평행이동 → 탐색 팬
+        if(panC.x!==null&&Game.cam.onPan)Game.cam.onPan(cx-panC.x,cy-panC.y);
+        panC.x=cx;panC.y=cy;}});
+    // 데스크톱: 휠로 탐색 줌
+    gl.addEventListener("wheel",e=>{if(Game.exploreOn&&Game.cam){e.preventDefault();
+      Game.cam.onPinch(e.deltaY<0?1.12:1/1.12);}},{passive:false});
+    const camEnd=e=>{camPtrs.delete(e.pointerId);pinchD=0;if(camPtrs.size<2)panC.x=null;};
     gl.addEventListener("pointerup",camEnd);gl.addEventListener("pointercancel",camEnd);
     // keyboard (desktop testing)
     addEventListener("keydown",e=>{keys[e.code]=true;
@@ -4217,6 +4289,14 @@ const Input=(()=>{
       if(e.code==="KeyP"||e.code==="Escape")Game.togglePause();
       if(e.code==="KeyR")Game.state==="play"&&!Game.paused&&Game.resetCar();
       if(e.code==="KeyC")Game.state==="play"&&toast("카메라: "+Game.cam.cycle());
+      if(Game.exploreOn&&Game.cam){const c=Game.cam;
+        if(e.code==="KeyW"||e.code==="ArrowUp")c.panMove(1,0);
+        else if(e.code==="KeyS"||e.code==="ArrowDown")c.panMove(-1,0);
+        else if(e.code==="KeyA"||e.code==="ArrowLeft")c.panMove(0,-1);
+        else if(e.code==="KeyD"||e.code==="ArrowRight")c.panMove(0,1);
+        else if(e.code==="Equal"||e.code==="NumpadAdd")c.onPinch(1.14);
+        else if(e.code==="Minus"||e.code==="NumpadSubtract")c.onPinch(1/1.14);
+        else if(e.code==="Escape")exitExplore();}
       Sfx.resume();});
     addEventListener("keyup",e=>{keys[e.code]=false;});
     // tilt
@@ -4243,6 +4323,7 @@ const Input=(()=>{
     for(const k in keys)keys[k]=false;
     document.querySelectorAll(".padBtn.press").forEach(b=>b.classList.remove("press"));}
   function read(){
+    if(Game.exploreOn)return{steer:0,gas:0,brake:1,hb:true};   // 탐색 중 차량 정지
     let steer=st.steer,gas=st.gas,brake=st.brake,hb=st.hb;
     if(Settings.steerMode==="tilt")steer=tiltVal;
     if(Settings.steerMode==="wheel")steer=clamp(whAngle/WH_MAX,-1,1);
@@ -4738,15 +4819,20 @@ function initHudButtons(){
   $("btnRepair").onclick=()=>{Sfx.click();Game.repair();};
   // 🏠 홈으로(메인 메뉴)
   $("btnHome").onclick=()=>{Sfx.click();Game.exitToMenu();};
-  // 🗺️ 전체 지도 오버뷰(맵 한눈에 보기) — 버튼·미니맵 탭으로 열기
-  $("btnMap").onclick=()=>{Sfx.click();openMapOverview();};
+  // 🗺️ 지도 버튼 = 미니맵 표시/숨김 토글
+  function setMinimap(on){Settings.minimapOn=on;saveSettings();
+    $("minimap").style.display=on?"":"none";$("minimapHide").style.display=on?"":"none";}
+  $("btnMap").onclick=()=>{Sfx.click();setMinimap(Settings.minimapOn===false);
+    toast(Settings.minimapOn===false?"미니맵 숨김":"미니맵 표시");};
+  // 미니맵 클릭 = 상세보기(전체 지도 오버뷰)
   $("minimap").addEventListener("click",()=>{Sfx.click();openMapOverview();});
   $("mapClose").onclick=()=>{Sfx.click();closeMapOverview();};
-  // 코너 미니맵 숨기기(✕) — 설정에서 다시 켤 수 있음
-  $("minimapHide").onclick=(e)=>{e.stopPropagation();Sfx.click();
-    Settings.minimapOn=false;saveSettings();
-    $("minimap").style.display="none";$("minimapHide").style.display="none";
-    toast("미니맵 숨김 — 설정에서 다시 켜기");};
+  // 🛰️ 상세보기의 3D 탐색 버튼 / 탐색 나가기
+  $("map3dBtn").onclick=()=>{Sfx.click();enterExplore();};
+  $("exploreExit").onclick=()=>{Sfx.click();exitExplore();};
+  // 코너 미니맵 숨기기(✕)
+  $("minimapHide").onclick=(e)=>{e.stopPropagation();Sfx.click();setMinimap(false);
+    toast("미니맵 숨김 — 지도 버튼으로 다시 표시");};
   // 📍 장소 이동(오픈월드)
   $("btnPlaces").onclick=()=>{Sfx.click();
     const ps=Game.world&&Game.world.places;if(!ps)return;
