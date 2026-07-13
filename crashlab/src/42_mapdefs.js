@@ -653,34 +653,27 @@ MAPS.push(
   mb.texCircle(-280,120,1,"rgba(244,248,252,.9)");
   mb.texText(-280,120-40,6,"DRIFT PLAZA","rgba(244,248,252,.55)");
   for(let k=0;k<10;k++)mb.prop("cone",-280+Math.cos(k*.628)*50,120+Math.sin(k*.628)*50);
-  // ⛲ 도심 중앙 광장: 더 큰 다단 분수 + 조경(동상·화단·가로등·방사형 보행로). 주차는 별도 대형 주차장으로 이전.
+  // ⛲ 도심 중앙 광장: 다단 분수(약간 축소) + 절제된 조경(동상·화단·가로등). 방사형 패턴 제거로 깔끔하게.
   {const fx=0,fz=0;
-   mb.stamp(fx,fz,94,(i,j,d)=>w.setS(i,j,S_ASP));      // 광장 바닥(아스팔트, 주행/드리프트 가능)
-   mb.texCircle(fx,fz,92,SURF_CSS[S_ASP]);
-   // 방사형 보행 패턴(장식) — 12갈래 + 내·외측 원형 프롬나드
-   for(let k=0;k<12;k++){const a=k/12*6.283;
-     mb.texRect(fx+Math.cos(a)*50,fz+Math.sin(a)*50,2.6,78,-a,"rgba(226,231,238,.30)");}
-   mb.texCircle(fx,fz,30,"rgba(226,231,238,.42)",.7);
-   mb.texCircle(fx,fz,64,"rgba(226,231,238,.30)",.7);
-   // 더 큰 다단 분수: 넓은 수반 + 4단 + 중앙 첨탑
-   mb.texCircle(fx,fz,12,SURF_CSS[SURF_ID.wet]);       // 수면(확대)
-   mb.baked("fountain",fx,fz,9,0,{y:0});
-   mb.box(fx,.35,fz,24,.7,24,0x9aa2ab,{mu:.7,tag:"fountain"});          // 하부 수반 테두리(넓게)
-   for(let k=0;k<4;k++)mb.box(fx,.55+k*.55,fz,14-k*3,1.0,14-k*3,k%2?0x9aa2ab:0x818b96,{mu:.7,tag:"fountain"});
-   mb.box(fx,3.6,fz,1.2,3.4,1.2,0xb6bcc4,{mu:.7,tag:"fountain"});        // 중앙 첨탑
-   // 4방위 기념 동상(주두 위 조형)
-   for(let q=0;q<4;q++){const a=q*Math.PI/2,sx=fx+Math.cos(a)*40,sz=fz+Math.sin(a)*40;
-     mb.box(sx,1.1,sz,3.2,2.2,3.2,0x8b8378,{mu:.6,tag:"plinth"});        // 주두
-     mb.box(sx,3.0,sz,1.1,2.0,1.1,0xcfd3d8,{mu:.5,tag:"statue"});        // 상
-     mb.box(sx,4.3,sz,1.5,.6,1.5,0xbfc4ca,{mu:.5,tag:"statue"});}
-   // 화단(사각 플랜터, 8곳) + 관목
-   for(let k=0;k<8;k++){const a=(k+.5)/8*6.283,px=fx+Math.cos(a)*60,pz=fz+Math.sin(a)*60;
+   mb.stamp(fx,fz,90,(i,j,d)=>w.setS(i,j,S_ASP));      // 광장 바닥(아스팔트, 주행/드리프트 가능)
+   mb.texCircle(fx,fz,88,SURF_CSS[S_ASP]);
+   mb.texCircle(fx,fz,52,"rgba(226,231,238,.26)",.7);  // 은은한 원형 프롬나드 1줄만
+   // 다단 분수(약간 축소): 수반 + 4단 + 중앙 첨탑
+   mb.texCircle(fx,fz,9,SURF_CSS[SURF_ID.wet]);
+   mb.baked("fountain",fx,fz,7,0,{y:0});
+   mb.box(fx,.3,fz,18,.6,18,0x9aa2ab,{mu:.7,tag:"fountain"});
+   for(let k=0;k<4;k++)mb.box(fx,.5+k*.5,fz,11-k*2.4,.9,11-k*2.4,k%2?0x9aa2ab:0x818b96,{mu:.7,tag:"fountain"});
+   mb.box(fx,2.9,fz,1.0,2.6,1.0,0xb6bcc4,{mu:.7,tag:"fountain"});
+   // 4방위 기념 동상
+   for(let q=0;q<4;q++){const a=q*Math.PI/2,sx=fx+Math.cos(a)*34,sz=fz+Math.sin(a)*34;
+     mb.box(sx,1.0,sz,2.8,2.0,2.8,0x8b8378,{mu:.6,tag:"plinth"});
+     mb.box(sx,2.7,sz,1.0,1.8,1.0,0xcfd3d8,{mu:.5,tag:"statue"});}
+   // 화단(4곳으로 축소) + 관목
+   for(let k=0;k<4;k++){const a=(k+.5)/4*6.283,px=fx+Math.cos(a)*56,pz=fz+Math.sin(a)*56;
      mb.box(px,.4,pz,7,.8,7,0x8a7a5c,{yaw:-a,mu:.7,tag:"planter"});
      mb.box(px,1.0,pz,6,.8,6,0x3f6b3a,{yaw:-a,mu:.7,tag:"hedge"});}
-   // 가로등 + 수목 (도로 위 벤치는 제거 — 주행 방해)
-   for(let k=0;k<8;k++){const a=(k+.5)/8*6.283;mb.prop("lamp",fx+Math.cos(a)*74,fz+Math.sin(a)*74,-a);}
-   for(let k=0;k<6;k++){const a=k/6*6.283+.3;mb.baked("treesTall",fx+Math.cos(a)*82,fz+Math.sin(a)*82,10,a,{});}
-   mb.texText(fx,fz-70,7,"⛲ CENTRAL PLAZA","rgba(240,244,250,.5)");}
+   for(let k=0;k<6;k++){const a=k/6*6.283+.3;mb.baked("treesTall",fx+Math.cos(a)*78,fz+Math.sin(a)*78,10,a,{});}
+   mb.texText(fx,fz-64,7,"⛲ CENTRAL PLAZA","rgba(240,244,250,.5)");}
   // 🅿️ 대형 주차장(도심 북서 블록) — 실제 주차장 배치: 열/통로 + 주차선 + 정차 차량
   {const px0=-150,pz0=150;                                // 격자 블록 하나를 주차장으로
    mb.stamp(px0,pz0,42,(i,j,d)=>w.setS(i,j,S_ASP));
@@ -697,69 +690,72 @@ MAPS.push(
    mb.texText(px0,pz0-40,6,"🅿 PARKING","rgba(240,244,250,.5)");}
   let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   const BLD2=["bldA","bldB","bldC","bldD"];
-  // 🌉 스폰 인터체인지 — 스폰(0,-60) 바로 옆 다단 고가(연쇄 업앤다운)·난간 완비·아래 촘촘히 채움·지하도
-  //   L1(하부 고가, 동서 z=-30): 물결형 업다운, 지상 x=0 도로 위를 지나 언더패스 형성
-  //   L2(상부 고가, 동서 z=-96): 더 높게(고가 위 또 고가 느낌) + 상부 소규모 마을
-  //   연결 램프로 L1↔L2 체인(업앤다운), 완만한 경사·전 구간 난간(bridgeDeck)
+  // 🌉 스폰 인터체인지 — 스폰(0,-60) 옆 4단 입체 교차: 지하 터널 · 지상 · L1 고가 · L3 고가(고가 위 고가)
+  //   L1(하부 고가, 동서 z=-30) / L2(상부 고가, 동서 z=-96) / L3(N-S 플라이오버, L1 위를 가로지름)
+  //   지하 딥: 지상 x=0 도로가 L1 밑에서 지하로 꺼졌다 나옴(옹벽+터널 루프). 전 구간 난간·촘촘한 교각.
   const heightAt=(pts,x)=>{for(let s=0;s<pts.length-1;s++){const a=pts[s],b=pts[s+1];
     if((x>=a.x&&x<=b.x)||(x<=a.x&&x>=b.x)){const t=(x-a.x)/((b.x-a.x)||1);return a.y+(b.y-a.y)*t;}}return 0;};
+  const heightAt2=(pts,z)=>{for(let s=0;s<pts.length-1;s++){const a=pts[s],b=pts[s+1];
+    if((z>=a.z&&z<=b.z)||(z<=a.z&&z>=b.z)){const t=(z-a.z)/((b.z-a.z)||1);return a.y+(b.y-a.y)*t;}}return 0;};
   {const Z1=-30, l1=[[-178,0],[-124,9],[-64,4],[0,12],[64,4],[124,9],[178,0]].map(([px,py])=>({x:px,z:Z1,y:py}));
-   bridgeDeck(mb,l1,15,{deck:0x565d68,rail:0xc9ced6});                 // 하부 고가(난간 포함)
    const Z2=-96, l2=[[-152,0],[-96,10],[-58,19],[58,19],[96,10],[152,0]].map(([px,py])=>({x:px,z:Z2,y:py}));
-   bridgeDeck(mb,l2,15,{deck:0x50565f,rail:0xbfc4cc});                 // 상부 고가(더 높음)
-   // 연결 램프: L1 동단(≈9m) → L2(≈19m) — 체인 업(연쇄 업앤다운)
+   // ── 지하 딥(언더그라운드): x=0 도로가 L1 밑에서 -5.4m까지 꺼졌다 복귀 (터널)
+   const dipC=z=>{const t=(z+30)/26;return -5.4*Math.max(0,1-t*t);};
+   for(let z=-58;z<=-2;z+=1)mb.stamp(0,z,7.6,(i,j,d,px,pz)=>{w.setH(i,j,dipC(pz));w.setS(i,j,S_ASP);});
+   for(let z=-52;z<=-8;z+=4){const y0=dipC(z),wh=1.1-y0;         // 옹벽(양측)
+     for(const s of[-1,1])mb.box(s*8.2,(y0+1.1)/2,z,1.0,wh,4.4,0x40474f,{mu:.7,tag:"wall"});}
+   mb.box(0,1.2,-30,17,.7,15,0x33393f,{mu:.7,tag:"portal"});      // 터널 루프(지하 천장)
+   for(const z of[-46,-14])mb.prop("lamp",8.4,z,Math.PI/2);
+   // ── L1 하부 고가(난간 포함)
+   bridgeDeck(mb,l1,15,{deck:0x565d68,rail:0xc9ced6});
+   // ── L2 상부 고가(더 높음)
+   bridgeDeck(mb,l2,15,{deck:0x50565f,rail:0xbfc4cc});
+   // ── 연결 램프: L1 동단(≈9m) → L2(≈19m)
    bridgeDeck(mb,[{x:150,z:-42,y:8},{x:150,z:-66,y:13},{x:128,z:-90,y:19}],13,{deck:0x5a616c,rail:0xc9ced6});
-   // 촘촘한 교각(고가 아래를 꽉 채움) — 데크 높이에 맞춰 기둥 배치
+   // ── L3 플라이오버(N-S, x=-90 그리드 도로): L1(z=-30) 위를 y=22로 가로질러 고가 위 고가.
+   //    양끝은 지상 도로로 내려옴(광장 밖 — 분수 광장은 건드리지 않음).
+   const L3X=-90, l3=[[72,0],[24,15],[-30,22],[-72,0]].map(([pz,py])=>({x:L3X,z:pz,y:py}));
+   bridgeDeck(mb,l3,12,{deck:0x5b626d,rail:0xc9ced6});
+   for(let z=-64;z<=64;z+=16){const dy=heightAt2(l3,z);         // L3 교각(도로 밖 ±10)
+     if(dy>3){const terr=Math.max(0,w.height(L3X,z));
+       for(const s of[-1,1])mb.box(L3X+s*10,(dy+terr)/2,z,1.4,dy-terr,1.4,0x616872,{mu:.6,tag:"pillar"});}}
+   // ── 촘촘한 교각(L1·L2 아래를 꽉 채움) — 단, x=0 지하도로 위는 비움
    for(const[pts,zc]of[[l1,Z1],[l2,Z2]])
-     for(let x=-150;x<=150;x+=20){const dy=heightAt(pts,x);
-       if(dy>2.4){const terr=w.height(x,zc);
+     for(let x=-150;x<=150;x+=20){if(Math.abs(x)<14)continue;const dy=heightAt(pts,x);
+       if(dy>2.4){const terr=Math.max(0,w.height(x,zc));
          for(const zo of[-5.5,0,5.5])mb.box(x,(dy+terr)/2,zc+zo,1.5,dy-terr,1.5,zo?0x616872:0x6b727c,{mu:.6,tag:"pillar"});}}
-   // 상부 마을(L2 데크 위 소규모 건물) — 고가 위 마을
-   for(const bx of[-34,34])mb.baked(BLD2[(bx+9)&3],bx,-96,12,0,{y:19,collide:true,shrink:.9});
-   // 지하도(언더패스): 지상 x=0 도로가 L1 밑을 통과 — 포털 측벽 + 조명
-   for(const s of[-1,1]){mb.box(s*10,2.2,-30,1.2,4.4,11,0x3a4048,{mu:.7,tag:"portal"});mb.prop("lamp",s*8,-30,0);}
-   mb.texText(0,-14,6,"UNDERPASS","rgba(240,244,250,.5)");
+   mb.texText(0,-2,6,"UNDERGROUND","rgba(240,244,250,.5)");
    mb.texText(0,-96,7,"SPAWN INTERCHANGE","rgba(240,244,250,.5)");}
   // 🚧 시작점(스폰 0,-60) 근처 방지턱 — 두 개는 멀리 떨어뜨리고 전체적으로 추가
   w.addRippleZone(0,-150,40,.014,2.2,3);
   w.addRippleZone(0,-220,34,.012,2.6,1);
   for(const[bx2,bz2,h,ty]of[
       [0,-150,.13,"round"],[0,-220,.16,"arch"],       // 스폰 뒤 직선: 두 방지턱을 멀리 이격
-      [0,55,.12,"flat"],[0,130,.15,"sharp"],           // 언더패스 북측
+      [0,150,.15,"sharp"],                             // 언더패스/플라이오버 북측(램프 밖)
       [-90,-45,.12,"round"],[90,-45,.14,"rumble"],     // 좌우 세로도로
-      [-90,60,.13,"arch"],[90,60,.12,"flat"]])
+      [-90,80,.13,"arch"],[90,80,.12,"flat"]])
     mb.bump(bx2,bz2,0,13,h,ty);
-  // 🛣️ 스폰/도심 코어 도로 경계 명확화: 흰 실선 가장자리 + 연석(사이드워크) + 도로변 조형물·난간
-  //   교차로 부근(±13m)은 비워 회전 방해 없음. 인터체인지 풋프린트(z∈-132..-8)는 도로변 물체 생략.
-  {const V=[-90,0,90],H=[-90,0,90],EXT=190,edge=7,curb=8.4,side=10.5;
-   const inIx=(a,arr)=>arr.some(c=>Math.abs(a-c)<13);
-   const inItc=(x,z)=>z<-8&&z>-132&&Math.abs(x)<172;
-   const roadside=(cx,cz,horiz)=>{                       // 도로 양옆에 연석·조형물·난간
-     for(const s of[-1,1]){
-       const ex=horiz?cx:cx+s*side, ez=horiz?cz+s*side:cz;
-       if(inItc(ex,ez))continue;
-       const slot=(Math.round((horiz?cx:cz))/24)|0, kind=((slot%4)+4)%4;
-       if(kind===0)mb.prop("lamp",ex,ez,horiz?0:Math.PI/2);            // 가로등
-       else if(kind===2){                                              // 기념 조형물(오벨리스크)
-         mb.box(ex,.5,ez,2.2,1.0,2.2,0x8b8378,{mu:.6,tag:"plinth"});
-         mb.box(ex,2.4,ez,.9,3.0,.9,0xbfc4ca,{mu:.5,tag:"monument"});}
-       else{                                                           // 난간(가드레일) 포스트+빔
-         mb.box(ex,.55,ez,.3,1.1,.3,0xb9c2cc,{mu:.5,tag:"railpost"});
-         mb.box(ex,.85,ez+(horiz?0:0),horiz?4.2:.24,.28,horiz?.24:4.2,0xcfd4da,{mu:.4,bounce:.2,tag:"railbar"});}}};
+  // 🛣️ 스폰/도심 코어 도로 경계 명확화: 흰 실선 가장자리 + 연석(사이드워크)만. 방해물(조형물·난간)은 두지 않음.
+  //   스폰 주변·인터체인지 풋프린트는 도로변 물체도 생략, 가로등만 드문드문(48m).
+  {const V=[-90,0,90],H=[-90,0,90],EXT=190,edge=7,curb=8.4;
+   const nearSpawn=(x,z)=>Math.hypot(x,z+60)<52;
+   const inItc=(x,z)=>z<-4&&z>-140&&Math.abs(x)<185;
    for(const X of V){                                    // 세로 도로
      for(const s of[-1,1])mb.texRect(X+s*edge,0,.42,2*EXT,0,"rgba(244,248,252,.92)"); // 가장자리 실선
      for(const s of[-1,1])mb.texRect(X+s*curb,0,1.4,2*EXT,0,SURF_CSS[S_WLK]);          // 연석/사이드워크
-     for(let z=-EXT+14;z<=EXT-14;z+=24){if(inIx(z,H))continue;roadside(X,z,false);}}
+     for(let z=-EXT+30;z<=EXT-30;z+=48){if(nearSpawn(X+10.5,z)||inItc(X+10.5,z))continue;
+       mb.prop("lamp",X+10.5,z,Math.PI/2);}}
    for(const Z of H){                                    // 가로 도로
      for(const s of[-1,1])mb.texRect(0,Z+s*edge,2*EXT,.42,0,"rgba(244,248,252,.92)");
      for(const s of[-1,1])mb.texRect(0,Z+s*curb,2*EXT,1.4,0,SURF_CSS[S_WLK]);
-     for(let x=-EXT+14;x<=EXT-14;x+=24){if(inIx(x,V))continue;roadside(x,Z,true);}}}
+     for(let x=-EXT+30;x<=EXT-30;x+=48){if(nearSpawn(x,Z+10.5)||inItc(x,Z+10.5))continue;
+       mb.prop("lamp",x,Z+10.5,0);}}}
   // 베이크 건물(지상) — 중앙 광장(r110)·뷰덕트 라인(x=VX, z>190) 비우고 종류·높이 다양하게
   for(let bx=-3;bx<=2;bx++)for(let bz=-3;bz<=2;bz++){
     const cx=bx*90+45,cz=bz*90+45;
     if(Math.hypot(cx,cz)<110)continue;                 // 중앙 광장 비움
     if(Math.hypot(cx+150,cz-150)<58)continue;          // 대형 주차장 블록 비움
-    if(cz<-8&&cz>-132&&Math.abs(cx)<172)continue;      // 스폰 인터체인지 풋프린트 비움(방해 건물 제거)
+    if(cz<-4&&cz>-140&&Math.abs(cx)<185)continue;      // 스폰 인터체인지 풋프린트 비움(고가 방해 건물 제거)
     const dense=Math.hypot(cx,cz)<250;
     for(let k=0;k<(dense?2:1);k++){
       const sc=(dense?24:16)+rnd()*(dense?20:12);
@@ -909,7 +905,8 @@ MAPS.push(
     {name:"⛲ 분수 광장",x:0,z:90,yaw:Math.PI},
     {name:"🅿️ 대형 주차장",x:-150,z:186,yaw:Math.PI},
     {name:"🌉 협곡 대교",x:557,z:-156,yaw:Math.PI*.75},
-    {name:"🌉 상부 고가(고가 위 마을)",x:-152,z:-96,yaw:Math.PI/2}];
+    {name:"🌉 상부 고가(L2)",x:-152,z:-96,yaw:Math.PI/2},
+    {name:"🛣️ 지하 터널",x:0,z:-64,yaw:0}];
   mb.paintLanes();
   return mb.finalize(this);}});
 
