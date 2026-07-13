@@ -2907,6 +2907,31 @@ MAPS.push(
       [-90,-45,.12,"round"],[90,-45,.14,"rumble"],     // 좌우 세로도로
       [-90,60,.13,"arch"],[90,60,.12,"flat"]])
     mb.bump(bx2,bz2,0,13,h,ty);
+  // 🛣️ 스폰/도심 코어 도로 경계 명확화: 흰 실선 가장자리 + 연석(사이드워크) + 도로변 조형물·난간
+  //   교차로 부근(±13m)은 비워 회전 방해 없음. 인터체인지 풋프린트(z∈-132..-8)는 도로변 물체 생략.
+  {const V=[-90,0,90],H=[-90,0,90],EXT=190,edge=7,curb=8.4,side=10.5;
+   const inIx=(a,arr)=>arr.some(c=>Math.abs(a-c)<13);
+   const inItc=(x,z)=>z<-8&&z>-132&&Math.abs(x)<172;
+   const roadside=(cx,cz,horiz)=>{                       // 도로 양옆에 연석·조형물·난간
+     for(const s of[-1,1]){
+       const ex=horiz?cx:cx+s*side, ez=horiz?cz+s*side:cz;
+       if(inItc(ex,ez))continue;
+       const slot=(Math.round((horiz?cx:cz))/24)|0, kind=((slot%4)+4)%4;
+       if(kind===0)mb.prop("lamp",ex,ez,horiz?0:Math.PI/2);            // 가로등
+       else if(kind===2){                                              // 기념 조형물(오벨리스크)
+         mb.box(ex,.5,ez,2.2,1.0,2.2,0x8b8378,{mu:.6,tag:"plinth"});
+         mb.box(ex,2.4,ez,.9,3.0,.9,0xbfc4ca,{mu:.5,tag:"monument"});}
+       else{                                                           // 난간(가드레일) 포스트+빔
+         mb.box(ex,.55,ez,.3,1.1,.3,0xb9c2cc,{mu:.5,tag:"railpost"});
+         mb.box(ex,.85,ez+(horiz?0:0),horiz?4.2:.24,.28,horiz?.24:4.2,0xcfd4da,{mu:.4,bounce:.2,tag:"railbar"});}}};
+   for(const X of V){                                    // 세로 도로
+     for(const s of[-1,1])mb.texRect(X+s*edge,0,.42,2*EXT,0,"rgba(244,248,252,.92)"); // 가장자리 실선
+     for(const s of[-1,1])mb.texRect(X+s*curb,0,1.4,2*EXT,0,SURF_CSS[S_WLK]);          // 연석/사이드워크
+     for(let z=-EXT+14;z<=EXT-14;z+=24){if(inIx(z,H))continue;roadside(X,z,false);}}
+   for(const Z of H){                                    // 가로 도로
+     for(const s of[-1,1])mb.texRect(0,Z+s*edge,2*EXT,.42,0,"rgba(244,248,252,.92)");
+     for(const s of[-1,1])mb.texRect(0,Z+s*curb,2*EXT,1.4,0,SURF_CSS[S_WLK]);
+     for(let x=-EXT+14;x<=EXT-14;x+=24){if(inIx(x,V))continue;roadside(x,Z,true);}}}
   // 베이크 건물(지상) — 중앙 광장(r110)·뷰덕트 라인(x=VX, z>190) 비우고 종류·높이 다양하게
   for(let bx=-3;bx<=2;bx++)for(let bz=-3;bz<=2;bz++){
     const cx=bx*90+45,cz=bz*90+45;
