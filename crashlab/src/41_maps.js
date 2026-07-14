@@ -128,15 +128,16 @@ class MapBuilder{
     const e=BAKED[name],A=Assets.arrays(e);
     const y=opt.y!==undefined?opt.y:this.world.height(x,z);
     const ca=Math.cos(yaw||0),sa=Math.sin(yaw||0);
+    const hs=opt.hScale||1;   // 세로(높이)만 늘리는 배율 — 넓이 그대로 건물만 더 높게
     for(let i=0;i<A.n;i++){
-      const px=A.pos[i*3]*scale,py=A.pos[i*3+1]*scale,pz=A.pos[i*3+2]*scale;
+      const px=A.pos[i*3]*scale,py=A.pos[i*3+1]*scale*hs,pz=A.pos[i*3+2]*scale;
       this.mergePos.push(px*ca+pz*sa+x,py+y,-px*sa+pz*ca+z);
       const nx=A.nor[i*3],nz=A.nor[i*3+2];
       this.mergeNor.push(nx*ca+nz*sa,A.nor[i*3+1],-nx*sa+nz*ca);
       this.mergeCol.push(A.col[i*3],A.col[i*3+1],A.col[i*3+2]);}
     if(opt.collide){
       const bb=e.bb;
-      const hw=(bb[3]-bb[0])/2*scale*(opt.shrink||1),hh=(bb[4]-bb[1])/2*scale,hd=(bb[5]-bb[2])/2*scale*(opt.shrink||1);
+      const hw=(bb[3]-bb[0])/2*scale*(opt.shrink||1),hh=(bb[4]-bb[1])/2*scale*hs,hd=(bb[5]-bb[2])/2*scale*(opt.shrink||1);
       this.world.boxes.push(new OBB(x,y+hh,z,hw,hh,hd,yaw||0,0,0,{mu:.5,tag:name}));}
   }
   box(x,y,z,w,h,d,color,opt){ // opt:{yaw,pitch,roll,mu,bounce,tag,noVis}

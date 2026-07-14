@@ -1876,15 +1876,16 @@ class MapBuilder{
     const e=BAKED[name],A=Assets.arrays(e);
     const y=opt.y!==undefined?opt.y:this.world.height(x,z);
     const ca=Math.cos(yaw||0),sa=Math.sin(yaw||0);
+    const hs=opt.hScale||1;   // 세로(높이)만 늘리는 배율 — 넓이 그대로 건물만 더 높게
     for(let i=0;i<A.n;i++){
-      const px=A.pos[i*3]*scale,py=A.pos[i*3+1]*scale,pz=A.pos[i*3+2]*scale;
+      const px=A.pos[i*3]*scale,py=A.pos[i*3+1]*scale*hs,pz=A.pos[i*3+2]*scale;
       this.mergePos.push(px*ca+pz*sa+x,py+y,-px*sa+pz*ca+z);
       const nx=A.nor[i*3],nz=A.nor[i*3+2];
       this.mergeNor.push(nx*ca+nz*sa,A.nor[i*3+1],-nx*sa+nz*ca);
       this.mergeCol.push(A.col[i*3],A.col[i*3+1],A.col[i*3+2]);}
     if(opt.collide){
       const bb=e.bb;
-      const hw=(bb[3]-bb[0])/2*scale*(opt.shrink||1),hh=(bb[4]-bb[1])/2*scale,hd=(bb[5]-bb[2])/2*scale*(opt.shrink||1);
+      const hw=(bb[3]-bb[0])/2*scale*(opt.shrink||1),hh=(bb[4]-bb[1])/2*scale*hs,hd=(bb[5]-bb[2])/2*scale*(opt.shrink||1);
       this.world.boxes.push(new OBB(x,y+hh,z,hw,hh,hd,yaw||0,0,0,{mu:.5,tag:name}));}
   }
   box(x,y,z,w,h,d,color,opt){ // opt:{yaw,pitch,roll,mu,bounce,tag,noVis}
@@ -2769,22 +2770,22 @@ const MAPS=[
 
 /* ---------- 7. 그랜드 시티 (오픈월드) ---------- */
 MAPS.push(
-{id:"grand",name:"메가시티 (오픈월드)",icon:"🌆",desc:"2.6km² 통합 오픈월드 — 도심·순환고속도로·산악 와인딩·호수·공업·공항·해안도로·스타디움. 📍장소 선택 스폰",
+{id:"grand",name:"메가시티 (오픈월드)",icon:"🌆",desc:"3.4km² 확장 오픈월드 — 고층 도심·순환고속도로·메가 외곽루프·마운틴 루프·호수·공업·공항·비치·스타디움. 📍장소 선택 스폰",
  modes:["free","time","race","drift"],
  build(){
-  const mb=new MapBuilder(1600,288),w=mb.world;
+  const mb=new MapBuilder(1840,332),w=mb.world;   // 맵 확대(1600→1840)
   mb.fill((x,z)=>{
     // 완만한 롤링(요철 지형) — 도로가 오르막/내리막을 따라감
     let h=1.6*Math.sin(x*.006)*Math.cos(z*.007)+.9*Math.sin(x*.015+1)*Math.cos(z*.013);
     if(Math.abs(x)<290&&Math.abs(z)<290)h*=.35;    // 다운타운은 평평하게(잔물결만) — 높낮이는 고가 뷰덕트로
-    const hd=Math.hypot(x-380,z+380);h+=34*Math.exp(-hd*hd/70000);   // 산(북동) — 오르막
+    const hd=Math.hypot(x-420,z+430);h+=36*Math.exp(-hd*hd/82000);   // 산(북동) — 오르막
     const h2=Math.hypot(x-250,z+180);h+=13*Math.exp(-h2*h2/30000);
-    const h3=Math.hypot(x+560,z+520);h+=26*Math.exp(-h3*h3/60000);   // 언덕(남서)
+    const h3=Math.hypot(x+620,z+560);h+=27*Math.exp(-h3*h3/66000);   // 언덕(남서)
     const ld=Math.hypot(x+350,z-300);                                 // 호수(북서)
     let s=S_GRS;
     if(ld<95){h=Math.min(h,-.35);s=S_WET;}
     else if(ld<115){h*=.3;s=S_SND;}
-    if(x>690){s=x>735?S_WET:S_SND;h=x>735?Math.min(h,-.3):h*.3;}      // 동측 해안
+    if(x>790){s=x>840?S_WET:S_SND;h=x>840?Math.min(h,-.3):h*.3;}      // 동측 해안(더 멀리)
     return[h,s];});
   // 도심 격자 (pitch 90, 7x7 — 약간 더 큰 다운타운)
   for(let k=-3;k<=3;k++){
@@ -2804,8 +2805,8 @@ MAPS.push(
   // 깊은 계곡(지형 0m으로 곤두박질치던 구덩이)은 bridgeValleys로 완만한 둑을 만들고
   // flattenCorridor로 노면을 그 프로파일에 맞춰 메워 — 어디서든 매끈히 주행 가능(구덩이 제거).
   // 더 크고 매끈한 루프(난잡함 정돈 + 더 길게 ≈6km). 스포크 접속부는 난간 개방.
-  const megaCtrl=[[650,20],[560,-360],[240,-575],[-180,-600],[-560,-430],[-690,-40],[-620,340],[-320,570],[80,640],[460,470]];
-  const spokeEnds=[[634,25],[70,637],[-686,-45],[-176,-598]];   // E·N·W·S 스포크 접속점
+  const megaCtrl=[[748,23],[644,-414],[276,-661],[-207,-690],[-644,-495],[-794,-46],[-713,391],[-368,656],[92,736],[529,541]];
+  const spokeEnds=[[729,29],[81,733],[-789,-52],[-202,-688]];   // E·N·W·S 스포크 접속점(맵 확대)
   const mega=followTerrain(w,samplePath(megaCtrl,true,600));
   bridgeValleys(mega,.1);
   flattenCorridor(mb,mega,11,18);
@@ -2813,13 +2814,13 @@ MAPS.push(
   railAlong(mb,mega,19,0xb9c2cc,(a)=>spokeEnds.some(e=>Math.hypot(a.x-e[0],a.z-e[1])<36));
   {const wide=mega.filter(p=>p.z<-520);            // 남측 광폭 구간
    if(wide.length>4)mb.paintPath(wide,27,S_ASP,true);}
-  mb.texText(560,-220,7,"MOUNTAIN HWY","rgba(240,244,250,.45)");
+  mb.texText(644,-253,7,"MOUNTAIN HWY","rgba(240,244,250,.45)");
   // 메가 꿀렁임·요철(구간별, 실제 노후 고속도로처럼)
-  w.addRippleZone(605,-210,64,.015,1.8,2);
-  w.addRippleZone(-430,-510,66,.013,1.2,3);
-  w.addRippleZone(-660,150,60,.017,2.1,2);
-  w.addRippleZone(-120,610,60,.012,1.5,1);
-  w.addRippleZone(480,430,56,.016,2.0,2);
+  w.addRippleZone(696,-242,66,.015,1.8,2);
+  w.addRippleZone(-494,-587,68,.013,1.2,3);
+  w.addRippleZone(-759,173,62,.017,2.1,2);
+  w.addRippleZone(-138,701,62,.012,1.5,1);
+  w.addRippleZone(552,494,58,.016,2.0,2);
   // 내부 순환로(r434) ↔ 메가 연결 스포크(4방향) — 지형추종(계곡 절개 방지)
   for(const[a2,b2]of[[[434,0],spokeEnds[0]],[[0,434],spokeEnds[1]],[[-434,0],spokeEnds[2]],[[0,-434],spokeEnds[3]]]){
     const sp=bridgeValleys(followTerrain(w,samplePath([a2,b2],false,70)),.14);
@@ -2937,11 +2938,12 @@ MAPS.push(
     const dense=Math.hypot(cx,cz)<250;
     for(let k=0;k<(dense?2:1);k++){
       const sc=(dense?24:16)+rnd()*(dense?20:12);
+      const hsc=dense?1.7+rnd()*1.3:1.3+rnd()*.7;         // 도심은 더 높은 고층(넓이 그대로 높이만 ↑)
       mb.baked(BLD2[(rnd()*4)|0],cx+(rnd()-.5)*(64-sc),cz+(rnd()-.5)*(64-sc),sc,
-        ((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92});}
+        ((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92,hScale:hsc});}
     if(rnd()<.5)mb.baked(rnd()<.5?"trees":"treesTall",cx+28,cz-28,10+rnd()*4,rnd()*6,{y:0});}
-  // 랜드마크 타워(도심 남동) + 소공원(도심 북서)
-  mb.baked("bldA",250,250,58,0,{y:0,collide:true,shrink:.9});
+  // 랜드마크 타워(도심 남동) — 초고층 + 소공원(도심 북서)
+  mb.baked("bldA",250,250,58,0,{y:0,collide:true,shrink:.9,hScale:3.0});
   mb.stamp(-250,-250,44,(i,j,d)=>w.setS(i,j,d<40?S_GRS:S_ASP));
   for(let k=0;k<7;k++)mb.baked("treesTall",-250+Math.cos(k)*30,-250+Math.sin(k*1.3)*30,11,k,{});
   // 교외 주택(남서) — 차고 모델 + 나무
@@ -2988,24 +2990,25 @@ MAPS.push(
    // 접근로: 순환로 서측 스퍼(-185,0) → 호수 프롬나드(남측 진입)
    mb.paintPath([{x:-185,y:0,z:0},{x:-250,y:0,z:90},{x:lx,y:0,z:lz-126}],10,S_ASP,true,true);
    mb.texText(lx,lz+134,9,"LAKESIDE","rgba(240,244,250,.5)");}
-  // 언덕 스위치백 등반로 (북동 산 정상까지) — 지형을 따라 오르막
-  // 순환로(r≈420)를 가로지르는 지점에는 가드레일 생략(순환로를 막던 '도로 장벽' 제거)
-  {const sb=followTerrain(w,samplePath([[220,-160],[350,-260],[290,-360],[400,-420],[430,-360]],false,120));
-   mb.paintPath(sb,10,S_ASP,true,true);
-   railAlong(mb,sb,10,0xb9c2cc,(a)=>{const r=Math.hypot(a.x,a.z);return r>394&&r<446;});}
+  // 🏔️ 마운틴 루프 — 순환로에서 갈라져 산(420,-430)을 넘어 다시 순환로로 돌아오는 '깨끗한 순환 도로'.
+  //   막다른 스위치백·비포장·와인딩 조각들을 이 1개의 연결된 루프로 대체(주행 가능·비난잡).
+  //   순환로 접속 구간만 가드레일 개방(도로 막힘 없음).
+  {const mloop=bridgeValleys(followTerrain(w,samplePath(
+     [[300,-300],[420,-370],[520,-450],[500,-560],[380,-585],[260,-520],[220,-410],[255,-345]],true,300)),.12);
+   flattenCorridor(mb,mloop,8,14);
+   mb.paintPath(mloop,13,S_ASP,true,true);
+   railAlong(mb,mloop,13,0xb9c2cc,(a)=>{const r=Math.hypot(a.x,a.z);return r>392&&r<452;});
+   mb.texText(400,-470,8,"MOUNTAIN LOOP","rgba(240,244,250,.5)");}
   // 공사장 (대형 갭 점프대 + 자재) — 격자와 순환로 사이 공터
   mb.ramp(250,236,0,24,22,14,0xd8433b);
   mb.ramp(250,296,Math.PI,20,20,14,0xc7742f);   // 착지 램프를 순환로 안쪽으로(고속도로 침범 금지)
   for(let k=0;k<6;k++)mb.box(220+k*7,.6,250,6,1.2,2,0xcaa23a,{yaw:k,mu:.8,tag:"beam"});
   for(let k=0;k<3;k++)mb.box(210,2.4+k*.1,270+k*4,10,.2,3.6,0x7a828c,{mu:.7,tag:"scaffold"});
-  // 언덕 비포장길
-  const dirt=samplePath([[220,-140],[300,-230],[380,-330],[430,-390]],false,80);
-  for(const p of dirt)mb.stamp(p.x,p.z,6,(i,j)=>w.setS(i,j,SURF_ID.gravel));
-  mb.texPath(dirt,11,SURF_CSS[SURF_ID.gravel]);
-  // 언덕·호수 나무 — 순환로(r≈420) 노면 위엔 배치 금지(도로 위 나무 제거)
-  for(let k=0;k<16;k++){
-    const tx=240+rnd()*220,tz=-160-rnd()*220,r=Math.hypot(tx,tz);
-    if(r>398&&r<452)continue;
+  // 언덕·산 나무 — 마운틴 루프(도로) 노면 위엔 배치 금지
+  for(let k=0;k<18;k++){
+    const tx=240+rnd()*300,tz=-200-rnd()*360,r=Math.hypot(tx,tz);
+    if(r>392&&r<452)continue;                              // 순환로 노면 위 금지
+    if(Math.abs(Math.hypot(tx-400,tz+470)-160)<40)continue; // 마운틴 루프 노면 근처 금지
     mb.baked(rnd()<.5?"trees":"treesTall",tx,tz,10+rnd()*5,rnd()*6,{});}
   for(let k=0;k<6;k++)mb.baked("treesTall",-350+Math.cos(k*1.05)*130,300+Math.sin(k*1.05)*130,11,k,{});
   // 가로등·표지판
@@ -3030,24 +3033,17 @@ MAPS.push(
    w.addRippleZone(ax+180,az,84,.012,1.7,1);
    // 접근 연결로 (도심 → 공항)
    mb.paintPath([{x:0,y:0,z:-418},{x:-40,y:0,z:-540},{x:ax,y:0,z:az-4}],13,S_ASP,true,true);}
-  // 해안도로 (동측) — 지형을 따르는 코스탈(sea-level 강제 절개 금지 → 산악 하이웨이 계곡 안 침범)
-  {const coast=bridgeValleys(followTerrain(w,samplePath([[560,-360],[640,-120],[660,120],[600,360],[500,520]],false,140)),.12);
-   mb.paintPath(coast,12,S_ASP,true,true);railAlong(mb,coast,12,0xb9c2cc);
-   // 순환로→해안 연결로: 메가 계곡(x≤548) 동쪽으로 우회 + 지형 추종(계곡 파괴 방지)
-   const cc=bridgeValleys(followTerrain(w,samplePath([[418,0],[500,20],[590,-140],[600,-280],[560,-360]],false,110)),.12);
-   mb.paintPath(cc,12,S_ASP,true,true);
-   for(let k=0;k<8;k++)mb.baked("treesTall",600+Math.sin(k)*30,-300+k*100,10,k,{});
-   mb.texText(640,0,12,"COAST HWY","rgba(240,244,250,.45)");}
+  // (해안도로·해안 연결로 제거 — 메가 하이웨이 동측과 중복되어 난잡했음. 메가 루프가 동측 도로 역할)
+  // 해변 야자·표지만 남김(해안 경관)
+  for(let k=0;k<7;k++)mb.baked("treesTall",760+Math.sin(k)*24,-240+k*90,10,k,{});
+  mb.texText(772,60,12,"EAST BEACH","rgba(240,244,250,.4)");
   // 스타디움 (남서 언덕 옆)
-  {const sx=-560,sz=520;
+  {const sx=-620,sz=560;
    mb.stamp(sx,sz,70,(i,j,d)=>w.setS(i,j,d<44?S_GRS:S_WLK));
    for(let k=0;k<26;k++){const a=k/26*6.283;
      mb.box(sx+Math.cos(a)*58,w.height(sx+Math.cos(a)*58,sz+Math.sin(a)*58)+5,sz+Math.sin(a)*58,9,10,9,0x39424e,{yaw:-a,mu:.5,tag:"stand"});}
    mb.paintPath([{x:-185,y:0,z:0},{x:-360,y:0,z:260},{x:sx+70,y:0,z:sz-40}],13,S_ASP,true,true);
    mb.texText(sx,sz,14,"ARENA","rgba(240,244,250,.5)");}
-  // 산악 와인딩 연장 (정상 너머 다운힐) — 지형 따라 내리막
-  {const md=followTerrain(w,samplePath([[430,-360],[470,-300],[430,-230],[500,-180],[560,-260]],false,120));
-   mb.paintPath(md,10,S_ASP,true,true);railAlong(mb,md,10,0xb9c2cc);}
 
   // 잔요철 패치: 전 도로가 아니라 일부 구간에만, 패턴 다양 (1=미세요철 2=워시보드 3=완만한 물결)
   w.addRippleZone(0,240,60,.012,2.1,1);      // 북부 연결로: 미세 요철
@@ -3069,20 +3065,20 @@ MAPS.push(
     {name:"🏙️ 다운타운",x:0,z:-60,yaw:0},
     {name:"🌉 스폰 고가(인터체인지)",x:-178,z:-30,yaw:Math.PI/2},
     {name:"🛣️ 순환 고속도로",x:418,z:0,yaw:0},
-    {name:"⛰️ 산 정상(오르막)",x:420,z:-400,yaw:Math.PI},
+    {name:"🏔️ 마운틴 루프",x:300,z:-300,yaw:Math.PI*.7},
     {name:"🌊 레이크사이드",x:-350,z:172,yaw:0},
     {name:"🌀 드리프트 광장",x:-280,z:70,yaw:0},
-    {name:"🛣️ 메가 하이웨이(외곽)",x:630,z:25,yaw:Math.PI},
-    {name:"⛰️ 하이웨이 산악 구간",x:540,z:-360,yaw:Math.PI*.7},
+    {name:"🛣️ 메가 하이웨이(외곽)",x:729,z:29,yaw:Math.PI},
+    {name:"⛰️ 하이웨이 산악 구간",x:644,z:-414,yaw:Math.PI*.7},
     {name:"🏘️ 교외 주택가",x:-232,z:-235,yaw:0},
     {name:"🏭 공업지구",x:330,z:340,yaw:Math.PI},
     {name:"🏗️ 공사장 점프대",x:250,z:225,yaw:0},
     {name:"✈️ 공항 활주로",x:-120,z:-656,yaw:Math.PI/2},
-    {name:"🌅 해안 도로",x:640,z:0,yaw:0},
-    {name:"🏟️ 스타디움",x:-560,z:590,yaw:0},
+    {name:"🏖️ 이스트 비치",x:740,z:60,yaw:Math.PI},
+    {name:"🏟️ 스타디움",x:-620,z:640,yaw:0},
     {name:"⛲ 분수 광장",x:0,z:90,yaw:Math.PI},
     {name:"🅿️ 대형 주차장",x:-150,z:186,yaw:Math.PI},
-    {name:"🌉 협곡 대교",x:557,z:-156,yaw:Math.PI*.75},
+    {name:"🌉 협곡 대교",x:500,z:-455,yaw:Math.PI*.75},
     {name:"🌉 상부 고가(L2)",x:-152,z:-96,yaw:Math.PI/2},
     {name:"🛣️ 지하 터널",x:0,z:-64,yaw:0}];
   mb.paintLanes();
