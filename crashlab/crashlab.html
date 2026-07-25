@@ -263,6 +263,8 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   background:var(--panel);border:1px solid var(--line);border-bottom:none;color:var(--tx2);
   font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center}
 #crashPanel .row,#labPanel .row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.labTests{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
+.labTests button{flex:1 1 30%;min-width:82px;font-size:11px;padding:7px 4px}
 #crashScenSeg{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
 #crashScenSeg button{flex:1;min-width:58px;font-size:11px;padding:6px 4px}
 #labStats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
@@ -487,9 +489,11 @@ input[type=checkbox]{accent-color:var(--acc)}
     <div class="row"><span style="font-size:13px;font-weight:700;color:var(--tx2)">가하는 힘</span>
       <input type="range" id="labForce" min="8" max="60" step="1" value="30">
       <span id="labForceVal">30</span></div>
+    <div id="labTests" class="labTests"></div>
     <div class="row" style="margin-bottom:0">
       <button class="btn sm" id="labPrev">◀ 이전 차</button>
       <button class="btn sm" id="labNext">다음 차 ▶</button>
+      <button class="btn sm ghost" id="labReset">🔧 복원</button>
     </div>
     <div id="labHint">차체를 탭 = 그 지점에 힘 · 드래그 = 회전 · 🔧 = 복원</div>
   </div>
@@ -5106,6 +5110,10 @@ const CUSTOM_DEFAULT={
   drive:"4WD",      // FF | FR | 4WD
   style:"coupe",    // 차체 형상
   len:.5,wid:.5,hei:.5,   // 전장·전폭·전고
+  glass:.45,        // 유리 틴팅 (0 투명 → 1 완전 블랙아웃)
+  wheelR:.5,        // 휠 지름
+  wheelW:.5,        // 타이어 폭
+  rim:.55,          // 림 인치(대구경일수록 사이드월이 얇아진다)
   color:0xff7a1a,
 };
 function customToSpec(C){
@@ -5133,7 +5141,11 @@ function customToSpec(C){
     rollFix:1.28,squashY:1,
     body:{hx:+hx.toFixed(3),hy:+hy.toFixed(3),hz:+hz.toFixed(3)},
     wheels:{track:+(hx*.88).toFixed(3),front:+(hz*.62).toFixed(3),rear:+(hz*.64).toFixed(3),
-            y:-hy*.55,radius:+L(.30,.46,C.hei).toFixed(3),width:+L(.20,.34,C.wid).toFixed(3)},
+            y:-hy*.55,
+            radius:+(L(.30,.46,C.hei)*L(.82,1.34,C.wheelR??.5)).toFixed(3),
+            width:+(L(.20,.34,C.wid)*L(.74,1.55,C.wheelW??.5)).toFixed(3)},
+    rimScale:+L(.86,1.28,C.rim??.55).toFixed(3),
+    glassTint:+(C.glass??.45).toFixed(3),
     susp:{k,c,travel,rest},arb:Math.round(k*L(.18,.46,C.stiff)),
     engine:{maxT,redline,idle:820},
     gears:[3.4,2.1,1.5,1.12,.9],final:3.9,
@@ -5337,6 +5349,20 @@ const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:
   envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.3}); // 유광 클리어코트+환경반사 — 매끈하게 이어진 표면(포르쉐·GLS), 크롬부는 밝아서 더 강하게 비침
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
   transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
+/* 유리 틴팅 — 커스텀 차의 glassTint(0 투명 ~ 1 블랙아웃)를 실제 머티리얼에 반영.
+   기본 차량(틴트 미지정)은 공용 MAT_GLASS를 그대로 써서 머티리얼 수를 늘리지 않는다. */
+const _tintMats={};
+function glassMatFor(spec){
+  const t=spec&&spec.glassTint;
+  if(t===undefined||t===null)return MAT_GLASS;
+  const k=(t*20|0);
+  if(!_tintMats[k]){
+    const m=MAT_GLASS.clone();
+    m.opacity=lerp(.34,.94,t);
+    m.shininess=lerp(220,110,t);
+    m.specular=new THREE.Color().setHSL(.58,.18,lerp(.72,.3,t));
+    _tintMats[k]=m;}
+  return _tintMats[k];}
 const MAT_LAMP=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.9,
   side:THREE.DoubleSide,toneMapped:false}); // 자체발광(조명 무시) 투명 렌즈 — 실제 빛나는 램프
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222,side:THREE.DoubleSide}); // 양면 → 타이어 측벽이 비쳐 보이지 않음
@@ -5442,7 +5468,7 @@ class CarVisual{
         const x=pa[i];yS+=pa[i+1];yc++;
         if(x<-.12){lxS+=x;lc++;}else if(x>.12){rxS+=x;rc++;}}
       if(lc&&rc)this.hlAnchor=[[lxS/lc,yS/yc,zMax-.02],[rxS/rc,yS/yc,zMax-.02]];}
-    if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,MAT_GLASS);
+    if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,glassMatFor(spec));
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
     this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh,this.lampsMesh]);
     const bumpMat=new THREE.MeshPhongMaterial({color:0x191d24,flatShading:true,shininess:18});
@@ -5473,7 +5499,31 @@ class CarVisual{
         {geo:new THREE.BoxGeometry(.11,.08,hz*1.1),color:0x1a1d22,x:hx*1.04,y:botY+.1},
         // 리어 견인 후크
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:-hx*.4,y:by+hy*.18,z:zR-.1},
-        {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1}];
+        {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1},
+        // 윈치(불바 중앙) — 드럼 + 페어리드 + 와이어
+        {geo:new THREE.CylinderGeometry(.09,.09,.34,12),color:0x3d444d,rz:Math.PI/2,y:by+hy*.44,z:zF+.02},
+        {geo:new THREE.BoxGeometry(.3,.11,.045),color:0x9aa2ab,y:by+hy*.44,z:zF+.17},
+        {geo:new THREE.CylinderGeometry(.012,.012,.2,6),color:0xc7ced6,rx:Math.PI/2,y:by+hy*.44,z:zF+.26},
+        // 스키드 플레이트(언더가드) — 프런트/미드
+        {geo:new THREE.BoxGeometry(hx*1.5,.05,hz*.5),color:0x6b727c,y:botY+.03,z:zF*.5},
+        {geo:new THREE.BoxGeometry(hx*1.4,.05,hz*.42),color:0x565c66,y:botY+.03,z:zR*.42},
+        // 리어 스페어 타이어(캐리어 + 타이어 + 림)
+        {geo:new THREE.BoxGeometry(.08,.5,.1),color:0x272c33,y:by+hy*.75,z:zR-.14},
+        {geo:new THREE.TorusGeometry(.3,.115,8,20),color:0x0c0d0f,y:by+hy*.9,z:zR-.3},
+        {geo:new THREE.CylinderGeometry(.19,.19,.14,14),color:0x2c3138,rx:Math.PI/2,y:by+hy*.9,z:zR-.3},
+        // 배기 스택(리어 우측) + 머드 플랩 4개
+        {geo:new THREE.CylinderGeometry(.045,.05,.5,10),color:0x8f979f,x:hx*.72,y:by+hy*.5,z:zR+.2},
+        {geo:new THREE.BoxGeometry(.24,.22,.02),color:0x14181d,x:-hx*.92,y:botY+.14,z:zF*.62},
+        {geo:new THREE.BoxGeometry(.24,.22,.02),color:0x14181d,x:hx*.92,y:botY+.14,z:zF*.62},
+        {geo:new THREE.BoxGeometry(.24,.22,.02),color:0x14181d,x:-hx*.92,y:botY+.14,z:zR*.72},
+        {geo:new THREE.BoxGeometry(.24,.22,.02),color:0x14181d,x:hx*.92,y:botY+.14,z:zR*.72},
+        // 루프 라이트바 마운트 브래킷
+        {geo:new THREE.BoxGeometry(.05,.1,.05),color:0x14161a,x:-hx*.62,y:topY+.01,z:zF*.32},
+        {geo:new THREE.BoxGeometry(.05,.1,.05),color:0x14161a,x:hx*.62,y:topY+.01,z:zF*.32}];
+      // 프런트 스팟 램프 4구(불바 상단) — 하우징
+      for(let sp=0;sp<4;sp++)
+        acc.push({geo:new THREE.CylinderGeometry(.075,.075,.07,12),color:0x22262c,
+          rx:Math.PI/2,x:(sp-1.5)*hx*.42,y:by+hy*.78,z:zF+.02});
       // 하드탑: 컴팩트 지프풍 캐빈 하드탑(짧고 낮게·멋지게) — 캐빈만 덮어 짐칸은 개방
       if(spec.id==="offroadc"){
         const zMid=zR+(zF-zR)*.34,cz=(zR+.12+zMid)/2,cl=zMid-zR-.16;  // 더 짧게(캐빈만)
@@ -5489,11 +5539,17 @@ class CarVisual{
         acc.push({geo:new THREE.CylinderGeometry(.05,.05,ch*1.5,8),color:0x14181d,x:hx*.92,y:cy+ch*.2,z:zMid-.05});}
       this.accMesh=new THREE.Mesh(mergeGeoms(acc),MAT_DETAIL);
       this.accMesh.castShadow=true;this.group.add(this.accMesh);
-      // LED 라이트바 발광 렌즈(자체발광)
-      this.ledMesh=new THREE.Mesh(new THREE.BoxGeometry(hx*1.42,.055,.05),
-        new THREE.MeshBasicMaterial({color:0xfff3c6,toneMapped:false}));
+      // LED 라이트바 + 프런트 스팟 램프 렌즈(자체발광)
+      const lensMat=new THREE.MeshBasicMaterial({color:0xfff3c6,toneMapped:false});
+      this.ledMesh=new THREE.Mesh(new THREE.BoxGeometry(hx*1.42,.055,.05),lensMat);
       this.ledMesh.position.set(0,topY+.06,zF*.32+.06);
-      this.group.add(this.ledMesh);}
+      this.group.add(this.ledMesh);
+      {const pods=[];
+       for(let sp=0;sp<4;sp++)
+         pods.push({geo:new THREE.CylinderGeometry(.058,.058,.03,12),color:0xfff3c6,
+           rx:Math.PI/2,x:(sp-1.5)*hx*.42,y:by+hy*.78,z:zF+.06});
+       this.podMesh=new THREE.Mesh(mergeGeoms(pods),lensMat);
+       this.group.add(this.podMesh);}}
     const wg=wheelGeo(spec.wheels.radius,spec.wheels.width,spec.rimScale);
     const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
@@ -5761,7 +5817,7 @@ class CarVisual{
     this.defVol=0;
     if(this.wheelOff)for(let i=0;i<4;i++){    // 탈락 바퀴 복원
       if(this.wheelOff[i]){this.wheelOff[i]=false;this.wheelMeshes[i].visible=true;}}
-    if(this._glassCracked){this._glassCracked=false;this.glassMesh.material=MAT_GLASS;}   // 유리 교체
+    if(this._glassCracked){this._glassCracked=false;this.glassMesh.material=glassMatFor(this.spec);}   // 유리 교체
     for(const k in this.parts){
       const p=this.parts[k];restoreGeo(p);this.partHp[k]=this.hp0[k];
       if(this.detached[k]){Fx.reclaimDebris(p);this.group.add(p);
@@ -6049,6 +6105,8 @@ SURF_IDS.forEach((k,i)=>{const c=new THREE.Color();c.setHex(SURF[k].col);
   // SURF.col은 linear로 취급돼 왔으므로 캔버스(sRGB)용으로 감마 보정
   SURF_CSS[i]="rgb("+[c.r,c.g,c.b].map(v=>Math.round(Math.pow(v,1/2.2)*255)).join(",")+")";});
 class MapBuilder{
+  /* 예약 코리도어 예외 태그 — 고가 데크·교각·터널 구조는 대로를 가로질러도 유지 */
+  static RESV_KEEP=/^(pillar|deck|parapet|bdeck|brail|bpil|bridge|portal|tunnelwall|slab|kerb)$/;
   constructor(size,res){
     this.world=new World(size,res);
     this.group=new THREE.Group();
@@ -6162,9 +6220,32 @@ class MapBuilder{
       this.stamp(x,z,w.cell*.55,(i,j)=>{
         if(w.sMap[w.idx(i,j)]===SURF_ID.asphalt)w.sMap[w.idx(i,j)]=SURF_ID.lane;});
     this.laneDots.length=0;}
+  /* ===== 🚦 예약 코리도어 — '쭉 직진' 보장 =====
+     간선/대로의 중심선을 예약해 두면, 이후 어떤 지구 콘텐츠도 그 안의 '주행 높이'에는
+     물체(물리+비주얼)를 놓을 수 없다. 사후 제거가 아니라 애초에 생성되지 않으므로
+     투명한 건물이 남는 일도 없다. 고가·데크·교각처럼 머리 위/구조물은 예외로 통과. */
+  reserve(pts,halfW){(this._resv=this._resv||[]).push({pts,halfW});return this;}
+  resvNear(x,z,ext){
+    if(!this._resvOn||!this._resv)return false;
+    for(const r of this._resv){
+      const pts=r.pts,hw=r.halfW+(ext||0);
+      for(let k=0;k<pts.length-1;k++){
+        const a=pts[k],b=pts[k+1],dx=b.x-a.x,dz=b.z-a.z,L2=dx*dx+dz*dz;
+        let t=L2?((x-a.x)*dx+(z-a.z)*dz)/L2:0;t=t<0?0:t>1?1:t;
+        if(Math.hypot(x-(a.x+dx*t),z-(a.z+dz*t))<=hw)return true;}}
+    return false;}
+  resvBlock(x,z,y,h,ext,tag){    // 주행 높이(지면+0.45 ~ +3.4)에 걸치면 배치 금지
+    if(MapBuilder.RESV_KEEP.test(tag||""))return false;
+    if(!this.resvNear(x,z,ext))return false;
+    const gy=this.world.height(x,z);
+    return (y+h*.5)>gy+.45&&(y-h*.5)<gy+3.4;}
   baked(name,x,z,scale,yaw,opt){ // 베이크 배경 모델 배치 (+선택 OBB)
     opt=opt||{};
     if(typeof BAKED==="undefined"||!BAKED[name])return;
+    if(this._resvOn){
+      const bb=BAKED[name].bb,hh=(bb[4]-bb[1])/2*scale*(opt.hScale||1);
+      const by=(opt.y!==undefined?opt.y:this.world.height(x,z))+hh;
+      if(this.resvBlock(x,z,by,hh*2,Math.max(bb[3]-bb[0],bb[5]-bb[2])*scale*.5,name))return;}
     const e=BAKED[name],A=Assets.arrays(e);
     const y=opt.y!==undefined?opt.y:this.world.height(x,z);
     const ca=Math.cos(yaw||0),sa=Math.sin(yaw||0);
@@ -6182,12 +6263,14 @@ class MapBuilder{
   }
   box(x,y,z,w,h,d,color,opt){ // opt:{yaw,pitch,roll,mu,bounce,tag,noVis}
     opt=opt||{};
+    if(this._resvOn&&this.resvBlock(x,z,y,h,Math.max(w,d)*.5,opt.tag))return null;
     const obb=new OBB(x,y,z,w/2,h/2,d/2,opt.yaw||0,opt.pitch||0,opt.roll||0,opt);
     this.world.boxes.push(obb);
     if(!opt.noVis)this.visBox(x,y,z,w,h,d,color,opt);
     return obb;}
   visBox(x,y,z,w,h,d,color,opt){
     opt=opt||{};
+    if(this._resvOn&&this.resvBlock(x,z,y,h,Math.max(w,d)*.5,opt.tag))return;
     const g=new THREE.BoxGeometry(w,h,d).toNonIndexed();
     g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(opt.pitch||0,opt.yaw||0,opt.roll||0,"YXZ")));
     g.translate(x,y,z);
@@ -6256,6 +6339,7 @@ class MapBuilder{
     const cy=this.world.height(x,z)+rise*.5- h*.35;
     return this.box(x,cy,z,wid,h,len,color||0x8f98a3,{yaw,pitch,mu:1,tag:"ramp"});}
   prop(type,x,z,yaw){
+    if(this._resvOn&&this.resvNear(x,z,2.5))return null;
     const w=this.world,y=w.height(x,z);
     const p=makeProp(type,x,y,z,yaw||0);
     w.props.push(p);this.group.add(p.mesh);return p;}
@@ -6420,6 +6504,7 @@ function bridgeDeck(mb,pts,width,opt){
    ============================================================ */
 function procBuilding(mb,x,z,W,D,H,seed,opt){
   opt=opt||{};
+  if(mb._resvOn&&mb.resvNear(x,z,Math.max(W,D)*.5))return 0;   // 예약 코리도어(대로) 위에는 짓지 않는다
   let s=(seed|0)||1;const rr=()=>{s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff;};
   const FLOOR=3.6;                                   // 층고
   const floors=Math.max(2,Math.round(H/FLOOR));
@@ -6678,6 +6763,46 @@ const MAPS=[
   mb.texText(334,sz0-6,2.8,"UPHILL","rgba(240,244,250,.7)");
   mb.texText(SX+56,sz0-16,5,"SUSPENSION LAB","rgba(240,244,250,.6)");
 
+  /* 9: 꿀렁임(롱웨이브) 레인 — 파장이 긴 노면 굴곡으로 서스펜션이 계속 상하로 일한다.
+        짧은 방지턱과 달리 차체가 통째로 출렁이며 댐퍼·리바운드 특성이 드러난다. */
+  {const LX=362;
+   mb.stamp(LX,sz0+82,26,(i,j,d)=>w.setS(i,j,S_ASP));
+   mb.texRect(LX,sz0+82,24,186,0,SURF_CSS[S_ASP]);
+   for(let k=0;k<10;k++)
+     w.addRippleZone(LX,sz0+6+k*18,15,.05+.022*(k%3),3.0+1.5*(k%3),1+(k%2));
+   for(let k=0;k<6;k++)mb.bump(LX,sz0+20+k*30,0,13,.20+.05*(k%3),"flat");
+   mb.texText(LX,sz0-8,2.8,"UNDULATION","rgba(240,244,250,.7)");}
+
+  /* === 🏁 핸들링 서킷(인필드 로드코스) — 헤어핀·에스·고속 코너 복합 폐곡선 === */
+  {const CX=110,CZ=150;
+   const raw=[[CX-96,CZ-84],[CX-20,CZ-98],[CX+62,CZ-74],[CX+98,CZ-18],
+              [CX+58,CZ+22],[CX+90,CZ+64],[CX+40,CZ+94],[CX-32,CZ+86],
+              [CX-54,CZ+40],[CX-98,CZ+14]];
+   const trk=samplePath(raw,true,26);
+   for(const p of trk)p.y=0;
+   flattenCorridor(mb,trk,10,15,()=>0);
+   mb.paintPath(trk,17,S_ASP,true,true);
+   for(let k=0;k<trk.length;k+=3){          // 커브(연석) — 낮게 깔아 주행을 막지 않음
+     const a=trk[k],b=trk[(k+1)%trk.length];
+     const dx=b.x-a.x,dz=b.z-a.z,L=Math.hypot(dx,dz)||1,nx=-dz/L,nz=dx/L;
+     for(const sgn of[-1,1])
+       mb.box(a.x+nx*sgn*9.4,.04,a.z+nz*sgn*9.4,1.5,.08,3.4,((k/3)|0)%2?0xd8433b:0xe9eef4,
+         {yaw:Math.atan2(dx,dz),mu:1,tag:"curb"});}
+   // 서킷 노면 위에 남은 기존 오브젝트(바위·뱅크 등) 정리 — 코스가 막히지 않게
+   {const kept=[];let n=0;
+    for(const o of w.boxes){
+      if(o.tag==="curb"){kept.push(o);continue;}
+      let near=false;
+      for(let k=0;k<trk.length;k+=2){
+        if(Math.hypot(o.c.x-trk[k].x,o.c.z-trk[k].z)<12+Math.max(o.half.x,o.half.z)){near=true;break;}}
+      const gy=w.height(o.c.x,o.c.z);
+      if(near&&o.c.y+o.half.y>gy+.3&&o.c.y-o.half.y<gy+3.2){n++;continue;}
+      kept.push(o);}
+    if(n){w.boxes.length=0;for(const o of kept)w.boxes.push(o);}}
+   mb.texRect(CX-96,CZ-84,1.2,15,0,"rgba(244,248,252,.9)");   // 스타트/피니시 라인
+   mb.texText(CX,CZ,9,"HANDLING CIRCUIT","rgba(240,244,250,.4)");}
+
+
   // slalom cones (지그재그)
   for(let k=0;k<10;k++)mb.prop("cone",-70+((k%2)*10-5),-60-k*20);
   // skidpad R30
@@ -6734,7 +6859,9 @@ const MAPS=[
     {name:"🛞 스키드패드",x:-250,z:-150,yaw:0},
     {name:"🎢 램프·점프대",x:-8,z:20,yaw:0},
     {name:"🗼 낙하 타워",x:-300,z:230,yaw:0},
-    {name:"🚧 IIHS 충돌시험",x:30,z:270,yaw:0}];
+    {name:"🚧 IIHS 충돌시험",x:30,z:270,yaw:0},
+    {name:"🌊 꿀렁임 레인",x:362,z:-266,yaw:0},
+    {name:"🏁 핸들링 서킷",x:14,z:66,yaw:Math.PI*.35}];
   return mb.finalize(this);}},
 
 /* ---------- 2. 네오시티 ---------- */
@@ -7245,6 +7372,22 @@ MAPS.push(
     feeders.push([[Math.cos(a)*(R_CBD-30),Math.sin(a)*(R_CBD-30)],
                   [Math.cos(a)*(R_INNER+8),Math.sin(a)*(R_INNER+8)]]);}
 
+  /* L0b 그랜드 불러바드 — 도시를 동서/남북으로 완전히 관통하는 8차선 초장거리 직선.
+     한 번도 꺾이지 않고 벨트웨이에서 벨트웨이까지 '쭉 직진'할 수 있도록 만든 축이다.
+     · 동서축 z=+300 (중앙광장 로터리 r112·입체교차·지하 홀 북단 286 모두 회피)
+     · 남북축 x=+200 (로터리·입체교차·터널 회피, 지하 홀 구간은 데크 위로 통과)
+     도심권(r<620)은 격자와 높이를 맞추려 강제 평탄, 외곽은 지형을 따라 오르내린다. */
+  const BLV_Z=300, BLV_X=200, BLR=R_BELT+40;
+  const blvdFlat=(pts)=>{for(const p of pts){
+      const f=clamp((Math.hypot(p.x,p.z)-620)/320,0,1);p.y*=f*f*(3-2*f);}
+    return pts;};
+  const blvdH=bridgeValleys(blvdFlat(followTerrain(w,samplePath([[-BLR,BLV_Z],[BLR,BLV_Z]],false,70))),.075);
+  const blvdV=bridgeValleys(blvdFlat(followTerrain(w,samplePath([[BLV_X,-BLR],[BLV_X,BLR]],false,70))),.075);
+  const paintBlvd=()=>{
+    for(const bp of[blvdH,blvdV]){
+      flattenCorridor(mb,bp,18,26);
+      mb.paintPath(bp,32,S_ASP,true,true);}};
+
   /* ===== ④ 도색: 간선 먼저 ===== */
   // 벨트웨이(6차선급)
   flattenCorridor(mb,belt,14,20);
@@ -7257,6 +7400,11 @@ MAPS.push(
   // 도심 진입 간선
   for(const[a,b]of feeders)
     mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],15,S_ASP,true,true);
+  // 그랜드 불러바드(관통 직선) — 도색 후 코리도어를 '예약'해서
+  // 이후 어떤 지구 콘텐츠(건물·난간·가로수·조형물)도 이 위에 생성되지 않게 한다.
+  paintBlvd();
+  mb.reserve(blvdH,19).reserve(blvdV,19);
+  mb._resvOn=true;
   /* L3 CBD 격자 (pitch 100, |k|<=3 → 7×7 블록)
      ※ 중앙 광장(분수)은 로터리로 둘러싼다 — 예전엔 x=0/z=0 도로가 분수와 동상을 관통해
        시작 지점에서 주행이 막혔다. 광장 반경 안쪽(r<PL_R)에는 격자 도로를 깔지 않고,
@@ -7590,11 +7738,11 @@ MAPS.push(
    mb.texText(bx,bz+190,11,"SUBURBS","rgba(240,244,250,.4)");
    w.addRippleZone(bx,bz,70,.015,1.2,3);}
 
-  /* --- 부가: 공사장 점프대(내부 순환 안쪽 공터) --- */
-  mb.ramp(300,300,Math.PI*.75,26,22,14,0xd8433b);
-  mb.ramp(360,360,Math.PI*1.75,22,20,14,0xc7742f);
-  for(let k=0;k<6;k++)mb.box(268+k*7,.6,268,6,1.2,2,0xcaa23a,{yaw:k,mu:.8,tag:"beam"});
-  mb.texText(330,330,7,"CONSTRUCTION","rgba(240,244,250,.4)");
+  /* --- 부가: 공사장 점프대 — 그랜드 불러바드(z=300)·애비뉴(x=200)를 피해 북동쪽 공터로 --- */
+  mb.ramp(322,392,Math.PI*.75,26,22,14,0xd8433b);
+  mb.ramp(382,452,Math.PI*1.75,22,20,14,0xc7742f);
+  for(let k=0;k<6;k++)mb.box(290+k*7,.6,360,6,1.2,2,0xcaa23a,{yaw:k,mu:.8,tag:"beam"});
+  mb.texText(352,422,7,"CONSTRUCTION","rgba(240,244,250,.4)");
 
   /* --- 벨트웨이 구간별 꿀렁임(실제 노후 고속도로 느낌) --- */
   for(let k=0;k<8;k++){const a=k/8*6.283;
@@ -7613,6 +7761,14 @@ MAPS.push(
     mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],15,S_ASP,true,true);
   // 격자 재확정 — 단, 지하터널 구간(x=0, z∈TUN)은 제외해야 터널이 메워지지 않는다.
   paintGrid(true);
+  // 그랜드 불러바드 재확정 — 어떤 지구 콘텐츠도 관통 직선을 끊지 못하게(마지막에 한 번 더)
+  paintBlvd();
+  // 불러바드 중앙분리 도색 + 표지
+  for(const bp of[blvdH,blvdV])for(let k=6;k<bp.length-6;k+=3){const p=bp[k];
+    mb.texRect(p.x,p.z,bp===blvdH?12:.5,bp===blvdH?.5:12,0,"rgba(240,214,120,.5)");}
+  mb.texText(-560,BLV_Z-20,11,"◀  GRAND  BLVD  ▶","rgba(238,244,252,.42)");
+  mb.texText(BLV_X+22,-560,11,"GRAND  AVE","rgba(238,244,252,.42)",Math.PI/2);
+  mb._resvOn=false;   // 이후 지하 구조물(데크·기둥)은 예약 코리도어와 무관하게 건설
   /* 🛣️ 지하 터널 — 모든 정지작업이 끝난 뒤에 파낸다(이전 버전은 재확정이 터널을 메우고
      옹벽·천장만 남겨 시작 지점 주행이 완전히 막혔다). 램프 경사는 완만하게. */
   {const TZ=-254;                                          // 터널 중심(=L1 데크 아래)
@@ -7626,67 +7782,104 @@ MAPS.push(
    for(const z of[TZ-16,TZ+16])mb.prop("lamp",9,z,Math.PI/2);
    mb.texText(0,TZ+44,6,"UNDERGROUND","rgba(240,244,250,.5)");}
 
-  /* 🕳️ 지하 구역 — 도심 동측 진입로로 내려가 지하 주차장/정비고 같은 음침한 대공간을 지나
-     서측으로 다시 올라오는 지하 순환. 전 구간 지붕(슬래브)+기둥+조명으로 폐쇄감을 준다. */
-  /*  실제 '지하 1층' 구조로 건설한다 — 완만한 크레이터(움푹 파임)가 아니라
-      · 바닥 슬래브는 평면(정확히 UY), 외벽은 수직 절벽 + 콘크리트 옹벽
-      · 지상과는 두 개의 진입 램프 코리도어로만 연결(그 외 전 구간은 수직 벽)
-      · 층고 4.4m 천장 슬래브 + 기둥 격자 + 조명 + 차선/주차구획      */
-  {const UY=-9.5, HX=250, HZ=86, UZ=200;             // 깊이 / 홀 반폭·반깊이 / 홀 중심 z
-   const RW=11;                                       // 램프 폭(반폭)
-   const RX0=HX, RX1=HX+120;                          // 램프 수평 구간(지하단→지상단)
+  /* 🅿️ 지하 주차장 B1 — "지하를 아래에 만든다"
+     지상(y=0)은 데크로 완전히 덮여 평범한 광장/도로처럼 그대로 직진 주행이 가능하고,
+     그 '아래' 층고 8.9m 공간에 기둥 격자·조명·주차구획을 갖춘 대형 지하 주차장이 있다.
+     진입은 동/서 두 개의 램프뿐이며, 램프 입구(트렌치)만 하늘로 열려 있다. */
+  {const UY=-9.5, HX=250, HZ=86, UZ=200;         // 바닥 깊이 / 홀 반폭·반깊이 / 홀 중심 z
+   const DKY=-.6;                                // 데크 하면(=천장) 높이 — 데크 상면은 정확히 y=0
+   const RW=11, RX0=HX, RX1=390, CX=320;         // 램프 반폭 / 램프 x구간 / 데크 덮개 끝
    const inHall=(x,z)=>Math.abs(x)<=HX&&Math.abs(z-UZ)<=HZ;
-   const rampY=(ax)=>{const f=clamp((ax-RX0)/(RX1-RX0),0,1);return lerp(UY,0,f*f*(3-2*f));};
+   const rampY=(ax)=>{const t=clamp((ax-RX0)/(RX1-RX0),0,1);return lerp(UY,0,t*t*(3-2*t));};
    const inRamp=(x,z)=>Math.abs(z-UZ)<=RW&&Math.abs(x)>HX&&Math.abs(x)<=RX1;
-   // ── 굴착: 홀은 완전 평면, 램프는 부드러운 S커브, 그 외는 손대지 않음(수직 절벽 유지)
+   /* ① 데크 주변 지표를 정확히 y=0으로 정지 — 데크 상면과 지면 사이 단차(턱)를 없앤다 */
+   mb.stamp(0,UZ,HX+HZ+140,(i,j,d,px,pz)=>{
+     const dx=Math.max(0,Math.abs(px)-(HX+8)),dz=Math.max(0,Math.abs(pz-UZ)-(HZ+8));
+     const f=clamp(Math.hypot(dx,dz)/38,0,1),id=w.idx(i,j);
+     w.hMap[id]=lerp(0,w.hMap[id],f*f);});
+   /* ② 굴착 — 홀은 완전 평면(UY), 램프는 부드러운 S커브, 그 외는 손대지 않는다 */
    mb.stamp(0,UZ,RX1+HZ+40,(i,j,d,px,pz)=>{
      if(inHall(px,pz)){w.setH(i,j,UY);w.setS(i,j,S_ASP);}
      else if(inRamp(px,pz)){w.setH(i,j,rampY(Math.abs(px)));w.setS(i,j,S_ASP);}});
-   // ── 외벽(수직 콘크리트 옹벽): 램프 개구부만 비우고 홀 둘레를 감싼다
-   // 벽은 바닥(UY)에서 지표(0)까지 완전히 세워 굴착면을 밀폐한다
-   //  → 밖이 보이는 틈이 없고, 지상에서 굴착부로 떨어질 수도 없다
-   const WH=-UY+.6, WY=UY+WH/2;                      // 벽 높이 / 중심 y
+   /* ③ 외벽(콘크리트 옹벽) — 바닥에서 천장까지만. 지상으로 절대 튀어나오지 않는다 */
+   const WH=DKY-UY, WY=(UY+DKY)/2;
    for(const s of[-1,1]){
-     // 남/북 장변
      mb.box(0,WY,UZ+s*(HZ+1),2*HX+4,WH,2,0x272b31,{mu:.8,tag:"wall"});
-     // 동/서 단변 — 램프 개구부(|z-UZ|<=RW) 위·아래로 분할
-     const seg=(HZ-RW)/2;
+     const seg=(HZ-RW)/2;                        // 램프 개구부 위·아래로 분할
      for(const t of[-1,1])
        mb.box(s*(HX+1),WY,UZ+t*(RW+seg),2,WH,seg*2,0x272b31,{mu:.8,tag:"wall"});}
-   // ── 램프 측벽(수직) — 램프 밖으로 이탈 방지
+   /* ④ 램프 측벽 — 덮개 아래는 천장까지, 입구 트렌치 구간은 지상 옹벽(추락 방지) */
    for(const s of[-1,1])for(const t of[-1,1])
-     for(let ax=RX0;ax<RX1;ax+=12){
-       const y0=rampY(ax),y1=rampY(ax+12),ym=(y0+y1)/2;
-       mb.box(s*(ax+6),ym+1.6,UZ+t*(RW+1),12,3.4,2,0x2b3037,{mu:.8,tag:"wall"});}
-   // ── 천장 슬래브(층고 4.4m) — 홀 위를 덮어 진짜 '지하층'이 되게
-   for(let x=-HX+20;x<HX;x+=40)for(let z=UZ-HZ+20;z<UZ+HZ;z+=40)
-     mb.box(x,UY+4.7,z,40,.7,40,0x23272d,{mu:.7,tag:"slab"});
-   // 램프 상부 슬래브(입구 캐노피) — 터널처럼 진입
-   for(const s of[-1,1])for(let ax=RX0;ax<RX0+56;ax+=14)
-     mb.box(s*(ax+7),rampY(ax)+4.9,UZ,14,.7,2*RW+4,0x23272d,{mu:.7,tag:"slab"});
-   // ── 기둥 격자 + 스트립 조명
+     for(let ax=RX0;ax<RX1;ax+=10){
+       const lo=Math.min(rampY(ax),rampY(ax+10))-.3, hi=ax<CX-6?DKY:.95;
+       if(hi<=lo)continue;
+       mb.box(s*(ax+5),(lo+hi)/2,UZ+t*(RW+1),10,hi-lo,2,0x2b3037,{mu:.8,tag:"wall"});}
+   /* ⑤ 지상 데크(= 지하의 천장). 굴착부 전체 + 램프 덮개까지 이어 붙여
+        위에서는 구덩이가 전혀 보이지 않고 도시 도로가 그대로 관통한다. */
+   /* 데크는 굴착 경계보다 12m 더 넓게 깐다 — 하이트맵은 셀 단위로 보간되므로
+      경계에 폭 1셀(≈6m)의 급경사 노치가 생긴다. 데크를 내밀어 그 위를 덮으면
+      지면(y=0)과 데크 상면(y=0)이 완전히 같은 평면이 되어 턱 없이 관통 주행된다. */
+   {const EX=HX+12,EZ=HZ+12;
+    const NX=17,NZ=7,TX=2*EX/NX,TZ=2*EZ/NZ;
+    for(let i=0;i<NX;i++)for(let j=0;j<NZ;j++)
+      mb.box(-EX+TX*(i+.5),DKY/2,UZ-EZ+TZ*(j+.5),TX+.4,-DKY,TZ+.4,0x5a616c,{mu:1,tag:"deck"});
+    const CL=CX-HX,NC=4,TC=CL/NC;                // 램프 덮개(진입로 위를 덮는 슬래브)
+    for(const s of[-1,1])for(let i=0;i<NC;i++)
+      mb.box(s*(HX+TC*(i+.5)),DKY/2,UZ,TC+.4,-DKY,2*RW+8,0x5a616c,{mu:1,tag:"deck"});
+    // 덮개 끝(램프 입구 위) 파라펫 — 트렌치로 떨어지지 않게
+    for(const s of[-1,1])mb.box(s*(CX+.4),.45,UZ,.8,1.5,2*RW+8,0xb9c2cc,{mu:.5,tag:"parapet"});}
+   /* ⑥ 데크 상면 차선 도색(시각 전용) — 지상 도로처럼 보이게 */
+   for(const gx of[-200,-100,0,100,200])
+     for(let z=UZ-HZ+7;z<UZ+HZ-2;z+=14)mb.visBox(gx,.03,z,.34,.06,7,0xe9eef6);
+   for(let x=-HX+7;x<HX-2;x+=14)mb.visBox(x,.03,UZ,7,.06,.34,0xe9eef6);
+   for(const s of[-1,1])mb.visBox(0,.03,UZ+s*(HZ-6),2*HX-14,.06,.34,0xd8e0ea);
+   /* ⑦ 지하 내부 — 기둥 격자 / 스트립 조명 / 주차 구획 / 주차 차량 */
    for(let x=-HX+34;x<HX;x+=58)for(let z=UZ-58;z<=UZ+58;z+=58){
-     mb.box(x,UY+2.3,z,2.6,4.6,2.6,0x3c434b,{mu:.7,tag:"pillar"});
-     mb.box(x,UY+.12,z,4.2,.24,4.2,0x31373e,{mu:.8,tag:"plinthbase"});}
-   for(let x=-HX+20;x<HX;x+=44)for(const z of[UZ-44,UZ,UZ+44])
-     mb.box(x,UY+4.28,z,5.2,.12,.44,0xfff3c0,{mu:.5,tag:"striplight"});
-   // ── 노면 도색: 어두운 콘크리트 + 차선 + 주차 구획 + 방향 화살표
-   mb.texRect(0,UZ,2*HX,2*HZ,0,"rgba(24,27,32,.72)");
+     if(Math.abs(z-UZ)<=RW+4&&Math.abs(x)>HX-34)continue;   // 램프 진입 축은 비운다
+     mb.box(x,(UY+DKY)/2,z,2.6,DKY-UY,2.6,0x3c434b,{mu:.7,tag:"pillar"});
+     mb.box(x,UY+.1,z,4.2,.2,4.2,0x31373e,{mu:.8,tag:"pillarbase"});
+     mb.visBox(x,UY+1.1,z,2.8,.5,2.8,0xe4c257);}            // 기둥 경고 도색
+   for(let x=-HX+20;x<HX;x+=40)for(const z of[UZ-56,UZ-18,UZ+18,UZ+56])
+     mb.box(x,DKY-.18,z,5.4,.14,.46,0xfff3c0,{mu:.5,tag:"striplight"});
+   mb.texRect(0,UZ,2*HX,2*HZ,0,"rgba(24,27,32,.74)");
    for(const s of[-1,1])mb.texRect(0,UZ+s*44,2*HX-20,.5,0,"rgba(226,232,240,.42)");
    for(let k=0;k<26;k++){const px=-HX+22+k*19;
      for(const s of[-1,1]){
        mb.texRect(px,UZ+s*66,.34,11,0,"rgba(214,222,232,.40)");
        if(k%3===1)mb.box(px+4.6,UY+.75,UZ+s*66,4.2,1.3,1.9,
          [0x4c5560,0x5f5443,0x39424e,0x6a4a44][k%4],{mu:.5,tag:"parkedcar"});}}
-   mb.texText(0,UZ,18,"UNDERGROUND  B1","rgba(206,214,226,.26)");
-   for(const s of[-1,1])mb.texText(s*(HX-46),UZ,8,s>0?"EXIT ▶":"◀ EXIT","rgba(224,186,96,.5)");}
+   mb.texText(0,UZ,18,"PARKING  B1","rgba(206,214,226,.24)");
+   for(const s of[-1,1])mb.texText(s*(HX-52),UZ,8,s>0?"EXIT ▶":"◀ EXIT","rgba(224,186,96,.55)");
+   /* ⑦b 램프 진입로 — 램프 입구(x=±390)를 지상 도로망(그랜드 불러바드 z=300)에 연결한다.
+        이게 없으면 지하 주차장이 지상망과 끊긴 별도 네트워크가 된다. */
+   for(const sg of[-1,1]){
+     const acc=[{x:sg*(RX1-8),y:0,z:UZ},{x:sg*(RX1+22),y:0,z:UZ+34},
+                {x:sg*(RX1+22),y:0,z:BLV_Z}];
+     flattenCorridor(mb,acc,8,13,()=>0);
+     mb.paintPath(acc,16,S_ASP,true,true);}
+   /* ⑧ 램프 입구 안내 — 지상에서 찾기 쉽게 */
+   for(const s of[-1,1]){
+     mb.texText(s*(CX+40),UZ-24,7,"P  B1 ▼","rgba(232,196,96,.75)");
+     mb.prop("lamp",s*(RX1-14),UZ+RW+5,0);}}
 
   /* 🚧 메가시티 도로 위 방지턱·요철·꿀렁임 — 가끔씩(도심 격자·순환로 일부 구간에만) */
+  const inUG=(x,z)=>Math.abs(x)<=252&&Math.abs(z-200)<=88;   // 지하 홀 데크 위는 제외
   for(let k=-GK;k<=GK;k++){
     if(k===0)continue;                                  // 광장 축은 비움
-    const off=k*GRID;
-    if(k%2===0)mb.bump(off,(k>0?1:-1)*160,0,13,.10+.03*Math.abs(k),k%4?"round":"arch");
-    if(k%3===0)mb.bump((k>0?1:-1)*160,off,Math.PI/2,13,.12,"rumble");}
+    const off=k*GRID, bz=(k>0?1:-1)*160, bx=(k>0?1:-1)*160;
+    if(k%2===0&&!inUG(off,bz))mb.bump(off,bz,0,13,.10+.03*Math.abs(k),k%4?"round":"arch");
+    if(k%3===0&&!inUG(bx,off))mb.bump(bx,off,Math.PI/2,13,.12,"rumble");}
+  /* 🚧 시작 지점(스폰 0,-200) 방지턱 · 요철 · 꿀렁임 — 출발하자마자 서스펜션을 느끼도록.
+     x=0 축(로터리 남쪽 진입로) 위에 종류를 섞어 배치하고, 스폰 주변엔 완만한 웨이브를 깐다. */
+  for(const[bz,bh,bk]of[[-206,.11,"round"],[-192,.13,"arch"],[-178,.10,"rumble"],
+                        [-162,.15,"round"],[-146,.12,"arch"],[-130,.10,"rumble"]])
+    mb.bump(0,bz,0,14,bh,bk);
+  w.addRippleZone(0,-186,30,.020,1.7,2);                // 스폰 직후 꿀렁임
+  w.addRippleZone(0,-140,26,.016,2.3,1);
+  for(const[rx,rz]of[[-100,-200],[100,-200]]){          // 좌우 진입로에도 요철
+    mb.bump(rx,rz+18,0,13,.12,"round");
+    w.addRippleZone(rx,rz-16,24,.015,2.0,2);}
+  mb.texText(0,-224,6,"⚠ BUMPS AHEAD","rgba(240,214,120,.6)");
   for(let k=0;k<6;k++){const a=(k+.5)/6*6.283;
     w.addRippleZone(Math.cos(a)*R_INNER,Math.sin(a)*R_INNER,58,.012+.004*(k%3),1.4+.3*(k%3),1+(k%3));}
   for(const[bx3,bz3]of[[GRID,GRID],[-GRID,GRID],[GRID,-GRID],[-GRID,-GRID]])
@@ -7701,7 +7894,10 @@ MAPS.push(
     {name:"⛲ 중앙 광장",x:0,z:100,yaw:Math.PI},
     {name:"🌉 스폰 입체교차",x:-178,z:-250,yaw:Math.PI/2},
     {name:"🛣️ 지하 터널",x:0,z:-300,yaw:0},
-    {name:"🕳️ 지하 구역",x:0,z:200,yaw:Math.PI/2},
+    {name:"🅿️ 지하주차장 B1",x:0,z:200,yaw:Math.PI/2},
+    {name:"🅿️ B1 진입 램프",x:368,z:200,yaw:-Math.PI/2},
+    {name:"🛣️ 그랜드 불러바드(동서)",x:-600,z:300,yaw:Math.PI/2},
+    {name:"🛣️ 그랜드 애비뉴(남북)",x:200,z:-620,yaw:0},
     {name:"🛣️ 내부 순환도로",x:R_INNER,z:0,yaw:Math.PI/2},
     {name:"🛣️ 외곽 벨트웨이",x:R_BELT,z:0,yaw:Math.PI/2},
     {name:"🏢 미드타운",x:D.mid[0],z:D.mid[1]-118,yaw:0},
@@ -7714,7 +7910,7 @@ MAPS.push(
     {name:"🏟️ 아레나",x:D.arena[0]+150,z:D.arena[1],yaw:Math.PI},
     {name:"⛰️ 산악 힐클라임",x:D.mtn[0]-190,z:D.mtn[1]+150,yaw:0},
     {name:"🏘️ 교외 주택가",x:D.burb[0]+150,z:D.burb[1],yaw:Math.PI},
-    {name:"🏗️ 공사장 점프대",x:300,z:300,yaw:Math.PI*.75}];
+    {name:"🏗️ 공사장 점프대",x:322,z:392,yaw:Math.PI*.75}];
   mb.paintLanes();
   return mb.finalize(this);}});
 
@@ -8445,6 +8641,7 @@ const Game={
       let steps=0;const t0=performance.now();
       while(this.acc>=PHYS_DT&&steps<10){this.physStep(PHYS_DT);this.acc-=PHYS_DT;steps++;}
       if(steps>=10)this.acc=0;
+      if(this.labPerf&&steps)this.labPerfTick(steps*PHYS_DT);
       this.physMs=performance.now()-t0;
       // consume impacts → deform + fx
       this.consumeImpacts(this.veh,this.vis,true);
@@ -8548,7 +8745,7 @@ const Game={
     v.reset(-250,-150,Math.PI*.22,false);      // 스키드패드 = 쇼룸 무대
     v.controlLock=true;v.damageOn=true;
     this.cam.mode="orbit";this.cam.dist=7;
-    this.lab={force:30};
+    this.lab={force:30,perf:null};
     showLabPanel();},
   labPoke(px,py){                              // 화면 탭 → 차체 그 지점에 힘 가하기
     if(this.mode!=="lab"||!this.veh)return;
@@ -8576,6 +8773,86 @@ const Game={
     Fx.impactFx(wp,_vA,dv);
     Sfx.crash?Sfx.crash(dv/40):Sfx.beep(180,.1,.3);
     this.slowmoT=Math.max(this.slowmoT,.4);},
+  /* ---------- 🔬 자동차 랩: 정형화된 시험 프로그램 ----------
+     IIHS/유로NCAP식 충돌 시나리오 + 서스펜션 워크 + 가속·제동 계측을
+     버튼 하나로 재현한다. 충격은 labPoke와 동일한 크럼플 파이프라인을 탄다. */
+  labHit(lx,ly,lz,nx,ny,nz,dv){
+    const b=this.veh.body,h=b.half;
+    const lp=new THREE.Vector3(lx*h.x,ly*h.y,lz*h.z);
+    const ln=new THREE.Vector3(nx,ny,nz).normalize();
+    const wp=new THREE.Vector3();b.localToWorld(lp.clone(),wp);
+    this.vis.applyImpact({lp,ln,wp,dv,soft:false},this.veh);
+    this.veh.addDamage(lp,dv*.5);
+    b.vecToWorld(ln.clone().negate(),_vA);
+    Fx.impactFx(wp,_vA,dv);
+    b.addForceAt(_vA.clone().multiplyScalar(-dv*b.mass*7),wp.clone().sub(b.pos));
+    Sfx.crash?Sfx.crash(dv/40):Sfx.beep(180,.1,.3);},
+  labTest(kind){
+    if(this.mode!=="lab"||!this.veh)return;
+    const v=this.veh,F=this.lab.force;
+    const seq=(steps)=>{let t=0;for(const[d,fn]of steps){t+=d;setTimeout(()=>{if(Game.mode==="lab")fn();},t);}};
+    switch(kind){
+      case "front":                                  // 정면 풀오버랩 (풀 배리어)
+        this.labHit(0,-.1,1,0,0,-1,F*1.5);break;
+      case "offset":                                 // 40% 오프셋 (운전석 쪽)
+        seq([[0,()=>this.labHit(-.62,-.05,1,.12,0,-1,F*1.5)],
+             [90,()=>this.labHit(-.42,.05,.94,.1,0,-1,F*.9)]]);break;
+      case "pole":                                   // 측면 폴 (B필러)
+        this.labHit(-1,.15,-.05,1,0,0,F*1.35);break;
+      case "roof":                                   // 루프 크러시 (전복 안전성)
+        seq([[0,()=>this.labHit(-.5,1,.2,0,-1,0,F*1.1)],
+             [110,()=>this.labHit(.5,1,-.1,0,-1,0,F*.9)]]);break;
+      case "rear":                                   // 후방 추돌
+        this.labHit(0,-.1,-1,0,0,1,F*1.3);break;
+      case "corner":                                 // 코너 임팩트(사각 접촉)
+        this.labHit(-.9,-.05,.9,.7,0,-.7,F*1.4);break;
+      case "hail":                                   // 다중 타격 — 전면부 집중 난타
+        seq([...Array(7)].map((_,i)=>[70,()=>{
+          const a=(i/7)*6.283;
+          this.labHit(Math.cos(a)*.8,.1+Math.sin(a)*.5,.85,-Math.cos(a)*.3,-Math.sin(a)*.3,-1,F*.55);}]));
+        break;
+      case "susp":{                                  // 서스펜션 워크 — 네 바퀴 순차 가진
+        const b=v.body;
+        seq([0,1,3,2].map((i,k)=>[220,()=>{
+          const w=v.wheels[i];if(!w)return;
+          const wp=new THREE.Vector3();b.localToWorld(w.local.clone(),wp);
+          b.addForceAt(new THREE.Vector3(0,-b.mass*34,0),wp.clone().sub(b.pos));
+          Sfx.beep(320+k*60,.06,.1);}]));
+        toast("🔧 서스펜션 워크 — 네 바퀴 순차 가진");break;}
+      case "perf":{                                  // 0→100 · 100→0 자동 계측 (시뮬레이션 시간 기준)
+        this.repairSilent();
+        // 조작 입력은 잠근 채(=Input이 스로틀을 0으로 덮어쓰지 못하게) 계측 루틴이 직접 운전한다
+        v.controlLock=true;v.damageOn=false;v.driveMode="D";
+        v.reset(this.world.spawn.x,this.world.spawn.z,this.world.spawn.yaw||0,true);
+        this.cam.mode="chase";
+        this.labPerf={t:0,t100:0,tb:0};
+        toast("⏱️ 가속·제동 계측 시작");
+        return;}
+    }
+    this.slowmoT=Math.max(this.slowmoT,.5);
+    setTimeout(()=>{if(Game.mode==="lab")showLabPanel();},900);},
+  /* 성능 계측 틱 — 시뮬레이션 시간(steps*PHYS_DT)으로 진행해 저프레임에서도 값이 정확하다 */
+  labPerfTick(sdt){
+    const L=this.labPerf,v=this.veh;
+    if(!L||!v)return;
+    L.t+=sdt;
+    const sp=v.body.vel.length()*3.6;
+    const fin=(msg)=>{
+      this.labPerf=null;
+      v.throttle=0;v.brake=1;v.steer=0;v.controlLock=true;v.damageOn=true;
+      this.cam.mode="orbit";
+      v.reset(-250,-150,Math.PI*.22,false);
+      if(msg)toast(msg);
+      showLabPanel();};
+    if(!L.t100){
+      v.throttle=1;v.brake=0;v.steer=0;v.steerIn=0;v.driveMode="D";
+      if(sp>=100){L.t100=L.t;L.tb=L.t;toast("0→100  "+L.t100.toFixed(2)+"초");}
+      else if(L.t>30)return fin("⏱️ 100km/h 미도달 — 계측 종료");
+    }else{
+      v.throttle=0;v.brake=1;
+      if(sp<=1.5||L.t-L.tb>20){
+        this.lab.perf={a:L.t100.toFixed(2),b:(L.t-L.tb).toFixed(2)};
+        return fin("100→0  "+this.lab.perf.b+"초 — 계측 완료");}}},
   repairSilent(){this.veh.clearDamage();this.vis.repair();},
   repair(){
     if(this.veh.isFlipped())this.veh.uprightInPlace();   // 전복 시 정위치 복원
@@ -8853,12 +9130,26 @@ function bigMsg(msg,ms,sub){
   el.classList.add("on");clearTimeout(_bigT);_bigT=setTimeout(()=>el.classList.remove("on"),ms||900);}
 
 /* ---------- 자동차 랩 패널 ---------- */
+const LAB_TESTS=[
+  ["front","정면 풀오버랩"],["offset","40% 오프셋"],["pole","측면 폴"],
+  ["roof","루프 크러시"],["rear","후방 추돌"],["corner","코너 임팩트"],
+  ["hail","다중 타격"],["susp","서스펜션 워크"],["perf","0→100 · 제동"]];
 function showLabPanel(){
-  const s=Game.veh.spec;
+  const s=Game.veh.spec,P=Game.lab.perf;
   const st=(v,l)=>'<div class="st"><b>'+v+'</b><span>'+l+'</span></div>';
+  const vis=Game.vis;
   $("labStats").innerHTML=
     st(s.hp+"hp","최고출력")+st(s.mass+"kg","공차중량")+st(s.drive,"구동방식")+
-    st(s.top+" km/h","최고속도")+st(s.acc,"0→100")+st((s.body.hz*2).toFixed(1)+" m","전장");
+    st(s.top+" km/h","최고속도")+st(P?P.a+"초":s.acc,"0→100")+
+    st(P?P.b+"초":(s.body.hz*2).toFixed(1)+" m",P?"100→0":"전장")+
+    st((vis&&vis.defVol?vis.defVol.toFixed(1):"0.0")+" L","변형량")+
+    st(String(vis?Object.keys(vis.detached).length:0),"탈락 부품");
+  const tb=$("labTests");
+  if(tb&&!tb.dataset.on){
+    tb.dataset.on="1";
+    tb.innerHTML=LAB_TESTS.map(([k,n])=>'<button class="btn sm" data-lt="'+k+'">'+n+'</button>').join("");
+    tb.querySelectorAll("[data-lt]").forEach(b=>b.onclick=()=>{
+      Sfx.click();Game.labTest(b.dataset.lt);});}
   $("labForce").value=Game.lab.force;$("labForceVal").textContent=Game.lab.force;
 }
 
@@ -9083,6 +9374,8 @@ const UI=(()=>{
     $("btnMenuBack").style.display=v==="home"?"none":"";
     $("menuCrumb").textContent={home:"",car:"차량 선택",map:"맵 선택",opts:"주행 설정",
       settings:"설정",editorList:"맵 에디터",garage:"커스텀 차고"}[v]||"";
+    if(typeof Showroom!=="undefined")
+      Showroom.frame=(v==="garage")?"garage":(v==="car")?"car":"home";
     ({home,car,map,opts,settings,editorList,garage})[v]();
     body().scrollTop=0;
   }
@@ -9157,6 +9450,7 @@ const UI=(()=>{
   function garage(){
     if(!CB)CB=loadCustomCar()||Object.assign({},CUSTOM_DEFAULT);
     const spec=customToSpec(CB);
+    previewCustom();
     const sl=(label,key,sub,fmt)=>
       '<div class="optRow"><div class="lb">'+label+'<small>'+(sub?sub+' · ':'')+fmt+'</small></div>'+
       '<div class="ct"><input type="range" data-cb="'+key+'" min="0" max="1" step="0.01" value="'+CB[key]+'"></div></div>';
@@ -9187,6 +9481,11 @@ const UI=(()=>{
       sl("전장","len","길이",(spec.body.hz*2).toFixed(2)+"m")+
       sl("전폭","wid","너비",(spec.body.hx*2).toFixed(2)+"m")+
       sl("전고","hei","높이",(spec.body.hy*2).toFixed(2)+"m")+
+      grp("유리 · 휠")+
+      sl("유리 틴팅","glass","투명 ↔ 블랙아웃",Math.round(CB.glass*100)+"%")+
+      sl("휠 지름","wheelR","타이어 외경",(spec.wheels.radius*200).toFixed(0)+"mm")+
+      sl("타이어 폭","wheelW","트레드 폭",(spec.wheels.width*1000).toFixed(0)+"mm")+
+      sl("림 인치","rim","클수록 사이드월이 얇음",(spec.rimScale*15).toFixed(1)+"in")+
       '<div class="optRow"><div class="lb">색상</div><div class="ct"><div class="statRow" id="cbCols">'+
         [0xff7a1a,0xe63946,0x2a6df4,0x3ddc84,0xffd23e,0xe8eef2,0x12161b,0x9d4edd].map(c=>
         '<i data-col="'+c+'" style="display:inline-block;width:26px;height:26px;border-radius:50%;margin-right:6px;'+
@@ -9199,7 +9498,7 @@ const UI=(()=>{
       '</div>'+
       '<p class="note">저장하면 차량 목록에 추가됩니다. 차체는 형상 값에 따라 실시간 생성되며, 물리(출력·그립·서스펜션)는 그대로 시뮬레이션에 반영됩니다.</p>';
     body().querySelectorAll("[data-cb]").forEach(r=>{
-      r.oninput=e=>{CB[r.dataset.cb]=+e.target.value;};
+      r.oninput=e=>{CB[r.dataset.cb]=+e.target.value;previewCustom();};
       r.onchange=()=>{Sfx.click();garage();};});
     $("cbName").oninput=e=>{CB.name=e.target.value;};
     body().querySelectorAll("[data-seg]").forEach(bn=>bn.onclick=()=>{
@@ -9221,6 +9520,22 @@ const UI=(()=>{
       CB=Object.assign({},CUSTOM_DEFAULT);
       pickCar=clamp(pickCar,0,CARS.length-1);
       toast("커스텀 차 삭제");show("car");};
+  }
+  /* 커스텀 차 실시간 3D 프리뷰 — 슬라이더를 움직이는 즉시 쇼룸의 차가 바뀐다.
+     형상 키가 바뀔 때만 메시를 재생성하고, 드래그 중에는 90ms로 스로틀한다. */
+  let _pvT=0,_pvQ=0;
+  function previewCustom(){
+    if(typeof Showroom==="undefined"||!CB)return;
+    const now=performance.now();
+    if(now-_pvT<90){                      // 스로틀 — 단, 마지막 상태는 반드시 반영(트레일링)
+      if(!_pvQ)_pvQ=setTimeout(()=>{_pvQ=0;previewCustom();},110);
+      return;}
+    _pvT=now;
+    try{
+      const key=[CB.style,CB.len,CB.wid,CB.hei,CB.wheelR,CB.wheelW,CB.rim,CB.glass,CB.color,CB.drive]
+        .map(v=>typeof v==="number"?v.toFixed(2):v).join("|");
+      Showroom.showSpec(customToSpec(CB),CB.color,key);
+    }catch(e){}
   }
   /* ---------- map ---------- */
   function map(){
@@ -9781,6 +10096,7 @@ function initHudButtons(){
   $("labForce").oninput=e=>{$("labForceVal").textContent=e.target.value;if(Game.lab)Game.lab.force=+e.target.value;};
   $("labPrev").onclick=()=>{Sfx.click();Game.opts.carIdx=(Game.opts.carIdx-1+CARS.length)%CARS.length;Game.startGame();};
   $("labNext").onclick=()=>{Sfx.click();Game.opts.carIdx=(Game.opts.carIdx+1)%CARS.length;Game.startGame();};
+  $("labReset").onclick=()=>{Sfx.click();Game.repair();if(Game.lab)Game.lab.perf=null;showLabPanel();};
   {const gl=$("gl");let px0=0,py0=0,mv=0;
    gl.addEventListener("pointerdown",e=>{px0=e.clientX;py0=e.clientY;mv=0;});
    gl.addEventListener("pointermove",e=>{mv=Math.max(mv,Math.hypot(e.clientX-px0,e.clientY-py0));});
@@ -9826,15 +10142,62 @@ const Showroom={
     this.spot=new THREE.SpotLight(0xfff2dd,4.2,70,.75,.45,1);
     this.spot.position.set(6,12,6);this.spot.target=plat;
     this.group.add(this.spot);
+    /* --- 3D 무대 연출: 림 라이트(스팟) 2등 + 회전 홀로 링 + 바닥 그리드(얇은 판) --- */
+    this.rimL=new THREE.SpotLight(0x4aa3ff,3.4,34,.9,.6,1.2);
+    this.rimL.position.set(-5.4,3.0,-4.2);this.rimL.target=plat;
+    this.rimR=new THREE.SpotLight(0xff7a1a,2.8,34,.9,.6,1.2);
+    this.rimR.position.set(5.6,2.6,-3.6);this.rimR.target=plat;
+    this.group.add(this.rimL,this.rimR);
+    this.halo=new THREE.Mesh(new THREE.TorusGeometry(5.6,.035,6,64),
+      new THREE.MeshBasicMaterial({color:0x4aa3ff,transparent:true,opacity:.5}));
+    this.halo.rotation.x=Math.PI/2;this.halo.position.y=.9;
+    this.group.add(this.halo);
+    {const gm=new THREE.MeshBasicMaterial({color:0x2a3644,transparent:true,opacity:.5});
+     for(let k=-9;k<=9;k++){
+       const a=new THREE.Mesh(new THREE.BoxGeometry(.07,.02,44),gm);a.position.set(k*2.6,-.26,0);
+       const c=new THREE.Mesh(new THREE.BoxGeometry(44,.02,.07),gm);c.position.set(0,-.26,k*2.6);
+       this.group.add(a,c);}}
     this.carRoot=new THREE.Group();
-    this.group.add(this.carRoot);},
+    this.group.add(this.carRoot);
+    this.spin=0;this.drag=0;this.dragV=0;
+    this.bindDrag();},
+  /* 메뉴 배경을 직접 돌려볼 수 있게(3D UI) — 메뉴 스크롤과 충돌하지 않도록
+     메뉴 본문 바깥(캔버스 영역)에서 시작한 제스처만 회전으로 처리한다. */
+  bindDrag(){
+    if(this._bound)return;this._bound=true;
+    // 메뉴는 세로 스크롤이므로 '가로 제스처'만 회전으로 해석한다.
+    // 슬라이더·버튼·카드 위에서 시작한 제스처는 건드리지 않는다.
+    let px=0,py=0,down=false,go=false;
+    const st=e=>{
+      if(!this.active)return;
+      if(e.target&&e.target.closest&&
+         e.target.closest("input,button,textarea,select,.tgl,.card,.seg,.btn"))return;
+      down=true;go=false;px=e.clientX;py=e.clientY;this.dragV=0;};
+    const mv=e=>{
+      if(!down||!this.active)return;
+      const dx=e.clientX-px,dy=e.clientY-py;
+      if(!go){if(Math.abs(dx)<9||Math.abs(dx)<Math.abs(dy))return;go=true;}
+      const d=dx/innerWidth*4.2;px=e.clientX;py=e.clientY;
+      this.drag+=d;this.dragV=d;};
+    const en=()=>{down=false;go=false;};
+    addEventListener("pointerdown",st,{passive:true});
+    addEventListener("pointermove",mv,{passive:true});
+    addEventListener("pointerup",en);addEventListener("pointercancel",en);},
   show(idx,color){
     this.ensure();
-    if(idx===this.idx&&color===this.color&&this.vis)return;
-    if(this.vis){this.vis.dispose();this.vis=null;}
+    if(idx===this.idx&&color===this.color&&!this.specKey&&this.vis)return;
+    this.specKey=null;
     this.idx=idx;this.color=color;
-    const spec=CARS[idx];
-    this.vis=new CarVisual(spec,spec.colors[color%spec.colors.length]);
+    this.build(CARS[idx],CARS[idx].colors[color%CARS[idx].colors.length]);},
+  /* 임의 스펙(커스텀 차고 실시간 프리뷰)을 그대로 세운다 */
+  showSpec(spec,colorHex,key){
+    this.ensure();
+    if(key&&key===this.specKey)return;
+    this.specKey=key||null;this.idx=-2;this.color=-2;
+    this.build(spec,colorHex);},
+  build(spec,colorHex){
+    if(this.vis){this.vis.dispose();this.vis=null;}
+    this.vis=new CarVisual(spec,colorHex);
     for(let i=0;i<4;i++){
       const m=this.vis.wheelMeshes[i];
       m.position.set((i%2?1:-1)*(spec.wheels.trackVis||spec.wheels.track),
@@ -9854,9 +10217,22 @@ const Showroom={
   leave(){this.active=false;if(this.group?.parent)scene.remove(this.group);},
   update(dt){
     this.t+=dt;
-    this.carRoot.rotation.y=this.t*.45;
+    // 드래그 관성 + 자동 회전
+    this.drag+=this.dragV;this.dragV*=.92;
+    this.spin+=dt*.45;
+    this.carRoot.rotation.y=this.spin+this.drag;
+    if(this.halo){this.halo.rotation.z=this.t*.6;
+      this.halo.material.opacity=.34+.18*Math.sin(this.t*1.7);}
+    if(this.rimL){this.rimL.position.x=-6.2*Math.cos(this.t*.35);
+      this.rimL.position.z=-6.2*Math.sin(this.t*.35);}
+    // 뷰별 프레이밍 — 차고(커스텀 제작)는 더 가까이, 홈은 넓게
     const wide=innerWidth>innerHeight;
-    camera.position.set(-2.7,this.Y+2.0,6.6);
+    const f=this.frame||"home";
+    const cfg=f==="garage"?{d:5.6,h:1.55,ox:-2.7}:f==="car"?{d:6.2,h:1.85,ox:-2.7}:{d:7.4,h:2.35,ox:-2.5};
+    const cx=this.camX=lerp(this.camX??cfg.ox,cfg.ox,Math.min(1,dt*4));
+    const cd=this.camD=lerp(this.camD??cfg.d,cfg.d,Math.min(1,dt*4));
+    const ch=this.camH=lerp(this.camH??cfg.h,cfg.h,Math.min(1,dt*4));
+    camera.position.set(cx,this.Y+ch+.5,cd);
     camera.lookAt(wide?-2.15:0,this.Y+(wide?.75:1.7),0);   // 차가 화면 우측(가로)/하단(세로)에 오도록
     skyDome.position.set(camera.position.x,0,camera.position.z);},
 };

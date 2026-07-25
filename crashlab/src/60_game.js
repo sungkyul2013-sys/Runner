@@ -369,6 +369,7 @@ const Game={
       let steps=0;const t0=performance.now();
       while(this.acc>=PHYS_DT&&steps<10){this.physStep(PHYS_DT);this.acc-=PHYS_DT;steps++;}
       if(steps>=10)this.acc=0;
+      if(this.labPerf&&steps)this.labPerfTick(steps*PHYS_DT);
       this.physMs=performance.now()-t0;
       // consume impacts → deform + fx
       this.consumeImpacts(this.veh,this.vis,true);
@@ -472,7 +473,7 @@ const Game={
     v.reset(-250,-150,Math.PI*.22,false);      // 스키드패드 = 쇼룸 무대
     v.controlLock=true;v.damageOn=true;
     this.cam.mode="orbit";this.cam.dist=7;
-    this.lab={force:30};
+    this.lab={force:30,perf:null};
     showLabPanel();},
   labPoke(px,py){                              // 화면 탭 → 차체 그 지점에 힘 가하기
     if(this.mode!=="lab"||!this.veh)return;
@@ -500,6 +501,86 @@ const Game={
     Fx.impactFx(wp,_vA,dv);
     Sfx.crash?Sfx.crash(dv/40):Sfx.beep(180,.1,.3);
     this.slowmoT=Math.max(this.slowmoT,.4);},
+  /* ---------- 🔬 자동차 랩: 정형화된 시험 프로그램 ----------
+     IIHS/유로NCAP식 충돌 시나리오 + 서스펜션 워크 + 가속·제동 계측을
+     버튼 하나로 재현한다. 충격은 labPoke와 동일한 크럼플 파이프라인을 탄다. */
+  labHit(lx,ly,lz,nx,ny,nz,dv){
+    const b=this.veh.body,h=b.half;
+    const lp=new THREE.Vector3(lx*h.x,ly*h.y,lz*h.z);
+    const ln=new THREE.Vector3(nx,ny,nz).normalize();
+    const wp=new THREE.Vector3();b.localToWorld(lp.clone(),wp);
+    this.vis.applyImpact({lp,ln,wp,dv,soft:false},this.veh);
+    this.veh.addDamage(lp,dv*.5);
+    b.vecToWorld(ln.clone().negate(),_vA);
+    Fx.impactFx(wp,_vA,dv);
+    b.addForceAt(_vA.clone().multiplyScalar(-dv*b.mass*7),wp.clone().sub(b.pos));
+    Sfx.crash?Sfx.crash(dv/40):Sfx.beep(180,.1,.3);},
+  labTest(kind){
+    if(this.mode!=="lab"||!this.veh)return;
+    const v=this.veh,F=this.lab.force;
+    const seq=(steps)=>{let t=0;for(const[d,fn]of steps){t+=d;setTimeout(()=>{if(Game.mode==="lab")fn();},t);}};
+    switch(kind){
+      case "front":                                  // 정면 풀오버랩 (풀 배리어)
+        this.labHit(0,-.1,1,0,0,-1,F*1.5);break;
+      case "offset":                                 // 40% 오프셋 (운전석 쪽)
+        seq([[0,()=>this.labHit(-.62,-.05,1,.12,0,-1,F*1.5)],
+             [90,()=>this.labHit(-.42,.05,.94,.1,0,-1,F*.9)]]);break;
+      case "pole":                                   // 측면 폴 (B필러)
+        this.labHit(-1,.15,-.05,1,0,0,F*1.35);break;
+      case "roof":                                   // 루프 크러시 (전복 안전성)
+        seq([[0,()=>this.labHit(-.5,1,.2,0,-1,0,F*1.1)],
+             [110,()=>this.labHit(.5,1,-.1,0,-1,0,F*.9)]]);break;
+      case "rear":                                   // 후방 추돌
+        this.labHit(0,-.1,-1,0,0,1,F*1.3);break;
+      case "corner":                                 // 코너 임팩트(사각 접촉)
+        this.labHit(-.9,-.05,.9,.7,0,-.7,F*1.4);break;
+      case "hail":                                   // 다중 타격 — 전면부 집중 난타
+        seq([...Array(7)].map((_,i)=>[70,()=>{
+          const a=(i/7)*6.283;
+          this.labHit(Math.cos(a)*.8,.1+Math.sin(a)*.5,.85,-Math.cos(a)*.3,-Math.sin(a)*.3,-1,F*.55);}]));
+        break;
+      case "susp":{                                  // 서스펜션 워크 — 네 바퀴 순차 가진
+        const b=v.body;
+        seq([0,1,3,2].map((i,k)=>[220,()=>{
+          const w=v.wheels[i];if(!w)return;
+          const wp=new THREE.Vector3();b.localToWorld(w.local.clone(),wp);
+          b.addForceAt(new THREE.Vector3(0,-b.mass*34,0),wp.clone().sub(b.pos));
+          Sfx.beep(320+k*60,.06,.1);}]));
+        toast("🔧 서스펜션 워크 — 네 바퀴 순차 가진");break;}
+      case "perf":{                                  // 0→100 · 100→0 자동 계측 (시뮬레이션 시간 기준)
+        this.repairSilent();
+        // 조작 입력은 잠근 채(=Input이 스로틀을 0으로 덮어쓰지 못하게) 계측 루틴이 직접 운전한다
+        v.controlLock=true;v.damageOn=false;v.driveMode="D";
+        v.reset(this.world.spawn.x,this.world.spawn.z,this.world.spawn.yaw||0,true);
+        this.cam.mode="chase";
+        this.labPerf={t:0,t100:0,tb:0};
+        toast("⏱️ 가속·제동 계측 시작");
+        return;}
+    }
+    this.slowmoT=Math.max(this.slowmoT,.5);
+    setTimeout(()=>{if(Game.mode==="lab")showLabPanel();},900);},
+  /* 성능 계측 틱 — 시뮬레이션 시간(steps*PHYS_DT)으로 진행해 저프레임에서도 값이 정확하다 */
+  labPerfTick(sdt){
+    const L=this.labPerf,v=this.veh;
+    if(!L||!v)return;
+    L.t+=sdt;
+    const sp=v.body.vel.length()*3.6;
+    const fin=(msg)=>{
+      this.labPerf=null;
+      v.throttle=0;v.brake=1;v.steer=0;v.controlLock=true;v.damageOn=true;
+      this.cam.mode="orbit";
+      v.reset(-250,-150,Math.PI*.22,false);
+      if(msg)toast(msg);
+      showLabPanel();};
+    if(!L.t100){
+      v.throttle=1;v.brake=0;v.steer=0;v.steerIn=0;v.driveMode="D";
+      if(sp>=100){L.t100=L.t;L.tb=L.t;toast("0→100  "+L.t100.toFixed(2)+"초");}
+      else if(L.t>30)return fin("⏱️ 100km/h 미도달 — 계측 종료");
+    }else{
+      v.throttle=0;v.brake=1;
+      if(sp<=1.5||L.t-L.tb>20){
+        this.lab.perf={a:L.t100.toFixed(2),b:(L.t-L.tb).toFixed(2)};
+        return fin("100→0  "+this.lab.perf.b+"초 — 계측 완료");}}},
   repairSilent(){this.veh.clearDamage();this.vis.repair();},
   repair(){
     if(this.veh.isFlipped())this.veh.uprightInPlace();   // 전복 시 정위치 복원
@@ -777,12 +858,26 @@ function bigMsg(msg,ms,sub){
   el.classList.add("on");clearTimeout(_bigT);_bigT=setTimeout(()=>el.classList.remove("on"),ms||900);}
 
 /* ---------- 자동차 랩 패널 ---------- */
+const LAB_TESTS=[
+  ["front","정면 풀오버랩"],["offset","40% 오프셋"],["pole","측면 폴"],
+  ["roof","루프 크러시"],["rear","후방 추돌"],["corner","코너 임팩트"],
+  ["hail","다중 타격"],["susp","서스펜션 워크"],["perf","0→100 · 제동"]];
 function showLabPanel(){
-  const s=Game.veh.spec;
+  const s=Game.veh.spec,P=Game.lab.perf;
   const st=(v,l)=>'<div class="st"><b>'+v+'</b><span>'+l+'</span></div>';
+  const vis=Game.vis;
   $("labStats").innerHTML=
     st(s.hp+"hp","최고출력")+st(s.mass+"kg","공차중량")+st(s.drive,"구동방식")+
-    st(s.top+" km/h","최고속도")+st(s.acc,"0→100")+st((s.body.hz*2).toFixed(1)+" m","전장");
+    st(s.top+" km/h","최고속도")+st(P?P.a+"초":s.acc,"0→100")+
+    st(P?P.b+"초":(s.body.hz*2).toFixed(1)+" m",P?"100→0":"전장")+
+    st((vis&&vis.defVol?vis.defVol.toFixed(1):"0.0")+" L","변형량")+
+    st(String(vis?Object.keys(vis.detached).length:0),"탈락 부품");
+  const tb=$("labTests");
+  if(tb&&!tb.dataset.on){
+    tb.dataset.on="1";
+    tb.innerHTML=LAB_TESTS.map(([k,n])=>'<button class="btn sm" data-lt="'+k+'">'+n+'</button>').join("");
+    tb.querySelectorAll("[data-lt]").forEach(b=>b.onclick=()=>{
+      Sfx.click();Game.labTest(b.dataset.lt);});}
   $("labForce").value=Game.lab.force;$("labForceVal").textContent=Game.lab.force;
 }
 

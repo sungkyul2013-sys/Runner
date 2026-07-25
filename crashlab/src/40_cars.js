@@ -123,6 +123,10 @@ const CUSTOM_DEFAULT={
   drive:"4WD",      // FF | FR | 4WD
   style:"coupe",    // 차체 형상
   len:.5,wid:.5,hei:.5,   // 전장·전폭·전고
+  glass:.45,        // 유리 틴팅 (0 투명 → 1 완전 블랙아웃)
+  wheelR:.5,        // 휠 지름
+  wheelW:.5,        // 타이어 폭
+  rim:.55,          // 림 인치(대구경일수록 사이드월이 얇아진다)
   color:0xff7a1a,
 };
 function customToSpec(C){
@@ -150,7 +154,11 @@ function customToSpec(C){
     rollFix:1.28,squashY:1,
     body:{hx:+hx.toFixed(3),hy:+hy.toFixed(3),hz:+hz.toFixed(3)},
     wheels:{track:+(hx*.88).toFixed(3),front:+(hz*.62).toFixed(3),rear:+(hz*.64).toFixed(3),
-            y:-hy*.55,radius:+L(.30,.46,C.hei).toFixed(3),width:+L(.20,.34,C.wid).toFixed(3)},
+            y:-hy*.55,
+            radius:+(L(.30,.46,C.hei)*L(.82,1.34,C.wheelR??.5)).toFixed(3),
+            width:+(L(.20,.34,C.wid)*L(.74,1.55,C.wheelW??.5)).toFixed(3)},
+    rimScale:+L(.86,1.28,C.rim??.55).toFixed(3),
+    glassTint:+(C.glass??.45).toFixed(3),
     susp:{k,c,travel,rest},arb:Math.round(k*L(.18,.46,C.stiff)),
     engine:{maxT,redline,idle:820},
     gears:[3.4,2.1,1.5,1.12,.9],final:3.9,
@@ -354,6 +362,20 @@ const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:
   envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.3}); // 유광 클리어코트+환경반사 — 매끈하게 이어진 표면(포르쉐·GLS), 크롬부는 밝아서 더 강하게 비침
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
   transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
+/* 유리 틴팅 — 커스텀 차의 glassTint(0 투명 ~ 1 블랙아웃)를 실제 머티리얼에 반영.
+   기본 차량(틴트 미지정)은 공용 MAT_GLASS를 그대로 써서 머티리얼 수를 늘리지 않는다. */
+const _tintMats={};
+function glassMatFor(spec){
+  const t=spec&&spec.glassTint;
+  if(t===undefined||t===null)return MAT_GLASS;
+  const k=(t*20|0);
+  if(!_tintMats[k]){
+    const m=MAT_GLASS.clone();
+    m.opacity=lerp(.34,.94,t);
+    m.shininess=lerp(220,110,t);
+    m.specular=new THREE.Color().setHSL(.58,.18,lerp(.72,.3,t));
+    _tintMats[k]=m;}
+  return _tintMats[k];}
 const MAT_LAMP=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.9,
   side:THREE.DoubleSide,toneMapped:false}); // 자체발광(조명 무시) 투명 렌즈 — 실제 빛나는 램프
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222,side:THREE.DoubleSide}); // 양면 → 타이어 측벽이 비쳐 보이지 않음
@@ -459,7 +481,7 @@ class CarVisual{
         const x=pa[i];yS+=pa[i+1];yc++;
         if(x<-.12){lxS+=x;lc++;}else if(x>.12){rxS+=x;rc++;}}
       if(lc&&rc)this.hlAnchor=[[lxS/lc,yS/yc,zMax-.02],[rxS/rc,yS/yc,zMax-.02]];}
-    if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,MAT_GLASS);
+    if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,glassMatFor(spec));
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
     this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh,this.lampsMesh]);
     const bumpMat=new THREE.MeshPhongMaterial({color:0x191d24,flatShading:true,shininess:18});
@@ -490,7 +512,31 @@ class CarVisual{
         {geo:new THREE.BoxGeometry(.11,.08,hz*1.1),color:0x1a1d22,x:hx*1.04,y:botY+.1},
         // 리어 견인 후크
         {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:-hx*.4,y:by+hy*.18,z:zR-.1},
-        {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1}];
+        {geo:new THREE.BoxGeometry(.1,.08,.14),color:0xb5443c,x:hx*.4,y:by+hy*.18,z:zR-.1},
+        // 윈치(불바 중앙) — 드럼 + 페어리드 + 와이어
+        {geo:new THREE.CylinderGeometry(.09,.09,.34,12),color:0x3d444d,rz:Math.PI/2,y:by+hy*.44,z:zF+.02},
+        {geo:new THREE.BoxGeometry(.3,.11,.045),color:0x9aa2ab,y:by+hy*.44,z:zF+.17},
+        {geo:new THREE.CylinderGeometry(.012,.012,.2,6),color:0xc7ced6,rx:Math.PI/2,y:by+hy*.44,z:zF+.26},
+        // 스키드 플레이트(언더가드) — 프런트/미드
+        {geo:new THREE.BoxGeometry(hx*1.5,.05,hz*.5),color:0x6b727c,y:botY+.03,z:zF*.5},
+        {geo:new THREE.BoxGeometry(hx*1.4,.05,hz*.42),color:0x565c66,y:botY+.03,z:zR*.42},
+        // 리어 스페어 타이어(캐리어 + 타이어 + 림)
+        {geo:new THREE.BoxGeometry(.08,.5,.1),color:0x272c33,y:by+hy*.75,z:zR-.14},
+        {geo:new THREE.TorusGeometry(.3,.115,8,20),color:0x0c0d0f,y:by+hy*.9,z:zR-.3},
+        {geo:new THREE.CylinderGeometry(.19,.19,.14,14),color:0x2c3138,rx:Math.PI/2,y:by+hy*.9,z:zR-.3},
+        // 배기 스택(리어 우측) + 머드 플랩 4개
+        {geo:new THREE.CylinderGeometry(.045,.05,.5,10),color:0x8f979f,x:hx*.72,y:by+hy*.5,z:zR+.2},
+        {geo:new THREE.BoxGeometry(.24,.22,.02),color:0x14181d,x:-hx*.92,y:botY+.14,z:zF*.62},
+        {geo:new THREE.BoxGeometry(.24,.22,.02),color:0x14181d,x:hx*.92,y:botY+.14,z:zF*.62},
+        {geo:new THREE.BoxGeometry(.24,.22,.02),color:0x14181d,x:-hx*.92,y:botY+.14,z:zR*.72},
+        {geo:new THREE.BoxGeometry(.24,.22,.02),color:0x14181d,x:hx*.92,y:botY+.14,z:zR*.72},
+        // 루프 라이트바 마운트 브래킷
+        {geo:new THREE.BoxGeometry(.05,.1,.05),color:0x14161a,x:-hx*.62,y:topY+.01,z:zF*.32},
+        {geo:new THREE.BoxGeometry(.05,.1,.05),color:0x14161a,x:hx*.62,y:topY+.01,z:zF*.32}];
+      // 프런트 스팟 램프 4구(불바 상단) — 하우징
+      for(let sp=0;sp<4;sp++)
+        acc.push({geo:new THREE.CylinderGeometry(.075,.075,.07,12),color:0x22262c,
+          rx:Math.PI/2,x:(sp-1.5)*hx*.42,y:by+hy*.78,z:zF+.02});
       // 하드탑: 컴팩트 지프풍 캐빈 하드탑(짧고 낮게·멋지게) — 캐빈만 덮어 짐칸은 개방
       if(spec.id==="offroadc"){
         const zMid=zR+(zF-zR)*.34,cz=(zR+.12+zMid)/2,cl=zMid-zR-.16;  // 더 짧게(캐빈만)
@@ -506,11 +552,17 @@ class CarVisual{
         acc.push({geo:new THREE.CylinderGeometry(.05,.05,ch*1.5,8),color:0x14181d,x:hx*.92,y:cy+ch*.2,z:zMid-.05});}
       this.accMesh=new THREE.Mesh(mergeGeoms(acc),MAT_DETAIL);
       this.accMesh.castShadow=true;this.group.add(this.accMesh);
-      // LED 라이트바 발광 렌즈(자체발광)
-      this.ledMesh=new THREE.Mesh(new THREE.BoxGeometry(hx*1.42,.055,.05),
-        new THREE.MeshBasicMaterial({color:0xfff3c6,toneMapped:false}));
+      // LED 라이트바 + 프런트 스팟 램프 렌즈(자체발광)
+      const lensMat=new THREE.MeshBasicMaterial({color:0xfff3c6,toneMapped:false});
+      this.ledMesh=new THREE.Mesh(new THREE.BoxGeometry(hx*1.42,.055,.05),lensMat);
       this.ledMesh.position.set(0,topY+.06,zF*.32+.06);
-      this.group.add(this.ledMesh);}
+      this.group.add(this.ledMesh);
+      {const pods=[];
+       for(let sp=0;sp<4;sp++)
+         pods.push({geo:new THREE.CylinderGeometry(.058,.058,.03,12),color:0xfff3c6,
+           rx:Math.PI/2,x:(sp-1.5)*hx*.42,y:by+hy*.78,z:zF+.06});
+       this.podMesh=new THREE.Mesh(mergeGeoms(pods),lensMat);
+       this.group.add(this.podMesh);}}
     const wg=wheelGeo(spec.wheels.radius,spec.wheels.width,spec.rimScale);
     const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
@@ -778,7 +830,7 @@ class CarVisual{
     this.defVol=0;
     if(this.wheelOff)for(let i=0;i<4;i++){    // 탈락 바퀴 복원
       if(this.wheelOff[i]){this.wheelOff[i]=false;this.wheelMeshes[i].visible=true;}}
-    if(this._glassCracked){this._glassCracked=false;this.glassMesh.material=MAT_GLASS;}   // 유리 교체
+    if(this._glassCracked){this._glassCracked=false;this.glassMesh.material=glassMatFor(this.spec);}   // 유리 교체
     for(const k in this.parts){
       const p=this.parts[k];restoreGeo(p);this.partHp[k]=this.hp0[k];
       if(this.detached[k]){Fx.reclaimDebris(p);this.group.add(p);

@@ -9,6 +9,8 @@ SURF_IDS.forEach((k,i)=>{const c=new THREE.Color();c.setHex(SURF[k].col);
   // SURF.col은 linear로 취급돼 왔으므로 캔버스(sRGB)용으로 감마 보정
   SURF_CSS[i]="rgb("+[c.r,c.g,c.b].map(v=>Math.round(Math.pow(v,1/2.2)*255)).join(",")+")";});
 class MapBuilder{
+  /* 예약 코리도어 예외 태그 — 고가 데크·교각·터널 구조는 대로를 가로질러도 유지 */
+  static RESV_KEEP=/^(pillar|deck|parapet|bdeck|brail|bpil|bridge|portal|tunnelwall|slab|kerb)$/;
   constructor(size,res){
     this.world=new World(size,res);
     this.group=new THREE.Group();
@@ -122,9 +124,32 @@ class MapBuilder{
       this.stamp(x,z,w.cell*.55,(i,j)=>{
         if(w.sMap[w.idx(i,j)]===SURF_ID.asphalt)w.sMap[w.idx(i,j)]=SURF_ID.lane;});
     this.laneDots.length=0;}
+  /* ===== 🚦 예약 코리도어 — '쭉 직진' 보장 =====
+     간선/대로의 중심선을 예약해 두면, 이후 어떤 지구 콘텐츠도 그 안의 '주행 높이'에는
+     물체(물리+비주얼)를 놓을 수 없다. 사후 제거가 아니라 애초에 생성되지 않으므로
+     투명한 건물이 남는 일도 없다. 고가·데크·교각처럼 머리 위/구조물은 예외로 통과. */
+  reserve(pts,halfW){(this._resv=this._resv||[]).push({pts,halfW});return this;}
+  resvNear(x,z,ext){
+    if(!this._resvOn||!this._resv)return false;
+    for(const r of this._resv){
+      const pts=r.pts,hw=r.halfW+(ext||0);
+      for(let k=0;k<pts.length-1;k++){
+        const a=pts[k],b=pts[k+1],dx=b.x-a.x,dz=b.z-a.z,L2=dx*dx+dz*dz;
+        let t=L2?((x-a.x)*dx+(z-a.z)*dz)/L2:0;t=t<0?0:t>1?1:t;
+        if(Math.hypot(x-(a.x+dx*t),z-(a.z+dz*t))<=hw)return true;}}
+    return false;}
+  resvBlock(x,z,y,h,ext,tag){    // 주행 높이(지면+0.45 ~ +3.4)에 걸치면 배치 금지
+    if(MapBuilder.RESV_KEEP.test(tag||""))return false;
+    if(!this.resvNear(x,z,ext))return false;
+    const gy=this.world.height(x,z);
+    return (y+h*.5)>gy+.45&&(y-h*.5)<gy+3.4;}
   baked(name,x,z,scale,yaw,opt){ // 베이크 배경 모델 배치 (+선택 OBB)
     opt=opt||{};
     if(typeof BAKED==="undefined"||!BAKED[name])return;
+    if(this._resvOn){
+      const bb=BAKED[name].bb,hh=(bb[4]-bb[1])/2*scale*(opt.hScale||1);
+      const by=(opt.y!==undefined?opt.y:this.world.height(x,z))+hh;
+      if(this.resvBlock(x,z,by,hh*2,Math.max(bb[3]-bb[0],bb[5]-bb[2])*scale*.5,name))return;}
     const e=BAKED[name],A=Assets.arrays(e);
     const y=opt.y!==undefined?opt.y:this.world.height(x,z);
     const ca=Math.cos(yaw||0),sa=Math.sin(yaw||0);
@@ -142,12 +167,14 @@ class MapBuilder{
   }
   box(x,y,z,w,h,d,color,opt){ // opt:{yaw,pitch,roll,mu,bounce,tag,noVis}
     opt=opt||{};
+    if(this._resvOn&&this.resvBlock(x,z,y,h,Math.max(w,d)*.5,opt.tag))return null;
     const obb=new OBB(x,y,z,w/2,h/2,d/2,opt.yaw||0,opt.pitch||0,opt.roll||0,opt);
     this.world.boxes.push(obb);
     if(!opt.noVis)this.visBox(x,y,z,w,h,d,color,opt);
     return obb;}
   visBox(x,y,z,w,h,d,color,opt){
     opt=opt||{};
+    if(this._resvOn&&this.resvBlock(x,z,y,h,Math.max(w,d)*.5,opt.tag))return;
     const g=new THREE.BoxGeometry(w,h,d).toNonIndexed();
     g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(opt.pitch||0,opt.yaw||0,opt.roll||0,"YXZ")));
     g.translate(x,y,z);
@@ -216,6 +243,7 @@ class MapBuilder{
     const cy=this.world.height(x,z)+rise*.5- h*.35;
     return this.box(x,cy,z,wid,h,len,color||0x8f98a3,{yaw,pitch,mu:1,tag:"ramp"});}
   prop(type,x,z,yaw){
+    if(this._resvOn&&this.resvNear(x,z,2.5))return null;
     const w=this.world,y=w.height(x,z);
     const p=makeProp(type,x,y,z,yaw||0);
     w.props.push(p);this.group.add(p.mesh);return p;}
@@ -380,6 +408,7 @@ function bridgeDeck(mb,pts,width,opt){
    ============================================================ */
 function procBuilding(mb,x,z,W,D,H,seed,opt){
   opt=opt||{};
+  if(mb._resvOn&&mb.resvNear(x,z,Math.max(W,D)*.5))return 0;   // 예약 코리도어(대로) 위에는 짓지 않는다
   let s=(seed|0)||1;const rr=()=>{s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff;};
   const FLOOR=3.6;                                   // 층고
   const floors=Math.max(2,Math.round(H/FLOOR));

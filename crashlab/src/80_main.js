@@ -287,6 +287,7 @@ function initHudButtons(){
   $("labForce").oninput=e=>{$("labForceVal").textContent=e.target.value;if(Game.lab)Game.lab.force=+e.target.value;};
   $("labPrev").onclick=()=>{Sfx.click();Game.opts.carIdx=(Game.opts.carIdx-1+CARS.length)%CARS.length;Game.startGame();};
   $("labNext").onclick=()=>{Sfx.click();Game.opts.carIdx=(Game.opts.carIdx+1)%CARS.length;Game.startGame();};
+  $("labReset").onclick=()=>{Sfx.click();Game.repair();if(Game.lab)Game.lab.perf=null;showLabPanel();};
   {const gl=$("gl");let px0=0,py0=0,mv=0;
    gl.addEventListener("pointerdown",e=>{px0=e.clientX;py0=e.clientY;mv=0;});
    gl.addEventListener("pointermove",e=>{mv=Math.max(mv,Math.hypot(e.clientX-px0,e.clientY-py0));});
@@ -332,15 +333,62 @@ const Showroom={
     this.spot=new THREE.SpotLight(0xfff2dd,4.2,70,.75,.45,1);
     this.spot.position.set(6,12,6);this.spot.target=plat;
     this.group.add(this.spot);
+    /* --- 3D 무대 연출: 림 라이트(스팟) 2등 + 회전 홀로 링 + 바닥 그리드(얇은 판) --- */
+    this.rimL=new THREE.SpotLight(0x4aa3ff,3.4,34,.9,.6,1.2);
+    this.rimL.position.set(-5.4,3.0,-4.2);this.rimL.target=plat;
+    this.rimR=new THREE.SpotLight(0xff7a1a,2.8,34,.9,.6,1.2);
+    this.rimR.position.set(5.6,2.6,-3.6);this.rimR.target=plat;
+    this.group.add(this.rimL,this.rimR);
+    this.halo=new THREE.Mesh(new THREE.TorusGeometry(5.6,.035,6,64),
+      new THREE.MeshBasicMaterial({color:0x4aa3ff,transparent:true,opacity:.5}));
+    this.halo.rotation.x=Math.PI/2;this.halo.position.y=.9;
+    this.group.add(this.halo);
+    {const gm=new THREE.MeshBasicMaterial({color:0x2a3644,transparent:true,opacity:.5});
+     for(let k=-9;k<=9;k++){
+       const a=new THREE.Mesh(new THREE.BoxGeometry(.07,.02,44),gm);a.position.set(k*2.6,-.26,0);
+       const c=new THREE.Mesh(new THREE.BoxGeometry(44,.02,.07),gm);c.position.set(0,-.26,k*2.6);
+       this.group.add(a,c);}}
     this.carRoot=new THREE.Group();
-    this.group.add(this.carRoot);},
+    this.group.add(this.carRoot);
+    this.spin=0;this.drag=0;this.dragV=0;
+    this.bindDrag();},
+  /* 메뉴 배경을 직접 돌려볼 수 있게(3D UI) — 메뉴 스크롤과 충돌하지 않도록
+     메뉴 본문 바깥(캔버스 영역)에서 시작한 제스처만 회전으로 처리한다. */
+  bindDrag(){
+    if(this._bound)return;this._bound=true;
+    // 메뉴는 세로 스크롤이므로 '가로 제스처'만 회전으로 해석한다.
+    // 슬라이더·버튼·카드 위에서 시작한 제스처는 건드리지 않는다.
+    let px=0,py=0,down=false,go=false;
+    const st=e=>{
+      if(!this.active)return;
+      if(e.target&&e.target.closest&&
+         e.target.closest("input,button,textarea,select,.tgl,.card,.seg,.btn"))return;
+      down=true;go=false;px=e.clientX;py=e.clientY;this.dragV=0;};
+    const mv=e=>{
+      if(!down||!this.active)return;
+      const dx=e.clientX-px,dy=e.clientY-py;
+      if(!go){if(Math.abs(dx)<9||Math.abs(dx)<Math.abs(dy))return;go=true;}
+      const d=dx/innerWidth*4.2;px=e.clientX;py=e.clientY;
+      this.drag+=d;this.dragV=d;};
+    const en=()=>{down=false;go=false;};
+    addEventListener("pointerdown",st,{passive:true});
+    addEventListener("pointermove",mv,{passive:true});
+    addEventListener("pointerup",en);addEventListener("pointercancel",en);},
   show(idx,color){
     this.ensure();
-    if(idx===this.idx&&color===this.color&&this.vis)return;
-    if(this.vis){this.vis.dispose();this.vis=null;}
+    if(idx===this.idx&&color===this.color&&!this.specKey&&this.vis)return;
+    this.specKey=null;
     this.idx=idx;this.color=color;
-    const spec=CARS[idx];
-    this.vis=new CarVisual(spec,spec.colors[color%spec.colors.length]);
+    this.build(CARS[idx],CARS[idx].colors[color%CARS[idx].colors.length]);},
+  /* 임의 스펙(커스텀 차고 실시간 프리뷰)을 그대로 세운다 */
+  showSpec(spec,colorHex,key){
+    this.ensure();
+    if(key&&key===this.specKey)return;
+    this.specKey=key||null;this.idx=-2;this.color=-2;
+    this.build(spec,colorHex);},
+  build(spec,colorHex){
+    if(this.vis){this.vis.dispose();this.vis=null;}
+    this.vis=new CarVisual(spec,colorHex);
     for(let i=0;i<4;i++){
       const m=this.vis.wheelMeshes[i];
       m.position.set((i%2?1:-1)*(spec.wheels.trackVis||spec.wheels.track),
@@ -360,9 +408,22 @@ const Showroom={
   leave(){this.active=false;if(this.group?.parent)scene.remove(this.group);},
   update(dt){
     this.t+=dt;
-    this.carRoot.rotation.y=this.t*.45;
+    // 드래그 관성 + 자동 회전
+    this.drag+=this.dragV;this.dragV*=.92;
+    this.spin+=dt*.45;
+    this.carRoot.rotation.y=this.spin+this.drag;
+    if(this.halo){this.halo.rotation.z=this.t*.6;
+      this.halo.material.opacity=.34+.18*Math.sin(this.t*1.7);}
+    if(this.rimL){this.rimL.position.x=-6.2*Math.cos(this.t*.35);
+      this.rimL.position.z=-6.2*Math.sin(this.t*.35);}
+    // 뷰별 프레이밍 — 차고(커스텀 제작)는 더 가까이, 홈은 넓게
     const wide=innerWidth>innerHeight;
-    camera.position.set(-2.7,this.Y+2.0,6.6);
+    const f=this.frame||"home";
+    const cfg=f==="garage"?{d:5.6,h:1.55,ox:-2.7}:f==="car"?{d:6.2,h:1.85,ox:-2.7}:{d:7.4,h:2.35,ox:-2.5};
+    const cx=this.camX=lerp(this.camX??cfg.ox,cfg.ox,Math.min(1,dt*4));
+    const cd=this.camD=lerp(this.camD??cfg.d,cfg.d,Math.min(1,dt*4));
+    const ch=this.camH=lerp(this.camH??cfg.h,cfg.h,Math.min(1,dt*4));
+    camera.position.set(cx,this.Y+ch+.5,cd);
     camera.lookAt(wide?-2.15:0,this.Y+(wide?.75:1.7),0);   // 차가 화면 우측(가로)/하단(세로)에 오도록
     skyDome.position.set(camera.position.x,0,camera.position.z);},
 };

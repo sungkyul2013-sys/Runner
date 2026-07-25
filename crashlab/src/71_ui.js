@@ -10,6 +10,8 @@ const UI=(()=>{
     $("btnMenuBack").style.display=v==="home"?"none":"";
     $("menuCrumb").textContent={home:"",car:"차량 선택",map:"맵 선택",opts:"주행 설정",
       settings:"설정",editorList:"맵 에디터",garage:"커스텀 차고"}[v]||"";
+    if(typeof Showroom!=="undefined")
+      Showroom.frame=(v==="garage")?"garage":(v==="car")?"car":"home";
     ({home,car,map,opts,settings,editorList,garage})[v]();
     body().scrollTop=0;
   }
@@ -84,6 +86,7 @@ const UI=(()=>{
   function garage(){
     if(!CB)CB=loadCustomCar()||Object.assign({},CUSTOM_DEFAULT);
     const spec=customToSpec(CB);
+    previewCustom();
     const sl=(label,key,sub,fmt)=>
       '<div class="optRow"><div class="lb">'+label+'<small>'+(sub?sub+' · ':'')+fmt+'</small></div>'+
       '<div class="ct"><input type="range" data-cb="'+key+'" min="0" max="1" step="0.01" value="'+CB[key]+'"></div></div>';
@@ -114,6 +117,11 @@ const UI=(()=>{
       sl("전장","len","길이",(spec.body.hz*2).toFixed(2)+"m")+
       sl("전폭","wid","너비",(spec.body.hx*2).toFixed(2)+"m")+
       sl("전고","hei","높이",(spec.body.hy*2).toFixed(2)+"m")+
+      grp("유리 · 휠")+
+      sl("유리 틴팅","glass","투명 ↔ 블랙아웃",Math.round(CB.glass*100)+"%")+
+      sl("휠 지름","wheelR","타이어 외경",(spec.wheels.radius*200).toFixed(0)+"mm")+
+      sl("타이어 폭","wheelW","트레드 폭",(spec.wheels.width*1000).toFixed(0)+"mm")+
+      sl("림 인치","rim","클수록 사이드월이 얇음",(spec.rimScale*15).toFixed(1)+"in")+
       '<div class="optRow"><div class="lb">색상</div><div class="ct"><div class="statRow" id="cbCols">'+
         [0xff7a1a,0xe63946,0x2a6df4,0x3ddc84,0xffd23e,0xe8eef2,0x12161b,0x9d4edd].map(c=>
         '<i data-col="'+c+'" style="display:inline-block;width:26px;height:26px;border-radius:50%;margin-right:6px;'+
@@ -126,7 +134,7 @@ const UI=(()=>{
       '</div>'+
       '<p class="note">저장하면 차량 목록에 추가됩니다. 차체는 형상 값에 따라 실시간 생성되며, 물리(출력·그립·서스펜션)는 그대로 시뮬레이션에 반영됩니다.</p>';
     body().querySelectorAll("[data-cb]").forEach(r=>{
-      r.oninput=e=>{CB[r.dataset.cb]=+e.target.value;};
+      r.oninput=e=>{CB[r.dataset.cb]=+e.target.value;previewCustom();};
       r.onchange=()=>{Sfx.click();garage();};});
     $("cbName").oninput=e=>{CB.name=e.target.value;};
     body().querySelectorAll("[data-seg]").forEach(bn=>bn.onclick=()=>{
@@ -148,6 +156,22 @@ const UI=(()=>{
       CB=Object.assign({},CUSTOM_DEFAULT);
       pickCar=clamp(pickCar,0,CARS.length-1);
       toast("커스텀 차 삭제");show("car");};
+  }
+  /* 커스텀 차 실시간 3D 프리뷰 — 슬라이더를 움직이는 즉시 쇼룸의 차가 바뀐다.
+     형상 키가 바뀔 때만 메시를 재생성하고, 드래그 중에는 90ms로 스로틀한다. */
+  let _pvT=0,_pvQ=0;
+  function previewCustom(){
+    if(typeof Showroom==="undefined"||!CB)return;
+    const now=performance.now();
+    if(now-_pvT<90){                      // 스로틀 — 단, 마지막 상태는 반드시 반영(트레일링)
+      if(!_pvQ)_pvQ=setTimeout(()=>{_pvQ=0;previewCustom();},110);
+      return;}
+    _pvT=now;
+    try{
+      const key=[CB.style,CB.len,CB.wid,CB.hei,CB.wheelR,CB.wheelW,CB.rim,CB.glass,CB.color,CB.drive]
+        .map(v=>typeof v==="number"?v.toFixed(2):v).join("|");
+      Showroom.showSpec(customToSpec(CB),CB.color,key);
+    }catch(e){}
   }
   /* ---------- map ---------- */
   function map(){
