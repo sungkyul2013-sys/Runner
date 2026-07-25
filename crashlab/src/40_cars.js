@@ -91,6 +91,76 @@ const CARS=[
   stats:{spd:6,acc:14,grip:85,mass:62}},
 ];
 
+/* ============================================================
+   🔧 커스텀 차량 — 사용자가 출력·접지·핸들링·서스펜션·형상을 직접 설계
+   튜닝값(0~1 정규화)을 실제 물리 스펙으로 환산해 CARS에 주입한다.
+   차체는 절차 로프트(buildCarBody)로 생성되므로 형상 파라미터가 그대로 반영된다.
+   ============================================================ */
+const CUSTOM_DEFAULT={
+  name:"마이 머신",icon:"🛠️",
+  power:.55,        // 출력 (엔진 토크·레드라인)
+  grip:.55,         // 접지력 (타이어 μ)
+  handling:.55,     // 핸들링 (조향각·응답)
+  travel:.4,        // 서스펜션 트래블
+  stiff:.5,         // 서스펜션 강성(딱딱함)
+  mass:.45,         // 공차중량
+  drive:"4WD",      // FF | FR | 4WD
+  style:"coupe",    // 차체 형상
+  len:.5,wid:.5,hei:.5,   // 전장·전폭·전고
+  color:0xff7a1a,
+};
+function customToSpec(C){
+  const L=lerp;
+  const hz=L(1.7,2.9,C.len), hx=L(.74,1.12,C.wid), hy=L(.42,.92,C.hei);
+  const mass=Math.round(L(820,3200,C.mass));
+  const maxT=Math.round(L(150,760,C.power));
+  const redline=Math.round(L(5200,8200,C.power));
+  const hp=Math.round(L(90,720,C.power));
+  const travel=+L(.10,.30,C.travel).toFixed(3);
+  // 강성: 질량에 비례한 기준 스프링레이트에 강성 슬라이더를 곱함(무거운 차는 더 단단해야 뜨지 않음)
+  const k=Math.round(mass*L(20,52,C.stiff));
+  const c=Math.round(k*L(.075,.125,C.stiff));
+  const grip=+L(.74,1.22,C.grip).toFixed(3);
+  const steerLo=+L(.48,.72,C.handling).toFixed(3);
+  const steerHi=+L(.09,.19,C.handling).toFixed(3);
+  const rest=+L(.16,.34,C.travel).toFixed(3);
+  const top=Math.round(L(130,320,C.power)*L(1.05,.92,C.mass));
+  const acc0=(L(11.5,2.6,C.power)*L(.85,1.35,C.mass)).toFixed(1);
+  return{
+    id:"custom",name:C.name||"마이 머신",icon:C.icon||"🛠️",
+    drive:C.drive,mass,hp,acc:acc0+"초",top,
+    desc:"내가 설계한 커스텀 머신 — 출력·접지·핸들링·서스펜션·형상 사용자 조정.",
+    isCustom:true,
+    rollFix:1.28,squashY:1,
+    body:{hx:+hx.toFixed(3),hy:+hy.toFixed(3),hz:+hz.toFixed(3)},
+    wheels:{track:+(hx*.88).toFixed(3),front:+(hz*.62).toFixed(3),rear:+(hz*.64).toFixed(3),
+            y:-hy*.55,radius:+L(.30,.46,C.hei).toFixed(3),width:+L(.20,.34,C.wid).toFixed(3)},
+    susp:{k,c,travel,rest},arb:Math.round(k*L(.18,.46,C.stiff)),
+    engine:{maxT,redline,idle:820},
+    gears:[3.4,2.1,1.5,1.12,.9],final:3.9,
+    brakeF:Math.round(mass*L(3.6,6.2,C.grip)),
+    steerLo,steerHi,aero:{cd:L(.7,1.7,C.hei),df:Math.round(L(0,22,C.grip))},
+    gripF:grip,gripR:+(grip*1.01).toFixed(3),
+    style:C.style,colors:[C.color,0x222831,0xe8eef2,0x3d5a80,0x4a5a40],
+    stats:{spd:Math.round(C.power*100),acc:Math.round(C.power*94),
+           grip:Math.round(C.grip*100),mass:Math.round(C.mass*100)},
+  };
+}
+function loadCustomCar(){
+  const C=Store.get("customCar",null);
+  if(!C)return null;
+  return Object.assign({},CUSTOM_DEFAULT,C);
+}
+/* CARS 배열에 커스텀 차를 반영(있으면 갱신, 없으면 추가/제거) */
+function syncCustomCar(){
+  const C=loadCustomCar();
+  const i=CARS.findIndex(c=>c.id==="custom");
+  if(!C){if(i>=0)CARS.splice(i,1);return -1;}
+  const spec=customToSpec(C);
+  if(i>=0)CARS[i]=spec;else CARS.push(spec);
+  return CARS.findIndex(c=>c.id==="custom");
+}
+
 /* ---------- generic non-indexed geometry merger ---------- */
 /* items: {geo, color, x,y,z, rx,ry,rz, sx,sy,sz} — consumes geo */
 const _mm=new THREE.Matrix4(),_me=new THREE.Euler();

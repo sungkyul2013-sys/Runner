@@ -9,12 +9,12 @@ const UI=(()=>{
     view=v;
     $("btnMenuBack").style.display=v==="home"?"none":"";
     $("menuCrumb").textContent={home:"",car:"차량 선택",map:"맵 선택",opts:"주행 설정",
-      settings:"설정",editorList:"맵 에디터"}[v]||"";
-    ({home,car,map,opts,settings,editorList})[v]();
+      settings:"설정",editorList:"맵 에디터",garage:"커스텀 차고"}[v]||"";
+    ({home,car,map,opts,settings,editorList,garage})[v]();
     body().scrollTop=0;
   }
   function back(){
-    const order={car:"home",map:"car",opts:"map",settings:"home",editorList:"home"};
+    const order={car:"home",map:"car",opts:"map",settings:"home",editorList:"home",garage:"car"};
     show(order[view]||"home");}
 
   /* ---------- home ---------- */
@@ -61,7 +61,8 @@ const UI=(()=>{
           '<i data-c="'+ci+'" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:#'+col.toString(16).padStart(6,"0")+
           ';border:2px solid '+(ci===pickColor&&i===pickCar?"#fff":"transparent")+'"></i>').join("")+'</div>'+
         '</button>').join("")+'</div>'+
-      '<div class="btnRow"><button class="btn" id="carNext">다음 →</button></div>';
+      '<div class="btnRow"><button class="btn" id="carNext">다음 →</button>'+
+      '<button class="btn sm" id="toGarage">🛠️ 커스텀 차 만들기</button></div>';
     body().querySelectorAll(".card").forEach(c=>c.onclick=e=>{
       const ci=e.target.dataset?.c;
       pickCar=+c.dataset.i;
@@ -74,8 +75,80 @@ const UI=(()=>{
         Game.mode="lab";Game.opts.carIdx=pickCar;Game.opts.color=pickColor;
         Game.startGame();return;}
       show("map");};
+    $("toGarage").onclick=()=>{Sfx.click();show("garage");};
   }
   function stat(nm,v){return '<div class="statRow"><em>'+nm+'</em><div class="bar"><i style="width:'+v+'%"></i></div></div>';}
+
+  /* ---------- 🛠️ 커스텀 차고 (커스텀 차량 제작) ---------- */
+  let CB=null;   // 편집 중인 커스텀 사양
+  function garage(){
+    if(!CB)CB=loadCustomCar()||Object.assign({},CUSTOM_DEFAULT);
+    const spec=customToSpec(CB);
+    const sl=(label,key,sub,fmt)=>
+      '<div class="optRow"><div class="lb">'+label+'<small>'+(sub?sub+' · ':'')+fmt+'</small></div>'+
+      '<div class="ct"><input type="range" data-cb="'+key+'" min="0" max="1" step="0.01" value="'+CB[key]+'"></div></div>';
+    const grp=t=>'<div class="h2" style="margin:18px 0 8px;font-size:12px;font-weight:900;letter-spacing:.22em;color:var(--acc2)">'+t+'</div>';
+    body().innerHTML='<div class="h1">🛠️ 커스텀 차고 <small>내 차를 직접 설계</small></div>'+
+      // 실시간 사양 요약
+      '<div class="hero" style="padding:18px 20px"><div class="heroBadge">MY MACHINE</div>'+
+      '<div style="font-size:22px;font-weight:900">'+esc(CB.name)+'</div>'+
+      '<div class="ds" style="color:var(--tx2);font-size:13px;margin-top:8px;line-height:1.7">'+
+        spec.hp+' hp · '+spec.mass.toLocaleString()+' kg · '+spec.drive+'<br>'+
+        '최고 '+spec.top+' km/h · 0→100 '+spec.acc+'<br>'+
+        '트래블 '+(spec.susp.travel*100).toFixed(0)+' cm · 스프링 '+(spec.susp.k/1000).toFixed(0)+' kN/m · 그립 '+spec.gripF.toFixed(2)+
+      '</div></div>'+
+      '<div class="optRow"><div class="lb">이름</div><div class="ct">'+
+        '<input type="text" id="cbName" value="'+esc(CB.name)+'" maxlength="14"></div></div>'+
+      grp("파워트레인")+
+      sl("출력","power","엔진 토크·레드라인",spec.hp+"hp / "+spec.engine.redline+"rpm")+
+      seg("구동 방식","cbDrive",[["FF","전륜"],["FR","후륜"],["4WD","4륜"]],CB.drive)+
+      grp("타이어 · 핸들링")+
+      sl("접지력","grip","타이어 μ",spec.gripF.toFixed(2)+"×")+
+      sl("핸들링","handling","조향각·응답",(spec.steerLo*57.3).toFixed(0)+"°")+
+      grp("서스펜션")+
+      sl("트래블","travel","서스펜션 행정",(spec.susp.travel*100).toFixed(0)+"cm")+
+      sl("강성(딱딱함)","stiff","스프링·댐퍼",(spec.susp.k/1000).toFixed(0)+"kN/m")+
+      grp("차체")+
+      sl("공차중량","mass","",spec.mass.toLocaleString()+"kg")+
+      seg("형상","cbStyle",[["coupe","쿠페"],["hatch","해치"],["sedan","세단"],["suv","SUV"],["super","슈퍼"],["truck","트럭"]],CB.style)+
+      sl("전장","len","길이",(spec.body.hz*2).toFixed(2)+"m")+
+      sl("전폭","wid","너비",(spec.body.hx*2).toFixed(2)+"m")+
+      sl("전고","hei","높이",(spec.body.hy*2).toFixed(2)+"m")+
+      '<div class="optRow"><div class="lb">색상</div><div class="ct"><div class="statRow" id="cbCols">'+
+        [0xff7a1a,0xe63946,0x2a6df4,0x3ddc84,0xffd23e,0xe8eef2,0x12161b,0x9d4edd].map(c=>
+        '<i data-col="'+c+'" style="display:inline-block;width:26px;height:26px;border-radius:50%;margin-right:6px;'+
+        'background:#'+c.toString(16).padStart(6,"0")+';border:2px solid '+(c===CB.color?"#fff":"transparent")+'"></i>').join("")+
+      '</div></div></div>'+
+      '<div class="btnRow" style="margin-top:20px">'+
+        '<button class="btn" id="cbSave">💾 저장하고 선택</button>'+
+        '<button class="btn sm" id="cbReset">기본값</button>'+
+        (Store.get("customCar",null)?'<button class="btn danger sm" id="cbDel">삭제</button>':'')+
+      '</div>'+
+      '<p class="note">저장하면 차량 목록에 추가됩니다. 차체는 형상 값에 따라 실시간 생성되며, 물리(출력·그립·서스펜션)는 그대로 시뮬레이션에 반영됩니다.</p>';
+    body().querySelectorAll("[data-cb]").forEach(r=>{
+      r.oninput=e=>{CB[r.dataset.cb]=+e.target.value;};
+      r.onchange=()=>{Sfx.click();garage();};});
+    $("cbName").oninput=e=>{CB.name=e.target.value;};
+    body().querySelectorAll("[data-seg]").forEach(bn=>bn.onclick=()=>{
+      const k=bn.dataset.seg;Sfx.click();
+      if(k==="cbDrive")CB.drive=bn.dataset.v;
+      else if(k==="cbStyle")CB.style=bn.dataset.v;
+      garage();});
+    body().querySelectorAll("#cbCols i").forEach(el=>el.onclick=()=>{
+      CB.color=+el.dataset.col;Sfx.click();garage();});
+    $("cbSave").onclick=()=>{Sfx.click();
+      Store.set("customCar",CB);
+      const idx=syncCustomCar();
+      if(idx>=0){pickCar=idx;pickColor=0;}
+      toast("커스텀 차 저장 — 차량 목록에 추가됨");
+      show("car");};
+    $("cbReset").onclick=()=>{Sfx.click();CB=Object.assign({},CUSTOM_DEFAULT);garage();};
+    const del=$("cbDel");
+    if(del)del.onclick=()=>{Sfx.click();Store.del("customCar");syncCustomCar();
+      CB=Object.assign({},CUSTOM_DEFAULT);
+      pickCar=clamp(pickCar,0,CARS.length-1);
+      toast("커스텀 차 삭제");show("car");};
+  }
   /* ---------- map ---------- */
   function map(){
     const avail=MAPS.filter(m=>m.modes.includes(pickMode));

@@ -384,6 +384,7 @@ function boot(){
           c.arb*=1.5;}}}}],                         // 롤 강성 상향 → 전복 방지
     ["렌더러 초기화…",()=>initRenderer()],
     ["입력 시스템…",()=>{Input.init();initHudButtons();initGauge();}],
+    ["커스텀 차고 불러오기…",()=>{try{syncCustomCar();}catch(e){console.warn("custom car",e);}}],
     ["차량 프리뷰 렌더링…",()=>makeCarThumbs()],
     ["에디터 준비…",()=>Editor.init()],
     ["메뉴 구성…",()=>{UI.init();$("debugHud").classList.toggle("on",Settings.debug);}],
