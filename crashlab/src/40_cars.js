@@ -588,6 +588,11 @@ class CarVisual{
     B(1.16,.05,.26,trim,0,hy*1.14,-hz*.86,-.30);
     for(const s of[-1,1])B(.05,.62,.56,carbon,s*.58,hy*1.20,-hz*.88);
     CY(.05,.05,.60,carbon,0,hy*.86,-hz*.86,0,0,0,8);            // 윙 파일런
+    // ── 리어 크래시 스트럭처 + 후방 안테나 폴(포르쉐식 리어 로드)
+    CY(.075,.055,.62,carbon,0,-hy*.10,-hz-.28,Math.PI/2,0,0,10); // 후방 임팩트 구조물
+    CY(.028,.020,1.05,0xd0d5dc,0,hy*.55,-hz-.16,-.16,0,0,8);     // 리어 폴(막대)
+    B(.10,.10,.10,0xffd23e,0,hy*1.02,-hz-.32);                   // 폴 끝 마커
+    CY(.022,.022,.46,0xd0d5dc,0,hy*1.55,-hz*.90,0,0,0,8);        // 윙 위 안테나
     // ── 서스펜션 위시본(전/후) — 실제처럼 노출
     for(const[wz,sgn]of[[W.front,1],[-W.rear,-1]])
       for(const s of[-1,1])for(const dy of[-.08,.10]){
@@ -678,14 +683,30 @@ class CarVisual{
     const d=Math.min(.72,.026*dv),R=.72+.032*dv;
     // 차체: 노드-빔 소프트바디에 충격 주입 (소성 변형은 격자가 계산)
     this.lattice.impact(imp.lp,imp.ln,dv);
+    /* 부품 손상은 '실제 타격 지점과의 거리'로 가중한다 — 정통으로 맞은 부품이 확실히
+       뜯겨 나가고, 스친 부품은 휘기만 한다(예전엔 반경 안 모든 부품이 동일 피해). */
+    const REACH=R+.5;
     for(const k in this.parts){
       const p=this.parts[k];
       if(this.detached[k])continue;
       deformGeo(p,imp.lp,imp.ln,d,R,.62);
       _vA.copy(imp.lp).sub(p.position);
-      if(_vA.length()<R+.5){
-        this.partHp[k]-=dv*.042*(k==="fb"||k==="rb"?1.6:(k==="ml"||k==="mr")?3:1);
-        if(this.partHp[k]<=0&&veh.damageOn)this.detachPart(k,veh,imp);}}
+      const dist=_vA.length();
+      if(dist>=REACH)continue;
+      const prox=1-dist/REACH;                       // 0(가장자리) ~ 1(정통)
+      const kMul=(k==="fb"||k==="rb")?1.6:(k==="ml"||k==="mr")?3:1;
+      this.partHp[k]-=dv*.042*kMul*(.3+1.9*prox*prox);
+      // 살아남은 부품은 충격 방향으로 '휘어짐'(영구 회전·이동) — 판금이 접힌 느낌
+      if(this.partHp[k]>0){
+        const bend=Math.min(.42,dv*.013*prox);
+        p.rotation.x+=imp.ln.z*bend*.5;
+        p.rotation.z-=imp.ln.x*bend*.5;
+        p.position.x+=imp.ln.x*bend*.16;
+        p.position.y+=imp.ln.y*bend*.10;
+        p.position.z+=imp.ln.z*bend*.16;}
+      // 정통으로 세게 맞으면 즉시 탈락(경첩 파단)
+      else if(veh.damageOn)this.detachPart(k,veh,imp);
+      if(this.partHp[k]>0&&veh.damageOn&&prox>.72&&dv>16)this.detachPart(k,veh,imp);}
     // 바퀴: 충격과 함께 뒤로 밀려나고(휠 셋백), 아주 강한 충격이면 탈락
     if(dv>7&&veh.damageOn&&this.wheelOff){
       const W=this.spec.wheels,tv=(this.baked&&W.trackVis)?W.trackVis:W.track;

@@ -147,12 +147,68 @@ function initHudButtons(){
   $("btnRepair").onclick=()=>{Sfx.click();Game.repair();};
   // 🏠 홈으로(메인 메뉴)
   $("btnHome").onclick=()=>{Sfx.click();Game.exitToMenu();};
-  // 📊 HUD 표시/숨김 (기본 off — 깔끔한 화면)
+  /* ✥ HUD 위치 편집 — 각 요소를 끌어서 원하는 자리에 배치, localStorage에 저장 */
+  const LAY_IDS=["speedo","dmgBox","telem","minimap","modeWidget"];
+  function applyLayout(){
+    const L=Store.get("hudLayout",{});
+    for(const id of LAY_IDS){const el=$(id);if(!el)continue;
+      const p=L[id];
+      if(p){el.style.left=p.x+"px";el.style.top=p.y+"px";
+        el.style.right="auto";el.style.bottom="auto";el.style.transform="none";}
+      else{el.style.left=el.style.top=el.style.right=el.style.bottom=el.style.transform="";}}
+    // 미니맵 닫기 버튼은 미니맵을 따라감
+    const mm=$("minimap"),mh=$("minimapHide");
+    if(mm&&mh&&Store.get("hudLayout",{}).minimap){
+      const r=mm.getBoundingClientRect();
+      mh.style.left=(r.right-24)+"px";mh.style.top=(r.top-2)+"px";
+      mh.style.right="auto";}}
+  Game.applyLayout=applyLayout;
+  let layoutOn=false,drag=null;
+  function setLayoutMode(on){
+    layoutOn=on;
+    $("hud").classList.toggle("layout",on);
+    $("layoutBar").classList.toggle("on",on);
+    for(const id of LAY_IDS){const el=$(id);if(el)el.classList.toggle("movable",on);}
+    if(on)$("hud").classList.remove("lean");else applyHud();}
+  function dragStart(e){
+    if(!layoutOn)return;
+    const el=e.currentTarget,r=el.getBoundingClientRect();
+    drag={el,dx:e.clientX-r.left,dy:e.clientY-r.top};
+    el.setPointerCapture&&el.setPointerCapture(e.pointerId);
+    e.preventDefault();e.stopPropagation();}
+  function dragMove(e){
+    if(!drag)return;
+    const w=innerWidth,h=innerHeight,r=drag.el.getBoundingClientRect();
+    const x=clamp(e.clientX-drag.dx,0,w-r.width),y=clamp(e.clientY-drag.dy,0,h-r.height);
+    drag.el.style.left=x+"px";drag.el.style.top=y+"px";
+    drag.el.style.right="auto";drag.el.style.bottom="auto";drag.el.style.transform="none";
+    e.preventDefault();e.stopPropagation();}
+  function dragEnd(e){
+    if(!drag)return;
+    const L=Store.get("hudLayout",{});
+    L[drag.el.id]={x:parseInt(drag.el.style.left)||0,y:parseInt(drag.el.style.top)||0};
+    Store.set("hudLayout",L);drag=null;applyLayout();}
+  for(const id of LAY_IDS){const el=$(id);if(!el)continue;
+    el.addEventListener("pointerdown",dragStart);
+    el.addEventListener("pointermove",dragMove);
+    el.addEventListener("pointerup",dragEnd);
+    el.addEventListener("pointercancel",dragEnd);}
+  $("layoutDone").onclick=()=>{Sfx.click();setLayoutMode(false);toast("HUD 배치 저장됨");};
+  $("layoutReset").onclick=()=>{Sfx.click();Store.set("hudLayout",{});applyLayout();toast("HUD 배치 초기화");};
+  Game.setLayoutMode=setLayoutMode;
+  applyLayout();
+  // 📊 HUD 표시/숨김 (기본 off — 깔끔한 화면). 길게 누르면 배치 편집 모드.
+  {let hudHold=null;const bh=$("btnHud");
+   bh.addEventListener("pointerdown",()=>{hudHold=setTimeout(()=>{hudHold=null;Sfx.click();setLayoutMode(true);},600);});
+   const cancel=()=>{if(hudHold){clearTimeout(hudHold);hudHold=null;}};
+   bh.addEventListener("pointerup",cancel);bh.addEventListener("pointerleave",cancel);}
   function applyHud(){const on=Settings.hudOn===true;
     $("hud").classList.toggle("lean",!on);
     $("btnHud").classList.toggle("off",!on);}
-  $("btnHud").onclick=()=>{Sfx.click();Settings.hudOn=!(Settings.hudOn===true);saveSettings();
-    applyHud();toast(Settings.hudOn?"HUD 표시":"HUD 숨김");};
+  $("btnHud").onclick=()=>{
+    if(layoutOn)return;                          // 배치 편집 중엔 토글 무시
+    Sfx.click();Settings.hudOn=!(Settings.hudOn===true);saveSettings();
+    applyHud();toast(Settings.hudOn?"HUD 표시":"HUD 숨김 (길게 누르면 배치 편집)");};
   applyHud();Game.applyHud=applyHud;
   // 🗺️ 지도 버튼 = 미니맵 표시/숨김 토글
   function setMinimap(on){Settings.minimapOn=on;saveSettings();

@@ -660,6 +660,35 @@ function exitExplore(){
   const c=Game.cam;if(c){c.mode=c._prevMode||"chase";}
   Game.exploreOn=false;
   $("hud").style.display="";$("exploreBar").classList.remove("on");}
+/* 🎯 3D 탐색 중 화면을 탭하면 그 지점으로 차량을 이동 — 화면 좌표 → 지면 교차점 */
+function exploreTeleport(sx,sy){
+  if(!Game.exploreOn||!Game.veh||!Game.world)return false;
+  const r=renderer.domElement.getBoundingClientRect();
+  const ndcX=((sx-r.left)/r.width)*2-1, ndcY=-((sy-r.top)/r.height)*2+1;
+  // 카메라에서 화면 방향 레이 생성
+  const org=camera.position.clone();
+  const dir=new THREE.Vector3(ndcX,ndcY,.5).unproject(camera).sub(org).normalize();
+  if(Math.abs(dir.y)<1e-4)return false;
+  // 지형과 교차: 굵게 전진하다 지면 아래로 내려가면 이분 탐색
+  let t=0,prev=org.y-Game.world.height(org.x,org.z),hit=-1;
+  for(let i=1;i<=600;i++){
+    const tt=i*6;
+    const px=org.x+dir.x*tt, py=org.y+dir.y*tt, pz=org.z+dir.z*tt;
+    if(Math.abs(px)>Game.world.size*.5||Math.abs(pz)>Game.world.size*.5)break;
+    const d=py-Game.world.height(px,pz);
+    if(prev>0&&d<=0){let lo=tt-6,hi=tt;
+      for(let k=0;k<24;k++){const m=(lo+hi)/2;
+        const q=org.y+dir.y*m-Game.world.height(org.x+dir.x*m,org.z+dir.z*m);
+        if(q>0)lo=m;else hi=m;}
+      hit=(lo+hi)/2;break;}
+    prev=d;t=tt;}
+  if(hit<0)return false;
+  const tx=org.x+dir.x*hit, tz=org.z+dir.z*hit;
+  const yaw=Math.atan2(Game.veh.body.pos.x-tx,Game.veh.body.pos.z-tz)+Math.PI;
+  Game.veh.reset(tx,tz,yaw,true);
+  Game.cam.exTarget.set(tx,0,tz);
+  toast("차량 이동 — "+Math.round(tx)+", "+Math.round(tz));
+  return true;}
 let _hudT=0;
 function updateHUD(dt){
   const v=Game.veh;if(!v)return;

@@ -1060,6 +1060,49 @@ MAPS.push(
    for(const z of[TZ-16,TZ+16])mb.prop("lamp",9,z,Math.PI/2);
    mb.texText(0,TZ+44,6,"UNDERGROUND","rgba(240,244,250,.5)");}
 
+  /* 🕳️ 지하 구역 — 도심 동측 진입로로 내려가 지하 주차장/정비고 같은 음침한 대공간을 지나
+     서측으로 다시 올라오는 지하 순환. 전 구간 지붕(슬래브)+기둥+조명으로 폐쇄감을 준다. */
+  {const UY=-9.5, EX=250, WX=-250, UZ=200;          // 지하 깊이 / 동·서 진입 x / 지하공간 z
+   const ramp=(x0,x1,z)=>{                          // 지상→지하 경사로(완만)
+     for(let t=0;t<=60;t++){const f=t/60,x=lerp(x0,x1,f);
+       const y=UY*(f<.12?0:f>.88?1:(f-.12)/.76);
+       mb.stamp(x,z,10,(i,j,d)=>{w.setH(i,j,y);w.setS(i,j,S_ASP);});}};
+   ramp(EX+96,EX,UZ);                                // 동측 진입(지상 x=346 → 지하 x=250)
+   ramp(WX-96,WX,UZ);                                // 서측 진입
+   // 지하 대공간(홀): 넓은 평면 + 연결 통로
+   mb.stamp(0,UZ,300,(i,j,d,px,pz)=>{
+     if(Math.abs(px)<=EX&&Math.abs(pz-UZ)<=78){w.setH(i,j,UY);w.setS(i,j,S_ASP);}});
+   // 슬래브(지붕) — 지상 도로 아래를 지나므로 지상과 분리
+   for(let x=-EX;x<=EX;x+=40)for(let z=UZ-70;z<=UZ+70;z+=40)
+     mb.box(x,UY+4.6,z,42,.8,42,0x2a2f36,{mu:.7,tag:"slab"});
+   // 기둥 격자(음침한 지하 주차장 느낌) + 조명
+   for(let x=-EX+40;x<EX;x+=56)for(let z=UZ-56;z<=UZ+56;z+=56){
+     mb.box(x,UY+2.2,z,2.4,4.4,2.4,0x3a4048,{mu:.7,tag:"pillar"});
+     if(((x+z)/56|0)%2===0)mb.box(x,UY+4.1,z+14,3.2,.14,.5,0xfff2b8,{mu:.5,tag:"striplight"});}
+   // 측벽(외곽) — 떨어지지 않게 막음
+   for(const s of[-1,1]){
+     mb.box(s*(EX+2),UY+2.4,UZ,2,5,160,0x22262c,{mu:.8,tag:"wall"});
+     mb.box(0,UY+2.4,UZ+s*80,2*EX,5,2,0x22262c,{mu:.8,tag:"wall"});}
+   // 지하 노면 마킹 + 주차 구획 + 방치 차량(음침한 분위기)
+   mb.texRect(0,UZ,2*EX,156,0,"rgba(20,23,28,.55)");
+   for(let k=0;k<22;k++){const px=-EX+30+k*22;
+     mb.texRect(px,UZ-52,.3,9,0,"rgba(210,216,226,.35)");
+     mb.texRect(px,UZ+52,.3,9,0,"rgba(210,216,226,.35)");
+     if(k%4===1)mb.box(px+3,UY+.75,UZ-52,4.2,1.3,1.9,[0x55606e,0x6b5f4e,0x3d4550][k%3],{mu:.5,tag:"parkedcar"});}
+   mb.texText(0,UZ,16,"UNDERGROUND LEVEL","rgba(200,208,220,.30)");
+   mb.texText(EX-40,UZ-64,7,"EXIT ▶","rgba(220,180,90,.45)");}
+
+  /* 🚧 메가시티 도로 위 방지턱·요철·꿀렁임 — 가끔씩(도심 격자·순환로 일부 구간에만) */
+  for(let k=-GK;k<=GK;k++){
+    if(k===0)continue;                                  // 광장 축은 비움
+    const off=k*GRID;
+    if(k%2===0)mb.bump(off,(k>0?1:-1)*160,0,13,.10+.03*Math.abs(k),k%4?"round":"arch");
+    if(k%3===0)mb.bump((k>0?1:-1)*160,off,Math.PI/2,13,.12,"rumble");}
+  for(let k=0;k<6;k++){const a=(k+.5)/6*6.283;
+    w.addRippleZone(Math.cos(a)*R_INNER,Math.sin(a)*R_INNER,58,.012+.004*(k%3),1.4+.3*(k%3),1+(k%3));}
+  for(const[bx3,bz3]of[[GRID,GRID],[-GRID,GRID],[GRID,-GRID],[-GRID,-GRID]])
+    w.addRippleZone(bx3,bz3,44,.011,2.2,1+((bx3+bz3)%2));
+
   w.checkpoints=pathCheckpoints(belt,30,22);
   w.waypoints=pathWaypoints(belt,true,60);
   w.spawn={x:0,z:-200,yaw:0};
@@ -1069,6 +1112,7 @@ MAPS.push(
     {name:"⛲ 중앙 광장",x:0,z:100,yaw:Math.PI},
     {name:"🌉 스폰 입체교차",x:-178,z:-250,yaw:Math.PI/2},
     {name:"🛣️ 지하 터널",x:0,z:-300,yaw:0},
+    {name:"🕳️ 지하 구역",x:0,z:200,yaw:Math.PI/2},
     {name:"🛣️ 내부 순환도로",x:R_INNER,z:0,yaw:Math.PI/2},
     {name:"🛣️ 외곽 벨트웨이",x:R_BELT,z:0,yaw:Math.PI/2},
     {name:"🏢 미드타운",x:D.mid[0],z:D.mid[1]-118,yaw:0},

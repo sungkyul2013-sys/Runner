@@ -8,7 +8,7 @@ const Input=(()=>{
   let steerPtr=null,tiltVal=0;
   let whPtr=null,whAngle=0,whLast=0;      // steering wheel state (rad)
   const WH_MAX=2.4;                        // 잠금까지 ±137°
-  const camPtrs=new Map();let pinchD=0;const panC={x:null,y:null};
+  const camPtrs=new Map();let pinchD=0;const panC={x:null,y:null};let tapT=null;
 
   function hookBtn(el,on,off){
     el.addEventListener("pointerdown",e=>{e.preventDefault();el.setPointerCapture(e.pointerId);
@@ -53,6 +53,7 @@ const Input=(()=>{
     const gl=$("gl");
     gl.addEventListener("pointerdown",e=>{
       Sfx.resume();
+      if(Game.exploreOn)tapT={t:Date.now(),x:e.clientX,y:e.clientY};   // 탭 판정 시작
       camPtrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
       if(camPtrs.size===2){
         const a=[...camPtrs.values()];
@@ -75,7 +76,13 @@ const Input=(()=>{
     // 데스크톱: 휠로 탐색 줌
     gl.addEventListener("wheel",e=>{if(Game.exploreOn&&Game.cam){e.preventDefault();
       Game.cam.onPinch(e.deltaY<0?1.12:1/1.12);}},{passive:false});
-    const camEnd=e=>{camPtrs.delete(e.pointerId);pinchD=0;if(camPtrs.size<2)panC.x=null;};
+    const camEnd=e=>{
+      // 3D 탐색 중 '짧은 탭'이면 그 지점으로 차량 이동(드래그 회전과 구분)
+      if(Game.exploreOn&&tapT&&Date.now()-tapT.t<320&&
+         Math.hypot(e.clientX-tapT.x,e.clientY-tapT.y)<12){
+        try{exploreTeleport(e.clientX,e.clientY);}catch(err){}}
+      tapT=null;
+      camPtrs.delete(e.pointerId);pinchD=0;if(camPtrs.size<2)panC.x=null;};
     gl.addEventListener("pointerup",camEnd);gl.addEventListener("pointercancel",camEnd);
     // keyboard (desktop testing)
     addEventListener("keydown",e=>{keys[e.code]=true;

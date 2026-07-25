@@ -125,6 +125,21 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #hud.lean #speedo,#hud.lean #dmgBox,#hud.lean #telem,
 #hud.lean #minimap,#hud.lean #minimapHide,#hud.lean #modeWidget{display:none!important}
 #btnHud.off{opacity:.55}
+/* HUD 위치 편집 모드: 드래그로 배치 변경 */
+#hud.layout .movable{outline:2px dashed var(--acc);outline-offset:3px;cursor:grab;
+  pointer-events:auto!important;touch-action:none}
+#hud.layout .movable::after{content:"⇕";position:absolute;right:-2px;top:-2px;font-size:11px;
+  background:var(--acc);color:#111;border-radius:5px;padding:0 3px;font-weight:900}
+#hud.layout #telem,#hud.layout #speedo,#hud.layout #dmgBox,
+#hud.layout #minimap,#hud.layout #minimapHide{display:block!important}
+#layoutBar{position:absolute;bottom:calc(var(--sab) + 14px);left:50%;transform:translateX(-50%);
+  z-index:38;display:none;align-items:center;gap:10px;background:rgba(12,15,21,.9);
+  padding:9px 14px;border-radius:22px;border:1px solid rgba(255,255,255,.16);
+  backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+#layoutBar.on{display:flex}
+#layoutBar span{font-size:11.5px;color:var(--tx2);font-weight:700}
+#layoutBar button{background:var(--acc);color:#111;border-radius:9px;padding:6px 12px;font-weight:800;font-size:12px}
+#layoutBar button.ghost{background:rgba(255,255,255,.12);color:var(--tx)}
 .hudTop{position:absolute;top:calc(var(--sat) + 10px);left:calc(var(--sal) + 12px);right:calc(var(--sar) + 12px);
   display:flex;align-items:flex-start;flex-wrap:wrap;justify-content:flex-end;gap:8px;pointer-events:none}
 .hudTop #modeWidget{margin-right:auto}
@@ -503,7 +518,8 @@ input[type=checkbox]{accent-color:var(--acc)}
   <div id="mapWrap"><canvas id="bigmap" width="720" height="720"></canvas><div id="mapMarks"></div></div>
   <div id="mapHint">📍 장소를 탭하면 즉시 이동 · 🛰️ 3D 탐색으로 실사 뷰</div>
 </div>
-<div id="exploreBar"><span id="exploreHint">🛰️ 3D 탐색 — 한 손가락 회전 · 두 손가락 이동/확대 (WASD·화살표 이동)</span><button class="btn" id="exploreExit">✕ 나가기</button></div>
+<div id="exploreBar"><span id="exploreHint">🛰️ 3D 탐색 — 화면을 <b>탭하면 그 지점으로 차량 이동</b> · 드래그 회전 · 두 손가락 이동/확대</span><button class="btn" id="exploreExit">✕ 나가기</button></div>
+<div id="layoutBar"><span>✥ HUD를 끌어 배치하세요</span><button class="ghost" id="layoutReset">초기화</button><button id="layoutDone">완료</button></div>
 <div id="reportPanel" class="overlayPanel"><button class="iconBtn" id="repClose" title="닫기">✕</button><div class="panelBox" id="reportBox"></div></div>
 <div id="resultPanel" class="overlayPanel"><div class="panelBox" id="resultBox"></div></div>
 <div id="placesPanel" class="overlayPanel"><div class="panelBox">
@@ -5533,6 +5549,11 @@ class CarVisual{
     B(1.16,.05,.26,trim,0,hy*1.14,-hz*.86,-.30);
     for(const s of[-1,1])B(.05,.62,.56,carbon,s*.58,hy*1.20,-hz*.88);
     CY(.05,.05,.60,carbon,0,hy*.86,-hz*.86,0,0,0,8);            // 윙 파일런
+    // ── 리어 크래시 스트럭처 + 후방 안테나 폴(포르쉐식 리어 로드)
+    CY(.075,.055,.62,carbon,0,-hy*.10,-hz-.28,Math.PI/2,0,0,10); // 후방 임팩트 구조물
+    CY(.028,.020,1.05,0xd0d5dc,0,hy*.55,-hz-.16,-.16,0,0,8);     // 리어 폴(막대)
+    B(.10,.10,.10,0xffd23e,0,hy*1.02,-hz-.32);                   // 폴 끝 마커
+    CY(.022,.022,.46,0xd0d5dc,0,hy*1.55,-hz*.90,0,0,0,8);        // 윙 위 안테나
     // ── 서스펜션 위시본(전/후) — 실제처럼 노출
     for(const[wz,sgn]of[[W.front,1],[-W.rear,-1]])
       for(const s of[-1,1])for(const dy of[-.08,.10]){
@@ -5623,14 +5644,30 @@ class CarVisual{
     const d=Math.min(.72,.026*dv),R=.72+.032*dv;
     // 차체: 노드-빔 소프트바디에 충격 주입 (소성 변형은 격자가 계산)
     this.lattice.impact(imp.lp,imp.ln,dv);
+    /* 부품 손상은 '실제 타격 지점과의 거리'로 가중한다 — 정통으로 맞은 부품이 확실히
+       뜯겨 나가고, 스친 부품은 휘기만 한다(예전엔 반경 안 모든 부품이 동일 피해). */
+    const REACH=R+.5;
     for(const k in this.parts){
       const p=this.parts[k];
       if(this.detached[k])continue;
       deformGeo(p,imp.lp,imp.ln,d,R,.62);
       _vA.copy(imp.lp).sub(p.position);
-      if(_vA.length()<R+.5){
-        this.partHp[k]-=dv*.042*(k==="fb"||k==="rb"?1.6:(k==="ml"||k==="mr")?3:1);
-        if(this.partHp[k]<=0&&veh.damageOn)this.detachPart(k,veh,imp);}}
+      const dist=_vA.length();
+      if(dist>=REACH)continue;
+      const prox=1-dist/REACH;                       // 0(가장자리) ~ 1(정통)
+      const kMul=(k==="fb"||k==="rb")?1.6:(k==="ml"||k==="mr")?3:1;
+      this.partHp[k]-=dv*.042*kMul*(.3+1.9*prox*prox);
+      // 살아남은 부품은 충격 방향으로 '휘어짐'(영구 회전·이동) — 판금이 접힌 느낌
+      if(this.partHp[k]>0){
+        const bend=Math.min(.42,dv*.013*prox);
+        p.rotation.x+=imp.ln.z*bend*.5;
+        p.rotation.z-=imp.ln.x*bend*.5;
+        p.position.x+=imp.ln.x*bend*.16;
+        p.position.y+=imp.ln.y*bend*.10;
+        p.position.z+=imp.ln.z*bend*.16;}
+      // 정통으로 세게 맞으면 즉시 탈락(경첩 파단)
+      else if(veh.damageOn)this.detachPart(k,veh,imp);
+      if(this.partHp[k]>0&&veh.damageOn&&prox>.72&&dv>16)this.detachPart(k,veh,imp);}
     // 바퀴: 충격과 함께 뒤로 밀려나고(휠 셋백), 아주 강한 충격이면 탈락
     if(dv>7&&veh.damageOn&&this.wheelOff){
       const W=this.spec.wheels,tv=(this.baked&&W.trackVis)?W.trackVis:W.track;
@@ -6198,8 +6235,31 @@ class MapBuilder{
     const w=this.world,y=w.height(x,z);
     const p=makeProp(type,x,y,z,yaw||0);
     w.props.push(p);this.group.add(p.mesh);return p;}
+  /* 🚧 도로 위 방해물 자동 제거 — 노면 '내부'에 놓인 난간·조형물·수목 등을 일괄 삭제.
+     맵 제작 중 실수로 도로를 가로막는 벽/난간이 생겨도 여기서 구조적으로 걸러진다.
+     (설계상 노면에 있어야 하는 것들 — 콘·타이어월·주차차량·교각·터널벽 등 — 은 보존) */
+  clearRoadObstacles(){
+    const w=this.world,R=w.res,N=R+1,cell=w.cell,half=w.size*.5;
+    const S=SURF_IDS;
+    const paved=s=>{const n=S[s];return n==="asphalt"||n==="lane"||n==="curb";};
+    const REMOVE=/^(rail|railpost|railbar|tree|treesTall|plinth|statue|monument|planter|hedge|bench|parasol|boat|dock|barrel|beam|scaffold|lightlamp|lighthouse|boathouse)$/;
+    const kept=[];let removed=0;
+    for(const b of w.boxes){
+      const t=b.tag||"";
+      if(!REMOVE.test(t)){kept.push(b);continue;}
+      const gy=w.height(b.c.x,b.c.z),bot=b.c.y-b.half.y,top=b.c.y+b.half.y;
+      if(bot>gy+1.6||top<gy+.12){kept.push(b);continue;}      // 공중/지하는 무관
+      const gi=Math.round((b.c.x+half)/cell),gj=Math.round((b.c.z+half)/cell);
+      if(gi<2||gj<2||gi>R-2||gj>R-2){kept.push(b);continue;}
+      const at=(i,j)=>paved(w.sMap[w.idx(i,j)]);
+      // 노면 '내부' 판정: 좌우·전후 2셀이 모두 포장 → 도로 한가운데(가장자리 난간은 보존)
+      if(at(gi,gj)&&at(gi-2,gj)&&at(gi+2,gj)&&at(gi,gj-2)&&at(gi,gj+2)){removed++;continue;}
+      kept.push(b);}
+    if(removed){w.boxes.length=0;for(const b of kept)w.boxes.push(b);}
+    return removed;}
   finalize(mapDef){
     const w=this.world;
+    this.roadObstaclesRemoved=this.clearRoadObstacles();
     // 포트홀 자동 산재 — 아스팔트/차선 위, 스폰·장소 주변 제외 (모든 맵에 다수)
     if(this.noPotholes!==true){
       let sd=(w.size*7|0)+13,rr=()=>{sd=(sd*1103515245+12345)&0x7fffffff;return sd/0x7fffffff;};
@@ -7470,6 +7530,49 @@ MAPS.push(
    for(const z of[TZ-16,TZ+16])mb.prop("lamp",9,z,Math.PI/2);
    mb.texText(0,TZ+44,6,"UNDERGROUND","rgba(240,244,250,.5)");}
 
+  /* 🕳️ 지하 구역 — 도심 동측 진입로로 내려가 지하 주차장/정비고 같은 음침한 대공간을 지나
+     서측으로 다시 올라오는 지하 순환. 전 구간 지붕(슬래브)+기둥+조명으로 폐쇄감을 준다. */
+  {const UY=-9.5, EX=250, WX=-250, UZ=200;          // 지하 깊이 / 동·서 진입 x / 지하공간 z
+   const ramp=(x0,x1,z)=>{                          // 지상→지하 경사로(완만)
+     for(let t=0;t<=60;t++){const f=t/60,x=lerp(x0,x1,f);
+       const y=UY*(f<.12?0:f>.88?1:(f-.12)/.76);
+       mb.stamp(x,z,10,(i,j,d)=>{w.setH(i,j,y);w.setS(i,j,S_ASP);});}};
+   ramp(EX+96,EX,UZ);                                // 동측 진입(지상 x=346 → 지하 x=250)
+   ramp(WX-96,WX,UZ);                                // 서측 진입
+   // 지하 대공간(홀): 넓은 평면 + 연결 통로
+   mb.stamp(0,UZ,300,(i,j,d,px,pz)=>{
+     if(Math.abs(px)<=EX&&Math.abs(pz-UZ)<=78){w.setH(i,j,UY);w.setS(i,j,S_ASP);}});
+   // 슬래브(지붕) — 지상 도로 아래를 지나므로 지상과 분리
+   for(let x=-EX;x<=EX;x+=40)for(let z=UZ-70;z<=UZ+70;z+=40)
+     mb.box(x,UY+4.6,z,42,.8,42,0x2a2f36,{mu:.7,tag:"slab"});
+   // 기둥 격자(음침한 지하 주차장 느낌) + 조명
+   for(let x=-EX+40;x<EX;x+=56)for(let z=UZ-56;z<=UZ+56;z+=56){
+     mb.box(x,UY+2.2,z,2.4,4.4,2.4,0x3a4048,{mu:.7,tag:"pillar"});
+     if(((x+z)/56|0)%2===0)mb.box(x,UY+4.1,z+14,3.2,.14,.5,0xfff2b8,{mu:.5,tag:"striplight"});}
+   // 측벽(외곽) — 떨어지지 않게 막음
+   for(const s of[-1,1]){
+     mb.box(s*(EX+2),UY+2.4,UZ,2,5,160,0x22262c,{mu:.8,tag:"wall"});
+     mb.box(0,UY+2.4,UZ+s*80,2*EX,5,2,0x22262c,{mu:.8,tag:"wall"});}
+   // 지하 노면 마킹 + 주차 구획 + 방치 차량(음침한 분위기)
+   mb.texRect(0,UZ,2*EX,156,0,"rgba(20,23,28,.55)");
+   for(let k=0;k<22;k++){const px=-EX+30+k*22;
+     mb.texRect(px,UZ-52,.3,9,0,"rgba(210,216,226,.35)");
+     mb.texRect(px,UZ+52,.3,9,0,"rgba(210,216,226,.35)");
+     if(k%4===1)mb.box(px+3,UY+.75,UZ-52,4.2,1.3,1.9,[0x55606e,0x6b5f4e,0x3d4550][k%3],{mu:.5,tag:"parkedcar"});}
+   mb.texText(0,UZ,16,"UNDERGROUND LEVEL","rgba(200,208,220,.30)");
+   mb.texText(EX-40,UZ-64,7,"EXIT ▶","rgba(220,180,90,.45)");}
+
+  /* 🚧 메가시티 도로 위 방지턱·요철·꿀렁임 — 가끔씩(도심 격자·순환로 일부 구간에만) */
+  for(let k=-GK;k<=GK;k++){
+    if(k===0)continue;                                  // 광장 축은 비움
+    const off=k*GRID;
+    if(k%2===0)mb.bump(off,(k>0?1:-1)*160,0,13,.10+.03*Math.abs(k),k%4?"round":"arch");
+    if(k%3===0)mb.bump((k>0?1:-1)*160,off,Math.PI/2,13,.12,"rumble");}
+  for(let k=0;k<6;k++){const a=(k+.5)/6*6.283;
+    w.addRippleZone(Math.cos(a)*R_INNER,Math.sin(a)*R_INNER,58,.012+.004*(k%3),1.4+.3*(k%3),1+(k%3));}
+  for(const[bx3,bz3]of[[GRID,GRID],[-GRID,GRID],[GRID,-GRID],[-GRID,-GRID]])
+    w.addRippleZone(bx3,bz3,44,.011,2.2,1+((bx3+bz3)%2));
+
   w.checkpoints=pathCheckpoints(belt,30,22);
   w.waypoints=pathWaypoints(belt,true,60);
   w.spawn={x:0,z:-200,yaw:0};
@@ -7479,6 +7582,7 @@ MAPS.push(
     {name:"⛲ 중앙 광장",x:0,z:100,yaw:Math.PI},
     {name:"🌉 스폰 입체교차",x:-178,z:-250,yaw:Math.PI/2},
     {name:"🛣️ 지하 터널",x:0,z:-300,yaw:0},
+    {name:"🕳️ 지하 구역",x:0,z:200,yaw:Math.PI/2},
     {name:"🛣️ 내부 순환도로",x:R_INNER,z:0,yaw:Math.PI/2},
     {name:"🛣️ 외곽 벨트웨이",x:R_BELT,z:0,yaw:Math.PI/2},
     {name:"🏢 미드타운",x:D.mid[0],z:D.mid[1]-118,yaw:0},
@@ -8513,6 +8617,35 @@ function exitExplore(){
   const c=Game.cam;if(c){c.mode=c._prevMode||"chase";}
   Game.exploreOn=false;
   $("hud").style.display="";$("exploreBar").classList.remove("on");}
+/* 🎯 3D 탐색 중 화면을 탭하면 그 지점으로 차량을 이동 — 화면 좌표 → 지면 교차점 */
+function exploreTeleport(sx,sy){
+  if(!Game.exploreOn||!Game.veh||!Game.world)return false;
+  const r=renderer.domElement.getBoundingClientRect();
+  const ndcX=((sx-r.left)/r.width)*2-1, ndcY=-((sy-r.top)/r.height)*2+1;
+  // 카메라에서 화면 방향 레이 생성
+  const org=camera.position.clone();
+  const dir=new THREE.Vector3(ndcX,ndcY,.5).unproject(camera).sub(org).normalize();
+  if(Math.abs(dir.y)<1e-4)return false;
+  // 지형과 교차: 굵게 전진하다 지면 아래로 내려가면 이분 탐색
+  let t=0,prev=org.y-Game.world.height(org.x,org.z),hit=-1;
+  for(let i=1;i<=600;i++){
+    const tt=i*6;
+    const px=org.x+dir.x*tt, py=org.y+dir.y*tt, pz=org.z+dir.z*tt;
+    if(Math.abs(px)>Game.world.size*.5||Math.abs(pz)>Game.world.size*.5)break;
+    const d=py-Game.world.height(px,pz);
+    if(prev>0&&d<=0){let lo=tt-6,hi=tt;
+      for(let k=0;k<24;k++){const m=(lo+hi)/2;
+        const q=org.y+dir.y*m-Game.world.height(org.x+dir.x*m,org.z+dir.z*m);
+        if(q>0)lo=m;else hi=m;}
+      hit=(lo+hi)/2;break;}
+    prev=d;t=tt;}
+  if(hit<0)return false;
+  const tx=org.x+dir.x*hit, tz=org.z+dir.z*hit;
+  const yaw=Math.atan2(Game.veh.body.pos.x-tx,Game.veh.body.pos.z-tz)+Math.PI;
+  Game.veh.reset(tx,tz,yaw,true);
+  Game.cam.exTarget.set(tx,0,tz);
+  toast("차량 이동 — "+Math.round(tx)+", "+Math.round(tz));
+  return true;}
 let _hudT=0;
 function updateHUD(dt){
   const v=Game.veh;if(!v)return;
@@ -8668,7 +8801,7 @@ const Input=(()=>{
   let steerPtr=null,tiltVal=0;
   let whPtr=null,whAngle=0,whLast=0;      // steering wheel state (rad)
   const WH_MAX=2.4;                        // 잠금까지 ±137°
-  const camPtrs=new Map();let pinchD=0;const panC={x:null,y:null};
+  const camPtrs=new Map();let pinchD=0;const panC={x:null,y:null};let tapT=null;
 
   function hookBtn(el,on,off){
     el.addEventListener("pointerdown",e=>{e.preventDefault();el.setPointerCapture(e.pointerId);
@@ -8713,6 +8846,7 @@ const Input=(()=>{
     const gl=$("gl");
     gl.addEventListener("pointerdown",e=>{
       Sfx.resume();
+      if(Game.exploreOn)tapT={t:Date.now(),x:e.clientX,y:e.clientY};   // 탭 판정 시작
       camPtrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
       if(camPtrs.size===2){
         const a=[...camPtrs.values()];
@@ -8735,7 +8869,13 @@ const Input=(()=>{
     // 데스크톱: 휠로 탐색 줌
     gl.addEventListener("wheel",e=>{if(Game.exploreOn&&Game.cam){e.preventDefault();
       Game.cam.onPinch(e.deltaY<0?1.12:1/1.12);}},{passive:false});
-    const camEnd=e=>{camPtrs.delete(e.pointerId);pinchD=0;if(camPtrs.size<2)panC.x=null;};
+    const camEnd=e=>{
+      // 3D 탐색 중 '짧은 탭'이면 그 지점으로 차량 이동(드래그 회전과 구분)
+      if(Game.exploreOn&&tapT&&Date.now()-tapT.t<320&&
+         Math.hypot(e.clientX-tapT.x,e.clientY-tapT.y)<12){
+        try{exploreTeleport(e.clientX,e.clientY);}catch(err){}}
+      tapT=null;
+      camPtrs.delete(e.pointerId);pinchD=0;if(camPtrs.size<2)panC.x=null;};
     gl.addEventListener("pointerup",camEnd);gl.addEventListener("pointercancel",camEnd);
     // keyboard (desktop testing)
     addEventListener("keydown",e=>{keys[e.code]=true;
@@ -9382,12 +9522,68 @@ function initHudButtons(){
   $("btnRepair").onclick=()=>{Sfx.click();Game.repair();};
   // 🏠 홈으로(메인 메뉴)
   $("btnHome").onclick=()=>{Sfx.click();Game.exitToMenu();};
-  // 📊 HUD 표시/숨김 (기본 off — 깔끔한 화면)
+  /* ✥ HUD 위치 편집 — 각 요소를 끌어서 원하는 자리에 배치, localStorage에 저장 */
+  const LAY_IDS=["speedo","dmgBox","telem","minimap","modeWidget"];
+  function applyLayout(){
+    const L=Store.get("hudLayout",{});
+    for(const id of LAY_IDS){const el=$(id);if(!el)continue;
+      const p=L[id];
+      if(p){el.style.left=p.x+"px";el.style.top=p.y+"px";
+        el.style.right="auto";el.style.bottom="auto";el.style.transform="none";}
+      else{el.style.left=el.style.top=el.style.right=el.style.bottom=el.style.transform="";}}
+    // 미니맵 닫기 버튼은 미니맵을 따라감
+    const mm=$("minimap"),mh=$("minimapHide");
+    if(mm&&mh&&Store.get("hudLayout",{}).minimap){
+      const r=mm.getBoundingClientRect();
+      mh.style.left=(r.right-24)+"px";mh.style.top=(r.top-2)+"px";
+      mh.style.right="auto";}}
+  Game.applyLayout=applyLayout;
+  let layoutOn=false,drag=null;
+  function setLayoutMode(on){
+    layoutOn=on;
+    $("hud").classList.toggle("layout",on);
+    $("layoutBar").classList.toggle("on",on);
+    for(const id of LAY_IDS){const el=$(id);if(el)el.classList.toggle("movable",on);}
+    if(on)$("hud").classList.remove("lean");else applyHud();}
+  function dragStart(e){
+    if(!layoutOn)return;
+    const el=e.currentTarget,r=el.getBoundingClientRect();
+    drag={el,dx:e.clientX-r.left,dy:e.clientY-r.top};
+    el.setPointerCapture&&el.setPointerCapture(e.pointerId);
+    e.preventDefault();e.stopPropagation();}
+  function dragMove(e){
+    if(!drag)return;
+    const w=innerWidth,h=innerHeight,r=drag.el.getBoundingClientRect();
+    const x=clamp(e.clientX-drag.dx,0,w-r.width),y=clamp(e.clientY-drag.dy,0,h-r.height);
+    drag.el.style.left=x+"px";drag.el.style.top=y+"px";
+    drag.el.style.right="auto";drag.el.style.bottom="auto";drag.el.style.transform="none";
+    e.preventDefault();e.stopPropagation();}
+  function dragEnd(e){
+    if(!drag)return;
+    const L=Store.get("hudLayout",{});
+    L[drag.el.id]={x:parseInt(drag.el.style.left)||0,y:parseInt(drag.el.style.top)||0};
+    Store.set("hudLayout",L);drag=null;applyLayout();}
+  for(const id of LAY_IDS){const el=$(id);if(!el)continue;
+    el.addEventListener("pointerdown",dragStart);
+    el.addEventListener("pointermove",dragMove);
+    el.addEventListener("pointerup",dragEnd);
+    el.addEventListener("pointercancel",dragEnd);}
+  $("layoutDone").onclick=()=>{Sfx.click();setLayoutMode(false);toast("HUD 배치 저장됨");};
+  $("layoutReset").onclick=()=>{Sfx.click();Store.set("hudLayout",{});applyLayout();toast("HUD 배치 초기화");};
+  Game.setLayoutMode=setLayoutMode;
+  applyLayout();
+  // 📊 HUD 표시/숨김 (기본 off — 깔끔한 화면). 길게 누르면 배치 편집 모드.
+  {let hudHold=null;const bh=$("btnHud");
+   bh.addEventListener("pointerdown",()=>{hudHold=setTimeout(()=>{hudHold=null;Sfx.click();setLayoutMode(true);},600);});
+   const cancel=()=>{if(hudHold){clearTimeout(hudHold);hudHold=null;}};
+   bh.addEventListener("pointerup",cancel);bh.addEventListener("pointerleave",cancel);}
   function applyHud(){const on=Settings.hudOn===true;
     $("hud").classList.toggle("lean",!on);
     $("btnHud").classList.toggle("off",!on);}
-  $("btnHud").onclick=()=>{Sfx.click();Settings.hudOn=!(Settings.hudOn===true);saveSettings();
-    applyHud();toast(Settings.hudOn?"HUD 표시":"HUD 숨김");};
+  $("btnHud").onclick=()=>{
+    if(layoutOn)return;                          // 배치 편집 중엔 토글 무시
+    Sfx.click();Settings.hudOn=!(Settings.hudOn===true);saveSettings();
+    applyHud();toast(Settings.hudOn?"HUD 표시":"HUD 숨김 (길게 누르면 배치 편집)");};
   applyHud();Game.applyHud=applyHud;
   // 🗺️ 지도 버튼 = 미니맵 표시/숨김 토글
   function setMinimap(on){Settings.minimapOn=on;saveSettings();

@@ -219,8 +219,31 @@ class MapBuilder{
     const w=this.world,y=w.height(x,z);
     const p=makeProp(type,x,y,z,yaw||0);
     w.props.push(p);this.group.add(p.mesh);return p;}
+  /* 🚧 도로 위 방해물 자동 제거 — 노면 '내부'에 놓인 난간·조형물·수목 등을 일괄 삭제.
+     맵 제작 중 실수로 도로를 가로막는 벽/난간이 생겨도 여기서 구조적으로 걸러진다.
+     (설계상 노면에 있어야 하는 것들 — 콘·타이어월·주차차량·교각·터널벽 등 — 은 보존) */
+  clearRoadObstacles(){
+    const w=this.world,R=w.res,N=R+1,cell=w.cell,half=w.size*.5;
+    const S=SURF_IDS;
+    const paved=s=>{const n=S[s];return n==="asphalt"||n==="lane"||n==="curb";};
+    const REMOVE=/^(rail|railpost|railbar|tree|treesTall|plinth|statue|monument|planter|hedge|bench|parasol|boat|dock|barrel|beam|scaffold|lightlamp|lighthouse|boathouse)$/;
+    const kept=[];let removed=0;
+    for(const b of w.boxes){
+      const t=b.tag||"";
+      if(!REMOVE.test(t)){kept.push(b);continue;}
+      const gy=w.height(b.c.x,b.c.z),bot=b.c.y-b.half.y,top=b.c.y+b.half.y;
+      if(bot>gy+1.6||top<gy+.12){kept.push(b);continue;}      // 공중/지하는 무관
+      const gi=Math.round((b.c.x+half)/cell),gj=Math.round((b.c.z+half)/cell);
+      if(gi<2||gj<2||gi>R-2||gj>R-2){kept.push(b);continue;}
+      const at=(i,j)=>paved(w.sMap[w.idx(i,j)]);
+      // 노면 '내부' 판정: 좌우·전후 2셀이 모두 포장 → 도로 한가운데(가장자리 난간은 보존)
+      if(at(gi,gj)&&at(gi-2,gj)&&at(gi+2,gj)&&at(gi,gj-2)&&at(gi,gj+2)){removed++;continue;}
+      kept.push(b);}
+    if(removed){w.boxes.length=0;for(const b of kept)w.boxes.push(b);}
+    return removed;}
   finalize(mapDef){
     const w=this.world;
+    this.roadObstaclesRemoved=this.clearRoadObstacles();
     // 포트홀 자동 산재 — 아스팔트/차선 위, 스폰·장소 주변 제외 (모든 맵에 다수)
     if(this.noPotholes!==true){
       let sd=(w.size*7|0)+13,rr=()=>{sd=(sd*1103515245+12345)&0x7fffffff;return sd/0x7fffffff;};
