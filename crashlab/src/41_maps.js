@@ -295,7 +295,10 @@ class MapBuilder{
     if(this.noRoughen!==true){
       /* 전역 잔요철 — 포장면 전체에 mm급 다중 사인. 패치(아래)는 '가끔 만나는 요철',
          이건 '항상 깔려 있는 노면 결'이다. 둘이 겹쳐야 도로 전역이 살아 있다. */
-      w.roadRough=1;
+      /* 진폭 계수 — 계측으로 고름(60km/h 롤스로이스, 차고 진폭 / 수직가속 RMS):
+           1.0 → 0.9cm / 1.01   0.7 → 0.6cm / 0.73   0.5 → 0.4cm / 0.55   0 → 0 / 0.26
+         0.5면 노면 결은 확실히 느껴지면서 차체는 거의 움직이지 않는다. */
+      w.roadRough=.5;
       let sd=(w.size*13|0)+7,rr=()=>{sd=(sd*1103515245+12345)&0x7fffffff;return sd/0x7fffffff;};
       const avoid=[w.spawn,...(w.places||[])];
       const paved=(x,z)=>{const q=w.surf(x,z);
@@ -303,7 +306,7 @@ class MapBuilder{
       /* 개수는 맵 크기 비례. 도로 전역에서 실제로 요철이 느껴져야 하므로
          (측정: /9 이면 포장면 중 10mm 이상 지점이 grand 7.8% / city 1%로 너무 드물었다)
          밀도를 크게 올리고, 좁은 이면도로도 통과하도록 도로 내부 판정 여유도 줄인다. */
-      const N=Math.round(w.size/4);                  // 요철 개수(맵 크기 비례)
+      const N=Math.round(w.size/7);                  // 요철 개수(맵 크기 비례)
       let placed=0;
       for(let k=0;k<N*6&&placed<N;k++){
         const x=(rr()-.5)*w.size*.94,z=(rr()-.5)*w.size*.94;
@@ -314,17 +317,18 @@ class MapBuilder{
         const t=rr();
         // 대부분은 아주 낮은 잔요철, 일부만 살짝 더 큰 굴곡
         this.rough(x,z,yaw,10+rr()*7,
-          t<.62?(.022+rr()*.030):(.055+rr()*.045),
+          t<.62?(.014+rr()*.018):(.036+rr()*.026),
           t<.30?"flat":t<.62?"round":t<.86?"arch":"round");
         placed++;}
       // 꿀렁임(롱웨이브) 존 — 도로 위에만, 개수는 절제
-      const NZ=Math.max(4,Math.round(w.size/130));
+      const NZ=Math.max(3,Math.round(w.size/260));
       let pz2=0;
       for(let k=0;k<NZ*6&&pz2<NZ;k++){
         const x=(rr()-.5)*w.size*.9,z=(rr()-.5)*w.size*.9;
         if(!paved(x,z))continue;
         if(avoid.some(a=>a&&Math.hypot(x-a.x,z-a.z)<40))continue;
-        w.addRippleZone(x,z,30+rr()*26,.010+rr()*.010,1.6+rr()*1.6,1+((rr()*3)|0));
+        /* 꿀렁임은 일부만 — 파장도 짧게(f 크게) 잡아 차체 고유진동수를 때리지 않게 */
+        w.addRippleZone(x,z,26+rr()*20,.006+rr()*.006,2.6+rr()*2.0,1+((rr()*3)|0));
         pz2++;}}
     this.texBase();
     this.tctx.drawImage(this.overlay,0,0);

@@ -944,72 +944,6 @@ class CarVisual{
         delete this.detached[k];}}
   }
   storeHomes(){for(const k in this.parts)this.parts[k].userData.home=this.parts[k].position.clone();}
-  /* 🪟 윈도 그래픽(크롬 서라운드)
-     스캔 차체는 창 주변 모서리가 들쭉날쭉해 옆에서 보면 지저분하다. 실차의
-     '윈도 서라운드 몰딩'을 얹으면 그 경계가 한 줄로 정리돼 매끈해 보인다.
-     · 유리 실루엣을 z 구간으로 나눠 구간별 상·하단 y와 바깥 x를 뽑고
-     · 이동평균으로 라인을 펴서(들쭉날쭉 제거) 직선에 가깝게 만든 뒤
-     · 짧은 크롬 세그먼트를 기울여 이어 붙인다(벨트라인 + 루프라인). */
-  buildWindowTrim(glassGeo,cr,hx,hy,zF,zR,K){
-    const a=glassGeo.attributes.position.array;
-    let xMax=0,zLo=1e9,zHi=-1e9,yLo=1e9,yHi=-1e9;
-    for(let i=0;i<a.length;i+=3){const q=Math.abs(a[i]);if(q>xMax)xMax=q;}
-    const XT=xMax*.60;                              // 측면 유리만(윈드실드·리어글래스 제외)
-    for(let i=0;i<a.length;i+=3){
-      if(Math.abs(a[i])<XT)continue;
-      if(a[i+2]<zLo)zLo=a[i+2];if(a[i+2]>zHi)zHi=a[i+2];
-      if(a[i+1]<yLo)yLo=a[i+1];if(a[i+1]>yHi)yHi=a[i+1];}
-    /* 캐빈 범위를 벗어난 조각(램프 렌즈 등)은 잘라낸다 */
-    const cab=Math.abs(zF-zR)*.52;
-    zLo=Math.max(zLo,zR+ .06);zHi=Math.min(zHi,zF- .06);
-    if(!(zHi-zLo>.6))return;
-    const N=16,top=new Array(N).fill(NaN),bot=new Array(N).fill(NaN),xo=new Array(N).fill(0);
-    for(const sg of[-1,1]){
-      top.fill(NaN);bot.fill(NaN);xo.fill(0);
-      for(let i=0;i<a.length;i+=3){
-        const x=a[i],y=a[i+1],z=a[i+2];
-        if(Math.sign(x)!==sg||Math.abs(x)<XT)continue;
-        if(z<zLo||z>zHi)continue;
-        let k=((z-zLo)/(zHi-zLo)*N)|0;if(k>=N)k=N-1;
-        if(!(top[k]>y))top[k]=y;
-        if(!(bot[k]<y))bot[k]=y;
-        const q=Math.abs(x);if(q>xo[k])xo[k]=q;}
-      /* 빈 구간 보간 */
-      const fill=arr=>{
-        let last=NaN;
-        for(let k=0;k<N;k++){if(isNaN(arr[k]))arr[k]=last;else last=arr[k];}
-        last=NaN;
-        for(let k=N-1;k>=0;k--){if(isNaN(arr[k]))arr[k]=last;else last=arr[k];}};
-      fill(top);fill(bot);
-      if(isNaN(top[0])||isNaN(bot[0]))continue;
-      /* 이동평균 3회 — 들쭉날쭉한 경계를 곧게 편다 */
-      const smooth=arr=>{
-        for(let p=0;p<3;p++){
-          const c=arr.slice();
-          for(let k=0;k<N;k++){
-            const a0=c[Math.max(0,k-1)],a1=c[k],a2=c[Math.min(N-1,k+1)];
-            arr[k]=(a0+a1*2+a2)/4;}}};
-      smooth(top);smooth(bot);smooth(xo);
-      const seg=(ys,zs,ye,ze,x0,x1,w,h)=>{
-        const dz=ze-zs,dy=ye-ys,len=Math.hypot(dz,dy);
-        if(len<.02)return;
-        cr.push({geo:new THREE.BoxGeometry(w,h,len),
-          x:sg*((x0+x1)*.5),y:(ys+ye)*.5,z:(zs+ze)*.5,rx:-Math.atan2(dy,dz)});};
-      const zAt=k=>zLo+(k+.5)/N*(zHi-zLo);
-      for(let k=0;k<N-1;k++){
-        const xa=Math.min(xo[k],hx*.99)*.985, xb=Math.min(xo[k+1],hx*.99)*.985;
-        // 벨트라인(창 하단)
-        seg(bot[k]+.012,zAt(k),bot[k+1]+.012,zAt(k+1),xa,xb,.024,.026);
-        // 루프라인(창 상단) — 지붕 곡선을 따라간다
-        if(K.roofTrim!==false)
-          seg(top[k]-.010,zAt(k),top[k+1]-.010,zAt(k+1),xa*.985,xb*.985,.020,.022);}
-      /* A/C 필러 마감 — 앞뒤 끝을 세로로 막아 창틀이 닫혀 보이게 */
-      for(const k of[0,N-1]){
-        const x=Math.min(xo[k],hx*.99)*.985;
-        const h2=Math.max(.02,(top[k]-.010)-(bot[k]+.012));
-        cr.push({geo:new THREE.BoxGeometry(.022,h2,.024),
-          x:sg*x,y:(top[k]+bot[k])*.5,z:zAt(k)});}}
-  }
   buildChromeKit(spec,bx,by,hx,hy,glassGeo){
     const K=spec.chromeKit;
     const zF=bx.max.z,zR=bx.min.z;
@@ -1024,11 +958,6 @@ class CarVisual{
     cr.push({geo:new THREE.BoxGeometry(gW*2+.09,.05,.07),y:gY-gH,z:gZ});       // 하단 몰딩
     for(const sg of[-1,1])
       cr.push({geo:new THREE.BoxGeometry(.05,gH*2+.05,.07),x:sg*(gW+.02),y:gY,z:gZ});
-    /* 모서리 챔퍼 — 네 귀퉁이를 45°로 이어 프레임이 한 덩어리로 매끈하게 돌아가게 한다
-       (박스 4개만 겹치면 코너가 계단처럼 각져 보였다) */
-    for(const sy of[-1,1])for(const sx of[-1,1])
-      cr.push({geo:new THREE.BoxGeometry(.075,.048,.068),
-        x:sx*(gW-.006),y:gY+sy*(gH-.004),z:gZ,rz:sx*sy*.62});
     dk.push({geo:new THREE.BoxGeometry(gW*2,gH*2,.04),y:gY,z:gZ-.03});          // 그릴 배경(다크)
     /* 판테온 그릴 — 세로 슬랫은 가운데가 굵고 바깥으로 갈수록 얇아지며,
        뒤로 살짝 물러난 곡면(배럴)을 이룬다. 상단에는 굵은 크롬 바가 얹힌다. */
@@ -1046,13 +975,7 @@ class CarVisual{
      /* 세로 바 7개는 앞면을 잘게 쪼개 지저분했다 → 한 장의 매끈한 메시 패널로.
         대신 아래에 '풀 폭 크롬 블레이드'를 깔아 좌우가 한 줄로 이어져 보이게 한다. */
      dk.push({geo:new THREE.BoxGeometry(iw*1.94,ih*1.7,.030),y:iy,z:iz+.014});
-     /* 풀 폭 크롬 블레이드 — 중앙이 코 안쪽에 묻혀 좌우가 끊겨 보이지 않도록
-        해당 높이에서 실제 앞면 z를 재서 그 바로 앞에 붙인다. */
-     const by3=iy-ih*1.45;
-     const bw=this.bodySilMin(by3,zF-.22,zF-.06,hy*.10,5);
-     const bladeW=(bw>0?bw:hx*.8)*1.66;
-     const nz=this.bodyNoseZ(0,by3,.22,hy*.10);
-     cr.push({geo:new THREE.BoxGeometry(bladeW,.024,.032),y:by3,z:(nz||zF-.14)-.012});}
+     }
     /* ── 보닛 오너먼트(환희의 여신상 / 스리포인티드 스타 대용 조각) ── */
     if(K.ornament){
       const oy=topY*(K.ornY||.30)+hy*.02, oz=zF-(K.ornZ||.30);
@@ -1064,7 +987,8 @@ class CarVisual{
                  rz:sg*.5,ry:sg*.22});}
     /* ── 윈도 몰딩 — 실제 유리 메시의 경계상자에 맞춘다.
          차체 최대폭(xR)에 붙이면 휠아치가 가장 넓어서 캐빈 밖으로 판자처럼 떠 보였다. ── */
-    if(K.window!==false&&glassGeo)this.buildWindowTrim(glassGeo,cr,hx,hy,zF,zR,K);
+    /* 윈도 몰딩은 넣지 않는다 — 스캔 차체의 창 경계에 크롬 줄을 얹으면
+       차 옆면이 줄무늬로 잘게 쪼개져 조잡해 보였다. 차체는 한 장으로 매끈하게 둔다. */
     /* ── 로커(사이드 스커트) 크롬 ──
        차체 '최대폭'(휠아치)에 붙이면 실제로 좁은 사이드실 높이에서는 막대가 차 밖으로
        떠 보인다 → 해당 높이·구간의 실제 차체 폭을 재서 그보다 살짝 안쪽에 붙인다. */
@@ -1095,8 +1019,7 @@ class CarVisual{
      const rLim=this.bodySilWidth(ry2,rz2+.06,hy*.20,.22);
      const rW=rLim>0?Math.min(hx*1.05,rLim*1.94):hx*1.05;
      cr.push({geo:new THREE.BoxGeometry(rW,.028,.045),y:ry2,z:rz2});
-     cr.push({geo:new THREE.CylinderGeometry(.034,.034,.010,16),y:ry2+.09,z:rz2+.014,rx:Math.PI/2});
-     dk.push({geo:new THREE.CylinderGeometry(.029,.029,.014,16),y:ry2+.09,z:rz2,rx:Math.PI/2});}
+     }
     const mk=(items,mat)=>{
       if(!items.length)return null;
       const m=new THREE.Mesh(mergeGeoms(items),mat);

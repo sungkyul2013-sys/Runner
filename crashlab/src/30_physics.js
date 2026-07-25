@@ -161,10 +161,14 @@ class World{
     if(!a)return 0;
     const s=this.surf(x,z);
     if(s!==SURF_ID.asphalt&&s!==SURF_ID.lane&&s!==SURF_ID.curb)return 0;
-    return a*(Math.sin(x*.37)*Math.sin(z*.31)*.0085
-             +Math.sin(x*.93+z*.41)*.0052
-             +Math.sin(z*1.37-x*.29)*.0041
-             +Math.sin(x*2.7)*Math.cos(z*2.3)*.0022);}
+    /* ⚠ 파장 선택이 핵심이다. 예전엔 파장 17m·7m 성분을 넣었는데, 60km/h에서 그게
+       1.0~2.5Hz = 차체 고유진동수(≈1.2Hz) 대역이라 노면 요철이 아니라 '통통 튀는
+       울렁임'으로 증폭됐다(계측: 차고 진폭 0.8cm → 3.2cm).
+       파장을 2.5m 이하로만 두면 60km/h에서 6.7Hz 이상 → 차체는 거의 반응하지 않고
+       타이어·서스펜션만 잘게 움직여 '노면 결'로만 느껴진다. */
+    return a*(Math.sin(x*2.51)*Math.sin(z*2.13)*.0026
+             +Math.sin(x*4.47+z*3.91)*.0016
+             +Math.sin(z*7.93-x*6.11)*.0011);}
   bumpH(x,z){
     let add=0;
     const B=this.bumps;

@@ -192,7 +192,7 @@ class Vehicle{
         /* 댐퍼 유압 지연(1차 저역통과) — 실제 댐퍼는 오일·호스 컴플라이언스 때문에
            스텝 단위의 순간 속도를 그대로 힘으로 바꾸지 못한다. 이 필터가 없으면
            격자 보간의 미세 계단이 그대로 힘 잡음이 된다. */
-        w.cVelF=(w.cVelF===undefined)?cVelRaw:w.cVelF+(cVelRaw-w.cVelF)*.28;
+        w.cVelF=(w.cVelF===undefined)?cVelRaw:w.cVelF+(cVelRaw-w.cVelF)*.42;
         const cVel=w.cVelF;
         // 비대칭 댐핑: 리바운드(늘어남)는 압축보다 강하게 → 방지턱 후 위로 튀는 요동 억제(실차 댐퍼)
         const cAsym=cVel<0?(susp.rebMul||1.5):1;
@@ -205,7 +205,7 @@ class Vehicle{
            방지턱을 내려올 때 차체가 자유낙하했다가 쿵 하고 받는다(측정: 힘 0N 구간).
            댐퍼는 스프링 힘의 일부까지만 깎을 수 있게 한다. */
         let dF=susp.c*kMul*dampMul*cVel*cAsym;
-        if(dF<0)dF=Math.max(dF,-(spring*.62+sp.mass*GRAV*.03));
+        if(dF<0)dF=Math.max(dF,-(spring*.80+sp.mass*GRAV*.04));
         let sF=spring+dF+arb;
         /* 스카이훅·헤이브·프리뷰는 '보조'다. 이 셋이 합쳐 지지력을 무너뜨리면
            서스가 사라진 것처럼 느껴지므로, 총 감쇠량을 스프링 힘 기준으로 제한한다. */
