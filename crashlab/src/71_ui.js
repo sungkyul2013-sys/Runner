@@ -32,7 +32,9 @@ const UI=(()=>{
       '<div class="grid big">'+MODES.map(m=>
         '<button class="card mode" data-m="'+m.id+'"><span class="ic">'+m.icon+'</span>'+
         '<span class="nm">'+m.name+'</span><span class="ds">'+m.desc+'</span></button>').join("")+'</div>'+
-      '<p class="note">실차 3D 모델(레인지로버 실측 스캔 + CC0 Kenney Car Kit) · 물리는 어떤 어시스트에서도 항상 풀 시뮬레이션 · 변형은 수리 전까지 영구 누적</p>';
+      '<p class="note">실차 3D 모델(레인지로버·마이바흐 GLS 실측 스캔 + CC0 Kenney Car Kit) · '+
+      '물리는 어떤 어시스트에서도 항상 풀 시뮬레이션 · 변형은 수리 전까지 영구 누적<br>'+
+      '<small style="opacity:.75">3D 모델 크레딧: "Rolls-Royce Ghost" by Black Snow (sketchfab.com/BlackSnow02), CC-BY-4.0</small></p>';
     $("quickPlay").onclick=()=>{
       Sfx.resume();Sfx.click();
       Game.mode="free";

@@ -246,7 +246,7 @@ class MapBuilder{
     if(this._resvOn&&this.resvNear(x,z,2.5))return null;
     const w=this.world,y=w.height(x,z);
     const p=makeProp(type,x,y,z,yaw||0);
-    w.props.push(p);this.group.add(p.mesh);return p;}
+    w.props.push(p);return p;}
   /* 🚧 도로 위 방해물 자동 제거 — 노면 '내부'에 놓인 난간·조형물·수목 등을 일괄 삭제.
      맵 제작 중 실수로 도로를 가로막는 벽/난간이 생겨도 여기서 구조적으로 걸러진다.
      (설계상 노면에 있어야 하는 것들 — 콘·타이어월·주차차량·교각·터널벽 등 — 은 보존) */
@@ -287,30 +287,61 @@ class MapBuilder{
     this.texBase();
     this.tctx.drawImage(this.overlay,0,0);
     this.texGrain();
-    // ground mesh (고해상 캔버스 텍스처)
+    /* ── 지면·정적 지오메트리를 공간 청크로 쪼갠다 ──
+       예전에는 지면 전체(≈7만 삼각형)와 병합 정적물 전체(≈19만 삼각형)가 각각
+       '하나의 메시'라 바운딩이 맵 전체를 덮었다 → 프러스텀 컬링이 전혀 듣지 않아
+       카메라가 어디를 보든 매 프레임 전량이, 그림자 패스에서 한 번 더 그려졌다.
+       청크로 나누면 보이는 부분만 그려져 실제 삼각형 수가 크게 준다.
+       (드로우콜은 조금 늘지만 청크 수는 수십 개 수준이라 훨씬 이득) */
     const res=Math.min(w.res,192);
-    const g=new THREE.PlaneGeometry(w.size,w.size,res,res);
-    g.rotateX(-Math.PI/2);
-    const pos=g.attributes.position;
-    for(let vi=0;vi<pos.count;vi++)
-      pos.setY(vi,w.baseHeight(pos.getX(vi),pos.getZ(vi)));
-    g.computeVertexNormals();
     const gtex=new THREE.CanvasTexture(this.tex);
     gtex.colorSpace=THREE.SRGBColorSpace;
     gtex.anisotropy=4;
-    const ground=new THREE.Mesh(g,new THREE.MeshLambertMaterial({map:gtex}));
-    ground.receiveShadow=true;
-    this.group.add(ground);
-    // merged static boxes
+    const groundMat=new THREE.MeshLambertMaterial({map:gtex});
+    const G=w.size>1600?7:(w.size>900?5:4);            // 지면 청크 분할 수
+    const sub=Math.max(4,Math.round(res/G));
+    const _gn=V3(0,1,0);
+    for(let cj=0;cj<G;cj++)for(let ci=0;ci<G;ci++){
+      const cs=w.size/G;
+      const ox=-w.size*.5+cs*(ci+.5),oz=-w.size*.5+cs*(cj+.5);
+      const g=new THREE.PlaneGeometry(cs,cs,sub,sub);
+      g.rotateX(-Math.PI/2);
+      const pos=g.attributes.position,uv=g.attributes.uv,nor=g.attributes.normal;
+      for(let vi=0;vi<pos.count;vi++){
+        const x=pos.getX(vi)+ox,z=pos.getZ(vi)+oz;
+        pos.setX(vi,x);pos.setZ(vi,z);pos.setY(vi,w.baseHeight(x,z));
+        // 법선은 하이트필드에서 해석적으로 — 청크 경계에서 음영이 어긋나지 않게
+        w.normal(x,z,_gn);nor.setXYZ(vi,_gn.x,_gn.y,_gn.z);
+        uv.setXY(vi,x/w.size+.5,1-(z/w.size+.5));}
+      const m=new THREE.Mesh(g,groundMat);
+      m.receiveShadow=true;
+      this.group.add(m);}
+    // merged static boxes — 삼각형 중심 좌표로 청크에 배분
     if(this.mergePos.length){
-      const mg=new THREE.BufferGeometry();
-      mg.setAttribute("position",new THREE.Float32BufferAttribute(this.mergePos,3));
-      mg.setAttribute("normal",new THREE.Float32BufferAttribute(this.mergeNor,3));
-      mg.setAttribute("color",new THREE.Float32BufferAttribute(this.mergeCol,3));
-      const mm=new THREE.Mesh(mg,new THREE.MeshLambertMaterial({vertexColors:true}));
-      mm.castShadow=true;mm.receiveShadow=true;
-      this.group.add(mm);}
+      const P=this.mergePos,N=this.mergeNor,C=this.mergeCol;
+      const CH=Math.max(140,w.size/9),half=w.size*.5;
+      const nC=Math.max(1,Math.ceil(w.size/CH));
+      const buckets=new Map();
+      for(let t=0;t<P.length;t+=9){
+        const cx=(P[t]+P[t+3]+P[t+6])/3,cz=(P[t+2]+P[t+5]+P[t+8])/3;
+        const i=clamp(Math.floor((cx+half)/CH),0,nC-1);
+        const j=clamp(Math.floor((cz+half)/CH),0,nC-1);
+        const k=j*nC+i;
+        let b=buckets.get(k);
+        if(!b){b={p:[],n:[],c:[]};buckets.set(k,b);}
+        for(let q=0;q<9;q++){b.p.push(P[t+q]);b.n.push(N[t+q]);b.c.push(C[t+q]);}}
+      const mmMat=new THREE.MeshLambertMaterial({vertexColors:true});   // 청크끼리 머티리얼 공유
+      for(const b of buckets.values()){
+        if(!b.p.length)continue;
+        const mg=new THREE.BufferGeometry();
+        mg.setAttribute("position",new THREE.Float32BufferAttribute(b.p,3));
+        mg.setAttribute("normal",new THREE.Float32BufferAttribute(b.n,3));
+        mg.setAttribute("color",new THREE.Float32BufferAttribute(b.c,3));
+        const mm=new THREE.Mesh(mg,mmMat);
+        mm.castShadow=true;mm.receiveShadow=true;
+        this.group.add(mm);}}
     this.mergePos=this.mergeNor=this.mergeCol=null;
+    buildPropInstances(w,this.group);   // 프롭을 타입별 InstancedMesh로 합쳐 드로우콜 최소화
     w.mapDef=mapDef;
     return{world:w,group:this.group};}
 }
@@ -471,46 +502,80 @@ function procBuilding(mb,x,z,W,D,H,seed,opt){
 }
 
 /* ---------- props ---------- */
+/* 프롭 정의 — 파트별 (지오메트리 · 색 · 로컬 오프셋).
+   예전에는 프롭 하나가 THREE.Group + 메시 2~3개 + '각자의' 머티리얼이었다.
+   메가시티에는 프롭이 93개라 그것만으로 메시 250여 개 · 드로우콜 200여 개가 됐고,
+   그림자 패스까지 더하면 프레임마다 400~500 드로우콜이 나가 모바일에서 치명적이었다.
+   → 파트별 InstancedMesh 하나로 합쳐 드로우콜을 타입×파트 수(10여 개)로 줄인다. */
 const PROP_DEFS={
-  cone:{r:.28,m:4,mk(){const g=new THREE.Group();
-    const c=new THREE.Mesh(new THREE.ConeGeometry(.22,.55,8),new THREE.MeshLambertMaterial({color:0xff7518}));
-    c.position.y=.28;g.add(c);
-    const b=new THREE.Mesh(new THREE.BoxGeometry(.4,.05,.4),new THREE.MeshLambertMaterial({color:0xd85f10}));
-    b.position.y=.025;g.add(b);return g;}},
-  sign:{r:.35,m:14,mk(){const g=new THREE.Group();
-    const p=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,2.1,6),new THREE.MeshLambertMaterial({color:0x8a94a0}));
-    p.position.y=1.05;g.add(p);
-    const s=new THREE.Mesh(new THREE.BoxGeometry(.62,.62,.04),new THREE.MeshLambertMaterial({color:0x2477ff}));
-    s.position.y=1.9;g.add(s);return g;}},
-  lamp:{r:.4,m:38,mk(){const g=new THREE.Group();
-    const p=new THREE.Mesh(new THREE.CylinderGeometry(.07,.09,4.6,6),new THREE.MeshLambertMaterial({color:0x5b6570}));
-    p.position.y=2.3;g.add(p);
-    const a=new THREE.Mesh(new THREE.BoxGeometry(.12,.1,1.1),new THREE.MeshLambertMaterial({color:0x5b6570}));
-    a.position.set(0,4.5,.5);g.add(a);
-    const l=new THREE.Mesh(new THREE.BoxGeometry(.2,.08,.4),new THREE.MeshBasicMaterial({color:0xfff2b8}));
-    l.position.set(0,4.42,.95);g.add(l);return g;}},
-  bench:{r:.5,m:26,mk(){const g=new THREE.Group();
-    const s=new THREE.Mesh(new THREE.BoxGeometry(1.5,.08,.45),new THREE.MeshLambertMaterial({color:0x9a6b3f}));
-    s.position.y=.45;g.add(s);
-    const b=new THREE.Mesh(new THREE.BoxGeometry(1.5,.4,.07),new THREE.MeshLambertMaterial({color:0x9a6b3f}));
-    b.position.set(0,.72,-.2);g.add(b);
-    const l=new THREE.Mesh(new THREE.BoxGeometry(1.3,.42,.35),new THREE.MeshLambertMaterial({color:0x4a4f57}));
-    l.position.y=.22;g.add(l);return g;}},
-  barrel:{r:.35,m:20,mk(){const m=new THREE.Mesh(new THREE.CylinderGeometry(.32,.32,.9,10),
-    new THREE.MeshLambertMaterial({color:0xd0662a}));m.position.y=.45;
-    const g=new THREE.Group();g.add(m);return g;}},
+  cone:{r:.28,m:4,parts:[
+    {geo:()=>new THREE.ConeGeometry(.22,.55,8),color:0xff7518,y:.28},
+    {geo:()=>new THREE.BoxGeometry(.4,.05,.4),color:0xd85f10,y:.025}]},
+  sign:{r:.35,m:14,parts:[
+    {geo:()=>new THREE.CylinderGeometry(.04,.04,2.1,6),color:0x8a94a0,y:1.05},
+    {geo:()=>new THREE.BoxGeometry(.62,.62,.04),color:0x2477ff,y:1.9}]},
+  lamp:{r:.4,m:38,parts:[
+    {geo:()=>new THREE.CylinderGeometry(.07,.09,4.6,6),color:0x5b6570,y:2.3},
+    {geo:()=>new THREE.BoxGeometry(.12,.1,1.1),color:0x5b6570,y:4.5,z:.5},
+    {geo:()=>new THREE.BoxGeometry(.2,.08,.4),color:0xfff2b8,y:4.42,z:.95,basic:true}]},
+  bench:{r:.5,m:26,parts:[
+    {geo:()=>new THREE.BoxGeometry(1.5,.08,.45),color:0x9a6b3f,y:.45},
+    {geo:()=>new THREE.BoxGeometry(1.5,.4,.07),color:0x9a6b3f,y:.72,z:-.2},
+    {geo:()=>new THREE.BoxGeometry(1.3,.42,.35),color:0x4a4f57,y:.22}]},
+  barrel:{r:.35,m:20,parts:[
+    {geo:()=>new THREE.CylinderGeometry(.32,.32,.9,10),color:0xd0662a,y:.45}]},
 };
+/* 프롭 인스턴싱 — 맵 빌드가 끝난 뒤 타입별로 InstancedMesh를 만든다 */
+const _propM4=new THREE.Matrix4(),_propQ=new THREE.Quaternion(),
+      _propE=new THREE.Euler(),_propS=new THREE.Vector3(1,1,1),_propP=new THREE.Vector3();
+function buildPropInstances(world,group){
+  const byType={};
+  for(const p of world.props)(byType[p.type]=byType[p.type]||[]).push(p);
+  world.propIM=[];
+  for(const type in byType){
+    const list=byType[type],def=PROP_DEFS[type];
+    def.parts.forEach((pt,pi)=>{
+      const mat=pt.basic
+        ? new THREE.MeshBasicMaterial({color:pt.color,toneMapped:false})
+        : new THREE.MeshLambertMaterial({color:pt.color});
+      const im=new THREE.InstancedMesh(pt.geo(),mat,list.length);
+      im.castShadow=!pt.basic;im.receiveShadow=false;
+      im.frustumCulled=false;          // 프롭은 맵 전역에 흩어져 있어 하나의 경계상자로 컬링 불가
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      group.add(im);
+      world.propIM.push(im);
+      list.forEach((p,k)=>{
+        (p.im=p.im||[]).push(im);(p.imi=p.imi||[]).push(k);
+        (p.off=p.off||[]).push([pt.x||0,pt.y||0,pt.z||0]);});});
+  }
+  for(const p of world.props)writePropMatrix(p);
+}
+/* 프롭 하나의 현재 위치·자세를 인스턴스 행렬에 반영 */
+function writePropMatrix(p){
+  if(!p.im)return;
+  for(let k=0;k<p.im.length;k++){
+    const o=p.off[k];
+    if(p.gone){_propS.set(0,0,0);_propP.set(0,-9999,0);_propQ.identity();}
+    else{
+      _propS.set(1,1,1);
+      _propE.set(p.rot.x,p.rot.y,p.rot.z,"YXZ");
+      _propQ.setFromEuler(_propE);
+      _propP.set(o[0],o[1],o[2]).applyQuaternion(_propQ).add(p.pos);}
+    _propM4.compose(_propP,_propQ,_propS);
+    p.im[k].setMatrixAt(p.imi[k],_propM4);
+    p.im[k].instanceMatrix.needsUpdate=true;}
+}
 function makeProp(type,x,y,z,yaw){
   const def=PROP_DEFS[type];
-  const mesh=def.mk();mesh.position.set(x,y,z);mesh.rotation.y=yaw;
-  return{type,mesh,def,home:{x,y,z,yaw},vel:V3(0,0,0),angVel:V3(0,0,0),awake:false,gone:false};}
+  return{type,def,pos:V3(x,y,z),rot:V3(0,yaw,0),
+    home:{x,y,z,yaw},vel:V3(0,0,0),angVel:V3(0,0,0),awake:false,gone:false};}
 
 /* prop vs vehicles — called from Vehicle.step */
 function hitProps(veh){
   const props=veh.world.props,b=veh.body;
   for(let i=0;i<props.length;i++){
     const p=props[i];if(p.gone)continue;
-    _t6.copy(p.mesh.position);_t6.y+=.4;
+    _t6.copy(p.pos);_t6.y+=.4;
     _t7.copy(_t6).sub(b.pos);
     if(_t7.lengthSq()>36)continue;
     b.worldToLocal(_t6,_t8);
@@ -535,19 +600,21 @@ function stepProps(world,dt){
   for(const p of world.props){
     if(!p.awake||p.gone)continue;
     p.vel.y-=GRAV*dt;
-    p.mesh.position.addScaledVector(p.vel,dt);
-    p.mesh.rotation.x+=p.angVel.x*dt;p.mesh.rotation.y+=p.angVel.y*dt;p.mesh.rotation.z+=p.angVel.z*dt;
-    const gy=world.height(p.mesh.position.x,p.mesh.position.z);
-    if(p.mesh.position.y<gy){
-      p.mesh.position.y=gy;
+    p.pos.addScaledVector(p.vel,dt);
+    p.rot.x+=p.angVel.x*dt;p.rot.y+=p.angVel.y*dt;p.rot.z+=p.angVel.z*dt;
+    const gy=world.height(p.pos.x,p.pos.z);
+    if(p.pos.y<gy){
+      p.pos.y=gy;
       if(p.vel.y<0)p.vel.y*=-.3;
       p.vel.x*=.82;p.vel.z*=.82;p.angVel.multiplyScalar(.8);
       if(p.vel.lengthSq()<.05){p.awake=false;}}
-    if(p.mesh.position.y<-40)p.gone=true;}
+    if(p.pos.y<-40)p.gone=true;
+    writePropMatrix(p);}
 }
 function resetProps(world){
   for(const p of world.props){
     p.gone=false;p.awake=false;p.vel.set(0,0,0);p.angVel.set(0,0,0);
-    p.mesh.position.set(p.home.x,p.home.y,p.home.z);
-    p.mesh.rotation.set(0,p.home.yaw,0);}
+    p.pos.set(p.home.x,p.home.y,p.home.z);
+    p.rot.set(0,p.home.yaw,0);
+    writePropMatrix(p);}
 }

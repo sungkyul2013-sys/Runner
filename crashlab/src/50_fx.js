@@ -98,7 +98,7 @@ const Fx=(()=>{
   function propHit(p,speed){
     Sfx.impact(clamp(speed/22,0,.55));
     for(let i=0;i<6;i++)
-      emit(sparks,p.mesh.position.x,p.mesh.position.y+.4,p.mesh.position.z,
+      emit(sparks,p.pos.x,p.pos.y+.4,p.pos.z,
         (Math.random()-.5)*5,Math.random()*4,(Math.random()-.5)*5,.3);}
 
   /* debris: detached car part */
@@ -183,6 +183,9 @@ class GameCamera{
     if(this.mode==="explore"){this.exDist=clamp(this.exDist/scale,30,this.exMax);return;}
     this.dist=clamp(this.dist/scale,3,14);this.userT=2.2;}
   update(dt,veh,world){
+    // 탐색(맵 전체 보기)에서는 절단면을 멀리, 주행에서는 가깝게 — 필요할 때만 갱신
+    {const want=this.mode==="explore"?CAM_FAR_EXPLORE:CAM_FAR_PLAY;
+     if(this.cam.far!==want){this.cam.far=want;this.cam.updateProjectionMatrix();}}
     if(this.mode==="explore"){
       const t=this.exTarget,ci=Math.cos(this.exPitch);
       let gx=t.x-Math.sin(this.exYaw)*ci*this.exDist;

@@ -118,6 +118,13 @@ function applyModelSpec(spec){
   spec.wheels.front=Math.abs((fw[0]?fw[0][2]:-len*.35)-spec.modelCz)*s;
   spec.wheels.rear=Math.abs((rw[0]?rw[0][2]:len*.35)-spec.modelCz)*s;
   spec.wheels.y=(w[0][1]-spec.modelCy)*s*sq+spec.susp.rest-drop;
+  /* 정하중 처짐 보정(옵트인) — 스캔 모델은 '설계 차고'로 만들어져 있는데,
+     휠 마운트를 모델 휠 위치+rest에 두면 정지 시 스프링이 눌린 만큼(compEq)
+     차체가 그만큼 더 낮게 앉아 로커·언더바디가 지면을 파고든다.
+     rideFix를 켜면 그 처짐량(+rideLift)만큼 마운트를 내려 설계 차고를 맞춘다. */
+  if(spec.rideFix){
+    const compEq=spec.mass*9.81/(4*spec.susp.k);
+    spec.wheels.y-=compEq+(spec.rideLift||0);}
   spec.engine.maxT*=wr/oldR;                                     // 휠 반경 변화 보상
   // 실측(큰) 휠은 기어가 상대적으로 길어져 RPM이 낮게 걸림 → 최종감속비를
   // 휠 반경에 맞춰 짧게 보정 (변속이 정상 작동, 가속 펀치 확보)

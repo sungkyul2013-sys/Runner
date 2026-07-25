@@ -3,6 +3,7 @@
    auto-quality, stability guards
    ============================================================ */
 let renderer,scene,camera,sunLight,hemiLight,headlight,skyDome,clouds;
+const CAM_FAR_PLAY=1400, CAM_FAR_EXPLORE=3400;   // 주행용 / 맵 전체 탐색용 절단면
 const FPS={fps:60,ema:60,lowT:0,okT:0,tier:0};
 
 /* ============ 충돌·슬로모션 프레임 가드 ============
@@ -72,22 +73,37 @@ function applyShadows(){
   scene.traverse(o=>{if(o.material)o.material.needsUpdate=true;});
 }
 
+/* 프레임버퍼 화소 수 예산(약 2.3MP)에 맞춰 픽셀 비율을 고른다 */
+const PIX_BUDGET=2.3e6;
+function pickPixelRatio(){
+  const dpr=Math.min(devicePixelRatio||1,2);
+  const px=innerWidth*innerHeight;
+  if(px<=0)return dpr;
+  return Math.max(1,Math.min(dpr,Math.sqrt(PIX_BUDGET/px)));
+}
 function initRenderer(){
   try{
-    renderer=new THREE.WebGLRenderer({canvas:$("gl"),antialias:true,powerPreference:"high-performance"});
+    /* 모바일 렌더 예산 —
+       · 고DPI 폰에서 MSAA는 이미 픽셀이 촘촘해 이득이 거의 없는데 비용은 크다 → dpr이 높으면 끈다.
+       · 픽셀 비율은 '프레임버퍼 화소 수' 예산으로 정한다(단순히 min(dpr,2)로 두면
+         큰 화면 고DPI 폰에서 프레임버퍼가 3~4메가픽셀까지 커져 그것만으로 프레임이 무너진다). */
+    const _dpr=devicePixelRatio||1;
+    renderer=new THREE.WebGLRenderer({canvas:$("gl"),antialias:_dpr<=1.5,powerPreference:"high-performance"});
   }catch(err){
     $("loadTip").textContent="⚠️ WebGL을 사용할 수 없습니다 — 브라우저/기기 설정을 확인해 주세요";
     throw err;}
-  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setPixelRatio(pickPixelRatio());
   renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.type=THREE.PCFShadowMap;
   renderer.shadowMap.autoUpdate=false;   // 갱신 시점은 메인 루프가 직접 정한다
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=1.05;
   scene=new THREE.Scene();
-  camera=new THREE.PerspectiveCamera(66,innerWidth/innerHeight,.1,2200);
+    /* 원거리 절단면 — 지수 포그가 1200m쯤이면 이미 완전히 가리는데도 2200m까지 그리고 있었다.
+     보이지도 않는 도시 반대편이 매 프레임(+그림자 패스) 통째로 렌더되던 셈이다. */
+  camera=new THREE.PerspectiveCamera(66,innerWidth/innerHeight,.1,CAM_FAR_PLAY);
   // sky dome + clouds
-  skyDome=new THREE.Mesh(new THREE.SphereGeometry(1500,24,12),
+  skyDome=new THREE.Mesh(new THREE.SphereGeometry(1280,24,12),
     new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide,fog:false}));
   skyDome.frustumCulled=false;
   scene.add(skyDome);
@@ -114,6 +130,7 @@ function initRenderer(){
   applyShadows();
   addEventListener("resize",()=>{
     camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+    renderer.setPixelRatio(pickPixelRatio());
     renderer.setSize(innerWidth,innerHeight);});
 }
 
