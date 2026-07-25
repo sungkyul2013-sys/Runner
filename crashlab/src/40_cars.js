@@ -89,6 +89,20 @@ const CARS=[
   brakeF:15000,steerLo:.72,steerHi:.2,aero:{cd:8,df:0},gripF:1.05,gripR:1.08,
   style:"suv",colors:[0x62a844,0xd7263d,0x3d5a80,0xffb340,0x8899aa],
   stats:{spd:6,acc:14,grip:85,mass:62}},
+ {id:"f1",name:"아폴로 F1-X",icon:"🏎️",drive:"RWD",mass:798,hp:1010,acc:"2.4초",top:355,
+  desc:"포뮬러 원 머신. 1.6L V6 터보하이브리드 1010마력 · 798kg · 다운포스 3,200kg급.\n극단적 그립과 제동력 — 코너에서 5G, 100→0을 2초 안에.",
+  style:"f1",procedural:true,rollFix:1.5,
+  body:{hx:.9,hy:.30,hz:2.62},
+  wheels:{track:.82,front:1.72,rear:1.66,y:-.12,radius:.34,width:.40},
+  // 실제 F1은 트래블 2~3cm·초고강성이지만 그대로 쓰면 노면 요철에서 접지를 잃는다.
+  // 시뮬 안정성을 위해 트래블·강성을 현실적 하한으로 조정(여전히 전 차량 중 가장 단단함).
+  susp:{k:88000,c:8600,travel:.10,rest:.16},arb:52000,
+  engine:{maxT:760,redline:14500,idle:3800},
+  gears:[3.05,2.25,1.78,1.45,1.2,1.0,.86,.75],final:3.2,
+  brakeF:26000,steerLo:.40,steerHi:.10,aero:{cd:1.05,df:72},   // 다운포스 지배적(안정 범위)
+  gripF:1.62,gripR:1.70,
+  colors:[0xe10600,0x00d2be,0x0090ff,0xff8700,0xf5f5f5],
+  stats:{spd:100,acc:100,grip:100,mass:8}},
 ];
 
 /* ============================================================
@@ -217,6 +231,11 @@ function carStations(spec){
     S(.5,1,-.76,.1,.22,.86),S(.34,1,-.76,.12,.9,.6,0,1),S(.2,.995,-.76,.12,1,.58),
     S(-.14,1,-.76,.12,1.02,.58,1),S(-.4,1,-.76,.12,.98,.58,1,1),S(-.6,.99,-.75,.1,.56,.68),
     S(-.84,.96,-.68,.02,.34,.66),S(-1,.76,-.54,-.14,.22,.6)];
+  if(st==="f1")return[   // 오픈휠 포뮬러: 뾰족한 노즈 → 넓은 사이드포드 → 좁은 엔진커버
+    S(1,.18,-.55,-.30,-.20,.16),S(.86,.34,-.72,-.30,-.10,.30),S(.62,.62,-.85,-.25,.10,.52),
+    S(.36,.80,-.90,-.20,.36,.60),S(.10,.84,-.92,-.18,.62,.52),S(-.16,.80,-.92,-.18,.70,.42),
+    S(-.44,.66,-.90,-.20,.62,.34),S(-.70,.50,-.86,-.24,.42,.28),S(-.90,.38,-.78,-.30,.24,.24),
+    S(-1,.28,-.66,-.36,.10,.20)];
   /* super */ return[
     S(1,.7,-.8,-.56,-.5,.58),S(.85,.95,-.95,-.42,-.32,.8),S(.5,1,-1,-.3,-.16,.86),
     S(.27,1,-1,-.26,-.1,.86),S(.1,1,-1,-.24,.48,.6,0,1),S(-.02,.995,-1,-.22,.62,.56),
@@ -521,7 +540,81 @@ class CarVisual{
   }
 
   /* ===== 절차 생성 차량 (폴백) ===== */
+  /* 🏎️ F1 전용 고밀도 절차 생성 — 모노코크·사이드포드·노즈콘·프론트/리어 윙·
+     할로·에어박스·엔진커버·디퓨저·서스펜션 위시본·배기까지 실루엣 재현 */
+  buildF1(spec,colorHex){
+    const{hx,hy,hz}=spec.body,W=spec.wheels;
+    const C=new THREE.Color(colorHex);
+    const dark=new THREE.Color(0x14171c), carbon=new THREE.Color(0x1b1f26);
+    const trim=C.clone().lerp(new THREE.Color(0xffffff),.35);
+    const det=[];
+    const B=(w,h,d,col,x,y,z,rx,ry,rz)=>det.push({geo:new THREE.BoxGeometry(w,h,d),color:col,x,y,z,rx,ry,rz});
+    const CY=(r1,r2,len,col,x,y,z,rx,ry,rz,seg)=>det.push({
+      geo:new THREE.CylinderGeometry(r1,r2,len,seg||12),color:col,x,y,z,rx,ry,rz});
+    // ── 모노코크(콕핏 튜브): 앞으로 좁아지는 단면 5단
+    const mono=[[-.55,.62,.30],[.10,.56,.34],[.75,.44,.30],[1.35,.30,.24],[1.85,.18,.17]];
+    for(let i=0;i<mono.length-1;i++){
+      const[z0,w0,h0]=mono[i],[z1,w1,h1]=mono[i+1];
+      B((w0+w1),(h0+h1)*.5,(z1-z0),C,0,-hy*.1+(h0+h1)*.12,(z0+z1)*.5);}
+    // ── 노즈콘(가늘고 긴 앞코) + 프론트 윙
+    CY(.10,.19,1.05,C,0,-hy*.28,hz*.72,Math.PI/2,0,0,10);
+    B(1.72,.05,.46,carbon,0,-hy*.62,hz*.96);                    // 메인 플레이트
+    B(1.72,.05,.30,trim,0,-hy*.48,hz*.92,-.22);                 // 상단 플랩
+    for(const s of[-1,1])B(.05,.34,.50,carbon,s*.84,-hy*.42,hz*.94);   // 엔드플레이트
+    // ── 사이드포드 + 라디에이터 인렛
+    for(const s of[-1,1]){
+      B(.46,.42,1.55,C,s*.60,-hy*.06,-.10);
+      B(.40,.30,.10,dark,s*.62,-hy*.02,.68);                    // 인렛
+      B(.30,.16,1.20,C,s*.55,hy*.30,-.30,0,0,s*.12);            // 어깨 페어링
+      B(.60,.05,1.90,carbon,s*.70,-hy*.72,-.10);}               // 플로어
+    // ── 바지보드 + 플로어/디퓨저
+    for(const s of[-1,1])B(.04,.26,.70,carbon,s*.58,-hy*.44,.86,0,s*.16,0);
+    B(1.30,.05,2.60,carbon,0,-hy*.78,-.30);
+    B(1.18,.30,.44,dark,0,-hy*.56,-hz*.86,.30);                 // 디퓨저
+    // ── 콕핏 개구부 + 할로 + 헤드레스트
+    B(.52,.16,.86,dark,0,hy*.30,.28);
+    CY(.045,.045,1.02,carbon,0,hy*.62,.30,0,0,Math.PI/2,8);     // 할로 전방 후프
+    for(const s of[-1,1])CY(.045,.045,.52,carbon,s*.44,hy*.38,.30,0,0,s*.5,8);
+    CY(.05,.05,.62,carbon,0,hy*.52,.78,.75,0,0,8);              // 할로 센터 스트럿
+    B(.56,.22,.30,dark,0,hy*.44,-.24);                          // 헤드레스트
+    // ── 에어박스 + 엔진커버 + 샤크핀
+    CY(.20,.26,.30,dark,0,hy*.78,-.42,Math.PI/2,0,0,10);
+    B(.46,.52,1.30,C,0,hy*.34,-1.02);
+    B(.05,.42,1.20,trim,0,hy*.70,-1.20);                        // 샤크핀
+    B(.30,.26,.34,C,0,hy*.16,-hz*.80);                          // 기어박스 케이싱
+    for(const s of[-1,1])CY(.06,.075,.24,0x3a3f47,s*.10,hy*.10,-hz*.94,Math.PI/2,0,0,8); // 배기
+    // ── 리어 윙(2단) + 엔드플레이트 + DRS 슬롯
+    B(1.16,.055,.42,carbon,0,hy*1.42,-hz*.90,-.10);
+    B(1.16,.05,.26,trim,0,hy*1.14,-hz*.86,-.30);
+    for(const s of[-1,1])B(.05,.62,.56,carbon,s*.58,hy*1.20,-hz*.88);
+    CY(.05,.05,.60,carbon,0,hy*.86,-hz*.86,0,0,0,8);            // 윙 파일런
+    // ── 서스펜션 위시본(전/후) — 실제처럼 노출
+    for(const[wz,sgn]of[[W.front,1],[-W.rear,-1]])
+      for(const s of[-1,1])for(const dy of[-.08,.10]){
+        const len=W.track-.16;
+        CY(.028,.028,len,carbon,s*(W.track*.5),W.y+dy,wz+sgn*.06,0,0,Math.PI/2,6);}
+    // ── 휠 허브 커버(에어로 휠)
+    for(const[wx,wz]of[[-W.track,W.front],[W.track,W.front],[-W.track,-W.rear],[W.track,-W.rear]])
+      CY(W.radius*.55,W.radius*.55,.03,0x2b2f36,wx+(wx<0?-1:1)*(W.width*.5+.02),W.y,wz,0,0,Math.PI/2,14);
+    const g=mergeGeoms(det);
+    this.bodyMesh=new THREE.Mesh(g,MAT_CAR);
+    this.bodyMesh.castShadow=true;
+    this.group.add(this.bodyMesh);
+    this.partHp={fb:1,rb:1,hood:1,trunk:1,dl:1,dr:1};
+    this.parts={};
+    // 휠(슬릭 타이어) — 다른 절차 차량과 동일한 파이프라인
+    this.wheelMeshes=[];
+    const wg=wheelGeo(W.radius,W.width,spec.rimScale);
+    const bg=brakeGeo(W.radius,W.width);
+    this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
+    for(let i=0;i<4;i++){
+      const m=new THREE.Mesh(wg,MAT_DETAIL);
+      const grp=new THREE.Group();grp.add(m);grp.add(new THREE.Mesh(bg,MAT_DETAIL));
+      this.group.add(grp);this.wheelMeshes.push(grp);}
+    this.lattice=new SoftLattice(spec,[this.bodyMesh]);
+  }
   buildProcedural(spec,colorHex){
+    if(spec.style==="f1")return this.buildF1(spec,colorHex);
     const{hx,hy,hz}=spec.body,st=carStations(spec),W=spec.wheels;
     const bodyC=new THREE.Color(colorHex);
     const shadeC=bodyC.clone().multiplyScalar(.72);

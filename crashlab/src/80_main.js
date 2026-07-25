@@ -147,6 +147,13 @@ function initHudButtons(){
   $("btnRepair").onclick=()=>{Sfx.click();Game.repair();};
   // 🏠 홈으로(메인 메뉴)
   $("btnHome").onclick=()=>{Sfx.click();Game.exitToMenu();};
+  // 📊 HUD 표시/숨김 (기본 off — 깔끔한 화면)
+  function applyHud(){const on=Settings.hudOn===true;
+    $("hud").classList.toggle("lean",!on);
+    $("btnHud").classList.toggle("off",!on);}
+  $("btnHud").onclick=()=>{Sfx.click();Settings.hudOn=!(Settings.hudOn===true);saveSettings();
+    applyHud();toast(Settings.hudOn?"HUD 표시":"HUD 숨김");};
+  applyHud();Game.applyHud=applyHud;
   // 🗺️ 지도 버튼 = 미니맵 표시/숨김 토글
   function setMinimap(on){Settings.minimapOn=on;saveSettings();
     $("minimap").style.display=on?"":"none";$("minimapHide").style.display=on?"":"none";}

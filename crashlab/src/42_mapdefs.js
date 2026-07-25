@@ -693,11 +693,35 @@ MAPS.push(
   // 도심 진입 간선
   for(const[a,b]of feeders)
     mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],15,S_ASP,true,true);
-  // L3 CBD 격자 (pitch 100, |k|<=3 → 7×7 블록)
-  const GK=3;
-  for(let k=-GK;k<=GK;k++){
-    mb.paintPath([{x:-R_CBD,y:0,z:k*GRID},{x:R_CBD,y:0,z:k*GRID}],14,S_ASP,true,true);
-    mb.paintPath([{x:k*GRID,y:0,z:-R_CBD},{x:k*GRID,y:0,z:R_CBD}],14,S_ASP,true,true);}
+  /* L3 CBD 격자 (pitch 100, |k|<=3 → 7×7 블록)
+     ※ 중앙 광장(분수)은 로터리로 둘러싼다 — 예전엔 x=0/z=0 도로가 분수와 동상을 관통해
+       시작 지점에서 주행이 막혔다. 광장 반경 안쪽(r<PL_R)에는 격자 도로를 깔지 않고,
+       네 갈래 도로를 로터리에 접속시킨다. */
+  const GK=3, PL_R=112, TUN=[-292,-216];        // 광장 반경 / 지하터널 구간(재확정 제외)
+  const gridSeg=(a,b,horiz)=>{               // 광장 안쪽을 피해 분할 도색
+    const pts=horiz?[{x:a,y:0,z:b},{x:-a,y:0,z:b}]:[{x:b,y:0,z:a},{x:b,y:0,z:-a}];
+    mb.paintPath(pts,14,S_ASP,true,true);};
+  const paintGrid=(skipTunnel)=>{
+    for(let k=-GK;k<=GK;k++){
+      const off=k*GRID;
+      if(Math.abs(off)<PL_R){   // 광장을 지나는 축: 로터리 바깥 구간만
+        mb.paintPath([{x:-R_CBD,y:0,z:off},{x:-PL_R+4,y:0,z:off}],14,S_ASP,true,true);
+        mb.paintPath([{x:PL_R-4,y:0,z:off},{x:R_CBD,y:0,z:off}],14,S_ASP,true,true);
+        // 세로축: 지하터널 구간(z∈TUN)은 건드리지 않음(정지작업이 터널을 메우던 버그 방지)
+        if(skipTunnel&&off===0){
+          mb.paintPath([{x:off,y:0,z:-R_CBD},{x:off,y:0,z:TUN[0]}],14,S_ASP,true,true);
+          mb.paintPath([{x:off,y:0,z:TUN[1]},{x:off,y:0,z:-PL_R+4}],14,S_ASP,true,true);
+        }else{
+          mb.paintPath([{x:off,y:0,z:-R_CBD},{x:off,y:0,z:-PL_R+4}],14,S_ASP,true,true);}
+        mb.paintPath([{x:off,y:0,z:PL_R-4},{x:off,y:0,z:R_CBD}],14,S_ASP,true,true);
+      }else{
+        mb.paintPath([{x:-R_CBD,y:0,z:off},{x:R_CBD,y:0,z:off}],14,S_ASP,true,true);
+        mb.paintPath([{x:off,y:0,z:-R_CBD},{x:off,y:0,z:R_CBD}],14,S_ASP,true,true);}}
+    // 광장 로터리(원형 도로) — 네 갈래가 모두 여기에 접속
+    const rot=[];for(let k2=0;k2<=64;k2++){const a=k2/64*6.283;
+      rot.push({x:Math.cos(a)*PL_R,y:0,z:Math.sin(a)*PL_R});}
+    mb.paintPath(rot,15,S_ASP,true,true);};
+  paintGrid(false);
   // 벨트웨이 가드레일 — 방사 간선 접속부는 개방(도로 막힘 금지)
   const radEnds=radials.map(rp=>rp[rp.length-1]);
   railAlong(mb,belt,26,0xb9c2cc,(a)=>radEnds.some(e=>Math.hypot(a.x-e.x,a.z-e.z)<44));
@@ -715,7 +739,9 @@ MAPS.push(
   /* --- 지구 1: CBD (중앙 광장 + 다단 입체교차 + 고층) --- */
   // 중앙 광장(분수)
   {const fx=0,fz=0;
-   mb.stamp(fx,fz,92,(i,j,d)=>w.setS(i,j,S_ASP));
+   mb.stamp(fx,fz,104,(i,j,d)=>w.setS(i,j,d>96?S_ASP:(d>92?S_WLK:S_ASP)));
+   mb.texCircle(fx,fz,102,SURF_CSS[S_ASP]);
+   mb.texCircle(fx,fz,94,SURF_CSS[S_WLK]);      // 로터리 안쪽 보도 링(광장 경계 명확)
    mb.texCircle(fx,fz,90,SURF_CSS[S_ASP]);
    mb.texCircle(fx,fz,54,"rgba(226,231,238,.26)",.7);
    mb.texCircle(fx,fz,9,SURF_CSS[SURF_ID.wet]);
@@ -736,33 +762,29 @@ MAPS.push(
     if((x>=a.x&&x<=b.x)||(x<=a.x&&x>=b.x)){const t=(x-a.x)/((b.x-a.x)||1);return a.y+(b.y-a.y)*t;}}return 0;};
   const heightAt2=(pts,z)=>{for(let s=0;s<pts.length-1;s++){const a=pts[s],b=pts[s+1];
     if((z>=a.z&&z<=b.z)||(z<=a.z&&z>=b.z)){const t=(z-a.z)/((b.z-a.z)||1);return a.y+(b.y-a.y)*t;}}return 0;};
-  {const Z1=-30, l1=[[-178,0],[-124,9],[-64,4],[0,12],[64,4],[124,9],[178,0]].map(([px,py])=>({x:px,z:Z1,y:py}));
-   const Z2=-96, l2=[[-152,0],[-96,10],[-58,19],[58,19],[96,10],[152,0]].map(([px,py])=>({x:px,z:Z2,y:py}));
-   // 지하 딥(터널): x=0 도로가 L1 밑으로 -5.4m 꺼졌다 복귀
-   const dipC=z=>{const t=(z+30)/26;return -5.4*Math.max(0,1-t*t);};
-   for(let z=-58;z<=-2;z+=1)mb.stamp(0,z,7.6,(i,j,d,px,pz)=>{w.setH(i,j,dipC(pz));w.setS(i,j,S_ASP);});
-   for(let z=-52;z<=-8;z+=4){const y0=dipC(z),wh=1.1-y0;
-     for(const s of[-1,1])mb.box(s*8.2,(y0+1.1)/2,z,1.0,wh,4.4,0x40474f,{mu:.7,tag:"wall"});}
-   mb.box(0,1.2,-30,17,.7,15,0x33393f,{mu:.7,tag:"portal"});
-   for(const z of[-46,-14])mb.prop("lamp",8.4,z,Math.PI/2);
+  /* 입체교차 스택은 광장 로터리(r=112) 남쪽으로 배치한다 — 예전엔 광장과 겹쳐
+     터널 출구가 분수로 직결되고 데크가 광장을 가로질렀다. IZ만큼 남쪽으로 이동. */
+  {const IZ=-220;
+   const Z1=IZ-30, l1=[[-178,0],[-124,9],[-64,4],[0,12],[64,4],[124,9],[178,0]].map(([px,py])=>({x:px,z:Z1,y:py}));
+   const Z2=IZ-96, l2=[[-152,0],[-96,10],[-58,19],[58,19],[96,10],[152,0]].map(([px,py])=>({x:px,z:Z2,y:py}));
+   // 지하 딥(터널)은 '간선 재확정' 뒤에 판다(평탄화로 메워지는 버그 방지)
    bridgeDeck(mb,l1,15,{deck:0x565d68,rail:0xc9ced6});
    bridgeDeck(mb,l2,15,{deck:0x50565f,rail:0xbfc4cc});
-   bridgeDeck(mb,[{x:150,z:-42,y:8},{x:150,z:-66,y:13},{x:128,z:-90,y:19}],13,{deck:0x5a616c,rail:0xc9ced6});
-   const L3X=-100, l3=[[72,0],[24,15],[-30,22],[-72,0]].map(([pz,py])=>({x:L3X,z:pz,y:py}));
+   bridgeDeck(mb,[{x:150,z:IZ-42,y:8},{x:150,z:IZ-66,y:13},{x:128,z:IZ-90,y:19}],13,{deck:0x5a616c,rail:0xc9ced6});
+   const L3X=-100, l3=[[IZ+72,0],[IZ+24,15],[IZ-30,22],[IZ-72,0]].map(([pz,py])=>({x:L3X,z:pz,y:py}));
    bridgeDeck(mb,l3,12,{deck:0x5b626d,rail:0xc9ced6});
-   for(let z=-64;z<=64;z+=16){const dy=heightAt2(l3,z);
+   for(let z=IZ-64;z<=IZ+64;z+=16){const dy=heightAt2(l3,z);
      if(dy>3){const terr=Math.max(0,w.height(L3X,z));
        for(const s of[-1,1])mb.box(L3X+s*10,(dy+terr)/2,z,1.4,dy-terr,1.4,0x616872,{mu:.6,tag:"pillar"});}}
    for(const[pts,zc]of[[l1,Z1],[l2,Z2]])
      for(let x=-150;x<=150;x+=20){if(Math.abs(x)<14)continue;const dy=heightAt(pts,x);
        if(dy>2.4){const terr=Math.max(0,w.height(x,zc));
          for(const zo of[-5.5,0,5.5])mb.box(x,(dy+terr)/2,zc+zo,1.5,dy-terr,1.5,zo?0x616872:0x6b727c,{mu:.6,tag:"pillar"});}}
-   mb.texText(0,-2,6,"UNDERGROUND","rgba(240,244,250,.5)");
-   mb.texText(0,-96,7,"SPAWN INTERCHANGE","rgba(240,244,250,.5)");}
+   mb.texText(0,IZ-96,7,"SPAWN INTERCHANGE","rgba(240,244,250,.5)");}
   // CBD 도로 경계(실선 + 연석) — 방해물 없이 경계만 명확히
   {const EXT=R_CBD,edge=7,curb=8.4,V=[-GRID,0,GRID],H=[-GRID,0,GRID];
-   const nearSpawn=(x,z)=>Math.hypot(x,z+60)<52;
-   const inItc=(x,z)=>z<-4&&z>-140&&Math.abs(x)<190;
+   const nearSpawn=(x,z)=>Math.hypot(x,z+200)<56;
+   const inItc=(x,z)=>z<-150&&z>-345&&Math.abs(x)<196;
    for(const X of V){
      for(const s of[-1,1])mb.texRect(X+s*edge,0,.42,2*EXT,0,"rgba(244,248,252,.92)");
      for(const s of[-1,1])mb.texRect(X+s*curb,0,1.4,2*EXT,0,SURF_CSS[S_WLK]);
@@ -774,17 +796,17 @@ MAPS.push(
      for(let x=-EXT+34;x<=EXT-34;x+=52){if(nearSpawn(x,Z+10.5)||inItc(x,Z+10.5))continue;
        mb.prop("lamp",x,Z+10.5,0);}}}
   // 스폰 주변 방지턱(간격 넓게) + 잔요철
-  w.addRippleZone(0,-150,40,.014,2.2,3);
-  w.addRippleZone(0,-220,34,.012,2.6,1);
-  for(const[bx2,bz2,h,ty]of[[0,-150,.13,"round"],[0,-220,.16,"arch"],[0,150,.15,"sharp"],
+  w.addRippleZone(0,-160,40,.014,2.2,3);
+  w.addRippleZone(0,-330,34,.012,2.6,1);
+  for(const[bx2,bz2,h,ty]of[[0,-160,.13,"round"],[0,-340,.16,"arch"],[0,150,.15,"sharp"],
       [-GRID,-45,.12,"round"],[GRID,-45,.14,"rumble"],[-GRID,80,.13,"arch"],[GRID,80,.12,"flat"]])
     mb.bump(bx2,bz2,0,13,h,ty);
   // CBD 고층 빌딩(블록 내부, 도로·광장·교차로 회피) + 옥상 디테일
   for(let bx=-GK;bx<GK;bx++)for(let bz=-GK;bz<GK;bz++){
     const cx=bx*GRID+GRID/2,cz=bz*GRID+GRID/2;
     if(Math.hypot(cx,cz)<112)continue;                       // 중앙 광장
-    if(cz<-4&&cz>-146&&Math.abs(cx)<196)continue;            // 입체교차 풋프린트
-    if(Math.abs(cx+100)<26&&cz>-90&&cz>-90&&cz<86)continue;  // L3 플라이오버 라인
+    if(cz<-160&&cz>-340&&Math.abs(cx)<196)continue;          // 입체교차 풋프린트(광장 남측)
+    if(Math.abs(cx+100)<26&&cz>-310&&cz<-140)continue;       // L3 플라이오버 라인
     const dense=Math.hypot(cx,cz)<230;
     for(let k=0;k<(dense?2:1);k++){
       const sc=(dense?26:18)+rnd()*(dense?20:12);
@@ -1023,19 +1045,30 @@ MAPS.push(
   for(const rp of radials){flattenCorridor(mb,rp,9,14);mb.paintPath(rp,16,S_ASP,true,true);}
   for(const[a,b]of feeders)
     mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],15,S_ASP,true,true);
-  for(let k=-GK;k<=GK;k++){
-    mb.paintPath([{x:-R_CBD,y:0,z:k*GRID},{x:R_CBD,y:0,z:k*GRID}],14,S_ASP,true,true);
-    mb.paintPath([{x:k*GRID,y:0,z:-R_CBD},{x:k*GRID,y:0,z:R_CBD}],14,S_ASP,true,true);}
+  // 격자 재확정 — 단, 지하터널 구간(x=0, z∈TUN)은 제외해야 터널이 메워지지 않는다.
+  paintGrid(true);
+  /* 🛣️ 지하 터널 — 모든 정지작업이 끝난 뒤에 파낸다(이전 버전은 재확정이 터널을 메우고
+     옹벽·천장만 남겨 시작 지점 주행이 완전히 막혔다). 램프 경사는 완만하게. */
+  {const TZ=-254;                                          // 터널 중심(=L1 데크 아래)
+   const dipC=z=>{const t=(z-TZ)/30;return -5.2*Math.max(0,1-t*t);};
+   for(let z=TZ-30;z<=TZ+30;z+=1)
+     mb.stamp(0,z,8.2,(i,j,d,px,pz)=>{w.setH(i,j,dipC(pz));w.setS(i,j,S_ASP);});
+   for(let z=TZ-24;z<=TZ+24;z+=4){const y0=dipC(z);
+     if(y0>-.5)continue;                                  // 지표 근처는 옹벽 생략(턱 방지)
+     for(const s of[-1,1])mb.box(s*8.6,(y0+1.0)/2,z,1.0,1.0-y0,4.4,0x40474f,{mu:.7,tag:"wall"});}
+   mb.box(0,4.2,TZ,18,.7,16,0x33393f,{mu:.7,tag:"portal"});   // 천장은 차 위로 충분히(4.2m)
+   for(const z of[TZ-16,TZ+16])mb.prop("lamp",9,z,Math.PI/2);
+   mb.texText(0,TZ+44,6,"UNDERGROUND","rgba(240,244,250,.5)");}
 
   w.checkpoints=pathCheckpoints(belt,30,22);
   w.waypoints=pathWaypoints(belt,true,60);
-  w.spawn={x:0,z:-60,yaw:0};
+  w.spawn={x:0,z:-200,yaw:0};
   /* 📍 장소(지구별) */
   w.places=[
-    {name:"🏙️ CBD 다운타운",x:0,z:-60,yaw:0},
+    {name:"🏙️ CBD 다운타운",x:0,z:-200,yaw:0},
     {name:"⛲ 중앙 광장",x:0,z:100,yaw:Math.PI},
-    {name:"🌉 스폰 입체교차",x:-178,z:-30,yaw:Math.PI/2},
-    {name:"🛣️ 지하 터널",x:0,z:-64,yaw:0},
+    {name:"🌉 스폰 입체교차",x:-178,z:-250,yaw:Math.PI/2},
+    {name:"🛣️ 지하 터널",x:0,z:-300,yaw:0},
     {name:"🛣️ 내부 순환도로",x:R_INNER,z:0,yaw:Math.PI/2},
     {name:"🛣️ 외곽 벨트웨이",x:R_BELT,z:0,yaw:Math.PI/2},
     {name:"🏢 미드타운",x:D.mid[0],z:D.mid[1]-118,yaw:0},

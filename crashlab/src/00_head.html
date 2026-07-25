@@ -118,6 +118,10 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 /* ---------- HUD ---------- */
 #hud{z-index:10;pointer-events:none}
 #hud>*{pointer-events:auto}
+/* HUD 최소 모드(기본값): 계기·손상·미니맵·텔레메트리를 감추고 상단 버튼만 남긴다 */
+#hud.lean #speedo,#hud.lean #dmgBox,#hud.lean #telem,
+#hud.lean #minimap,#hud.lean #minimapHide,#hud.lean #modeWidget{display:none!important}
+#btnHud.off{opacity:.55}
 .hudTop{position:absolute;top:calc(var(--sat) + 10px);left:calc(var(--sal) + 12px);right:calc(var(--sar) + 12px);
   display:flex;align-items:flex-start;flex-wrap:wrap;justify-content:flex-end;gap:8px;pointer-events:none}
 .hudTop #modeWidget{margin-right:auto}
