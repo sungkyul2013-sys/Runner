@@ -1148,7 +1148,16 @@ MAPS.push(
    const DKY=-.6;                                // 데크 하면(=천장) 높이 — 데크 상면은 정확히 y=0
    const RW=11, RX0=HX, RX1=390, CX=320;         // 램프 반폭 / 램프 x구간 / 데크 덮개 끝
    const inHall=(x,z)=>Math.abs(x)<=HX&&Math.abs(z-UZ)<=HZ;
-   const rampY=(ax)=>{const t=clamp((ax-RX0)/(RX1-RX0),0,1);return lerp(UY,0,t*t*(3-2*t));};
+   /* 램프 프로파일 — 예전엔 전 구간 S커브(smoothstep)라 경사가 계속 변해 어지러웠다.
+      가운데는 '일정 경사 직선', 양 끝 12%만 짧게 완화해 깔끔한 업/다운으로 만든다. */
+   const rampY=(ax)=>{
+     const t=clamp((ax-RX0)/(RX1-RX0),0,1),E=.12;
+     let f;
+     if(t<E)f=t*t/(2*E);                       // 진입 완화
+     else if(t>1-E)f=1-(1-t)*(1-t)/(2*E);      // 진출 완화
+     else f=t-E/2;
+     f/=(1-E);                                  // 전체를 0~1로 정규화
+     return lerp(UY,0,clamp(f,0,1));};
    const inRamp=(x,z)=>Math.abs(z-UZ)<=RW&&Math.abs(x)>HX&&Math.abs(x)<=RX1;
    /* ① 데크 주변 지표를 정확히 y=0으로 정지 — 데크 상면과 지면 사이 단차(턱)를 없앤다 */
    mb.stamp(0,UZ,HX+HZ+140,(i,j,d,px,pz)=>{
@@ -1208,6 +1217,10 @@ MAPS.push(
          [0x4c5560,0x5f5443,0x39424e,0x6a4a44][k%4],{mu:.5,tag:"parkedcar"});}}
    mb.texText(0,UZ,18,"PARKING  B1","rgba(206,214,226,.24)");
    for(const s of[-1,1])mb.texText(s*(HX-52),UZ,8,s>0?"EXIT ▶":"◀ EXIT","rgba(224,186,96,.55)");
+   /* ⑦a 램프 감속 방지턱 — 지하 주차장 진입로답게 내려가는 길에 3개씩 */
+   for(const sg of[-1,1])for(const f of[.24,.48,.72]){
+     const ax=RX0+(RX1-RX0)*f;
+     mb.bump(sg*ax,UZ,Math.PI/2,2*RW-2,.085,f<.5?"round":"arch");}
    /* ⑦b 램프 진입로 — 램프 입구(x=±390)를 지상 도로망(그랜드 불러바드 z=300)에 연결한다.
         이게 없으면 지하 주차장이 지상망과 끊긴 별도 네트워크가 된다. */
    for(const sg of[-1,1]){

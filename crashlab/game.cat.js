@@ -28,11 +28,34 @@ const Assets=(()=>{
       pos[i*3+a]=bb[a]+P[i*3+a]/32767*(bb[3+a]-bb[a]);
       nor[i*3+a]=N[i*3+a]/127;
       col[i*3+a]=C[i*3+a]/255;}
-    // dominant paint color (리틴트 기준) — mask bit1=paint, bit2=glass
+    /* dominant paint color (리틴트 기준) — mask bit1=paint, bit2=glass
+       ⚠ 단순 최다 색으로 뽑으면 안 된다. 스캔 모델은 겉 패널보다 안쪽 셸(도어 잼·엔진룸·
+       하부)의 정점이 더 많은 경우가 흔해서, 최다 색이 '실내 검정'으로 잡히고 정작 겉면
+       도색은 리틴트에서 빠진다(롤스로이스: 겉면 104,104,104 이 그대로 회색으로 남았다).
+       그래서 '바깥 껍질다움'으로 가중해 최다 색을 고른다:
+         · 법선이 바디 중심에서 바깥을 향할수록(코사인) 가중 ↑
+         · 중심에서 멀수록(정규화 반경) 가중 ↑ */
     let dom=null;
-    if(M){const cnt={};
-      for(let i=0;i<n;i++)if(M[i]&1){const k=C[i*3]+","+C[i*3+1]+","+C[i*3+2];cnt[k]=(cnt[k]||0)+1;}
-      let mx=0;for(const k in cnt)if(cnt[k]>mx){mx=cnt[k];dom=k.split(",").map(Number);}}
+    if(M){
+      const cx0=(bb[0]+bb[3])/2,cy0=(bb[1]+bb[4])/2,cz0=(bb[2]+bb[5])/2;
+      const ex=(bb[3]-bb[0])/2||1,ey=(bb[4]-bb[1])/2||1,ez=(bb[5]-bb[2])/2||1;
+      const cnt={};
+      for(let i=0;i<n;i++){
+        if(!(M[i]&1))continue;
+        const dx=(pos[i*3]-cx0)/ex,dy=(pos[i*3+1]-cy0)/ey,dz=(pos[i*3+2]-cz0)/ez;
+        const r=Math.sqrt(dx*dx+dy*dy+dz*dz);
+        let w=1;
+        if(r>1e-4){
+          const cs=(nor[i*3]*dx+nor[i*3+1]*dy+nor[i*3+2]*dz)/r;   // 바깥을 보는가
+          w=Math.max(0,cs)*Math.min(1,r)*Math.min(1,r);}
+        if(w<=0)continue;
+        const k=C[i*3]+","+C[i*3+1]+","+C[i*3+2];
+        cnt[k]=(cnt[k]||0)+w;}
+      let mx=0;for(const k in cnt)if(cnt[k]>mx){mx=cnt[k];dom=k.split(",").map(Number);}
+      /* 겉면 판정이 전부 걸러진 이상 케이스 → 옛 방식으로 폴백 */
+      if(!dom){const c2={};
+        for(let i=0;i<n;i++)if(M[i]&1){const k=C[i*3]+","+C[i*3+1]+","+C[i*3+2];c2[k]=(c2[k]||0)+1;}
+        let m2=0;for(const k in c2)if(c2[k]>m2){m2=c2[k];dom=k.split(",").map(Number);}}}
     e._arr={pos,nor,col,M,dom,n,idx};
     return e._arr;}
   /* geometry: flip(+scale) → 게임 좌표(+z 전방), optional paint retint */
@@ -41,8 +64,11 @@ const Assets=(()=>{
     const s=opt.scale||1,sy=(opt.sy||1)*s,A=arrays(e);
     const pos=new Float32Array(A.pos),nor=new Float32Array(A.nor),col=new Float32Array(A.col);
     const cx=opt.cx||0,cy=opt.cy||0,cz=opt.cz||0;
-    // 팔레트 텍스처 차량: 따뜻한 도색 클러스터를 휘도 보존하며 리틴트
-    const ps=e.paintSrc,pr=opt.paint;
+    /* 팔레트 텍스처 차량: 따뜻한 도색 클러스터를 휘도 보존하며 리틴트.
+       paintSrc 가 없는 베이크(롤스로이스 등)는 '겉껍질 최다색' dom 을 기준색으로 써서
+       같은 경로를 태운다 — 예전 '정확히 일치하는 정점만 교체' 방식은 겉면 도색이 두 개
+       이상의 머티리얼로 쪼개진 모델에서 절반만 색이 바뀌는 문제가 있었다. */
+    const ps=e.paintSrc||A.dom,pr=opt.paint;
     const psLum=ps?(ps[0]+ps[1]+ps[2])/3/255:1;
     // 원본 도색의 정규화 색조(밝기 1로 정규화) — 색조 비교 기준
     const psN=ps?[(ps[0]/255)/(psLum||1),(ps[1]/255)/(psLum||1),(ps[2]/255)/(psLum||1)]:[1,1,1];
@@ -506,6 +532,22 @@ class World{
   }
   addPothole(x,z,r,depth){this.potholes.push({x,z,r2:r*r,r,depth});}
   addRippleZone(x,z,r,amp,f,p){(this.rippleZones||(this.rippleZones=[])).push({x,z,r,r2:r*r,amp,f,p:p||1});}
+  /* 🛣️ 도로 전역 잔요철(노후 포장) — 포장면에서만 더해지는 mm급 다중 사인장.
+     · '아스팔트와 같은 색'이라는 요구를 가장 곧이곧대로 만족한다: 색을 칠하는 게 아니라
+       노면 자체를 미세하게 흔들 뿐이라 그림·텍스처가 전혀 바뀌지 않는다.
+     · 진폭이 cm 미만이라 승차감(특히 고급차)은 유지되고, 대신 어느 도로를 달려도
+       스티어링·서스펜션이 계속 살아 있다.
+     · 패치(bump)와 달리 '전역'이라 도로 전체에서 균일하게 느껴진다.
+     roadRough=0이면 완전히 꺼진다(테스트·심사용 맵). */
+  roadRoughH(x,z){
+    const a=this.roadRough;
+    if(!a)return 0;
+    const s=this.surf(x,z);
+    if(s!==SURF_ID.asphalt&&s!==SURF_ID.lane&&s!==SURF_ID.curb)return 0;
+    return a*(Math.sin(x*.37)*Math.sin(z*.31)*.0085
+             +Math.sin(x*.93+z*.41)*.0052
+             +Math.sin(z*1.37-x*.29)*.0041
+             +Math.sin(x*2.7)*Math.cos(z*2.3)*.0022);}
   bumpH(x,z){
     let add=0;
     const B=this.bumps;
@@ -553,6 +595,7 @@ class World{
       h+=rz.amp*w*(rz.p===2?Math.sin(z*rz.f)*.9+Math.sin(z*rz.f*2.3)*.3:
                    rz.p===3?Math.sin(x*rz.f+z*rz.f*.7)*Math.cos(z*rz.f*.45):
                    Math.sin(x*rz.f)*Math.sin(z*rz.f*1.13)+.5*Math.sin(x*rz.f*2.2+1.3)*Math.cos(z*rz.f*1.9));}
+    if(this.roadRough)h+=this.roadRoughH(x,z);
     return h;}
   normal(x,z,out){
     const e=this.cell;
@@ -1207,6 +1250,7 @@ const CARS=[
   model:"rrghost",style:"sedan",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
   smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
   groundClear:.19,wheelVisFit:1.01,rideFix:true,rideLift:0,fitBumper:true,
+  headlamp:{w:.40,h:.12,leds:5},   // 하우징+LED 5구+유리 렌즈
   wheelTuck:.055,                 // 뒤에서 봤을 때 휠이 차체 밖으로 4cm 튀어나오던 문제 보정
   chromeKit:{grilleW:.34,grilleH:.26,grilleY:.74,grilleZ:.20,slats:13,
              ornament:true,ornY:.30,ornZ:.46,exhaust:2,rearY:.80},
@@ -1232,6 +1276,7 @@ const CARS=[
  {id:"maybach",name:"메르세데스-마이바흐 GLS",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.9초",top:240,
   desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
   model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,fitBumper:true,
+  headlamp:{w:.34,h:.13,leds:4},
   chromeKit:{grilleW:.40,grilleH:.22,grilleY:.82,grilleZ:.16,slats:11,
              ornament:true,ornY:.40,ornZ:.34,exhaust:4,rearY:.70},
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
@@ -1536,19 +1581,25 @@ function makeCarEnv(){
   t.needsUpdate=true;return t;}
 const ENV_CAR=(()=>{try{return makeCarEnv();}catch(e){return null;}})();
 const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:135,specular:0x9aa2ae,side:THREE.DoubleSide,
-  envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.12}); // 클리어코트 광택·양면(베이크 차량 투명 방지)
+  envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.09}); // 클리어코트 광택·양면(베이크 차량 투명 방지)
 const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:210,specular:0xc2cdd8,side:THREE.DoubleSide,
-  envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.3}); // 유광 클리어코트+환경반사 — 매끈하게 이어진 표면(포르쉐·GLS), 크롬부는 밝아서 더 강하게 비침
+  envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.13}); // 유광 클리어코트+환경반사 — 매끈하게 이어진 표면(포르쉐·GLS), 크롬부는 밝아서 더 강하게 비침
 /* 크롬 — 거울에 가까운 금속(그릴·오너먼트·윈도 몰딩). 정점색 없이 단색 + 강한 환경반사 */
 const MAT_CHROME=new THREE.MeshPhongMaterial({color:0xeef3f9,shininess:520,specular:0xffffff,
   envMap:ENV_CAR,combine:1/*Mix — 환경색이 베이스를 물들이지 않게*/,reflectivity:.72,flatShading:false});
-const MAT_CHROME_DARK=new THREE.MeshPhongMaterial({color:0x2d3238,shininess:420,specular:0xdfe7f2,
-  envMap:ENV_CAR,combine:1,reflectivity:.55,flatShading:false});   // 다크 크롬(그릴 안쪽·트림)
+/* 다크 크롬(그릴 안쪽·인테이크·램프 하우징·배기 팁).
+   reflectivity를 높게 두면 Mix 합성이 환경(밝은 하늘)색으로 덮어써서 '검은 부품'이
+   흰 원판처럼 보인다(배기 팁이 흰 공으로 보이던 원인) → 반사는 낮게, 하이라이트만. */
+const MAT_CHROME_DARK=new THREE.MeshPhongMaterial({color:0x2d3238,shininess:420,specular:0x8f9aa8,
+  envMap:ENV_CAR,combine:1,reflectivity:.16,flatShading:false});
 /* 초광택 클리어코트 — 롤스로이스급 도장(반짝임·환경반사 강화) */
 /* 반짝임은 specular/shininess가 만든다. reflectivity를 너무 올리면 환경색이 디퓨즈를
-   덮어 검정 도장이 흰색처럼 떠 버리므로, 하이라이트는 강하게 두고 반사는 절제한다. */
+   덮어 검정 도장이 흰색처럼 떠 버리므로, 하이라이트는 강하게 두고 반사는 절제한다.
+   측정값(쇼룸 검정 도장 도어 픽셀 / 하이라이트 피크):
+     refl .26 spec f0f6ff → 133 / 255(포화·은색처럼 보임)
+     refl .07 spec 4a5460 →  62 / 252(검정으로 읽히고 하이라이트는 그대로) ← 채택 */
 const MAT_CAR_GLOSS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:420,
-  specular:0xf0f6ff,side:THREE.DoubleSide,envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.26});
+  specular:0x4a5460,side:THREE.DoubleSide,envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.07});
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
   transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
 /* 유리 틴팅 — 커스텀 차의 glassTint(0 투명 ~ 1 블랙아웃)를 실제 머티리얼에 반영.
@@ -1651,6 +1702,25 @@ class CarVisual{
   mkPart(w,h,d,x,y,z,mat){
     const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d,2,1,2).toNonIndexed(),mat);
     m.position.set(x,y,z);m.castShadow=true;this.group.add(m);return m;}
+  /* 차체 실루엣 반폭 측정 — (y,z) 근방 실제 차체의 최대 |x|.
+     크롬 몰딩·램프 하우징·미러 같은 '얹는 부품'을 차체 밖으로 튀어나오지 않게
+     붙이는 기준. 세단은 휠아치가 가장 넓어서 차체 최대폭(xR)을 그대로 쓰면
+     좁은 사이드실·코·램프 높이에서 막대기가 공중에 뜬 것처럼 보인다. */
+  bodySilWidth(y,z,tolY,tolZ){
+    const a=this.bodyMesh.geometry.attributes.position.array;
+    let mx=0;
+    for(let i=0;i<a.length;i+=3)
+      if(Math.abs(a[i+1]-y)<tolY&&Math.abs(a[i+2]-z)<tolZ){
+        const q=Math.abs(a[i]);if(q>mx)mx=q;}
+    return mx;}
+  /* z 구간 전체에서 '가장 좁은' 반폭 — 길쭉한 몰딩(로커)이 양 끝에서 튀지 않게 한다 */
+  bodySilMin(y,z0,z1,tolY,slices){
+    let mn=1e9;
+    for(let i=0;i<slices;i++){
+      const z=z0+(z1-z0)*(i+.5)/slices;
+      const w=this.bodySilWidth(y,z,tolY,Math.abs(z1-z0)/slices*.75);
+      if(w>0&&w<mn)mn=w;}
+    return mn<1e9?mn:0;}
 
   /* ===== 외부(베이크) 모델 차량 ===== */
   buildBaked(spec,colorHex){
@@ -1696,16 +1766,19 @@ class CarVisual{
     const fbZ=zF-.16, rbZ=zR+.16;
     const fbW=spec.fitBumper?widthAt(fbZ,.30)*.90:hx*1.02;
     const rbW=spec.fitBumper?widthAt(rbZ,.30)*.90:hx*1.02;
+    /* 미러 — 차체 최대폭(휠아치)에 붙이면 어깨선이 좁은 앞도어에서 밖으로 뜬다 */
+    const mxW=spec.fitBumper?widthAt(zF*.34,.30)*.99:xR*.96;
     this.parts={
       fb:this.mkPart(fbW,hy*.15,.09,0,by+hy*.06,fbZ,bumpMat),
       rb:this.mkPart(rbW,hy*.15,.09,0,by+hy*.06,rbZ,bumpMat),
-      ml:this.mkPart(.07,.08,.17,-xR*.96,hy*.1,zF*.34,bumpMat),
-      mr:this.mkPart(.07,.08,.17,xR*.96,hy*.1,zF*.34,bumpMat)};
+      ml:this.mkPart(.07,.08,.17,-mxW,hy*.1,zF*.34,bumpMat),
+      mr:this.mkPart(.07,.08,.17,mxW,hy*.1,zF*.34,bumpMat)};
     this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
     /* ✨ 크롬 킷 — 스캔 모델은 텍스처가 없어 그릴·오너먼트·몰딩이 도장과 같은 색으로
        뭉쳐 나온다(원본이 단색 블랙 모델). 색이 구분되는 부위를 실제 부품으로 얹어
        크롬 그릴·조각·몰딩이 반짝이게 한다. */
     if(spec.chromeKit)this.buildChromeKit(spec,bx,by,hx,hy,split.glass);
+    if(spec.headlamp&&this.hlAnchor)this.buildHeadlamps(spec,bx,hy);
     // 오프로드 몬스터 전용 액세서리(지프 스타일): 불바·루프 LED바·록슬라이더
     if(spec.id==="offroad"||spec.id==="offroadc"){
       const topY=bx.max.y,botY=bx.min.y;
@@ -2101,21 +2174,44 @@ class CarVisual{
       const zc=clamp((g.max.z+g.min.z)/2,zR+cabin*.6,zF-cabin*.6);
       /* 벨트라인(도어 상단) 몰딩만 넣는다. 루프 라인은 곡선이라 직선 막대를 얹으면
          지붕 위에 떠 있는 안테나처럼 보였다 → 상단 스트립은 넣지 않는다. */
+      /* 캐빈 실루엣보다 안쪽에 — 유리 경계상자는 곡면의 최대치라 그대로 쓰면 밖으로 뜬다 */
+      const by2=g.min.y+.02;
+      const lim=this.bodySilMin(by2,zc-len/2,zc+len/2,hy*.14,7);
+      const bx2=lim>0?Math.min(gx,lim)*.96:gx*.97;
       for(const sg of[-1,1])
-        cr.push({geo:new THREE.BoxGeometry(.028,.028,len),x:sg*gx*1.01,y:g.min.y+.02,z:zc});}
-    /* ── 로커(사이드 스커트) 크롬 + 휠아치 트림 ── */
-    if(K.rocker!==false)for(const sg of[-1,1])
-      cr.push({geo:new THREE.BoxGeometry(.045,.05,Math.abs(zF-zR)*.52),
-               x:sg*xR*.99,y:by+hy*.10,z:(zF+zR)/2});
-    /* ── 배기 팁 ── */
+        cr.push({geo:new THREE.BoxGeometry(.026,.026,len),x:sg*bx2,y:by2,z:zc});}
+    /* ── 로커(사이드 스커트) 크롬 ──
+       차체 '최대폭'(휠아치)에 붙이면 실제로 좁은 사이드실 높이에서는 막대가 차 밖으로
+       떠 보인다 → 해당 높이·구간의 실제 차체 폭을 재서 그보다 살짝 안쪽에 붙인다. */
+    if(K.rocker!==false){
+      const ry=by+hy*.10, rz=(zF+zR)/2, rLen=Math.abs(zF-zR)*.40;
+      /* 구간의 '최소' 폭 기준 — 최대폭(휠아치)으로 잡으면 도어 중앙에서 막대가 밖으로
+         떠 버린다. 표면보다 확실히 안쪽(0.90)에 심어 몰딩처럼만 비치게 한다. */
+      const rw=this.bodySilMin(ry,rz-rLen/2,rz+rLen/2,hy*.20,7)||xR*.86;
+      for(const sg of[-1,1])
+        cr.push({geo:new THREE.BoxGeometry(.036,.040,rLen),x:sg*rw*.90,y:ry,z:rz});}
+    /* ── 배기 팁 — 실차처럼 범퍼에 '박혀 있는' 피니셔.
+         예전엔 밝은 크롬 원통이 범퍼 밖으로 나와 흰 공을 붙인 것처럼 보였다 →
+         팁 본체는 다크 크롬으로 범퍼 안쪽에 묻고, 테두리만 얇은 크롬 링으로. ── */
     const NE=K.exhaust||2;
+    const exY=by+hy*.16, exZ=zR+.035;
+    const exLim=this.bodySilWidth(exY,exZ+.05,hy*.22,.22);
     for(let i=0;i<NE;i++){
       const sg=i<NE/2?-1:1, k=(i%Math.max(1,NE/2));
-      cr.push({geo:new THREE.CylinderGeometry(.052,.058,.11,14),
-               x:sg*(xR*.52+k*.13),y:by+hy*.16,z:zR+.06,rx:Math.PI/2});}
-    /* ── 리어 크롬 몰딩 + 배지 ── */
-    cr.push({geo:new THREE.BoxGeometry(hx*1.1,.035,.05),y:by+hy*(K.rearY||.90),z:zR+.05});
-    cr.push({geo:new THREE.CylinderGeometry(.038,.038,.02,16),y:by+hy*(K.rearY||.90)+.09,z:zR+.05,rx:Math.PI/2});
+      let ex=xR*.50+k*.13;
+      if(exLim>0)ex=Math.min(ex,exLim*.80);
+      /* 실차(고스트)는 원통이 아니라 '납작한 사각 피니셔'다. 원통 크롬 원판을 앞에 두면
+         탁구공을 붙인 것처럼 보였으므로, 크롬 테두리 판을 깊은 쪽에 두고 그 앞에
+         어두운 사각 팁을 얹어 얇은 크롬 테두리만 비치게 한다. */
+      cr.push({geo:new THREE.BoxGeometry(.145,.062,.012),x:sg*ex,y:exY,z:exZ+.010});
+      dk.push({geo:new THREE.BoxGeometry(.125,.044,.070),x:sg*ex,y:exY,z:exZ-.020});}
+    /* ── 리어 크롬 몰딩 + 배지 — 실루엣 안으로 클램프(밖으로 삐져나오던 판자) ── */
+    {const ry2=by+hy*(K.rearY||.90), rz2=zR+.04;
+     const rLim=this.bodySilWidth(ry2,rz2+.06,hy*.20,.22);
+     const rW=rLim>0?Math.min(hx*1.05,rLim*1.94):hx*1.05;
+     cr.push({geo:new THREE.BoxGeometry(rW,.028,.045),y:ry2,z:rz2});
+     cr.push({geo:new THREE.CylinderGeometry(.034,.034,.010,16),y:ry2+.09,z:rz2+.014,rx:Math.PI/2});
+     dk.push({geo:new THREE.CylinderGeometry(.029,.029,.014,16),y:ry2+.09,z:rz2,rx:Math.PI/2});}
     const mk=(items,mat)=>{
       if(!items.length)return null;
       const m=new THREE.Mesh(mergeGeoms(items),mat);
@@ -2125,6 +2221,51 @@ class CarVisual{
     // 크롬도 소프트바디 격자에 물려 충돌 시 함께 찌그러진다
     if(this.chromeMesh)this.lattice.bind(this.chromeMesh);
     if(this.chromeDarkMesh)this.lattice.bind(this.chromeDarkMesh);
+  }
+  /* 💡 헤드램프 어셈블리 — 동그란 구슬이 앞으로 튀어나온 모양이 아니라,
+     실차처럼 '차체에 파인 램프 하우징 + 그 안의 여러 개 LED 프로젝터 + 앞면 유리 렌즈'로 만든다. */
+  buildHeadlamps(spec,bx,hy){
+    const H=spec.headlamp===true?{}:spec.headlamp;
+    const w0=H.w||.34, h=H.h||.115, n=H.leds||4;
+    const housing=[],leds=[];
+    this.hlLens=[];
+    this.hlBox=[];
+    for(const[ax0,ay,az]of this.hlAnchor){
+      const sgn=ax0<0?-1:1;
+      /* ── 차체 실루엣 안으로 넣기 ──
+         램프 앵커는 램프 마스크의 평균 위치라 하우징을 그대로 그리면 코가 좁아지는
+         구간에서 베젤 바깥 끝이 차체 밖으로 삐져나온다(옆에서 보면 막대기).
+         안쪽 끝은 그대로 두고 바깥 끝만 실루엣 안으로 당겨 폭을 다시 계산한다. */
+      const lim=this.bodySilWidth(ay,az-.05,Math.max(h*1.3,.09),.20);
+      const inner=Math.max(.06,Math.abs(ax0)-w0/2);
+      let outer=Math.abs(ax0)+w0/2+.014;
+      if(lim>0)outer=Math.min(outer,lim*.965);
+      const w=Math.max(.16,outer-.014-inner);
+      const ax=sgn*(inner+w/2);
+      this.hlBox.push([ax,ay,az,w,h]);
+      // 하우징: 안쪽으로 파인 어두운 상자(램프가 차체 안에 들어가 보이게)
+      housing.push({geo:new THREE.BoxGeometry(w,h,.10),x:ax,y:ay,z:az-.055});
+      // 크롬 베젤(둘레)
+      housing.push({geo:new THREE.BoxGeometry(w+.024,.014,.045),x:ax,y:ay+h/2,z:az-.022});
+      housing.push({geo:new THREE.BoxGeometry(w+.024,.014,.045),x:ax,y:ay-h/2,z:az-.022});
+      // LED 프로젝터 여러 개 — 하우징 '안쪽'에 나란히
+      for(let i=0;i<n;i++){
+        const t=(i+.5)/n*2-1;
+        leds.push({geo:new THREE.CylinderGeometry(h*.30,h*.30,.02,12),
+          rx:Math.PI/2,x:ax+t*(w*.5-h*.34)*sgn,y:ay,z:az-.028});}
+      // 앞면 유리 렌즈(차체 면과 나란히, 살짝 안쪽)
+      const lens=new THREE.Mesh(new THREE.BoxGeometry(w,h,.012),
+        new THREE.MeshPhongMaterial({color:0x9fc4dd,transparent:true,opacity:.34,
+          shininess:300,specular:0xffffff,side:THREE.DoubleSide}));
+      lens.position.set(ax,ay,az-.010);
+      this.group.add(lens);this.hlLens.push(lens);}
+    this.hlHousing=new THREE.Mesh(mergeGeoms(housing),MAT_CHROME_DARK);
+    this.hlHousing.castShadow=true;this.group.add(this.hlHousing);
+    // LED는 자체발광(항상 형태가 보이고, 점등 시 더 밝아진다)
+    this.hlLed=new THREE.Mesh(mergeGeoms(leds),
+      new THREE.MeshBasicMaterial({color:0xfff6e2,toneMapped:false}));
+    this.group.add(this.hlLed);
+    this.lattice.bind(this.hlHousing);this.lattice.bind(this.hlLed);
   }
   sync(veh,shakeT){
     // 렌더는 보간된 포즈를 쓴다(고정 스텝 물리 ↔ 가변 프레임 렌더 사이를 매끄럽게)
@@ -2136,14 +2277,22 @@ class CarVisual{
     if(this.hlAnchor){
       const on=typeof Game!=="undefined"&&Game.veh===veh;
       if(on&&!this.hl){                                    // 플레이어가 됐을 때 최초 생성
-        this.hl=this.hlAnchor.map(([x,y,zl])=>{
+        this.hl=this.hlAnchor.map(([x0,y0,zl0],li)=>{
+          /* 하우징이 실루엣에 맞춰 재계산됐다면 그 위치·폭을 그대로 쓴다 */
+          const B=this.hlBox&&this.hlBox[li];
+          const x=B?B[0]:x0, y=B?B[1]:y0, zl=B?B[2]:zl0;
           const s=new THREE.SpotLight(0xfff0cc,0,30,.52,.42,1.2);
           s.position.set(x,y,zl);s.target.position.set(x*.5,y-.4,zl+16);
           this.group.add(s);this.group.add(s.target);
-          const g=new THREE.Mesh(new THREE.SphereGeometry(.075,8,6),
-            new THREE.MeshBasicMaterial({color:0xfff6d8,transparent:true,opacity:.85,
+          /* 발광은 '앞으로 튀어나온 구슬'이 아니라 렌즈면에 붙은 얇은 판으로 —
+             램프가 차체 밖으로 돌출돼 보이던 문제를 없앤다. */
+          const S=this.spec;
+          const hw=B?B[3]:(S.headlamp?(S.headlamp===true?.34:(S.headlamp.w||.34)):.22);
+          const hh=B?B[4]:(S.headlamp?(S.headlamp===true?.115:(S.headlamp.h||.115)):.10);
+          const g=new THREE.Mesh(new THREE.BoxGeometry(hw*.94,hh*.9,.012),
+            new THREE.MeshBasicMaterial({color:0xfff6d8,transparent:true,opacity:.8,
               blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
-          g.scale.z=.4;g.position.set(x,y,zl+.05);g.visible=false;this.group.add(g);
+          g.position.set(x,y,zl-.004);g.visible=false;this.group.add(g);
           return{s,g};});}
       if(this.hl){
         const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
@@ -2713,7 +2862,11 @@ class MapBuilder{
     this.group.add(mesh);
     this.world.movers.push({obb,mesh,baseY:y,meshY:y,anim:anim||(()=>0)});
     return obb;}
-  bump(x,z,yaw,width,h,type){ // 과속방지턱: 지형 높이에 매끈히 반영(뚝뚝 끊김 없음) + 매칭 비주얼
+  /* 도로면과 같은 색의 '요철'(눈에 띄는 노란 스트라이프 없이 노면만 울퉁불퉁).
+     방지턱과 물리는 동일하고 비주얼만 아스팔트색으로 깐다. */
+  rough(x,z,yaw,width,h,type){
+    return this.bump(x,z,yaw,width,h,type,[.226,.239,.263]);}
+  bump(x,z,yaw,width,h,type,solidCol){ // 과속방지턱: 지형 높이에 매끈히 반영(뚝뚝 끊김 없음) + 매칭 비주얼
     h=h||.1;type=type||"arch";yaw=yaw||0;
     const hw=width/2, y0=this.world.height(x,z);   // 방지턱 추가 전 지면 높이(더블카운트 방지)
     const hd=type==="flat"?1.9:type==="sharp"?.72:type==="round"?1.35:1.6; // 프로파일 반폭(진행방향)
@@ -2721,10 +2874,11 @@ class MapBuilder{
       const si=Math.sin(yaw),co=Math.cos(yaw);
       for(let k=-3;k<=3;k++){const off=k*.62,bx=x+si*off,bz=z-co*off;
         this.world.addBump(bx,bz,yaw,hw,.26,.05,"round");
-        this._bumpStrip(bx,bz,yaw,y0,hw,.26,.05,"round",(k&1)?[.85,.6,.06]:[.85,.86,.88]);}
+        this._bumpStrip(bx,bz,yaw,y0,hw,.26,.05,"round",
+          solidCol||((k&1)?[.85,.6,.06]:[.85,.86,.88]));}
       return this;}
     this.world.addBump(x,z,yaw,hw,hd,h,type);
-    this._bumpStrip(x,z,yaw,y0,hw,hd,h,type);
+    this._bumpStrip(x,z,yaw,y0,hw,hd,h,type,solidCol);
     return this;}
   _bumpStrip(x,z,yaw,y0,hw,hd,h,type,solid){ // 아치 프로파일과 정확히 일치하는 매끈한 비주얼 스트립
     const NU=3,NV=18,W=NU+1,pos=[],idx=[];
@@ -2803,6 +2957,43 @@ class MapBuilder{
         if(s!==SURF_ID.asphalt&&s!==SURF_ID.lane&&s!==SURF_ID.curb)continue;
         if(avoid.some(a=>a&&Math.hypot(x-a.x,z-a.z)<22))continue;
         this.pothole(x,z,1.3+rr()*1.9,.1+rr()*.14);}}
+    /* 🛣️ 노면 요철·꿀렁임 자동 산재 — 도로 전역에 '아스팔트와 같은 색'으로 깔아
+       눈에 띄는 노란 스트라이프 없이 노후 포장 느낌만 준다.
+       (스폰·장소 주변은 비워 출발 직후가 답답하지 않게) */
+    if(this.noRoughen!==true){
+      /* 전역 잔요철 — 포장면 전체에 mm급 다중 사인. 패치(아래)는 '가끔 만나는 요철',
+         이건 '항상 깔려 있는 노면 결'이다. 둘이 겹쳐야 도로 전역이 살아 있다. */
+      w.roadRough=1;
+      let sd=(w.size*13|0)+7,rr=()=>{sd=(sd*1103515245+12345)&0x7fffffff;return sd/0x7fffffff;};
+      const avoid=[w.spawn,...(w.places||[])];
+      const paved=(x,z)=>{const q=w.surf(x,z);
+        return q===SURF_ID.asphalt||q===SURF_ID.lane||q===SURF_ID.curb;};
+      /* 개수는 맵 크기 비례. 도로 전역에서 실제로 요철이 느껴져야 하므로
+         (측정: /9 이면 포장면 중 10mm 이상 지점이 grand 7.8% / city 1%로 너무 드물었다)
+         밀도를 크게 올리고, 좁은 이면도로도 통과하도록 도로 내부 판정 여유도 줄인다. */
+      const N=Math.round(w.size/4);                  // 요철 개수(맵 크기 비례)
+      let placed=0;
+      for(let k=0;k<N*6&&placed<N;k++){
+        const x=(rr()-.5)*w.size*.94,z=(rr()-.5)*w.size*.94;
+        if(!paved(x,z))continue;
+        if(!paved(x+5,z)||!paved(x-5,z)||!paved(x,z+5)||!paved(x,z-5))continue;  // 도로 내부만
+        if(avoid.some(a=>a&&Math.hypot(x-a.x,z-a.z)<26))continue;
+        const yaw=rr()<.5?0:Math.PI/2;
+        const t=rr();
+        // 대부분은 아주 낮은 잔요철, 일부만 살짝 더 큰 굴곡
+        this.rough(x,z,yaw,10+rr()*7,
+          t<.62?(.022+rr()*.030):(.055+rr()*.045),
+          t<.30?"flat":t<.62?"round":t<.86?"arch":"round");
+        placed++;}
+      // 꿀렁임(롱웨이브) 존 — 도로 위에만, 개수는 절제
+      const NZ=Math.max(4,Math.round(w.size/130));
+      let pz2=0;
+      for(let k=0;k<NZ*6&&pz2<NZ;k++){
+        const x=(rr()-.5)*w.size*.9,z=(rr()-.5)*w.size*.9;
+        if(!paved(x,z))continue;
+        if(avoid.some(a=>a&&Math.hypot(x-a.x,z-a.z)<40))continue;
+        w.addRippleZone(x,z,30+rr()*26,.010+rr()*.010,1.6+rr()*1.6,1+((rr()*3)|0));
+        pz2++;}}
     this.texBase();
     this.tctx.drawImage(this.overlay,0,0);
     this.texGrain();
@@ -4287,7 +4478,16 @@ MAPS.push(
    const DKY=-.6;                                // 데크 하면(=천장) 높이 — 데크 상면은 정확히 y=0
    const RW=11, RX0=HX, RX1=390, CX=320;         // 램프 반폭 / 램프 x구간 / 데크 덮개 끝
    const inHall=(x,z)=>Math.abs(x)<=HX&&Math.abs(z-UZ)<=HZ;
-   const rampY=(ax)=>{const t=clamp((ax-RX0)/(RX1-RX0),0,1);return lerp(UY,0,t*t*(3-2*t));};
+   /* 램프 프로파일 — 예전엔 전 구간 S커브(smoothstep)라 경사가 계속 변해 어지러웠다.
+      가운데는 '일정 경사 직선', 양 끝 12%만 짧게 완화해 깔끔한 업/다운으로 만든다. */
+   const rampY=(ax)=>{
+     const t=clamp((ax-RX0)/(RX1-RX0),0,1),E=.12;
+     let f;
+     if(t<E)f=t*t/(2*E);                       // 진입 완화
+     else if(t>1-E)f=1-(1-t)*(1-t)/(2*E);      // 진출 완화
+     else f=t-E/2;
+     f/=(1-E);                                  // 전체를 0~1로 정규화
+     return lerp(UY,0,clamp(f,0,1));};
    const inRamp=(x,z)=>Math.abs(z-UZ)<=RW&&Math.abs(x)>HX&&Math.abs(x)<=RX1;
    /* ① 데크 주변 지표를 정확히 y=0으로 정지 — 데크 상면과 지면 사이 단차(턱)를 없앤다 */
    mb.stamp(0,UZ,HX+HZ+140,(i,j,d,px,pz)=>{
@@ -4347,6 +4547,10 @@ MAPS.push(
          [0x4c5560,0x5f5443,0x39424e,0x6a4a44][k%4],{mu:.5,tag:"parkedcar"});}}
    mb.texText(0,UZ,18,"PARKING  B1","rgba(206,214,226,.24)");
    for(const s of[-1,1])mb.texText(s*(HX-52),UZ,8,s>0?"EXIT ▶":"◀ EXIT","rgba(224,186,96,.55)");
+   /* ⑦a 램프 감속 방지턱 — 지하 주차장 진입로답게 내려가는 길에 3개씩 */
+   for(const sg of[-1,1])for(const f of[.24,.48,.72]){
+     const ax=RX0+(RX1-RX0)*f;
+     mb.bump(sg*ax,UZ,Math.PI/2,2*RW-2,.085,f<.5?"round":"arch");}
    /* ⑦b 램프 진입로 — 램프 입구(x=±390)를 지상 도로망(그랜드 불러바드 z=300)에 연결한다.
         이게 없으면 지하 주차장이 지상망과 끊긴 별도 네트워크가 된다. */
    for(const sg of[-1,1]){
@@ -6723,13 +6927,15 @@ const Showroom={
       new THREE.MeshPhongMaterial({color:0x0d1017,shininess:30}));
     floor.position.y=-.3;floor.receiveShadow=true;
     this.group.add(floor);
-    this.spot=new THREE.SpotLight(0xfff2dd,4.2,70,.75,.45,1);
+    this.spot=new THREE.SpotLight(0xfff2dd,3.0,70,.75,.45,1);
     this.spot.position.set(6,12,6);this.spot.target=plat;
     this.group.add(this.spot);
-    /* --- 3D 무대 연출: 림 라이트(스팟) 2등 + 회전 홀로 링 + 바닥 그리드(얇은 판) --- */
-    this.rimL=new THREE.SpotLight(0x4aa3ff,3.4,34,.9,.6,1.2);
+    /* --- 3D 무대 연출: 림 라이트(스팟) 2등 + 회전 홀로 링 + 바닥 그리드(얇은 판) ---
+       림 라이트는 실루엣을 살리는 '보조'다. 예전 세기(3.4/2.8)로는 밝은 크롬·알로이 휠이
+       파랑/주황 줄무늬로 물들어 차 색이 무엇인지 알 수 없었다 → 확실히 낮춘다. */
+    this.rimL=new THREE.SpotLight(0x4aa3ff,1.35,34,.9,.6,1.2);
     this.rimL.position.set(-5.4,3.0,-4.2);this.rimL.target=plat;
-    this.rimR=new THREE.SpotLight(0xff7a1a,2.8,34,.9,.6,1.2);
+    this.rimR=new THREE.SpotLight(0xff7a1a,1.10,34,.9,.6,1.2);
     this.rimR.position.set(5.6,2.6,-3.6);this.rimR.target=plat;
     this.group.add(this.rimL,this.rimR);
     this.halo=new THREE.Mesh(new THREE.TorusGeometry(5.6,.035,6,64),
@@ -6818,7 +7024,10 @@ const Showroom={
     const ch=this.camH=lerp(this.camH??cfg.h,cfg.h,Math.min(1,dt*4));
     camera.position.set(cx,this.Y+ch+.5,cd);
     camera.lookAt(wide?-2.15:0,this.Y+(wide?.75:1.7),0);   // 차가 화면 우측(가로)/하단(세로)에 오도록
-    skyDome.position.set(camera.position.x,0,camera.position.z);},
+    /* 쇼룸은 무대가 y=Y(600)에 떠 있다. 스카이돔을 y=0에 두면 지평선의 밝은 띠가
+       차 옆을 가로지르며 '떠 있는 막대기'처럼 보였다. 무대보다 충분히 아래(-300)에
+       두면 지평선이 차 위쪽 배경에서 부드러운 그라데이션으로만 지나간다. */
+    skyDome.position.set(camera.position.x,this.Y-300,camera.position.z);},
 };
 
 /* 차량 3D 프리뷰 썸네일 (차량 선택 카드용) */

@@ -194,7 +194,11 @@ class MapBuilder{
     this.group.add(mesh);
     this.world.movers.push({obb,mesh,baseY:y,meshY:y,anim:anim||(()=>0)});
     return obb;}
-  bump(x,z,yaw,width,h,type){ // 과속방지턱: 지형 높이에 매끈히 반영(뚝뚝 끊김 없음) + 매칭 비주얼
+  /* 도로면과 같은 색의 '요철'(눈에 띄는 노란 스트라이프 없이 노면만 울퉁불퉁).
+     방지턱과 물리는 동일하고 비주얼만 아스팔트색으로 깐다. */
+  rough(x,z,yaw,width,h,type){
+    return this.bump(x,z,yaw,width,h,type,[.226,.239,.263]);}
+  bump(x,z,yaw,width,h,type,solidCol){ // 과속방지턱: 지형 높이에 매끈히 반영(뚝뚝 끊김 없음) + 매칭 비주얼
     h=h||.1;type=type||"arch";yaw=yaw||0;
     const hw=width/2, y0=this.world.height(x,z);   // 방지턱 추가 전 지면 높이(더블카운트 방지)
     const hd=type==="flat"?1.9:type==="sharp"?.72:type==="round"?1.35:1.6; // 프로파일 반폭(진행방향)
@@ -202,10 +206,11 @@ class MapBuilder{
       const si=Math.sin(yaw),co=Math.cos(yaw);
       for(let k=-3;k<=3;k++){const off=k*.62,bx=x+si*off,bz=z-co*off;
         this.world.addBump(bx,bz,yaw,hw,.26,.05,"round");
-        this._bumpStrip(bx,bz,yaw,y0,hw,.26,.05,"round",(k&1)?[.85,.6,.06]:[.85,.86,.88]);}
+        this._bumpStrip(bx,bz,yaw,y0,hw,.26,.05,"round",
+          solidCol||((k&1)?[.85,.6,.06]:[.85,.86,.88]));}
       return this;}
     this.world.addBump(x,z,yaw,hw,hd,h,type);
-    this._bumpStrip(x,z,yaw,y0,hw,hd,h,type);
+    this._bumpStrip(x,z,yaw,y0,hw,hd,h,type,solidCol);
     return this;}
   _bumpStrip(x,z,yaw,y0,hw,hd,h,type,solid){ // 아치 프로파일과 정확히 일치하는 매끈한 비주얼 스트립
     const NU=3,NV=18,W=NU+1,pos=[],idx=[];
@@ -284,6 +289,43 @@ class MapBuilder{
         if(s!==SURF_ID.asphalt&&s!==SURF_ID.lane&&s!==SURF_ID.curb)continue;
         if(avoid.some(a=>a&&Math.hypot(x-a.x,z-a.z)<22))continue;
         this.pothole(x,z,1.3+rr()*1.9,.1+rr()*.14);}}
+    /* 🛣️ 노면 요철·꿀렁임 자동 산재 — 도로 전역에 '아스팔트와 같은 색'으로 깔아
+       눈에 띄는 노란 스트라이프 없이 노후 포장 느낌만 준다.
+       (스폰·장소 주변은 비워 출발 직후가 답답하지 않게) */
+    if(this.noRoughen!==true){
+      /* 전역 잔요철 — 포장면 전체에 mm급 다중 사인. 패치(아래)는 '가끔 만나는 요철',
+         이건 '항상 깔려 있는 노면 결'이다. 둘이 겹쳐야 도로 전역이 살아 있다. */
+      w.roadRough=1;
+      let sd=(w.size*13|0)+7,rr=()=>{sd=(sd*1103515245+12345)&0x7fffffff;return sd/0x7fffffff;};
+      const avoid=[w.spawn,...(w.places||[])];
+      const paved=(x,z)=>{const q=w.surf(x,z);
+        return q===SURF_ID.asphalt||q===SURF_ID.lane||q===SURF_ID.curb;};
+      /* 개수는 맵 크기 비례. 도로 전역에서 실제로 요철이 느껴져야 하므로
+         (측정: /9 이면 포장면 중 10mm 이상 지점이 grand 7.8% / city 1%로 너무 드물었다)
+         밀도를 크게 올리고, 좁은 이면도로도 통과하도록 도로 내부 판정 여유도 줄인다. */
+      const N=Math.round(w.size/4);                  // 요철 개수(맵 크기 비례)
+      let placed=0;
+      for(let k=0;k<N*6&&placed<N;k++){
+        const x=(rr()-.5)*w.size*.94,z=(rr()-.5)*w.size*.94;
+        if(!paved(x,z))continue;
+        if(!paved(x+5,z)||!paved(x-5,z)||!paved(x,z+5)||!paved(x,z-5))continue;  // 도로 내부만
+        if(avoid.some(a=>a&&Math.hypot(x-a.x,z-a.z)<26))continue;
+        const yaw=rr()<.5?0:Math.PI/2;
+        const t=rr();
+        // 대부분은 아주 낮은 잔요철, 일부만 살짝 더 큰 굴곡
+        this.rough(x,z,yaw,10+rr()*7,
+          t<.62?(.022+rr()*.030):(.055+rr()*.045),
+          t<.30?"flat":t<.62?"round":t<.86?"arch":"round");
+        placed++;}
+      // 꿀렁임(롱웨이브) 존 — 도로 위에만, 개수는 절제
+      const NZ=Math.max(4,Math.round(w.size/130));
+      let pz2=0;
+      for(let k=0;k<NZ*6&&pz2<NZ;k++){
+        const x=(rr()-.5)*w.size*.9,z=(rr()-.5)*w.size*.9;
+        if(!paved(x,z))continue;
+        if(avoid.some(a=>a&&Math.hypot(x-a.x,z-a.z)<40))continue;
+        w.addRippleZone(x,z,30+rr()*26,.010+rr()*.010,1.6+rr()*1.6,1+((rr()*3)|0));
+        pz2++;}}
     this.texBase();
     this.tctx.drawImage(this.overlay,0,0);
     this.texGrain();

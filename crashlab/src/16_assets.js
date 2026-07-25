@@ -23,11 +23,34 @@ const Assets=(()=>{
       pos[i*3+a]=bb[a]+P[i*3+a]/32767*(bb[3+a]-bb[a]);
       nor[i*3+a]=N[i*3+a]/127;
       col[i*3+a]=C[i*3+a]/255;}
-    // dominant paint color (리틴트 기준) — mask bit1=paint, bit2=glass
+    /* dominant paint color (리틴트 기준) — mask bit1=paint, bit2=glass
+       ⚠ 단순 최다 색으로 뽑으면 안 된다. 스캔 모델은 겉 패널보다 안쪽 셸(도어 잼·엔진룸·
+       하부)의 정점이 더 많은 경우가 흔해서, 최다 색이 '실내 검정'으로 잡히고 정작 겉면
+       도색은 리틴트에서 빠진다(롤스로이스: 겉면 104,104,104 이 그대로 회색으로 남았다).
+       그래서 '바깥 껍질다움'으로 가중해 최다 색을 고른다:
+         · 법선이 바디 중심에서 바깥을 향할수록(코사인) 가중 ↑
+         · 중심에서 멀수록(정규화 반경) 가중 ↑ */
     let dom=null;
-    if(M){const cnt={};
-      for(let i=0;i<n;i++)if(M[i]&1){const k=C[i*3]+","+C[i*3+1]+","+C[i*3+2];cnt[k]=(cnt[k]||0)+1;}
-      let mx=0;for(const k in cnt)if(cnt[k]>mx){mx=cnt[k];dom=k.split(",").map(Number);}}
+    if(M){
+      const cx0=(bb[0]+bb[3])/2,cy0=(bb[1]+bb[4])/2,cz0=(bb[2]+bb[5])/2;
+      const ex=(bb[3]-bb[0])/2||1,ey=(bb[4]-bb[1])/2||1,ez=(bb[5]-bb[2])/2||1;
+      const cnt={};
+      for(let i=0;i<n;i++){
+        if(!(M[i]&1))continue;
+        const dx=(pos[i*3]-cx0)/ex,dy=(pos[i*3+1]-cy0)/ey,dz=(pos[i*3+2]-cz0)/ez;
+        const r=Math.sqrt(dx*dx+dy*dy+dz*dz);
+        let w=1;
+        if(r>1e-4){
+          const cs=(nor[i*3]*dx+nor[i*3+1]*dy+nor[i*3+2]*dz)/r;   // 바깥을 보는가
+          w=Math.max(0,cs)*Math.min(1,r)*Math.min(1,r);}
+        if(w<=0)continue;
+        const k=C[i*3]+","+C[i*3+1]+","+C[i*3+2];
+        cnt[k]=(cnt[k]||0)+w;}
+      let mx=0;for(const k in cnt)if(cnt[k]>mx){mx=cnt[k];dom=k.split(",").map(Number);}
+      /* 겉면 판정이 전부 걸러진 이상 케이스 → 옛 방식으로 폴백 */
+      if(!dom){const c2={};
+        for(let i=0;i<n;i++)if(M[i]&1){const k=C[i*3]+","+C[i*3+1]+","+C[i*3+2];c2[k]=(c2[k]||0)+1;}
+        let m2=0;for(const k in c2)if(c2[k]>m2){m2=c2[k];dom=k.split(",").map(Number);}}}
     e._arr={pos,nor,col,M,dom,n,idx};
     return e._arr;}
   /* geometry: flip(+scale) → 게임 좌표(+z 전방), optional paint retint */
@@ -36,8 +59,11 @@ const Assets=(()=>{
     const s=opt.scale||1,sy=(opt.sy||1)*s,A=arrays(e);
     const pos=new Float32Array(A.pos),nor=new Float32Array(A.nor),col=new Float32Array(A.col);
     const cx=opt.cx||0,cy=opt.cy||0,cz=opt.cz||0;
-    // 팔레트 텍스처 차량: 따뜻한 도색 클러스터를 휘도 보존하며 리틴트
-    const ps=e.paintSrc,pr=opt.paint;
+    /* 팔레트 텍스처 차량: 따뜻한 도색 클러스터를 휘도 보존하며 리틴트.
+       paintSrc 가 없는 베이크(롤스로이스 등)는 '겉껍질 최다색' dom 을 기준색으로 써서
+       같은 경로를 태운다 — 예전 '정확히 일치하는 정점만 교체' 방식은 겉면 도색이 두 개
+       이상의 머티리얼로 쪼개진 모델에서 절반만 색이 바뀌는 문제가 있었다. */
+    const ps=e.paintSrc||A.dom,pr=opt.paint;
     const psLum=ps?(ps[0]+ps[1]+ps[2])/3/255:1;
     // 원본 도색의 정규화 색조(밝기 1로 정규화) — 색조 비교 기준
     const psN=ps?[(ps[0]/255)/(psLum||1),(ps[1]/255)/(psLum||1),(ps[2]/255)/(psLum||1)]:[1,1,1];

@@ -381,13 +381,15 @@ const Showroom={
       new THREE.MeshPhongMaterial({color:0x0d1017,shininess:30}));
     floor.position.y=-.3;floor.receiveShadow=true;
     this.group.add(floor);
-    this.spot=new THREE.SpotLight(0xfff2dd,4.2,70,.75,.45,1);
+    this.spot=new THREE.SpotLight(0xfff2dd,3.0,70,.75,.45,1);
     this.spot.position.set(6,12,6);this.spot.target=plat;
     this.group.add(this.spot);
-    /* --- 3D 무대 연출: 림 라이트(스팟) 2등 + 회전 홀로 링 + 바닥 그리드(얇은 판) --- */
-    this.rimL=new THREE.SpotLight(0x4aa3ff,3.4,34,.9,.6,1.2);
+    /* --- 3D 무대 연출: 림 라이트(스팟) 2등 + 회전 홀로 링 + 바닥 그리드(얇은 판) ---
+       림 라이트는 실루엣을 살리는 '보조'다. 예전 세기(3.4/2.8)로는 밝은 크롬·알로이 휠이
+       파랑/주황 줄무늬로 물들어 차 색이 무엇인지 알 수 없었다 → 확실히 낮춘다. */
+    this.rimL=new THREE.SpotLight(0x4aa3ff,1.35,34,.9,.6,1.2);
     this.rimL.position.set(-5.4,3.0,-4.2);this.rimL.target=plat;
-    this.rimR=new THREE.SpotLight(0xff7a1a,2.8,34,.9,.6,1.2);
+    this.rimR=new THREE.SpotLight(0xff7a1a,1.10,34,.9,.6,1.2);
     this.rimR.position.set(5.6,2.6,-3.6);this.rimR.target=plat;
     this.group.add(this.rimL,this.rimR);
     this.halo=new THREE.Mesh(new THREE.TorusGeometry(5.6,.035,6,64),
@@ -476,7 +478,10 @@ const Showroom={
     const ch=this.camH=lerp(this.camH??cfg.h,cfg.h,Math.min(1,dt*4));
     camera.position.set(cx,this.Y+ch+.5,cd);
     camera.lookAt(wide?-2.15:0,this.Y+(wide?.75:1.7),0);   // 차가 화면 우측(가로)/하단(세로)에 오도록
-    skyDome.position.set(camera.position.x,0,camera.position.z);},
+    /* 쇼룸은 무대가 y=Y(600)에 떠 있다. 스카이돔을 y=0에 두면 지평선의 밝은 띠가
+       차 옆을 가로지르며 '떠 있는 막대기'처럼 보였다. 무대보다 충분히 아래(-300)에
+       두면 지평선이 차 위쪽 배경에서 부드러운 그라데이션으로만 지나간다. */
+    skyDome.position.set(camera.position.x,this.Y-300,camera.position.z);},
 };
 
 /* 차량 3D 프리뷰 썸네일 (차량 선택 카드용) */

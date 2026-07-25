@@ -149,6 +149,22 @@ class World{
   }
   addPothole(x,z,r,depth){this.potholes.push({x,z,r2:r*r,r,depth});}
   addRippleZone(x,z,r,amp,f,p){(this.rippleZones||(this.rippleZones=[])).push({x,z,r,r2:r*r,amp,f,p:p||1});}
+  /* 🛣️ 도로 전역 잔요철(노후 포장) — 포장면에서만 더해지는 mm급 다중 사인장.
+     · '아스팔트와 같은 색'이라는 요구를 가장 곧이곧대로 만족한다: 색을 칠하는 게 아니라
+       노면 자체를 미세하게 흔들 뿐이라 그림·텍스처가 전혀 바뀌지 않는다.
+     · 진폭이 cm 미만이라 승차감(특히 고급차)은 유지되고, 대신 어느 도로를 달려도
+       스티어링·서스펜션이 계속 살아 있다.
+     · 패치(bump)와 달리 '전역'이라 도로 전체에서 균일하게 느껴진다.
+     roadRough=0이면 완전히 꺼진다(테스트·심사용 맵). */
+  roadRoughH(x,z){
+    const a=this.roadRough;
+    if(!a)return 0;
+    const s=this.surf(x,z);
+    if(s!==SURF_ID.asphalt&&s!==SURF_ID.lane&&s!==SURF_ID.curb)return 0;
+    return a*(Math.sin(x*.37)*Math.sin(z*.31)*.0085
+             +Math.sin(x*.93+z*.41)*.0052
+             +Math.sin(z*1.37-x*.29)*.0041
+             +Math.sin(x*2.7)*Math.cos(z*2.3)*.0022);}
   bumpH(x,z){
     let add=0;
     const B=this.bumps;
@@ -196,6 +212,7 @@ class World{
       h+=rz.amp*w*(rz.p===2?Math.sin(z*rz.f)*.9+Math.sin(z*rz.f*2.3)*.3:
                    rz.p===3?Math.sin(x*rz.f+z*rz.f*.7)*Math.cos(z*rz.f*.45):
                    Math.sin(x*rz.f)*Math.sin(z*rz.f*1.13)+.5*Math.sin(x*rz.f*2.2+1.3)*Math.cos(z*rz.f*1.9));}
+    if(this.roadRough)h+=this.roadRoughH(x,z);
     return h;}
   normal(x,z,out){
     const e=this.cell;
