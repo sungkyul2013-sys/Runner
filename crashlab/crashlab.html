@@ -4188,8 +4188,16 @@ function setRec(k,v){Records[k]=v;Store.set("records",Records);}
 const Sfx=(()=>{
   let ctx=null,master=null,engA=null,engB=null,engNoise=null,engGain=null,engBGain=null,noiseGain=null,
       skidSrc=null,skidGain=null,skidFilt=null,windGain=null,started=false;
-  function noiseBuffer(c){const len=c.sampleRate*1.2,b=c.createBuffer(1,len,c.sampleRate),d=b.getChannelData(0);
-    for(let i=0;i<len;i++)d[i]=Math.random()*2-1;return b;}
+  let _nb=null;
+  /* 화이트노이즈 버퍼는 매번 새로 만들 필요가 없다(내용이 같다).
+     예전에는 충돌음 1회마다 1.2초 분량(≈5만 샘플)을 새로 할당·난수 채움 했고,
+     한 프레임에 충격이 여러 번 들어오면 이것만으로 수십만 번 난수를 돌려
+     충돌 순간 프레임이 길어지는 원인이 됐다 → 한 번 만들어 재사용한다. */
+  function noiseBuffer(c){
+    if(_nb&&_nb.sampleRate===c.sampleRate)return _nb;
+    const len=(c.sampleRate*1.2)|0,b=c.createBuffer(1,len,c.sampleRate),d=b.getChannelData(0);
+    for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+    _nb=b;return b;}
   function init(){if(started)return;started=true;
     try{
       ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -4231,7 +4239,13 @@ const Sfx=(()=>{
   function skid(amt){if(!ctx)return;skidGain.gain.setTargetAtTime(clamp(amt,0,1)*.24,ctx.currentTime,.06);
     skidFilt.frequency.setTargetAtTime(1000+amt*900,ctx.currentTime,.06);}
   function wind(spd){if(!ctx)return;windGain.gain.setTargetAtTime(clamp(spd/60,0,1)*.08,ctx.currentTime,.15);}
+  let _impT=0,_impS=0;
+  /* 충돌음 합치기 — 한 번의 충돌에서 접촉점마다 충격이 여러 개 들어오는데,
+     그때마다 오실레이터·노이즈 노드를 만들면 오디오 그래프 생성 비용이 한 프레임에 몰린다.
+     40ms 안에 들어온 충격은 가장 센 것 하나로 대표해 재생한다(청감상 차이 없음). */
   function impact(str){if(!ctx)return;str=clamp(str,0,1);const t=ctx.currentTime;
+    if(t-_impT<.04){if(str<=_impS)return;}else _impS=0;
+    _impT=t;_impS=Math.max(_impS,str);
     const o=ctx.createOscillator();o.type="sine";o.frequency.setValueAtTime(90+str*60,t);o.frequency.exponentialRampToValueAtTime(35,t+.25);
     const g=ctx.createGain();g.gain.setValueAtTime(.5*str+.1,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);
     o.connect(g);g.connect(master);o.start(t);o.stop(t+.32);
@@ -4255,6 +4269,7 @@ const Sfx=(()=>{
    fixed step 120 Hz, all SI units
    ============================================================ */
 const PHYS_DT=1/120, GRAV=9.81;
+const PHYS_BUDGET_MS=8;   // 한 프레임에 허용하는 물리 시간 예산(스텝 수 상한 산정용)
 const SURF={asphalt:{mu:1.0,col:0x3a3f47},wet:{mu:.7,col:0x2e3640},gravel:{mu:.6,col:0x6b5f4e},
   grass:{mu:.55,col:0x3e6b34},sand:{mu:.5,col:0xc2a368},ice:{mu:.15,col:0xbfe4f2},
   snow:{mu:.35,col:0xe8eef2},curb:{mu:.95,col:0xb5443c},walk:{mu:.9,col:0x878e99},
@@ -4278,7 +4293,25 @@ class Body{
     this.quat=new THREE.Quaternion();this.angVel=V3(0,0,0);
     this.force=V3(0,0,0);this.torque=V3(0,0,0);
     this._q=new THREE.Quaternion();this._qc=new THREE.Quaternion();
+    /* ---- 렌더 보간용 포즈 ----
+       물리는 고정 스텝(1/120s)으로 돌고 화면은 가변 프레임으로 그려진다.
+       두 주기가 어긋나면 어떤 프레임은 물리가 2번 진행되고 어떤 프레임은 0번 진행돼
+       차가 '뚝뚝' 끊겨 보인다. 특히 슬로모션(타임스케일 0.15)에서는 물리가
+       3~4프레임마다 한 번만 진행되므로 육안으로 확실히 튄다.
+       → 마지막 두 물리 상태를 저장해 두고, 남은 누적시간 비율로 보간한 포즈(rPos/rQuat)를
+         렌더에 쓴다. 프레임레이트·타임스케일과 무관하게 항상 매끄럽다. */
+    this.pPos=V3(0,0,0);this.pQuat=new THREE.Quaternion();
+    this.rPos=V3(0,0,0);this.rQuat=new THREE.Quaternion();
   }
+  snap(){   // 순간이동(리셋/복구) 시 보간 잔상이 생기지 않게 이전 상태를 현재로 맞춘다
+    this.pPos.copy(this.pos);this.pQuat.copy(this.quat);
+    this.rPos.copy(this.pos);this.rQuat.copy(this.quat);}
+  lerpRender(a){
+    if(a<=0){this.rPos.copy(this.pPos);this.rQuat.copy(this.pQuat);return;}
+    if(a>=1){this.rPos.copy(this.pos);this.rQuat.copy(this.quat);return;}
+    this.rPos.lerpVectors(this.pPos,this.pos,a);
+    this.rQuat.copy(this.pQuat).slerp(this.quat,a);}
+  rLocalToWorld(l,out){return out.copy(l).applyQuaternion(this.rQuat).add(this.rPos);}
   localToWorld(l,out){return out.copy(l).applyQuaternion(this.quat).add(this.pos);}
   worldToLocal(w,out){this._qc.copy(this.quat).invert();return out.copy(w).sub(this.pos).applyQuaternion(this._qc);}
   vecToWorld(l,out){return out.copy(l).applyQuaternion(this.quat);}
@@ -4295,6 +4328,8 @@ class Body{
     this.angVel.add(_t1);}
   addForceAt(f,rWorld){this.force.add(f);_t0.copy(rWorld).cross(f);this.torque.add(_t0);}
   integrate(dt){
+    // 스텝 시작 시점(=이전 스텝 종료 상태)을 렌더 보간용으로 보관
+    this.pPos.copy(this.pos);this.pQuat.copy(this.quat);
     this.vel.addScaledVector(this.force,this.invMass*dt);
     this._qc.copy(this.quat).invert();
     _t1.copy(this.torque).applyQuaternion(this._qc).multiply(this.invI).applyQuaternion(this.quat);
@@ -4565,6 +4600,8 @@ class Vehicle{
     this.impacts.length=0;
     this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};
     this.flipT=0;this.airT=0;
+    b.snap();                       // 렌더 보간 잔상 방지
+    for(const w of this.wheels){w.pVisY=w.visY;w.rVisY=w.visY;w.pSpin=w.spin;w.rSpin=w.spin;}
   }
   isFlipped(){
     const u=_vUp2.set(0,1,0).applyQuaternion(this.body.quat);return u.y<.5;}
@@ -4577,7 +4614,8 @@ class Vehicle{
     b.vel.set(0,0,0);b.angVel.set(0,0,0);b.force.set(0,0,0);b.torque.set(0,0,0);
     this.impacts.length=0;this.flipT=0;this.airT=0;this.throttle=0;this.brake=0;
     for(const w of this.wheels){w.comp=0;w.prevComp=0;w.skid=0;w.omega=0;w.onGround=false;w.load=0;}
-    this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};}
+    this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};
+    b.snap();}                      // 렌더 보간 잔상 방지(순간 자세 변경)
   clearDamage(){
     this.dmg={f:0,b:0,l:0,r:0};
     this.powerMul=1;this.steerMul=1;this.suspMul=1;this.brakeMul=1;this.toe=0;this.defVol=0;
@@ -4900,7 +4938,8 @@ class Vehicle{
     // NaN guard → rollback (안정성 2)
     if(!b.ok()){
       b.pos.copy(this.lastGood.pos);b.quat.copy(this.lastGood.quat);
-      b.vel.set(0,0,0);b.angVel.set(0,0,0);b.force.set(0,0,0);b.torque.set(0,0,0);}
+      b.vel.set(0,0,0);b.angVel.set(0,0,0);b.force.set(0,0,0);b.torque.set(0,0,0);
+      b.snap();}                    // 롤백도 순간이동 → 보간 잔상 방지
     else if((this._goodT=(this._goodT||0)+dt)>.5){this._goodT=0;
       this.lastGood.pos.copy(b.pos);this.lastGood.quat.copy(b.quat);}
   }
@@ -5831,8 +5870,9 @@ class CarVisual{
   }
   storeHomes(){for(const k in this.parts)this.parts[k].userData.home=this.parts[k].position.clone();}
   sync(veh,shakeT){
-    this.group.position.copy(veh.body.pos);
-    this.group.quaternion.copy(veh.body.quat);
+    // 렌더는 보간된 포즈를 쓴다(고정 스텝 물리 ↔ 가변 프레임 렌더 사이를 매끄럽게)
+    this.group.position.copy(veh.body.rPos);
+    this.group.quaternion.copy(veh.body.rQuat);
     if(shakeT>0&&Settings.camShake){
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
     // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게. SpotLight는 최초 1회 지연 생성.
@@ -5856,10 +5896,11 @@ class CarVisual{
     for(let i=0;i<4;i++){
       if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함
       const w=veh.wheels[i],m=this.wheelMeshes[i];
-      m.position.set(this.baked?(w.left?-tv:tv):w.local.x,w.visY+(this.wheelYOff||0),w.local.z);
+      const vy=(w.rVisY===undefined?w.visY:w.rVisY);
+      m.position.set(this.baked?(w.left?-tv:tv):w.local.x,vy+(this.wheelYOff||0),w.local.z);
       const st=(w.front?veh.steer:0)+(w.left?-veh.toe:veh.toe)*8;
       m.rotation.set(0,st,0);
-      m.children[0].rotation.x=w.spin;}
+      m.children[0].rotation.x=(w.rSpin===undefined?w.spin:w.rSpin);}
   }
   dispose(){
     this.group.parent&&this.group.parent.remove(this.group);
@@ -5918,8 +5959,16 @@ class SoftLattice{
         const a=idx(i,j,k),b=idx(i2,j2,k2);
         const r=Math.hypot(dx*this.cell[0],dy*this.cell[1],dz*this.cell[2]);
         beams.push(a,b,r,r);}       // a,b,rest,rest0
-    this.beams=new Float32Array(beams);
-    this.nb=beams.length/4;
+    /* 빔 데이터는 종류별 타입배열로 분리한다 —
+       하나의 Float32Array에 인덱스까지 섞어 담으면 배열 첨자로 쓸 때마다 float→int 변환이
+       끼어들어 솔버 내부 루프가 크게 느려진다(충돌 프레임의 남은 스파이크 원인). */
+    const nb=beams.length/4;
+    this.nb=nb;
+    this.bA=new Int32Array(nb);this.bB=new Int32Array(nb);
+    this.bRest=new Float32Array(nb);this.bR0=new Float32Array(nb);
+    for(let b=0;b<nb;b++){
+      this.bA[b]=beams[b*4]*3;this.bB[b]=beams[b*4+1]*3;   // 미리 *3 해 둔 성분 오프셋
+      this.bRest[b]=beams[b*4+2];this.bR0[b]=beams[b*4+3];}
     // 빔 파열(tearing): 인장 변형률이 한계를 넘으면 끊어져 구속 해제 → 판금이 '찢어져' 벌어짐
     this.bbrk=new Uint8Array(this.nb);
     this.torn=0;
@@ -5945,6 +5994,34 @@ class SoftLattice{
     const colAttr=mesh.geometry.attributes.color;
     this.binds.push({mesh,orig,bi,bw,vc,col:colAttr?colAttr.array.slice():null});
   }
+  /* 정점 스키닝 준비 —
+     ① 8본 트라이리니어 가중치 중 무시할 만한 것(<2%)을 버리고 CSR로 압축해 재정규화.
+        스캔 차체는 정점당 실제 유효 본이 4~5개라 연산량이 40% 이상 줄어든다.
+     ② 정점이 많은 메시는 프레임마다 연속 구간(스트라이프) 하나씩만 갱신한다.
+        총 작업량은 같지만 한 프레임에 몰리지 않아 '충돌 순간 뚝' 끊기는 스파이크가 사라진다. */
+  ensureFast(bd){
+    if(bd.wi)return;
+    const vc=bd.vc,bi=bd.bi,bw=bd.bw;
+    const wo=new Int32Array(vc+1);
+    for(let v=0;v<vc;v++){
+      const o=v*8;let c2=0;
+      for(let c=0;c<8;c++)if(bw[o+c]>.02)c2++;
+      wo[v+1]=c2||1;}
+    for(let v=0;v<vc;v++)wo[v+1]+=wo[v];
+    const tot=wo[vc],wi=new Int32Array(tot),ww=new Float32Array(tot);
+    for(let v=0;v<vc;v++){
+      const o=v*8;let p=wo[v],sum=0;
+      for(let c=0;c<8;c++)if(bw[o+c]>.02){wi[p]=bi[o+c]*3;ww[p]=bw[o+c];sum+=bw[o+c];p++;}
+      if(p===wo[v]){                        // 전부 미미하면 최대 가중치 본 하나로
+        let best=0,bv=-1;
+        for(let c=0;c<8;c++)if(bw[o+c]>bv){bv=bw[o+c];best=c;}
+        wi[p]=bi[o+best]*3;ww[p]=1;sum=1;p++;}
+      if(sum>0&&Math.abs(sum-1)>1e-6){const inv=1/sum;for(let q=wo[v];q<p;q++)ww[q]*=inv;}}
+    bd.wi=wi;bd.ww=ww;bd.wo=wo;
+    bd.big=vc>20000;
+    bd.flat=!!(bd.mesh.material&&bd.mesh.material.flatShading);
+    bd.stripes=clamp(Math.round(vc/30000),1,4);
+    bd.sp=0;}
   impact(lp,ln,dv){
     // 현실적 방향성 크럼플:
     //  (1) 국소 크럼플 — 충돌한 부위만 충격 방향으로 함몰(접점서 거리로 감쇠, 종이처럼 구겨짐).
@@ -6016,12 +6093,16 @@ class SoftLattice{
     this.hot=Math.min(this.hot+.6+sev*1.6,3.4);this.dirty=true;
   }
   update(dt){
-    if(this.hot<=0){if(this.dirty){this.write();this.dirty=false;}return false;}
+    if(this.hot<=0){if(this.dirty){this.write(false,true);this.dirty=false;}return false;}
     this.hot-=dt;
-    const P=this.pos,Q=this.prev,H=this.home,B=this.beams,A=this.anchor,PL=this.plast,BK=this.bbrk;
+    const P=this.pos,Q=this.prev,H=this.home,A=this.anchor,PL=this.plast,BK=this.bbrk;
+    const bA=this.bA,bB=this.bB,bRest=this.bRest,bR0=this.bR0,nb=this.nb;
     const damp=.9;
     // 솔버 품질: 설정(물리 품질) + 충격 세기에 따라 적응 — 강한 크래시일 때 더 정밀하게 수렴
     const QL=(typeof Settings!=="undefined"&&Settings.softQuality)||"normal";
+    /* 솔버 품질은 설정값만으로 결정한다 — 프레임 시간에 따라 자동으로 낮추면
+       같은 충돌인데도 기기·순간에 따라 변형 결과가 달라지므로 쓰지 않는다.
+       부드러움은 '메시 반영을 스트라이프로 분산'해서 확보한다(결과는 그대로). */
     const subs=QL==="high"?3:QL==="low"?1:2;
     const iters=QL==="high"?6:QL==="low"?3:4;
     for(let s=0;s<subs;s++){
@@ -6035,48 +6116,71 @@ class SoftLattice{
         // 위로 말려 올라가는 노드 억제 → 크럼플은 앞뒤(아코디언)로 유지
         const yUp=P[a+1]-H[a+1];
         if(yUp>.28)P[a+1]-=(yUp-.28)*.5;}
-      // beam constraints + plasticity + tearing
-      for(let it=0;it<iters;it++)
-        for(let b=0;b<this.nb;b++){
-          if(BK[b])continue;                   // 끊어진 빔: 구속 없음(판금 찢김)
-          const o=b*4,ia=B[o]*3,ib=B[o+1]*3;
+      /* beam constraints + plasticity + tearing
+         소성·파열 판정은 첫 반복에서만 필요하므로 루프를 분리한다
+         (핫 루프에서 분기를 빼 반복당 비용을 줄인다 — 결과는 동일). */
+      for(let b=0;b<nb;b++){
+        if(BK[b])continue;                     // 끊어진 빔: 구속 없음(판금 찢김)
+        const ia=bA[b],ib=bB[b];
+        const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
+        const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
+        const rest0=bR0[b],rc=bRest[b],strain=(len-rc)/rest0;
+        // 파열: 인장이 한계(90%)를 넘으면 용접부가 뜯김 → 이후 구속 해제
+        if(strain>.9){BK[b]=1;this.torn++;continue;}
+        if(Math.abs(strain)>.014)              // 항복: 압축은 깊게, 인장은 찢김 허용(1.4배까지)
+          bRest[b]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.4);
+        const rest=bRest[b];
+        const diff=(len-rest)/len*.5*.42;
+        P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
+        P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
+      for(let it=1;it<iters;it++)
+        for(let b=0;b<nb;b++){
+          if(BK[b])continue;
+          const ia=bA[b],ib=bB[b];
           const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
           const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
-          if(it===0){                          // 소성 먼저: 붕괴된 현재 길이로 항복 → 재팽창 전에 영구 단축
-            const rest0=B[o+3],rc=B[o+2],strain=(len-rc)/rest0;
-            // 파열: 인장이 한계(90%)를 넘으면 용접부가 뜯김 → 이후 구속 해제
-            if(strain>.9){BK[b]=1;this.torn++;continue;}
-            if(Math.abs(strain)>.014)           // 항복: 압축은 깊게(rest0*.05까지), 인장은 찢김 허용(1.4배까지 늘어남)
-              B[o+2]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.4);}
-          const rest=B[o+2];
-          const diff=(len-rest)/len*.5*.42;
+          const diff=(len-bRest[b])/len*.5*.42;
           P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
     }
-    // 메시 반영 스로틀: 2프레임에 1회(노멀은 4프레임에 1회) → 크래시 중 프레임 부드럽게
+    /* 메시 반영: 매 프레임 스트라이프 하나씩 → 총 작업량은 같고 프레임당 부하는 균일.
+       법선은 4프레임에 한 번만(대형 스캔 메시는 충돌이 끝난 뒤 한 번). */
     this._wr=(this._wr||0)+1;
-    if(this._wr&1)this.write((this._wr&3)===1);
+    this.write((this._wr&3)!==1);
     this.dirty=true;   // hot 종료 시 마지막 상태 확정 기록
     return true;
   }
-  write(skipNormals){
+  write(skipNormals,full){
     const P=this.pos,H=this.home;
     for(const bd of this.binds){
+      this.ensureFast(bd);
       const arr=bd.mesh.geometry.attributes.position.array;
       const cAttr=bd.col?bd.mesh.geometry.attributes.color:null,cArr=cAttr?cAttr.array:null;
-      for(let v=0;v<bd.vc;v++){
-        const o=v*8;let dx=0,dy=0,dz=0;
-        for(let c=0;c<8;c++){
-          const ni=bd.bi[o+c]*3,w=bd.bw[o+c];
+      const wi=bd.wi,ww=bd.ww,wo=bd.wo,orig=bd.orig,col=bd.col;
+      // 스트라이프 = 연속 구간이라 시간이 섞이는 경계가 삼각형 1개뿐(육안으로 보이지 않음)
+      const K=full?1:bd.stripes;
+      const chunk=Math.ceil(bd.vc/K);
+      const v0=full?0:bd.sp*chunk, v1=full?bd.vc:Math.min(bd.vc,v0+chunk);
+      if(!full)bd.sp=(bd.sp+1)%K;
+      for(let v=v0;v<v1;v++){
+        let dx=0,dy=0,dz=0;
+        for(let q=wo[v],qe=wo[v+1];q<qe;q++){
+          const ni=wi[q],w=ww[q];
           dx+=(P[ni]-H[ni])*w;dy+=(P[ni+1]-H[ni+1])*w;dz+=(P[ni+2]-H[ni+2])*w;}
-        arr[v*3]=bd.orig[v*3]+dx;arr[v*3+1]=bd.orig[v*3+1]+dy;arr[v*3+2]=bd.orig[v*3+2]+dz;
+        const v3=v*3;
+        arr[v3]=orig[v3]+dx;arr[v3+1]=orig[v3+1]+dy;arr[v3+2]=orig[v3+2]+dz;
         if(cArr){ // 구겨진 부위 도장 크리즈(음영): 변형 깊이에 비례해 어두워짐
-          const disp=Math.sqrt(dx*dx+dy*dy+dz*dz);
-          const f=disp<.02?1:Math.max(.42,1-disp*.5);
-          cArr[v*3]=bd.col[v*3]*f;cArr[v*3+1]=bd.col[v*3+1]*f;cArr[v*3+2]=bd.col[v*3+2]*f;}}
+          const d2=dx*dx+dy*dy+dz*dz;
+          const f=d2<4e-4?1:Math.max(.42,1-Math.sqrt(d2)*.5);   // 안 구겨진 정점은 sqrt 생략
+          cArr[v3]=col[v3]*f;cArr[v3+1]=col[v3+1]*f;cArr[v3+2]=col[v3+2]*f;}}
       bd.mesh.geometry.attributes.position.needsUpdate=true;
       if(cAttr)cAttr.needsUpdate=true;
-      if(!skipNormals)bd.mesh.geometry.computeVertexNormals();}
+      /* 법선 재계산은 정말 필요할 때만.
+         · 플랫 셰이딩 메시는 셰이더가 면 법선을 미분으로 구하므로 정점 법선을 쓰지 않는다.
+         · 정점이 아주 많은 스캔 차체는 충돌 중에는 미루고 충돌이 끝난 뒤 한 번만 갱신한다. */
+      if(skipNormals||bd.flat)continue;
+      if(bd.big&&this.hot>0&&!full)continue;
+      bd.mesh.geometry.computeVertexNormals();}
   }
   totalDisp(){
     let s=0;
@@ -6088,13 +6192,14 @@ class SoftLattice{
   reset(){
     this.pos.set(this.home);this.prev.set(this.home);this.plast.fill(0);
     this.bbrk.fill(0);this.torn=0;
-    for(let b=0;b<this.nb;b++)this.beams[b*4+2]=this.beams[b*4+3];
+    this.bRest.set(this.bR0);
     for(const bd of this.binds){
       bd.mesh.geometry.attributes.position.array.set(bd.orig);
       bd.mesh.geometry.attributes.position.needsUpdate=true;
       if(bd.col){bd.mesh.geometry.attributes.color.array.set(bd.col);
         bd.mesh.geometry.attributes.color.needsUpdate=true;}
-      bd.mesh.geometry.computeVertexNormals();}
+      this.ensureFast(bd);
+      if(!bd.flat)bd.mesh.geometry.computeVertexNormals();}
     this.hot=0;this.dirty=false;
   }
 }
@@ -8237,32 +8342,34 @@ class GameCamera{
       this.cam.lookAt(t.x,(world?world.height(t.x,t.z):0)+2,t.z);
       return;}
     const b=veh.body,sp=veh.speed;
+    // 카메라도 보간된 포즈를 따라가야 한다 — 물리 포즈를 쓰면 차와 카메라가 서로 어긋나 떨린다
+    const bp=b.rPos,bq=b.rQuat;
     this.userT=Math.max(0,this.userT-dt);
     if(this.shake>0)this.shake=Math.max(0,this.shake-dt*2.4);
-    const yaw=Math.atan2(2*(b.quat.w*b.quat.y+b.quat.x*b.quat.z),1-2*(b.quat.y*b.quat.y+b.quat.x*b.quat.x));
+    const yaw=Math.atan2(2*(bq.w*bq.y+bq.x*bq.z),1-2*(bq.y*bq.y+bq.x*bq.x));
     let tx,ty,tz,lx,ly,lz;
     if(this.mode==="chase"||this.mode==="free"){
       const behind=(this.mode==="free"&&sp<1.5)||this.userT>0?this.orbitYaw+yaw:yaw;
       const recenter=this.mode==="chase"&&this.userT<=0;
       if(recenter)this.orbitYaw*=Math.max(0,1-dt*3);
       const d=this.dist+sp*.05,pi=this.orbitPitch;
-      tx=b.pos.x-Math.sin(behind)*Math.cos(pi)*d;
-      tz=b.pos.z-Math.cos(behind)*Math.cos(pi)*d;
-      ty=b.pos.y+Math.sin(pi)*d;
+      tx=bp.x-Math.sin(behind)*Math.cos(pi)*d;
+      tz=bp.z-Math.cos(behind)*Math.cos(pi)*d;
+      ty=bp.y+Math.sin(pi)*d;
       const ahead=this.mode==="chase"?clamp(sp*.25,0,7):0;
-      lx=b.pos.x+Math.sin(yaw)*ahead;ly=b.pos.y+.6;lz=b.pos.z+Math.cos(yaw)*ahead;
+      lx=bp.x+Math.sin(yaw)*ahead;ly=bp.y+.6;lz=bp.z+Math.cos(yaw)*ahead;
       const k=this.mode==="chase"?1-Math.pow(.0018,dt):1-Math.pow(.0001,dt);
       this.pos.x+=(tx-this.pos.x)*k;this.pos.y+=(ty-this.pos.y)*k;this.pos.z+=(tz-this.pos.z)*k;
     }else if(this.mode==="hood"){
-      _t6.set(0,veh.spec.body.hy*.55,veh.spec.body.hz*.35);b.localToWorld(_t6,this.pos);
-      lx=b.pos.x+Math.sin(yaw)*30;ly=this.pos.y;lz=b.pos.z+Math.cos(yaw)*30;
+      _t6.set(0,veh.spec.body.hy*.55,veh.spec.body.hz*.35);b.rLocalToWorld(_t6,this.pos);
+      lx=bp.x+Math.sin(yaw)*30;ly=this.pos.y;lz=bp.z+Math.cos(yaw)*30;
     }else if(this.mode==="bumper"){
-      _t6.set(0,-veh.spec.body.hy*.1,veh.spec.body.hz+.3);b.localToWorld(_t6,this.pos);
-      lx=b.pos.x+Math.sin(yaw)*30;ly=this.pos.y;lz=b.pos.z+Math.cos(yaw)*30;
+      _t6.set(0,-veh.spec.body.hy*.1,veh.spec.body.hz+.3);b.rLocalToWorld(_t6,this.pos);
+      lx=bp.x+Math.sin(yaw)*30;ly=this.pos.y;lz=bp.z+Math.cos(yaw)*30;
     }else{ // top
-      this.pos.set(b.pos.x,b.pos.y+26+sp*.12,b.pos.z-6);
-      lx=b.pos.x;ly=b.pos.y;lz=b.pos.z;}
-    if(lx===undefined){lx=b.pos.x;ly=b.pos.y;lz=b.pos.z;}
+      this.pos.set(bp.x,bp.y+26+sp*.12,bp.z-6);
+      lx=bp.x;ly=bp.y;lz=bp.z;}
+    if(lx===undefined){lx=bp.x;ly=bp.y;lz=bp.z;}
     // keep above terrain
     if(world){const gy=world.height(this.pos.x,this.pos.z)+.5;if(this.pos.y<gy)this.pos.y=gy;}
     this.cam.position.copy(this.pos);
@@ -8603,6 +8710,10 @@ const Game={
   /* ---------- per-physics-step ---------- */
   physStep(dt){
     const v=this.veh;
+    // 렌더 보간용: 이 스텝 시작 시점의 휠 시각 상태(서스 스트로크·회전각)를 보관
+    for(const w of v.wheels){w.pVisY=w.visY;w.pSpin=w.spin;}
+    for(const a of this.ais)for(const w of a.veh.wheels){w.pVisY=w.visY;w.pSpin=w.spin;}
+    for(const d of this.drones)for(const w of d.veh.wheels){w.pVisY=w.visY;w.pSpin=w.spin;}
     // input → player (unless locked)
     if(!v.controlLock)Input.applyTo(v);
     if(this.mode==="crash")this.crashStep(dt);
@@ -8642,11 +8753,22 @@ const Game={
     if(this.slowmoT>0)this.slowmoT-=dt;
     if(!this.paused){
       this.acc+=dt*ts;
+      /* 스텝 예산 — 충돌처럼 한 스텝이 비싸지는 순간에 스텝 수까지 늘어나면
+         프레임이 길어지고, 길어진 프레임 때문에 다음 프레임의 누적시간이 더 커져
+         스텝이 또 늘어나는 악순환(스파이럴)이 생긴다. 최근 실측 스텝 비용으로
+         상한을 정해 한 프레임의 물리 시간을 예산 안에 묶는다. */
+      const est=this._msPerStep||.35;
+      const maxSteps=clamp(Math.round(PHYS_BUDGET_MS/est),1,10);
       let steps=0;const t0=performance.now();
-      while(this.acc>=PHYS_DT&&steps<10){this.physStep(PHYS_DT);this.acc-=PHYS_DT;steps++;}
-      if(steps>=10)this.acc=0;
+      while(this.acc>=PHYS_DT&&steps<maxSteps){this.physStep(PHYS_DT);this.acc-=PHYS_DT;steps++;}
+      if(steps>=maxSteps)this.acc=Math.min(this.acc,PHYS_DT);   // 밀린 시간은 버린다(스파이럴 차단)
       if(this.labPerf&&steps)this.labPerfTick(steps*PHYS_DT);
       this.physMs=performance.now()-t0;
+      if(steps)this._msPerStep=lerp(this._msPerStep||this.physMs/steps,this.physMs/steps,.2);
+      /* 렌더 포즈 보간 — 남은 누적시간 비율만큼 마지막 두 물리 상태 사이를 채운다.
+         이것이 "충돌·슬로모션에서 뚝뚝 끊김"의 근본 해결책이다. */
+      this.rAlpha=clamp(this.acc/PHYS_DT,0,1);
+      this.interpRender(this.rAlpha);
       // consume impacts → deform + fx
       this.consumeImpacts(this.veh,this.vis,true);
       for(const a of this.ais)this.consumeImpacts(a.veh,a.vis,false);
@@ -8678,6 +8800,20 @@ const Game={
     if(this.shakeT>0)this.shakeT-=dt;
     updateHUD(dt);
   },
+  /* 모든 차량의 렌더 포즈(차체 + 휠 스트로크·회전)를 보간한다 */
+  interpRender(a){
+    const doV=(v)=>{
+      v.body.lerpRender(a);
+      for(const w of v.wheels){
+        const p=(w.pVisY===undefined?w.visY:w.pVisY);
+        w.rVisY=p+(w.visY-p)*a;
+        const ps=(w.pSpin===undefined?w.spin:w.pSpin);
+        let d=w.spin-ps;                          // 회전각은 최단경로로(랩어라운드 역회전 방지)
+        if(d>Math.PI)d-=6.283185307;else if(d<-Math.PI)d+=6.283185307;
+        w.rSpin=ps+d*a;}};
+    doV(this.veh);
+    for(const x of this.ais)doV(x.veh);
+    for(const x of this.drones)doV(x.veh);},
   consumeImpacts(v,vis,isPlayer){
     for(const imp of v.impacts){
       vis.applyImpact(imp,v);
@@ -9931,13 +10067,13 @@ function mainLoop(t){
       // headlight follows player
       if(headlight&&headlight.visible&&Game.veh){
         const b=Game.veh.body;
-        _t6.set(0,0,Game.veh.spec.body.hz);b.localToWorld(_t6,headlight.position);
-        _t7.set(0,-1.5,30);b.localToWorld(_t7,headlight.target.position);}
+        _t6.set(0,0,Game.veh.spec.body.hz);b.rLocalToWorld(_t6,headlight.position);
+        _t7.set(0,-1.5,30);b.rLocalToWorld(_t7,headlight.target.position);}
       skyDome.position.set(camera.position.x,0,camera.position.z);
-      sunLight.target.position.copy(Game.veh.body.pos);
-      sunLight.position.set(Game.veh.body.pos.x+TOD[Game.opts.tod].sunPos[0]*.5,
-        Game.veh.body.pos.y+TOD[Game.opts.tod].sunPos[1]*.5,
-        Game.veh.body.pos.z+TOD[Game.opts.tod].sunPos[2]*.5);
+      sunLight.target.position.copy(Game.veh.body.rPos);
+      sunLight.position.set(Game.veh.body.rPos.x+TOD[Game.opts.tod].sunPos[0]*.5,
+        Game.veh.body.rPos.y+TOD[Game.opts.tod].sunPos[1]*.5,
+        Game.veh.body.rPos.z+TOD[Game.opts.tod].sunPos[2]*.5);
       renderer.render(scene,camera);
     }else if(Game.state==="menu"){
       if(Showroom.active)Showroom.update(dt);

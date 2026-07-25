@@ -327,6 +327,10 @@ const Game={
   /* ---------- per-physics-step ---------- */
   physStep(dt){
     const v=this.veh;
+    // 렌더 보간용: 이 스텝 시작 시점의 휠 시각 상태(서스 스트로크·회전각)를 보관
+    for(const w of v.wheels){w.pVisY=w.visY;w.pSpin=w.spin;}
+    for(const a of this.ais)for(const w of a.veh.wheels){w.pVisY=w.visY;w.pSpin=w.spin;}
+    for(const d of this.drones)for(const w of d.veh.wheels){w.pVisY=w.visY;w.pSpin=w.spin;}
     // input → player (unless locked)
     if(!v.controlLock)Input.applyTo(v);
     if(this.mode==="crash")this.crashStep(dt);
@@ -366,11 +370,22 @@ const Game={
     if(this.slowmoT>0)this.slowmoT-=dt;
     if(!this.paused){
       this.acc+=dt*ts;
+      /* 스텝 예산 — 충돌처럼 한 스텝이 비싸지는 순간에 스텝 수까지 늘어나면
+         프레임이 길어지고, 길어진 프레임 때문에 다음 프레임의 누적시간이 더 커져
+         스텝이 또 늘어나는 악순환(스파이럴)이 생긴다. 최근 실측 스텝 비용으로
+         상한을 정해 한 프레임의 물리 시간을 예산 안에 묶는다. */
+      const est=this._msPerStep||.35;
+      const maxSteps=clamp(Math.round(PHYS_BUDGET_MS/est),1,10);
       let steps=0;const t0=performance.now();
-      while(this.acc>=PHYS_DT&&steps<10){this.physStep(PHYS_DT);this.acc-=PHYS_DT;steps++;}
-      if(steps>=10)this.acc=0;
+      while(this.acc>=PHYS_DT&&steps<maxSteps){this.physStep(PHYS_DT);this.acc-=PHYS_DT;steps++;}
+      if(steps>=maxSteps)this.acc=Math.min(this.acc,PHYS_DT);   // 밀린 시간은 버린다(스파이럴 차단)
       if(this.labPerf&&steps)this.labPerfTick(steps*PHYS_DT);
       this.physMs=performance.now()-t0;
+      if(steps)this._msPerStep=lerp(this._msPerStep||this.physMs/steps,this.physMs/steps,.2);
+      /* 렌더 포즈 보간 — 남은 누적시간 비율만큼 마지막 두 물리 상태 사이를 채운다.
+         이것이 "충돌·슬로모션에서 뚝뚝 끊김"의 근본 해결책이다. */
+      this.rAlpha=clamp(this.acc/PHYS_DT,0,1);
+      this.interpRender(this.rAlpha);
       // consume impacts → deform + fx
       this.consumeImpacts(this.veh,this.vis,true);
       for(const a of this.ais)this.consumeImpacts(a.veh,a.vis,false);
@@ -402,6 +417,20 @@ const Game={
     if(this.shakeT>0)this.shakeT-=dt;
     updateHUD(dt);
   },
+  /* 모든 차량의 렌더 포즈(차체 + 휠 스트로크·회전)를 보간한다 */
+  interpRender(a){
+    const doV=(v)=>{
+      v.body.lerpRender(a);
+      for(const w of v.wheels){
+        const p=(w.pVisY===undefined?w.visY:w.pVisY);
+        w.rVisY=p+(w.visY-p)*a;
+        const ps=(w.pSpin===undefined?w.spin:w.pSpin);
+        let d=w.spin-ps;                          // 회전각은 최단경로로(랩어라운드 역회전 방지)
+        if(d>Math.PI)d-=6.283185307;else if(d<-Math.PI)d+=6.283185307;
+        w.rSpin=ps+d*a;}};
+    doV(this.veh);
+    for(const x of this.ais)doV(x.veh);
+    for(const x of this.drones)doV(x.veh);},
   consumeImpacts(v,vis,isPlayer){
     for(const imp of v.impacts){
       vis.applyImpact(imp,v);

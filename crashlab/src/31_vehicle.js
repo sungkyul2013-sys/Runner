@@ -56,6 +56,8 @@ class Vehicle{
     this.impacts.length=0;
     this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};
     this.flipT=0;this.airT=0;
+    b.snap();                       // 렌더 보간 잔상 방지
+    for(const w of this.wheels){w.pVisY=w.visY;w.rVisY=w.visY;w.pSpin=w.spin;w.rSpin=w.spin;}
   }
   isFlipped(){
     const u=_vUp2.set(0,1,0).applyQuaternion(this.body.quat);return u.y<.5;}
@@ -68,7 +70,8 @@ class Vehicle{
     b.vel.set(0,0,0);b.angVel.set(0,0,0);b.force.set(0,0,0);b.torque.set(0,0,0);
     this.impacts.length=0;this.flipT=0;this.airT=0;this.throttle=0;this.brake=0;
     for(const w of this.wheels){w.comp=0;w.prevComp=0;w.skid=0;w.omega=0;w.onGround=false;w.load=0;}
-    this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};}
+    this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};
+    b.snap();}                      // 렌더 보간 잔상 방지(순간 자세 변경)
   clearDamage(){
     this.dmg={f:0,b:0,l:0,r:0};
     this.powerMul=1;this.steerMul=1;this.suspMul=1;this.brakeMul=1;this.toe=0;this.defVol=0;
@@ -391,7 +394,8 @@ class Vehicle{
     // NaN guard → rollback (안정성 2)
     if(!b.ok()){
       b.pos.copy(this.lastGood.pos);b.quat.copy(this.lastGood.quat);
-      b.vel.set(0,0,0);b.angVel.set(0,0,0);b.force.set(0,0,0);b.torque.set(0,0,0);}
+      b.vel.set(0,0,0);b.angVel.set(0,0,0);b.force.set(0,0,0);b.torque.set(0,0,0);
+      b.snap();}                    // 롤백도 순간이동 → 보간 잔상 방지
     else if((this._goodT=(this._goodT||0)+dt)>.5){this._goodT=0;
       this.lastGood.pos.copy(b.pos);this.lastGood.quat.copy(b.quat);}
   }

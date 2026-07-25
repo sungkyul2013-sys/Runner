@@ -45,8 +45,16 @@ class SoftLattice{
         const a=idx(i,j,k),b=idx(i2,j2,k2);
         const r=Math.hypot(dx*this.cell[0],dy*this.cell[1],dz*this.cell[2]);
         beams.push(a,b,r,r);}       // a,b,rest,rest0
-    this.beams=new Float32Array(beams);
-    this.nb=beams.length/4;
+    /* 빔 데이터는 종류별 타입배열로 분리한다 —
+       하나의 Float32Array에 인덱스까지 섞어 담으면 배열 첨자로 쓸 때마다 float→int 변환이
+       끼어들어 솔버 내부 루프가 크게 느려진다(충돌 프레임의 남은 스파이크 원인). */
+    const nb=beams.length/4;
+    this.nb=nb;
+    this.bA=new Int32Array(nb);this.bB=new Int32Array(nb);
+    this.bRest=new Float32Array(nb);this.bR0=new Float32Array(nb);
+    for(let b=0;b<nb;b++){
+      this.bA[b]=beams[b*4]*3;this.bB[b]=beams[b*4+1]*3;   // 미리 *3 해 둔 성분 오프셋
+      this.bRest[b]=beams[b*4+2];this.bR0[b]=beams[b*4+3];}
     // 빔 파열(tearing): 인장 변형률이 한계를 넘으면 끊어져 구속 해제 → 판금이 '찢어져' 벌어짐
     this.bbrk=new Uint8Array(this.nb);
     this.torn=0;
@@ -72,6 +80,34 @@ class SoftLattice{
     const colAttr=mesh.geometry.attributes.color;
     this.binds.push({mesh,orig,bi,bw,vc,col:colAttr?colAttr.array.slice():null});
   }
+  /* 정점 스키닝 준비 —
+     ① 8본 트라이리니어 가중치 중 무시할 만한 것(<2%)을 버리고 CSR로 압축해 재정규화.
+        스캔 차체는 정점당 실제 유효 본이 4~5개라 연산량이 40% 이상 줄어든다.
+     ② 정점이 많은 메시는 프레임마다 연속 구간(스트라이프) 하나씩만 갱신한다.
+        총 작업량은 같지만 한 프레임에 몰리지 않아 '충돌 순간 뚝' 끊기는 스파이크가 사라진다. */
+  ensureFast(bd){
+    if(bd.wi)return;
+    const vc=bd.vc,bi=bd.bi,bw=bd.bw;
+    const wo=new Int32Array(vc+1);
+    for(let v=0;v<vc;v++){
+      const o=v*8;let c2=0;
+      for(let c=0;c<8;c++)if(bw[o+c]>.02)c2++;
+      wo[v+1]=c2||1;}
+    for(let v=0;v<vc;v++)wo[v+1]+=wo[v];
+    const tot=wo[vc],wi=new Int32Array(tot),ww=new Float32Array(tot);
+    for(let v=0;v<vc;v++){
+      const o=v*8;let p=wo[v],sum=0;
+      for(let c=0;c<8;c++)if(bw[o+c]>.02){wi[p]=bi[o+c]*3;ww[p]=bw[o+c];sum+=bw[o+c];p++;}
+      if(p===wo[v]){                        // 전부 미미하면 최대 가중치 본 하나로
+        let best=0,bv=-1;
+        for(let c=0;c<8;c++)if(bw[o+c]>bv){bv=bw[o+c];best=c;}
+        wi[p]=bi[o+best]*3;ww[p]=1;sum=1;p++;}
+      if(sum>0&&Math.abs(sum-1)>1e-6){const inv=1/sum;for(let q=wo[v];q<p;q++)ww[q]*=inv;}}
+    bd.wi=wi;bd.ww=ww;bd.wo=wo;
+    bd.big=vc>20000;
+    bd.flat=!!(bd.mesh.material&&bd.mesh.material.flatShading);
+    bd.stripes=clamp(Math.round(vc/30000),1,4);
+    bd.sp=0;}
   impact(lp,ln,dv){
     // 현실적 방향성 크럼플:
     //  (1) 국소 크럼플 — 충돌한 부위만 충격 방향으로 함몰(접점서 거리로 감쇠, 종이처럼 구겨짐).
@@ -143,12 +179,16 @@ class SoftLattice{
     this.hot=Math.min(this.hot+.6+sev*1.6,3.4);this.dirty=true;
   }
   update(dt){
-    if(this.hot<=0){if(this.dirty){this.write();this.dirty=false;}return false;}
+    if(this.hot<=0){if(this.dirty){this.write(false,true);this.dirty=false;}return false;}
     this.hot-=dt;
-    const P=this.pos,Q=this.prev,H=this.home,B=this.beams,A=this.anchor,PL=this.plast,BK=this.bbrk;
+    const P=this.pos,Q=this.prev,H=this.home,A=this.anchor,PL=this.plast,BK=this.bbrk;
+    const bA=this.bA,bB=this.bB,bRest=this.bRest,bR0=this.bR0,nb=this.nb;
     const damp=.9;
     // 솔버 품질: 설정(물리 품질) + 충격 세기에 따라 적응 — 강한 크래시일 때 더 정밀하게 수렴
     const QL=(typeof Settings!=="undefined"&&Settings.softQuality)||"normal";
+    /* 솔버 품질은 설정값만으로 결정한다 — 프레임 시간에 따라 자동으로 낮추면
+       같은 충돌인데도 기기·순간에 따라 변형 결과가 달라지므로 쓰지 않는다.
+       부드러움은 '메시 반영을 스트라이프로 분산'해서 확보한다(결과는 그대로). */
     const subs=QL==="high"?3:QL==="low"?1:2;
     const iters=QL==="high"?6:QL==="low"?3:4;
     for(let s=0;s<subs;s++){
@@ -162,48 +202,71 @@ class SoftLattice{
         // 위로 말려 올라가는 노드 억제 → 크럼플은 앞뒤(아코디언)로 유지
         const yUp=P[a+1]-H[a+1];
         if(yUp>.28)P[a+1]-=(yUp-.28)*.5;}
-      // beam constraints + plasticity + tearing
-      for(let it=0;it<iters;it++)
-        for(let b=0;b<this.nb;b++){
-          if(BK[b])continue;                   // 끊어진 빔: 구속 없음(판금 찢김)
-          const o=b*4,ia=B[o]*3,ib=B[o+1]*3;
+      /* beam constraints + plasticity + tearing
+         소성·파열 판정은 첫 반복에서만 필요하므로 루프를 분리한다
+         (핫 루프에서 분기를 빼 반복당 비용을 줄인다 — 결과는 동일). */
+      for(let b=0;b<nb;b++){
+        if(BK[b])continue;                     // 끊어진 빔: 구속 없음(판금 찢김)
+        const ia=bA[b],ib=bB[b];
+        const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
+        const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
+        const rest0=bR0[b],rc=bRest[b],strain=(len-rc)/rest0;
+        // 파열: 인장이 한계(90%)를 넘으면 용접부가 뜯김 → 이후 구속 해제
+        if(strain>.9){BK[b]=1;this.torn++;continue;}
+        if(Math.abs(strain)>.014)              // 항복: 압축은 깊게, 인장은 찢김 허용(1.4배까지)
+          bRest[b]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.4);
+        const rest=bRest[b];
+        const diff=(len-rest)/len*.5*.42;
+        P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
+        P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
+      for(let it=1;it<iters;it++)
+        for(let b=0;b<nb;b++){
+          if(BK[b])continue;
+          const ia=bA[b],ib=bB[b];
           const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
           const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
-          if(it===0){                          // 소성 먼저: 붕괴된 현재 길이로 항복 → 재팽창 전에 영구 단축
-            const rest0=B[o+3],rc=B[o+2],strain=(len-rc)/rest0;
-            // 파열: 인장이 한계(90%)를 넘으면 용접부가 뜯김 → 이후 구속 해제
-            if(strain>.9){BK[b]=1;this.torn++;continue;}
-            if(Math.abs(strain)>.014)           // 항복: 압축은 깊게(rest0*.05까지), 인장은 찢김 허용(1.4배까지 늘어남)
-              B[o+2]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.4);}
-          const rest=B[o+2];
-          const diff=(len-rest)/len*.5*.42;
+          const diff=(len-bRest[b])/len*.5*.42;
           P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
     }
-    // 메시 반영 스로틀: 2프레임에 1회(노멀은 4프레임에 1회) → 크래시 중 프레임 부드럽게
+    /* 메시 반영: 매 프레임 스트라이프 하나씩 → 총 작업량은 같고 프레임당 부하는 균일.
+       법선은 4프레임에 한 번만(대형 스캔 메시는 충돌이 끝난 뒤 한 번). */
     this._wr=(this._wr||0)+1;
-    if(this._wr&1)this.write((this._wr&3)===1);
+    this.write((this._wr&3)!==1);
     this.dirty=true;   // hot 종료 시 마지막 상태 확정 기록
     return true;
   }
-  write(skipNormals){
+  write(skipNormals,full){
     const P=this.pos,H=this.home;
     for(const bd of this.binds){
+      this.ensureFast(bd);
       const arr=bd.mesh.geometry.attributes.position.array;
       const cAttr=bd.col?bd.mesh.geometry.attributes.color:null,cArr=cAttr?cAttr.array:null;
-      for(let v=0;v<bd.vc;v++){
-        const o=v*8;let dx=0,dy=0,dz=0;
-        for(let c=0;c<8;c++){
-          const ni=bd.bi[o+c]*3,w=bd.bw[o+c];
+      const wi=bd.wi,ww=bd.ww,wo=bd.wo,orig=bd.orig,col=bd.col;
+      // 스트라이프 = 연속 구간이라 시간이 섞이는 경계가 삼각형 1개뿐(육안으로 보이지 않음)
+      const K=full?1:bd.stripes;
+      const chunk=Math.ceil(bd.vc/K);
+      const v0=full?0:bd.sp*chunk, v1=full?bd.vc:Math.min(bd.vc,v0+chunk);
+      if(!full)bd.sp=(bd.sp+1)%K;
+      for(let v=v0;v<v1;v++){
+        let dx=0,dy=0,dz=0;
+        for(let q=wo[v],qe=wo[v+1];q<qe;q++){
+          const ni=wi[q],w=ww[q];
           dx+=(P[ni]-H[ni])*w;dy+=(P[ni+1]-H[ni+1])*w;dz+=(P[ni+2]-H[ni+2])*w;}
-        arr[v*3]=bd.orig[v*3]+dx;arr[v*3+1]=bd.orig[v*3+1]+dy;arr[v*3+2]=bd.orig[v*3+2]+dz;
+        const v3=v*3;
+        arr[v3]=orig[v3]+dx;arr[v3+1]=orig[v3+1]+dy;arr[v3+2]=orig[v3+2]+dz;
         if(cArr){ // 구겨진 부위 도장 크리즈(음영): 변형 깊이에 비례해 어두워짐
-          const disp=Math.sqrt(dx*dx+dy*dy+dz*dz);
-          const f=disp<.02?1:Math.max(.42,1-disp*.5);
-          cArr[v*3]=bd.col[v*3]*f;cArr[v*3+1]=bd.col[v*3+1]*f;cArr[v*3+2]=bd.col[v*3+2]*f;}}
+          const d2=dx*dx+dy*dy+dz*dz;
+          const f=d2<4e-4?1:Math.max(.42,1-Math.sqrt(d2)*.5);   // 안 구겨진 정점은 sqrt 생략
+          cArr[v3]=col[v3]*f;cArr[v3+1]=col[v3+1]*f;cArr[v3+2]=col[v3+2]*f;}}
       bd.mesh.geometry.attributes.position.needsUpdate=true;
       if(cAttr)cAttr.needsUpdate=true;
-      if(!skipNormals)bd.mesh.geometry.computeVertexNormals();}
+      /* 법선 재계산은 정말 필요할 때만.
+         · 플랫 셰이딩 메시는 셰이더가 면 법선을 미분으로 구하므로 정점 법선을 쓰지 않는다.
+         · 정점이 아주 많은 스캔 차체는 충돌 중에는 미루고 충돌이 끝난 뒤 한 번만 갱신한다. */
+      if(skipNormals||bd.flat)continue;
+      if(bd.big&&this.hot>0&&!full)continue;
+      bd.mesh.geometry.computeVertexNormals();}
   }
   totalDisp(){
     let s=0;
@@ -215,13 +278,14 @@ class SoftLattice{
   reset(){
     this.pos.set(this.home);this.prev.set(this.home);this.plast.fill(0);
     this.bbrk.fill(0);this.torn=0;
-    for(let b=0;b<this.nb;b++)this.beams[b*4+2]=this.beams[b*4+3];
+    this.bRest.set(this.bR0);
     for(const bd of this.binds){
       bd.mesh.geometry.attributes.position.array.set(bd.orig);
       bd.mesh.geometry.attributes.position.needsUpdate=true;
       if(bd.col){bd.mesh.geometry.attributes.color.array.set(bd.col);
         bd.mesh.geometry.attributes.color.needsUpdate=true;}
-      bd.mesh.geometry.computeVertexNormals();}
+      this.ensureFast(bd);
+      if(!bd.flat)bd.mesh.geometry.computeVertexNormals();}
     this.hot=0;this.dirty=false;
   }
 }

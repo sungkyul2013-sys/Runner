@@ -86,8 +86,16 @@ function setRec(k,v){Records[k]=v;Store.set("records",Records);}
 const Sfx=(()=>{
   let ctx=null,master=null,engA=null,engB=null,engNoise=null,engGain=null,engBGain=null,noiseGain=null,
       skidSrc=null,skidGain=null,skidFilt=null,windGain=null,started=false;
-  function noiseBuffer(c){const len=c.sampleRate*1.2,b=c.createBuffer(1,len,c.sampleRate),d=b.getChannelData(0);
-    for(let i=0;i<len;i++)d[i]=Math.random()*2-1;return b;}
+  let _nb=null;
+  /* 화이트노이즈 버퍼는 매번 새로 만들 필요가 없다(내용이 같다).
+     예전에는 충돌음 1회마다 1.2초 분량(≈5만 샘플)을 새로 할당·난수 채움 했고,
+     한 프레임에 충격이 여러 번 들어오면 이것만으로 수십만 번 난수를 돌려
+     충돌 순간 프레임이 길어지는 원인이 됐다 → 한 번 만들어 재사용한다. */
+  function noiseBuffer(c){
+    if(_nb&&_nb.sampleRate===c.sampleRate)return _nb;
+    const len=(c.sampleRate*1.2)|0,b=c.createBuffer(1,len,c.sampleRate),d=b.getChannelData(0);
+    for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+    _nb=b;return b;}
   function init(){if(started)return;started=true;
     try{
       ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -129,7 +137,13 @@ const Sfx=(()=>{
   function skid(amt){if(!ctx)return;skidGain.gain.setTargetAtTime(clamp(amt,0,1)*.24,ctx.currentTime,.06);
     skidFilt.frequency.setTargetAtTime(1000+amt*900,ctx.currentTime,.06);}
   function wind(spd){if(!ctx)return;windGain.gain.setTargetAtTime(clamp(spd/60,0,1)*.08,ctx.currentTime,.15);}
+  let _impT=0,_impS=0;
+  /* 충돌음 합치기 — 한 번의 충돌에서 접촉점마다 충격이 여러 개 들어오는데,
+     그때마다 오실레이터·노이즈 노드를 만들면 오디오 그래프 생성 비용이 한 프레임에 몰린다.
+     40ms 안에 들어온 충격은 가장 센 것 하나로 대표해 재생한다(청감상 차이 없음). */
   function impact(str){if(!ctx)return;str=clamp(str,0,1);const t=ctx.currentTime;
+    if(t-_impT<.04){if(str<=_impS)return;}else _impS=0;
+    _impT=t;_impS=Math.max(_impS,str);
     const o=ctx.createOscillator();o.type="sine";o.frequency.setValueAtTime(90+str*60,t);o.frequency.exponentialRampToValueAtTime(35,t+.25);
     const g=ctx.createGain();g.gain.setValueAtTime(.5*str+.1,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);
     o.connect(g);g.connect(master);o.start(t);o.stop(t+.32);

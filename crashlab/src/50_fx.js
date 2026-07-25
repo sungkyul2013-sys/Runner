@@ -194,32 +194,34 @@ class GameCamera{
       this.cam.lookAt(t.x,(world?world.height(t.x,t.z):0)+2,t.z);
       return;}
     const b=veh.body,sp=veh.speed;
+    // 카메라도 보간된 포즈를 따라가야 한다 — 물리 포즈를 쓰면 차와 카메라가 서로 어긋나 떨린다
+    const bp=b.rPos,bq=b.rQuat;
     this.userT=Math.max(0,this.userT-dt);
     if(this.shake>0)this.shake=Math.max(0,this.shake-dt*2.4);
-    const yaw=Math.atan2(2*(b.quat.w*b.quat.y+b.quat.x*b.quat.z),1-2*(b.quat.y*b.quat.y+b.quat.x*b.quat.x));
+    const yaw=Math.atan2(2*(bq.w*bq.y+bq.x*bq.z),1-2*(bq.y*bq.y+bq.x*bq.x));
     let tx,ty,tz,lx,ly,lz;
     if(this.mode==="chase"||this.mode==="free"){
       const behind=(this.mode==="free"&&sp<1.5)||this.userT>0?this.orbitYaw+yaw:yaw;
       const recenter=this.mode==="chase"&&this.userT<=0;
       if(recenter)this.orbitYaw*=Math.max(0,1-dt*3);
       const d=this.dist+sp*.05,pi=this.orbitPitch;
-      tx=b.pos.x-Math.sin(behind)*Math.cos(pi)*d;
-      tz=b.pos.z-Math.cos(behind)*Math.cos(pi)*d;
-      ty=b.pos.y+Math.sin(pi)*d;
+      tx=bp.x-Math.sin(behind)*Math.cos(pi)*d;
+      tz=bp.z-Math.cos(behind)*Math.cos(pi)*d;
+      ty=bp.y+Math.sin(pi)*d;
       const ahead=this.mode==="chase"?clamp(sp*.25,0,7):0;
-      lx=b.pos.x+Math.sin(yaw)*ahead;ly=b.pos.y+.6;lz=b.pos.z+Math.cos(yaw)*ahead;
+      lx=bp.x+Math.sin(yaw)*ahead;ly=bp.y+.6;lz=bp.z+Math.cos(yaw)*ahead;
       const k=this.mode==="chase"?1-Math.pow(.0018,dt):1-Math.pow(.0001,dt);
       this.pos.x+=(tx-this.pos.x)*k;this.pos.y+=(ty-this.pos.y)*k;this.pos.z+=(tz-this.pos.z)*k;
     }else if(this.mode==="hood"){
-      _t6.set(0,veh.spec.body.hy*.55,veh.spec.body.hz*.35);b.localToWorld(_t6,this.pos);
-      lx=b.pos.x+Math.sin(yaw)*30;ly=this.pos.y;lz=b.pos.z+Math.cos(yaw)*30;
+      _t6.set(0,veh.spec.body.hy*.55,veh.spec.body.hz*.35);b.rLocalToWorld(_t6,this.pos);
+      lx=bp.x+Math.sin(yaw)*30;ly=this.pos.y;lz=bp.z+Math.cos(yaw)*30;
     }else if(this.mode==="bumper"){
-      _t6.set(0,-veh.spec.body.hy*.1,veh.spec.body.hz+.3);b.localToWorld(_t6,this.pos);
-      lx=b.pos.x+Math.sin(yaw)*30;ly=this.pos.y;lz=b.pos.z+Math.cos(yaw)*30;
+      _t6.set(0,-veh.spec.body.hy*.1,veh.spec.body.hz+.3);b.rLocalToWorld(_t6,this.pos);
+      lx=bp.x+Math.sin(yaw)*30;ly=this.pos.y;lz=bp.z+Math.cos(yaw)*30;
     }else{ // top
-      this.pos.set(b.pos.x,b.pos.y+26+sp*.12,b.pos.z-6);
-      lx=b.pos.x;ly=b.pos.y;lz=b.pos.z;}
-    if(lx===undefined){lx=b.pos.x;ly=b.pos.y;lz=b.pos.z;}
+      this.pos.set(bp.x,bp.y+26+sp*.12,bp.z-6);
+      lx=bp.x;ly=bp.y;lz=bp.z;}
+    if(lx===undefined){lx=bp.x;ly=bp.y;lz=bp.z;}
     // keep above terrain
     if(world){const gy=world.height(this.pos.x,this.pos.z)+.5;if(this.pos.y<gy)this.pos.y=gy;}
     this.cam.position.copy(this.pos);

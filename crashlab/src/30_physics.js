@@ -3,6 +3,7 @@
    fixed step 120 Hz, all SI units
    ============================================================ */
 const PHYS_DT=1/120, GRAV=9.81;
+const PHYS_BUDGET_MS=8;   // 한 프레임에 허용하는 물리 시간 예산(스텝 수 상한 산정용)
 const SURF={asphalt:{mu:1.0,col:0x3a3f47},wet:{mu:.7,col:0x2e3640},gravel:{mu:.6,col:0x6b5f4e},
   grass:{mu:.55,col:0x3e6b34},sand:{mu:.5,col:0xc2a368},ice:{mu:.15,col:0xbfe4f2},
   snow:{mu:.35,col:0xe8eef2},curb:{mu:.95,col:0xb5443c},walk:{mu:.9,col:0x878e99},
@@ -26,7 +27,25 @@ class Body{
     this.quat=new THREE.Quaternion();this.angVel=V3(0,0,0);
     this.force=V3(0,0,0);this.torque=V3(0,0,0);
     this._q=new THREE.Quaternion();this._qc=new THREE.Quaternion();
+    /* ---- 렌더 보간용 포즈 ----
+       물리는 고정 스텝(1/120s)으로 돌고 화면은 가변 프레임으로 그려진다.
+       두 주기가 어긋나면 어떤 프레임은 물리가 2번 진행되고 어떤 프레임은 0번 진행돼
+       차가 '뚝뚝' 끊겨 보인다. 특히 슬로모션(타임스케일 0.15)에서는 물리가
+       3~4프레임마다 한 번만 진행되므로 육안으로 확실히 튄다.
+       → 마지막 두 물리 상태를 저장해 두고, 남은 누적시간 비율로 보간한 포즈(rPos/rQuat)를
+         렌더에 쓴다. 프레임레이트·타임스케일과 무관하게 항상 매끄럽다. */
+    this.pPos=V3(0,0,0);this.pQuat=new THREE.Quaternion();
+    this.rPos=V3(0,0,0);this.rQuat=new THREE.Quaternion();
   }
+  snap(){   // 순간이동(리셋/복구) 시 보간 잔상이 생기지 않게 이전 상태를 현재로 맞춘다
+    this.pPos.copy(this.pos);this.pQuat.copy(this.quat);
+    this.rPos.copy(this.pos);this.rQuat.copy(this.quat);}
+  lerpRender(a){
+    if(a<=0){this.rPos.copy(this.pPos);this.rQuat.copy(this.pQuat);return;}
+    if(a>=1){this.rPos.copy(this.pos);this.rQuat.copy(this.quat);return;}
+    this.rPos.lerpVectors(this.pPos,this.pos,a);
+    this.rQuat.copy(this.pQuat).slerp(this.quat,a);}
+  rLocalToWorld(l,out){return out.copy(l).applyQuaternion(this.rQuat).add(this.rPos);}
   localToWorld(l,out){return out.copy(l).applyQuaternion(this.quat).add(this.pos);}
   worldToLocal(w,out){this._qc.copy(this.quat).invert();return out.copy(w).sub(this.pos).applyQuaternion(this._qc);}
   vecToWorld(l,out){return out.copy(l).applyQuaternion(this.quat);}
@@ -43,6 +62,8 @@ class Body{
     this.angVel.add(_t1);}
   addForceAt(f,rWorld){this.force.add(f);_t0.copy(rWorld).cross(f);this.torque.add(_t0);}
   integrate(dt){
+    // 스텝 시작 시점(=이전 스텝 종료 상태)을 렌더 보간용으로 보관
+    this.pPos.copy(this.pos);this.pQuat.copy(this.quat);
     this.vel.addScaledVector(this.force,this.invMass*dt);
     this._qc.copy(this.quat).invert();
     _t1.copy(this.torque).applyQuaternion(this._qc).multiply(this.invI).applyQuaternion(this.quat);

@@ -840,8 +840,9 @@ class CarVisual{
   }
   storeHomes(){for(const k in this.parts)this.parts[k].userData.home=this.parts[k].position.clone();}
   sync(veh,shakeT){
-    this.group.position.copy(veh.body.pos);
-    this.group.quaternion.copy(veh.body.quat);
+    // 렌더는 보간된 포즈를 쓴다(고정 스텝 물리 ↔ 가변 프레임 렌더 사이를 매끄럽게)
+    this.group.position.copy(veh.body.rPos);
+    this.group.quaternion.copy(veh.body.rQuat);
     if(shakeT>0&&Settings.camShake){
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
     // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게. SpotLight는 최초 1회 지연 생성.
@@ -865,10 +866,11 @@ class CarVisual{
     for(let i=0;i<4;i++){
       if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함
       const w=veh.wheels[i],m=this.wheelMeshes[i];
-      m.position.set(this.baked?(w.left?-tv:tv):w.local.x,w.visY+(this.wheelYOff||0),w.local.z);
+      const vy=(w.rVisY===undefined?w.visY:w.rVisY);
+      m.position.set(this.baked?(w.left?-tv:tv):w.local.x,vy+(this.wheelYOff||0),w.local.z);
       const st=(w.front?veh.steer:0)+(w.left?-veh.toe:veh.toe)*8;
       m.rotation.set(0,st,0);
-      m.children[0].rotation.x=w.spin;}
+      m.children[0].rotation.x=(w.rSpin===undefined?w.spin:w.rSpin);}
   }
   dispose(){
     this.group.parent&&this.group.parent.remove(this.group);

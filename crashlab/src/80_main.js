@@ -118,13 +118,13 @@ function mainLoop(t){
       // headlight follows player
       if(headlight&&headlight.visible&&Game.veh){
         const b=Game.veh.body;
-        _t6.set(0,0,Game.veh.spec.body.hz);b.localToWorld(_t6,headlight.position);
-        _t7.set(0,-1.5,30);b.localToWorld(_t7,headlight.target.position);}
+        _t6.set(0,0,Game.veh.spec.body.hz);b.rLocalToWorld(_t6,headlight.position);
+        _t7.set(0,-1.5,30);b.rLocalToWorld(_t7,headlight.target.position);}
       skyDome.position.set(camera.position.x,0,camera.position.z);
-      sunLight.target.position.copy(Game.veh.body.pos);
-      sunLight.position.set(Game.veh.body.pos.x+TOD[Game.opts.tod].sunPos[0]*.5,
-        Game.veh.body.pos.y+TOD[Game.opts.tod].sunPos[1]*.5,
-        Game.veh.body.pos.z+TOD[Game.opts.tod].sunPos[2]*.5);
+      sunLight.target.position.copy(Game.veh.body.rPos);
+      sunLight.position.set(Game.veh.body.rPos.x+TOD[Game.opts.tod].sunPos[0]*.5,
+        Game.veh.body.rPos.y+TOD[Game.opts.tod].sunPos[1]*.5,
+        Game.veh.body.rPos.z+TOD[Game.opts.tod].sunPos[2]*.5);
       renderer.render(scene,camera);
     }else if(Game.state==="menu"){
       if(Showroom.active)Showroom.update(dt);
