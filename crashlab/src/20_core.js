@@ -51,6 +51,19 @@ const Settings=Object.assign({
   autoSlowmo:true,debug:false,
   autoReport:true,       // 충돌 후 리포트 자동 표시
   minimapOn:true,        // 코너 미니맵 표시
+  /* ---- v3.0 확장 설정 ---- */
+  softQuality:"normal",  // 소프트바디 솔버 품질 low|normal|high
+  damageMul:1.0,         // 손상 배율 0.3~2.5
+  gripMul:1.0,           // 전역 타이어 그립 배율 0.6~1.4
+  damperMul:1.0,         // 서스펜션 댐핑 배율 0.6~1.6
+  steerSpeed:1.0,        // 조향 응답 속도 배율
+  camFov:66,             // 기본 시야각 55~92
+  camShakeAmt:1.0,       // 셰이크 강도
+  speedFov:true,         // 속도감 FOV
+  showTelemetry:true,    // 텔레메트리 스트립
+  hudScale:1.0,          // HUD 크기 0.8~1.3
+  units:"kmh",           // kmh | mph
+  autoUpright:false,     // 전복 시 자동 복구
 },Store.get("settings",{}));
 function applyAssistPreset(p){Settings.assist=p;
   if(p==="casual"){Settings.absOn=Settings.tcsOn=Settings.ctrSteer=Settings.stab=true;}

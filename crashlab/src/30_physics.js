@@ -221,35 +221,37 @@ class World{
     return best;}
 }
 
-/* generic point-contact impulse vs static world; returns impact Δv (approach speed) */
-function resolvePointContact(body,pWorld,ct,extraBounce){
+/* generic point-contact impulse vs static world; returns impact Δv (approach speed)
+   share: 다중 접점일 때 임펄스 분배 계수(1/접점수) — 반복 솔버에서 과보정 방지 */
+function resolvePointContact(body,pWorld,ct,extraBounce,share){
+  const sh=share||1;
   _t5.copy(pWorld).sub(body.pos);           // r
   body.velAt(_t5,_t6);                       // contact velocity
   const vn=_t6.dot(ct.n);
   let dv=0;
   if(vn<0){
     dv=-vn;
-    // effective mass along n
+    // effective mass along n (선형 + 회전)
     _t7.copy(_t5).cross(ct.n);
     body._qc.copy(body.quat).invert();
     _t8.copy(_t7).applyQuaternion(body._qc).multiply(body.invI).applyQuaternion(body.quat);
     _t8.cross(_t5);
     const kn=body.invMass+_t8.dot(ct.n);
     const e=(ct.bounce||0)+(extraBounce||0);
-    const j=-(1+e)*vn/kn;
+    const j=-(1+e)*vn/kn*sh;
     _t9.copy(ct.n).multiplyScalar(j);
     body.applyImpulse(_t9,_t5);
-    // friction
+    // friction (쿨롱 한계 — 유효질량 기반이라 회전 접점에서도 안정)
     body.velAt(_t5,_t6);
     _t7.copy(_t6).addScaledVector(ct.n,-_t6.dot(ct.n));
     const tl=_t7.length();
     if(tl>1e-4){
       _t7.multiplyScalar(-1/tl);
-      const jt=Math.min(tl/ (body.invMass*2), ct.mu*j);
+      const jt=Math.min(tl/Math.max(kn,1e-6)*sh, ct.mu*Math.abs(j));
       _t9.copy(_t7).multiplyScalar(jt);
       body.applyImpulse(_t9,_t5);}
   }
-  // positional correction
-  body.pos.addScaledVector(ct.n,ct.depth*.35);
+  // positional correction (ct.depth=0이면 호출측에서 일괄 처리)
+  if(ct.depth)body.pos.addScaledVector(ct.n,ct.depth*.35);
   return dv;
 }

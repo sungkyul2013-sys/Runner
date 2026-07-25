@@ -599,7 +599,8 @@ MAPS.push(
     // 완만한 롤링(요철 지형) — 도로가 오르막/내리막을 따라감
     let h=1.6*Math.sin(x*.006)*Math.cos(z*.007)+.9*Math.sin(x*.015+1)*Math.cos(z*.013);
     if(Math.abs(x)<290&&Math.abs(z)<290)h*=.35;    // 다운타운은 평평하게(잔물결만) — 높낮이는 고가 뷰덕트로
-    const hd=Math.hypot(x-420,z+430);h+=36*Math.exp(-hd*hd/82000);   // 산(북동) — 오르막
+    // 산(북동): 순환로(r=420)를 침범하지 않도록 바깥으로 이동 + 감쇠 반경 축소
+    const hd=Math.hypot(x-560,z+560);h+=38*Math.exp(-hd*hd/62000);
     const h2=Math.hypot(x-250,z+180);h+=13*Math.exp(-h2*h2/30000);
     const h3=Math.hypot(x+620,z+560);h+=27*Math.exp(-h3*h3/66000);   // 언덕(남서)
     const ld=Math.hypot(x+350,z-300);                                 // 호수(북서)
@@ -626,6 +627,16 @@ MAPS.push(
   // 깊은 계곡(지형 0m으로 곤두박질치던 구덩이)은 bridgeValleys로 완만한 둑을 만들고
   // flattenCorridor로 노면을 그 프로파일에 맞춰 메워 — 어디서든 매끈히 주행 가능(구덩이 제거).
   // 더 크고 매끈한 루프(난잡함 정돈 + 더 길게 ≈6km). 스포크 접속부는 난간 개방.
+  /* ✈️ 공항 대지(플라토) — 반드시 메가 하이웨이보다 먼저 정지작업한다.
+     활주로/유도로를 y=0으로 도색하면 경사지에 협곡이 파여 공항이 고립되고 벽이 생기며,
+     메가 하이웨이가 나중에 '옛 지형' 프로파일로 재정지되면 활주로를 가로지르는 단차가 남는다.
+     여기서 먼저 평지를 만들면 이후 모든 도로(메가·접근로)가 이 평지를 따라 매끈히 이어진다. */
+  const AP_X=-120,AP_Z=-660;
+  {const PX=470,PZ=150,BL=130;
+   mb.stamp(AP_X,AP_Z+40,PX+PZ+BL,(i,j,d,px,pz)=>{
+     const dx=Math.max(0,Math.abs(px-AP_X)-PX),dz=Math.max(0,Math.abs(pz-(AP_Z+40))-PZ);
+     const f=clamp(Math.hypot(dx,dz)/BL,0,1),idx=w.idx(i,j);
+     w.hMap[idx]=lerp(0,w.hMap[idx],f*f);});}
   const megaCtrl=[[748,23],[644,-414],[276,-661],[-207,-690],[-644,-495],[-794,-46],[-713,391],[-368,656],[92,736],[529,541]];
   const spokeEnds=[[729,29],[81,733],[-789,-52],[-202,-688]];   // E·N·W·S 스포크 접속점(맵 확대)
   const mega=followTerrain(w,samplePath(megaCtrl,true,600));
@@ -814,12 +825,18 @@ MAPS.push(
   // 🏔️ 마운틴 루프 — 순환로에서 갈라져 산(420,-430)을 넘어 다시 순환로로 돌아오는 '깨끗한 순환 도로'.
   //   막다른 스위치백·비포장·와인딩 조각들을 이 1개의 연결된 루프로 대체(주행 가능·비난잡).
   //   순환로 접속 구간만 가드레일 개방(도로 막힘 없음).
+  //   ※ 루프는 순환로(r=420) '바깥'에만 두어 순환로 노면을 절대 침범하지 않는다.
+  //     (과거 이 루프의 정지작업이 순환로를 12~18m 둑으로 덮어 길을 완전히 끊었다.)
   {const mloop=bridgeValleys(followTerrain(w,samplePath(
-     [[300,-300],[420,-370],[520,-450],[500,-560],[380,-585],[260,-520],[220,-410],[255,-345]],true,300)),.12);
+     [[478,-336],[610,-380],[700,-500],[660,-644],[520,-694],[404,-604],[402,-452]],true,300)),.12);
    flattenCorridor(mb,mloop,8,14);
    mb.paintPath(mloop,13,S_ASP,true,true);
-   railAlong(mb,mloop,13,0xb9c2cc,(a)=>{const r=Math.hypot(a.x,a.z);return r>392&&r<452;});
-   mb.texText(400,-470,8,"MOUNTAIN LOOP","rgba(240,244,250,.5)");}
+   railAlong(mb,mloop,13,0xb9c2cc,(a)=>Math.hypot(a.x-402,a.z+452)<52);   // 램프 접속부 개방
+   // 순환로(남동) → 마운틴 루프 진입 램프
+   const mramp=bridgeValleys(followTerrain(w,samplePath([[297,-297],[350,-360],[402,-452]],false,90)),.12);
+   flattenCorridor(mb,mramp,7,12);
+   mb.paintPath(mramp,12,S_ASP,true,true);
+   mb.texText(580,-540,8,"MOUNTAIN LOOP","rgba(240,244,250,.5)");}
   // 공사장 (대형 갭 점프대 + 자재) — 격자와 순환로 사이 공터
   mb.ramp(250,236,0,24,22,14,0xd8433b);
   mb.ramp(250,296,Math.PI,20,20,14,0xc7742f);   // 착지 램프를 순환로 안쪽으로(고속도로 침범 금지)
@@ -837,7 +854,7 @@ MAPS.push(
 
   /* ===== 외곽 구역 확장 (통합 오픈월드) ===== */
   // 공항 활주로 (남측) — 훨씬 긴 대형 직선 활주로(840m) + 유도로 + 격납고·관제탑. 약간의 요철 꿀렁임.
-  {const ax=-120,az=-660;
+  {const ax=AP_X,az=AP_Z;
    mb.paintPath([{x:ax-420,y:0,z:az},{x:ax+420,y:0,z:az}],44,S_ASP,true);       // 활주로 840m
    for(let k=-18;k<=18;k++)mb.texRect(ax+k*22,az,10,1.2,0,"rgba(244,248,252,.8)");  // 중앙선 파선
    for(const side of[-1,1])for(let k=0;k<6;k++)for(const s of[-1,1])                 // 접지대 마킹(양끝)
@@ -852,8 +869,10 @@ MAPS.push(
    mb.box(ax+420,23,az+108,16,4,16,0x2b3138,{mu:.5,tag:"towercab"});
    w.addRippleZone(ax-220,az,84,.010,1.4,3);   // 노면 잔요철(오래된 활주로 느낌)
    w.addRippleZone(ax+180,az,84,.012,1.7,1);
-   // 접근 연결로 (도심 → 공항)
-   mb.paintPath([{x:0,y:0,z:-418},{x:-40,y:0,z:-540},{x:ax,y:0,z:az-4}],13,S_ASP,true,true);}
+   // 접근 연결로 (도심 순환로 → 공항) — 지형추종+계곡다리로 매끈하게(강제 절개 금지)
+   {const apr=bridgeValleys(followTerrain(w,samplePath([[0,-418],[-40,-540],[ax,az-30]],false,90)),.11);
+    flattenCorridor(mb,apr,8,14);
+    mb.paintPath(apr,13,S_ASP,true,true);}}
   // (해안도로·해안 연결로 제거 — 메가 하이웨이 동측과 중복되어 난잡했음. 메가 루프가 동측 도로 역할)
   // 해변 야자·표지만 남김(해안 경관)
   for(let k=0;k<7;k++)mb.baked("treesTall",760+Math.sin(k)*24,-240+k*90,10,k,{});
@@ -878,6 +897,20 @@ MAPS.push(
   w.addRippleZone(-150,150,50,.014,2.0,2);   // 주차장 진입로: 워시보드
   w.addRippleZone(-70,0,40,.012,2.5,1);      // 도심 중앙로: 미세 요철
   w.addRippleZone(140,60,42,.016,1.3,3);     // 도심 동측: 완만한 물결
+  /* ===== 주요 간선 재확정 (구조적 보장) =====
+     이후 어떤 지형·도로 작업도 순환로/메가 루프 노면을 덮어 길을 끊지 못하게, 빌드 마지막에
+     두 간선의 코리도어 정지작업과 도색을 다시 적용한다. (막다른 길·둑·절벽 재발 방지) */
+  flattenCorridor(mb,ring,11,16,()=>0);
+  mb.paintPath(ring,19,S_ASP,true,true);
+  flattenCorridor(mb,mega,11,18);
+  mb.paintPath(mega,19,S_ASP,true,true);
+  // 4방향 연결로도 재확정(도심 ↔ 순환로 접속 보장)
+  for(const[a,b]of[[[185,0],[418,0]],[[-185,0],[-418,0]],[[0,185],[0,418]],[[0,-185],[0,-418]]])
+    mb.paintPath([{x:a[0],y:0,z:a[1]},{x:b[0],y:0,z:b[1]}],14,S_ASP,true);
+  // 스포크(순환로 ↔ 메가) 재확정
+  for(const[a2,b2]of[[[434,0],spokeEnds[0]],[[0,434],spokeEnds[1]],[[-434,0],spokeEnds[2]],[[0,-434],spokeEnds[3]]]){
+    const sp=bridgeValleys(followTerrain(w,samplePath([a2,b2],false,70)),.14);
+    mb.paintPath(sp,14,S_ASP,true,true);}
   w.checkpoints=pathCheckpoints(mega,26,20);
   w.waypoints=pathWaypoints(mega,true,56);
   w.spawn={x:0,z:-60,yaw:0};
@@ -886,12 +919,12 @@ MAPS.push(
     {name:"🏙️ 다운타운",x:0,z:-60,yaw:0},
     {name:"🌉 스폰 고가(인터체인지)",x:-178,z:-30,yaw:Math.PI/2},
     {name:"🛣️ 순환 고속도로",x:418,z:0,yaw:0},
-    {name:"🏔️ 마운틴 루프",x:300,z:-300,yaw:Math.PI*.7},
+    {name:"🏔️ 마운틴 루프",x:478,z:-336,yaw:Math.PI*.7},
     {name:"🌊 레이크사이드",x:-350,z:172,yaw:0},
     {name:"🌀 드리프트 광장",x:-280,z:70,yaw:0},
     {name:"🛣️ 메가 하이웨이(외곽)",x:729,z:29,yaw:Math.PI},
     {name:"⛰️ 하이웨이 산악 구간",x:644,z:-414,yaw:Math.PI*.7},
-    {name:"🏘️ 교외 주택가",x:-232,z:-235,yaw:0},
+    {name:"🏘️ 교외 주택가",x:-225,z:-180,yaw:0},
     {name:"🏭 공업지구",x:330,z:340,yaw:Math.PI},
     {name:"🏗️ 공사장 점프대",x:250,z:225,yaw:0},
     {name:"✈️ 공항 활주로",x:-120,z:-656,yaw:Math.PI/2},
@@ -899,7 +932,7 @@ MAPS.push(
     {name:"🏟️ 스타디움",x:-620,z:640,yaw:0},
     {name:"⛲ 분수 광장",x:0,z:90,yaw:Math.PI},
     {name:"🅿️ 대형 주차장",x:-150,z:186,yaw:Math.PI},
-    {name:"🌉 협곡 대교",x:500,z:-455,yaw:Math.PI*.75},
+    {name:"🌉 협곡 대교",x:644,z:-414,yaw:Math.PI*.75},
     {name:"🌉 상부 고가(L2)",x:-152,z:-96,yaw:Math.PI/2},
     {name:"🛣️ 지하 터널",x:0,z:-64,yaw:0}];
   mb.paintLanes();

@@ -21,7 +21,7 @@ class Vehicle{
                V3(-w.track,w.y,-w.rear),V3(w.track,w.y,-w.rear)];
     for(let i=0;i<4;i++)this.wheels.push({
       i,local:pos[i],front:i<2,left:i%2===0,radius:w.radius,width:w.width,
-      steer:0,comp:0,prevComp:0,onGround:false,load:0,surf:0,skid:0,spin:0,omega:0,
+      steer:0,comp:0,prevComp:0,onGround:false,load:0,surf:0,skid:0,spin:0,omega:0,dmg:0,
       cW:V3(0,0,0),cN:V3(0,1,0),susF:0,slipA:0,visY:w.y-spec.susp.rest});
     // hull collision points
     const hx=spec.body.hx,hy=spec.body.hy,hz=spec.body.hz;
@@ -70,22 +70,35 @@ class Vehicle{
     this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};}
   clearDamage(){
     this.dmg={f:0,b:0,l:0,r:0};
-    this.powerMul=1;this.steerMul=1;this.suspMul=1;this.toe=0;this.defVol=0;
+    this.powerMul=1;this.steerMul=1;this.suspMul=1;this.brakeMul=1;this.toe=0;this.defVol=0;
     this.partHp={fb:1,rb:1,hood:1,trunk:1,dl:1,dr:1};
-    for(const w of this.wheels)if(w.local0)w.local.copy(w.local0);   // 밀려난 휠 마운트 복원
+    for(const w of this.wheels){w.dmg=0;if(w.local0)w.local.copy(w.local0);}   // 휠 손상·밀려난 마운트 복원
   }
   addDamage(lp,dv){
     if(!this.damageOn)return;
-    const s=this.spec.body,amt=clamp(dv*2.2,0,45);
+    const s=this.spec.body,dmul=(typeof Settings!=="undefined"&&Settings.damageMul)||1;
+    const amt=clamp(dv*2.2*dmul,0,45);
     if(lp.z>s.hz*.45)this.dmg.f=Math.min(100,this.dmg.f+amt);
     else if(lp.z<-s.hz*.45)this.dmg.b=Math.min(100,this.dmg.b+amt);
     else if(lp.x<0)this.dmg.l=Math.min(100,this.dmg.l+amt*1.2);
     else this.dmg.r=Math.min(100,this.dmg.r+amt*1.2);
+    // 부위별(휠) 손상: 충격점에 가장 가까운 휠의 서스/타이어가 상함 → 그립 저하·정렬 틀어짐
+    if(dv>3.2){
+      let best=-1,bd=1e9;
+      for(let i=0;i<4;i++){const w=this.wheels[i],wl=w.local0||w.local;
+        const d2=(lp.x-wl.x)**2+(lp.z-wl.z)**2;
+        if(d2<bd){bd=d2;best=i;}}
+      if(best>=0&&bd<(s.hz*.72)**2)
+        this.wheels[best].dmg=Math.min(1,(this.wheels[best].dmg||0)+clamp((dv-3)*.045*dmul,0,.5));}
     const d=this.dmg;
-    this.powerMul=1-.5*clamp((d.f-25)/75,0,1);
-    this.steerMul=1-.38*clamp((d.f+ (d.l+d.r)*.5)/160,0,1);
+    this.powerMul=1-.55*clamp((d.f-22)/78,0,1);                       // 엔진·라디에이터 손상
+    this.steerMul=1-.4*clamp((d.f+(d.l+d.r)*.5)/160,0,1);             // 스티어링 랙 손상
     this.suspMul=1-.35*clamp((d.f+d.b+d.l+d.r)/320,0,1);
-    this.toe=clamp((d.l-d.r)*.00045,-.045,.045)*(1+.2*Math.random());
+    this.brakeMul=1-.42*clamp((d.f+d.b*.5)/150,0,1);                  // 브레이크 라인 손상
+    // 프레임 굽음 → 토우 틀어짐(차가 한쪽으로 쏠림). 휠 손상 편차도 쏠림에 가산.
+    const wl=((this.wheels[0].dmg||0)+(this.wheels[2].dmg||0))*.5;
+    const wr=((this.wheels[1].dmg||0)+(this.wheels[3].dmg||0))*.5;
+    this.toe=clamp((d.l-d.r)*.00045+(wl-wr)*.028,-.06,.06)*(1+.2*Math.random());
   }
   get speed(){return this.body.vel.length();}
   fwdSpeed(){this.body.vecToWorld(_vFw.set(0,0,1),_vA);return this.body.vel.dot(_vA);}
@@ -105,7 +118,8 @@ class Vehicle{
       const beta=Math.atan2(_vD.x,Math.abs(_vD.z)); // body slip
       target+=clamp(beta*.75,-sp.steerLo*.8,sp.steerLo*.8)*clamp(Math.abs(vFwd)/10,0,1);
       target=clamp(target,-sp.steerLo,sp.steerLo);}
-    const sRate=(Math.abs(target)<Math.abs(this.steer)?9:5.5);
+    const sSpd=(typeof Settings!=="undefined"&&Settings.steerSpeed)||1;   // 조향 응답 속도(설정)
+    const sRate=(Math.abs(target)<Math.abs(this.steer)?9:5.5)*sSpd;
     this.steer+=clamp(target-this.steer,-sRate*dt,sRate*dt);
 
     /* ----- transmission ----- */
@@ -139,6 +153,8 @@ class Vehicle{
 
     /* ----- wheels ----- */
     const susp=sp.susp,kMul=this.suspMul;
+    const S_=(typeof Settings!=="undefined")?Settings:null;
+    const gripMul=(S_&&S_.gripMul)||1, dampMul=(S_&&S_.damperMul)||1;   // 설정: 그립·댐핑 배율
     let groundCount=0,skidMax=0;
     const maxRay=susp.rest+r;
     for(let i=0;i<4;i++){
@@ -165,7 +181,7 @@ class Vehicle{
         const cVel=clamp((w.comp-w.prevComp)/dt,-3.5,3.5);
         // 비대칭 댐핑: 리바운드(늘어남)는 압축보다 강하게 → 방지턱 후 위로 튀는 요동 억제(실차 댐퍼)
         const cAsym=cVel<0?(susp.rebMul||1.5):1;
-        let sF=susp.k*kMul*w.comp+susp.c*kMul*cVel*cAsym+arb;
+        let sF=susp.k*kMul*w.comp+susp.c*kMul*dampMul*cVel*cAsym+arb;
         if(susp.sky)sF-=b.vel.y*susp.sky;   // 스카이훅(전자제어 에어서스): 차체 상하 요동 직접 감쇠
         sF=clamp(sF,0,sp.mass*GRAV*1.4);
         w.susF=sF;w.load=lerp(w.load,sF,.5);
@@ -181,11 +197,12 @@ class Vehicle{
         const side=_t2.copy(_hit.n).cross(_vH);             // right vector
         const vF2=_vA.dot(_vH),vS=_vA.dot(side);
         const load=Math.max(w.load,0);
-        const mu=_hit.mu*(w.front?sp.gripF:sp.gripR);
+        // 휠 손상 → 그립 저하(찌그러진 림·펑크 타이어). 손상 클수록 μ가 떨어져 차가 그쪽으로 쏠림.
+        const mu=_hit.mu*(w.front?sp.gripF:sp.gripR)*(1-.55*(w.dmg||0))*gripMul;
         const maxF=mu*load;
         // longitudinal
         let longF=engF*split[i];
-        let brk=this.brake*sp.brakeF*(w.front?.6:.4);
+        let brk=this.brake*sp.brakeF*(w.front?.6:.4)*this.brakeMul;
         let locked=false;
         if(this.handbrake&&!w.front){brk=Math.max(brk,sp.brakeF*.8);locked=!this.assists.abs||true;}
         if(brk>0&&Math.abs(vF2)>.3){
@@ -303,20 +320,35 @@ class Vehicle{
       rigidCts.push({i,wx:_vD.x,wy:_vD.y,wz:_vD.z,
         n:{x:ct.n.x,y:ct.n.y,z:ct.n.z},depth:ct.depth,mu:ct.mu,bounce:ct.bounce,
         vn:_vA.dot(ct.n)});}
-    for(const rc of rigidCts){
-      _vD.set(rc.wx,rc.wy,rc.wz);_vC.set(rc.n.x,rc.n.y,rc.n.z);
-      _hit.n.copy(_vC);_hit.mu=rc.mu;
-      const dv=resolvePointContact(b,_vD,{n:_vC,depth:rc.depth,mu:rc.mu,bounce:rc.bounce},0);
-      // 위치 보정: 임펄스만으론 벽에 파묻힌 채 가속하면 계속 파고듦 → 침투 깊이만큼 강하게 밀어냄.
-      // 벽 경계를 확실히: 깊게 박혀도 즉시 이탈(끼임 방지) + 벽 안쪽으로 향하는 속도성분 제거.
-      if(rc.depth>.02){
-        b.pos.addScaledVector(_vC,Math.min(rc.depth*.85,.4));
-        const vin=b.vel.dot(_vC);if(vin<0)b.vel.addScaledVector(_vC,-vin);}   // 파고드는 속도 상쇄
-      const useDv=Math.max(dv,-rc.vn);   // 사전 접근속도 기준 → 모든 접점이 동일 강도로 크럼플
-      // 전복 시 루프(상단 프레임)도 물리대로 손상: 지붕 접점은 문턱 낮게 + 압궤 가중
-      const roofPt=this.hull[rc.i].y>sp.body.hy*.55;
-      if(roofPt&&useDv>.9)this.registerImpact(this.hull[rc.i],_vD,_vC,useDv*1.35);
-      else if(useDv>1.4)this.registerImpact(this.hull[rc.i],_vD,_vC,useDv);}
+    // 반복 접촉 솔버: 임펄스를 접점 수로 분배해 2회 반복 → 수렴(지터·침하·끼임 제거).
+    // 위치 보정은 접점별로 누적하지 않고, 법선별 최대 침투만 모아 1회 적용(과보정으로 튀어오르는 현상 방지).
+    const NC=rigidCts.length;
+    if(NC){
+      const dvOut=this._dvOut||(this._dvOut=[]);dvOut.length=0;
+      for(let it=0;it<2;it++)
+        for(let ri=0;ri<NC;ri++){
+          const rc=rigidCts[ri];
+          _vD.set(rc.wx,rc.wy,rc.wz);_vC.set(rc.n.x,rc.n.y,rc.n.z);
+          _hit.n.copy(_vC);_hit.mu=rc.mu;
+          const dv=resolvePointContact(b,_vD,
+            {n:_vC,depth:0,mu:rc.mu,bounce:rc.bounce},0,1/NC);   // depth 0: 위치보정은 아래서 일괄
+          if(it===0)dvOut[ri]=dv;}
+      // 침투 해소: 가장 깊은 접점 방향으로 한 번만 밀어냄 + 파고드는 속도성분 상쇄(벽 경계 확실)
+      let deepest=null;
+      for(const rc of rigidCts)if(!deepest||rc.depth>deepest.depth)deepest=rc;
+      if(deepest&&deepest.depth>.02){
+        _vC.set(deepest.n.x,deepest.n.y,deepest.n.z);
+        b.pos.addScaledVector(_vC,Math.min(deepest.depth*.9,.45));
+        const vin=b.vel.dot(_vC);if(vin<0)b.vel.addScaledVector(_vC,-vin);}
+      // 크럼플 등록: 사전 접근속도 기준 → 모든 접점이 동일 강도(순서 의존 비대칭 없음)
+      for(let ri=0;ri<NC;ri++){
+        const rc=rigidCts[ri];
+        _vD.set(rc.wx,rc.wy,rc.wz);_vC.set(rc.n.x,rc.n.y,rc.n.z);
+        const useDv=Math.max(dvOut[ri]||0,-rc.vn);
+        // 전복 시 루프(상단 프레임)도 물리대로 손상: 지붕 접점은 문턱 낮게 + 압궤 가중
+        const roofPt=this.hull[rc.i].y>sp.body.hy*.55;
+        if(roofPt&&useDv>.9)this.registerImpact(this.hull[rc.i],_vD,_vC,useDv*1.35);
+        else if(useDv>1.4)this.registerImpact(this.hull[rc.i],_vD,_vC,useDv);}}
 
     /* ----- props ----- */
     hitProps(this);
@@ -349,15 +381,19 @@ class Vehicle{
   }
 }
 
-/* car ↔ car collision (both dynamic) */
+/* car ↔ car collision (both dynamic) — 다중 접점 + 질량비 분리 + 접선 마찰 + 각운동량 교환.
+   (구버전은 첫 접점에서 return 해 접점 1개만 풀렸다 → 차대차 충돌이 약하고 비대칭·관통되던 원인) */
+const _ccCts=[];
 function collideCars(a,c){
   _vA.copy(a.body.pos).sub(c.body.pos);
   const rr=a.body.half.length()+c.body.half.length();
   if(_vA.lengthSq()>rr*rr)return;
+  _ccCts.length=0;
+  // ① 양방향 접점 수집(사전 접근속도 기록 → 순서 의존 비대칭 제거)
   for(let pass=0;pass<2;pass++){
     const A=pass?c:a,B=pass?a:c;      // A's points vs B's box
-    for(const hp of A.hull){
-      A.body.localToWorld(hp,_vB);
+    for(let hi=0;hi<A.hull.length;hi++){
+      A.body.localToWorld(A.hull[hi],_vB);
       B.body.worldToLocal(_vB,_vC);
       const h=B.body.half;
       const dx=h.x-Math.abs(_vC.x),dy=h.y-Math.abs(_vC.y),dz=h.z-Math.abs(_vC.z);
@@ -365,27 +401,60 @@ function collideCars(a,c){
       if(dx<=dy&&dx<=dz)_vD.set(sign(_vC.x),0,0);
       else if(dy<=dz)_vD.set(0,sign(_vC.y),0);
       else _vD.set(0,0,sign(_vC.z));
-      const depth=Math.min(dx,dy,dz);
-      B.body.vecToWorld(_vD,_vE);            // normal pushing A away from B
-      _vF.copy(_vB).sub(A.body.pos);         // rA
-      _vG.copy(_vB).sub(B.body.pos);         // rB
-      A.body.velAt(_vF,_vH);B.body.velAt(_vG,_t3);
-      _vH.sub(_t3);
+      B.body.vecToWorld(_vD,_vE);            // normal: A를 B에서 밀어내는 방향
+      _vF.copy(_vB).sub(A.body.pos);A.body.velAt(_vF,_vH);
+      _vG.copy(_vB).sub(B.body.pos);B.body.velAt(_vG,_t3);
+      _ccCts.push({A,B,hi,wx:_vB.x,wy:_vB.y,wz:_vB.z,
+        nx:_vE.x,ny:_vE.y,nz:_vE.z,depth:Math.min(dx,dy,dz),
+        vn:_vH.sub(_t3).dot(_vE)});}}
+  if(!_ccCts.length)return;
+  const N=_ccCts.length;
+  // ② 접점별 임펄스(접점 수로 분배) + 접선 마찰. 반복 2회로 수렴.
+  for(let it=0;it<2;it++)
+    for(const ct of _ccCts){
+      const A=ct.A,B=ct.B;
+      _vB.set(ct.wx,ct.wy,ct.wz);_vE.set(ct.nx,ct.ny,ct.nz);
+      _vF.copy(_vB).sub(A.body.pos);_vG.copy(_vB).sub(B.body.pos);
+      A.body.velAt(_vF,_vH);B.body.velAt(_vG,_t3);_vH.sub(_t3);
       const vn=_vH.dot(_vE);
-      if(vn<0){
-        const kn=A.body.invMass+B.body.invMass;
-        const j=-(1.25)*vn/Math.max(kn,1e-6)*.7;
-        _t3.copy(_vE).multiplyScalar(j);
-        A.body.applyImpulse(_t3,_vF);
-        _t3.multiplyScalar(-1);
-        B.body.applyImpulse(_t3,_vG);
-        if(-vn>2){
-          A.body.worldToLocal(_vB,_t4);A.registerImpact(_t4.clone(),_vB,_vE,-vn);
-          B.body.worldToLocal(_vB,_t4);_t5.copy(_vE).multiplyScalar(-1);
-          B.registerImpact(_t4.clone(),_vB,_t5,-vn);}}
-      A.body.pos.addScaledVector(_vE,depth*.25);
-      B.body.pos.addScaledVector(_vE,-depth*.25);
-      return; // one contact per pair per step is enough
-    }
-  }
+      if(vn>=0)continue;
+      // 유효질량: 회전항 포함(모서리 충돌이 실제처럼 차를 회전시킴)
+      const kn=effMassInv(A.body,_vF,_vE)+effMassInv(B.body,_vG,_vE);
+      const j=-(1+.12)*vn/Math.max(kn,1e-6)/N;
+      _t4.copy(_vE).multiplyScalar(j);
+      A.body.applyImpulse(_t4,_vF);
+      _t4.multiplyScalar(-1);B.body.applyImpulse(_t4,_vG);
+      // 접선 마찰(쓸림·회전 유발) — 쿨롱 한계 내
+      A.body.velAt(_vF,_vH);B.body.velAt(_vG,_t3);_vH.sub(_t3);
+      _t5.copy(_vH).addScaledVector(_vE,-_vH.dot(_vE));
+      const tl=_t5.length();
+      if(tl>1e-3){
+        _t5.multiplyScalar(-1/tl);
+        const kt=effMassInv(A.body,_vF,_t5)+effMassInv(B.body,_vG,_t5);
+        const jt=Math.min(tl/Math.max(kt,1e-6),.6*Math.abs(j));
+        _t4.copy(_t5).multiplyScalar(jt);
+        A.body.applyImpulse(_t4,_vF);
+        _t4.multiplyScalar(-1);B.body.applyImpulse(_t4,_vG);}
+      // 크럼플 등록(사전 접근속도 기준 → 양측 동일 강도)
+      const dv=-ct.vn;
+      if(it===0&&dv>1.6){
+        A.body.worldToLocal(_vB,_t6);A.registerImpact(_t6.clone(),_vB,_vE,dv);
+        B.body.worldToLocal(_vB,_t6);_t7.copy(_vE).multiplyScalar(-1);
+        B.registerImpact(_t6.clone(),_vB,_t7,dv);}}
+  // ③ 위치 분리: 질량비로 나눠 밀어냄(무거운 차는 덜 밀림) — 관통·끼임 방지
+  for(const ct of _ccCts){
+    const A=ct.A,B=ct.B,ia=A.body.invMass,ib=B.body.invMass,s=ia+ib;
+    if(s<=0)continue;
+    const push=Math.min(ct.depth,.25)*.55/N*4;   // 접점 분배 후에도 충분히 분리
+    _vE.set(ct.nx,ct.ny,ct.nz);
+    A.body.pos.addScaledVector(_vE,push*(ia/s));
+    B.body.pos.addScaledVector(_vE,-push*(ib/s));}
+}
+/* 접점 r·법선 n 방향 유효 역질량 (선형 + 회전) */
+function effMassInv(body,r,n){
+  _t8.copy(r).cross(n);
+  body._qc.copy(body.quat).invert();
+  _t9.copy(_t8).applyQuaternion(body._qc).multiply(body.invI).applyQuaternion(body.quat);
+  _t9.cross(r);
+  return body.invMass+_t9.dot(n);
 }

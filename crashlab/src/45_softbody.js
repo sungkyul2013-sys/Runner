@@ -47,6 +47,9 @@ class SoftLattice{
         beams.push(a,b,r,r);}       // a,b,rest,rest0
     this.beams=new Float32Array(beams);
     this.nb=beams.length/4;
+    // 빔 파열(tearing): 인장 변형률이 한계를 넘으면 끊어져 구속 해제 → 판금이 '찢어져' 벌어짐
+    this.bbrk=new Uint8Array(this.nb);
+    this.torn=0;
     // mesh bindings
     this.binds=[];
     for(const m of meshes)if(m)this.bind(m);
@@ -142,9 +145,13 @@ class SoftLattice{
   update(dt){
     if(this.hot<=0){if(this.dirty){this.write();this.dirty=false;}return false;}
     this.hot-=dt;
-    const P=this.pos,Q=this.prev,H=this.home,B=this.beams,A=this.anchor,PL=this.plast;
+    const P=this.pos,Q=this.prev,H=this.home,B=this.beams,A=this.anchor,PL=this.plast,BK=this.bbrk;
     const damp=.9;
-    for(let s=0;s<2;s++){
+    // 솔버 품질: 설정(물리 품질) + 충격 세기에 따라 적응 — 강한 크래시일 때 더 정밀하게 수렴
+    const QL=(typeof Settings!=="undefined"&&Settings.softQuality)||"normal";
+    const subs=QL==="high"?3:QL==="low"?1:2;
+    const iters=QL==="high"?6:QL==="low"?3:4;
+    for(let s=0;s<subs;s++){
       // verlet + anchor(→ home+plast: 소성 변형된 형태로 복원 = 영구 크럼플)
       for(let i=0;i<this.n;i++){
         const a=i*3;
@@ -155,14 +162,17 @@ class SoftLattice{
         // 위로 말려 올라가는 노드 억제 → 크럼플은 앞뒤(아코디언)로 유지
         const yUp=P[a+1]-H[a+1];
         if(yUp>.28)P[a+1]-=(yUp-.28)*.5;}
-      // beam constraints + plasticity
-      for(let it=0;it<4;it++)
+      // beam constraints + plasticity + tearing
+      for(let it=0;it<iters;it++)
         for(let b=0;b<this.nb;b++){
+          if(BK[b])continue;                   // 끊어진 빔: 구속 없음(판금 찢김)
           const o=b*4,ia=B[o]*3,ib=B[o+1]*3;
           const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
           const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
           if(it===0){                          // 소성 먼저: 붕괴된 현재 길이로 항복 → 재팽창 전에 영구 단축
             const rest0=B[o+3],rc=B[o+2],strain=(len-rc)/rest0;
+            // 파열: 인장이 한계(90%)를 넘으면 용접부가 뜯김 → 이후 구속 해제
+            if(strain>.9){BK[b]=1;this.torn++;continue;}
             if(Math.abs(strain)>.014)           // 항복: 압축은 깊게(rest0*.05까지), 인장은 찢김 허용(1.4배까지 늘어남)
               B[o+2]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.4);}
           const rest=B[o+2];
@@ -204,6 +214,7 @@ class SoftLattice{
   }
   reset(){
     this.pos.set(this.home);this.prev.set(this.home);this.plast.fill(0);
+    this.bbrk.fill(0);this.torn=0;
     for(let b=0;b<this.nb;b++)this.beams[b*4+2]=this.beams[b*4+3];
     for(const bd of this.binds){
       bd.mesh.geometry.attributes.position.array.set(bd.orig);
