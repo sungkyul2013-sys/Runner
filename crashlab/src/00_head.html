@@ -118,8 +118,8 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 /* ---------- HUD ---------- */
 #hud{z-index:10;pointer-events:none}
 #hud>*{pointer-events:auto}
-/* HUD 최소 모드(기본값): 계기·손상·미니맵·텔레메트리를 감추고 상단 버튼만 남긴다 */
-#hud.lean #speedo,#hud.lean #dmgBox,#hud.lean #telem,
+/* HUD 최소 모드: 속도계는 항상 유지하고, 계측 정보(손상·접지/G·서스·RPM·미니맵)만 감춘다 */
+#hud.lean #dmgBox,#hud.lean #telem,
 #hud.lean #minimap,#hud.lean #minimapHide,#hud.lean #modeWidget{display:none!important}
 #btnHud.off{opacity:.55}
 /* HUD 위치 편집 모드: 드래그로 배치 변경 */

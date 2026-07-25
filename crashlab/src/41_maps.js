@@ -371,6 +371,74 @@ function bridgeDeck(mb,pts,width,opt){
   return pts;
 }
 
+/* ============================================================
+   🏢 procBuilding — 실사 지향 절차 건물
+   층별 창문 밴드 · 수직 멀리언 · 코니스 · 셋백 · 저층부 리테일 · 옥상 설비 · 야간 점등
+   창문/디테일은 visBox(비충돌 시각 전용)로 병합 → 물리 비용 없이 밀도 높은 파사드
+   ============================================================ */
+function procBuilding(mb,x,z,W,D,H,seed,opt){
+  opt=opt||{};
+  let s=(seed|0)||1;const rr=()=>{s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff;};
+  const FLOOR=3.6;                                   // 층고
+  const floors=Math.max(2,Math.round(H/FLOOR));
+  // 외장 팔레트(콘크리트·석재·유리 커튼월·브릭)
+  const SKIN=[
+    {wall:0x9aa1a8,trim:0xb8bfc6,glass:0x2a3946,lit:0xffe9a8},  // 라이트 콘크리트
+    {wall:0x7d848c,trim:0x969ea6,glass:0x24313c,lit:0xffe2a0},  // 그레이 스톤
+    {wall:0x8d5f4a,trim:0xa87a62,glass:0x28323c,lit:0xffdf9c},  // 브릭
+    {wall:0x5d6b74,trim:0x77858e,glass:0x1e3b4a,lit:0xcfeaff},  // 다크 커튼월
+    {wall:0xb0a894,trim:0xc7c0ae,glass:0x2b3742,lit:0xffe6ad}]; // 샌드스톤
+  const K=SKIN[(rr()*SKIN.length)|0];
+  const night=opt.night===true;
+  const V=(w,h,d,c,px,py,pz)=>mb.visBox(px,py,pz,w,h,d,c,{});   // 시각 전용
+  let cw=W,cd=D,cy=0,tier=0;
+  const tiers=H>44?(rr()<.6?3:2):(H>26&&rr()<.5?2:1);           // 셋백 단수
+  const perTier=floors/tiers;
+  for(let t=0;t<tiers;t++){
+    const fCount=Math.round(t===tiers-1?floors-Math.round(perTier)*t:perTier);
+    const th=fCount*FLOOR;
+    // 본체(충돌 있음) — 한 단당 하나의 OBB
+    mb.box(x,cy+th/2,z,cw,th,cd,K.wall,{mu:.6,tag:"building"});
+    const hw=cw/2,hd=cd/2;
+    // 층별 창문 밴드(4면) + 상하 슬래브 라인
+    for(let f=0;f<fCount;f++){
+      const by=cy+f*FLOOR+FLOOR*.62;
+      const retail=(t===0&&f===0);
+      const gh=retail?FLOOR*.62:FLOOR*.46;
+      const gc=retail?K.glass:( night&&rr()<.42 ? K.lit : K.glass);
+      V(cw*.94,gh,.14,gc,x,by,z+hd+.02);   V(cw*.94,gh,.14,gc,x,by,z-hd-.02);
+      V(.14,gh,cd*.94,gc,x+hw+.02,by,z);   V(.14,gh,cd*.94,gc,x-hw-.02,by,z);
+      // 슬래브(층 구분선)
+      const sy=cy+f*FLOOR+FLOOR-.06;
+      V(cw+.24,.16,.10,K.trim,x,sy,z+hd+.03); V(cw+.24,.16,.10,K.trim,x,sy,z-hd-.03);
+      V(.10,.16,cd+.24,K.trim,x+hw+.03,sy,z); V(.10,.16,cd+.24,K.trim,x-hw-.03,sy,z);}
+    // 수직 멀리언(창문 사이 기둥) — 파사드 리듬
+    const mn=Math.max(2,Math.round(cw/4.6));
+    for(let m=1;m<mn;m++){
+      const mx=x-hw+(cw/mn)*m;
+      V(.20,th-.2,.12,K.trim,mx,cy+th/2,z+hd+.04);
+      V(.20,th-.2,.12,K.trim,mx,cy+th/2,z-hd-.04);}
+    const dn=Math.max(2,Math.round(cd/4.6));
+    for(let m=1;m<dn;m++){
+      const mz=z-hd+(cd/dn)*m;
+      V(.12,th-.2,.20,K.trim,x+hw+.04,cy+th/2,mz);
+      V(.12,th-.2,.20,K.trim,x-hw-.04,cy+th/2,mz);}
+    // 코니스(각 단 상부 돌출)
+    V(cw+1.0,.5,cd+1.0,K.trim,x,cy+th+.1,z);
+    cy+=th;
+    if(t<tiers-1){cw*=.74+rr()*.12;cd*=.74+rr()*.12;}
+  }
+  // 옥상 설비: 기계실 · 물탱크 · 안테나 · 파라펫
+  const hw=cw/2;
+  V(cw+.6,.9,cd+.6,K.trim,x,cy+.45,z);                          // 파라펫
+  mb.box(x+(rr()-.5)*hw,cy+2.0,z+(rr()-.5)*hw,cw*.34,3.2,cd*.34,0x6b727c,{mu:.5,tag:"roofunit"});
+  if(rr()<.55)mb.box(x-(rr()*hw*.6),cy+2.6,z+(rr()*hw*.6),cw*.2,4.2,cd*.2,0x8a7a5c,{mu:.5,tag:"tank"});
+  if(rr()<.6)mb.box(x+(rr()-.5)*hw*.5,cy+7.5,z+(rr()-.5)*hw*.5,.45,12,.45,0x8a929c,{mu:.5,tag:"mast"});
+  if(rr()<.35)for(let a=0;a<3;a++)                              // 옥상 냉각탑 열
+    mb.box(x-cw*.25+a*cw*.25,cy+1.5,z-cd*.3,2.4,2.2,2.4,0x59606b,{mu:.5,tag:"roofunit"});
+  return cy;   // 총 높이
+}
+
 /* ---------- props ---------- */
 const PROP_DEFS={
   cone:{r:.28,m:4,mk(){const g=new THREE.Group();

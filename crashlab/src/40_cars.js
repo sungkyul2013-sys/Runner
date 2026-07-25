@@ -91,12 +91,14 @@ const CARS=[
   stats:{spd:6,acc:14,grip:85,mass:62}},
  {id:"f1",name:"아폴로 F1-X",icon:"🏎️",drive:"RWD",mass:798,hp:1010,acc:"2.4초",top:355,
   desc:"포뮬러 원 머신. 1.6L V6 터보하이브리드 1010마력 · 798kg · 다운포스 3,200kg급.\n극단적 그립과 제동력 — 코너에서 5G, 100→0을 2초 안에.",
-  style:"f1",procedural:true,rollFix:1.5,
-  body:{hx:.9,hy:.30,hz:2.62},
-  wheels:{track:.82,front:1.72,rear:1.66,y:-.12,radius:.34,width:.40},
+  // 급조향 전복 방지: 실차처럼 트랙을 넓히고(1.96m) 무게중심을 낮춘다.
+  // 전복 한계 ≈ (트랙/2)/무게중심높이 → 넓은 트랙 + 낮은 CoG로 한계를 크게 끌어올림.
+  style:"f1",procedural:true,rollFix:2.1,
+  body:{hx:.9,hy:.26,hz:2.62},
+  wheels:{track:.98,front:1.72,rear:1.66,y:-.16,radius:.34,width:.40},
   // 실제 F1에 가깝게 트래블을 더 짧게(7cm) — 대신 속도에 비례한 다운포스가 차를 눌러
   // 뜸·전복·미끄러짐을 막는다(고속일수록 접지하중↑ → 타이어 한계↑).
-  susp:{k:96000,c:9200,travel:.07,rest:.125},arb:58000,
+  susp:{k:96000,c:9200,travel:.07,rest:.125},arb:150000,   // 롤 강성 대폭↑(급조향 전복 방지)
   engine:{maxT:760,redline:14500,idle:3800},
   gears:[3.05,2.25,1.78,1.45,1.2,1.0,.86,.75],final:3.2,
   brakeF:26000,steerLo:.40,steerHi:.10,aero:{cd:1.05,df:128},  // 다운포스 지배적

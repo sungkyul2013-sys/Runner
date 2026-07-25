@@ -256,12 +256,17 @@ class Vehicle{
         b.localToWorld(_vAe1,_vAe2);
         _vAe3.copy(_vAe2).sub(b.pos);
         b.addForceAt(_vAe1.set(0,-q*frac,0),_vAe3);}
-      // 고속 롤 감쇠 — 다운포스가 큰 차일수록 강하게(전복 방지)
+      // 고속 롤 감쇠 + 롤 각도 제한 — 다운포스가 큰 차일수록 강하게(급조향 전복 방지)
       if(groundCount>0){
-        b.vecToWorld(_vAe1.set(0,0,1),_vAe2);
+        b.vecToWorld(_vAe1.set(0,0,1),_vAe2);              // 차 전방축(롤 축)
+        const dfK=Math.min(2.4,sp.aero.df/55);
         const rollR=b.angVel.dot(_vAe2);
-        b.torque.addScaledVector(_vAe2,
-          -rollR*sp.mass*Math.min(1.8,speed*.022)*Math.min(1.6,sp.aero.df/55));}}
+        b.torque.addScaledVector(_vAe2,-rollR*sp.mass*Math.min(1.8,speed*.022)*dfK);
+        // 롤 각(차체 좌우 기울기)이 커지면 되돌리는 복원 토크 — 넘어가기 전에 잡는다
+        b.vecToWorld(_vAe1.set(1,0,0),_vAe3);              // 차 우측축
+        const tilt=_vAe3.y;                                 // >0 이면 우측이 들림
+        if(Math.abs(tilt)>.06)
+          b.torque.addScaledVector(_vAe2,-sign(tilt)*(Math.abs(tilt)-.06)*sp.mass*10*dfK);}}
     if(groundCount>0)b.force.addScaledVector(b.vel,-14);
 
     /* ----- stability assist (yaw damp) ----- */

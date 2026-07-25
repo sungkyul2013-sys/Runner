@@ -807,22 +807,23 @@ MAPS.push(
     if(Math.hypot(cx,cz)<112)continue;                       // 중앙 광장
     if(cz<-160&&cz>-340&&Math.abs(cx)<196)continue;          // 입체교차 풋프린트(광장 남측)
     if(Math.abs(cx+100)<26&&cz>-310&&cz<-140)continue;       // L3 플라이오버 라인
+    /* 🏢 실사 지향 절차 건물 — 층별 창문·멀리언·코니스·셋백·옥상 설비.
+       블록 내부에 도로 이격을 두고 1~2동 배치(도심은 초고층, 외곽은 중층). */
     const dense=Math.hypot(cx,cz)<230;
+    const isNight=(Game&&Game.opts&&Game.opts.tod)==="night";
     for(let k=0;k<(dense?2:1);k++){
-      const sc=(dense?26:18)+rnd()*(dense?20:12);
-      const hsc=dense?2.0+rnd()*1.6:1.4+rnd()*.8;            // 도심 초고층
-      const px=cx+(rnd()-.5)*(GRID-24-sc),pz=cz+(rnd()-.5)*(GRID-24-sc);
-      mb.baked(BLD2[(rnd()*4)|0],px,pz,sc,((rnd()*4)|0)*Math.PI/2,
-        {y:0,collide:true,shrink:.92,hScale:hsc});
-      const bh=sc*.86*hsc,hw=sc*.30;
-      mb.box(px+(rnd()-.5)*hw,bh+1.4,pz+(rnd()-.5)*hw,hw*.7,2.8,hw*.7,
-        [0x6e7682,0x59606b,0x7b838f][(rnd()*3)|0],{mu:.5,tag:"roofunit"});
-      if(rnd()<.55)mb.box(px+(rnd()-.5)*hw*.6,bh+6.5,pz+(rnd()-.5)*hw*.6,.5,8,.5,0x8a929c,{mu:.5,tag:"mast"});
-      if(rnd()<.3)mb.box(px-rnd()*hw*.7,bh+2.6,pz+rnd()*hw*.7,hw*.42,4,hw*.42,0x8a7a5c,{mu:.5,tag:"tank"});}
-    if(rnd()<.4)mb.baked(rnd()<.5?"trees":"treesTall",cx+30,cz-30,10+rnd()*4,rnd()*6,{y:0});}
-  // 랜드마크 초고층 타워
-  mb.baked("bldA",250,250,60,0,{y:0,collide:true,shrink:.9,hScale:3.4});
-  mb.box(250,60*.86*3.4+7,250,1.0,14,1.0,0xd8433b,{mu:.5,tag:"mast"});
+      const bw=(dense?22:18)+rnd()*(dense?16:10);
+      const bd=(dense?22:18)+rnd()*(dense?16:10);
+      const bh=dense?(46+rnd()*72):(18+rnd()*26);            // 도심 최고 118m급
+      const jitter=(GRID-30-Math.max(bw,bd))*.5;
+      const px=cx+(rnd()-.5)*Math.max(0,jitter)*2*(k?1:.4);
+      const pz=cz+(rnd()-.5)*Math.max(0,jitter)*2*(k?.4:1);
+      procBuilding(mb,px,pz,bw,bd,bh,(px*37+pz*91)|0,{night:isNight});}
+    if(rnd()<.4)mb.baked(rnd()<.5?"trees":"treesTall",cx+34,cz-34,10+rnd()*4,rnd()*6,{y:0});}
+  // 랜드마크 초고층 타워(셋백 3단 + 첨탑)
+  {const top=procBuilding(mb,250,250,42,42,168,20250,{night:(Game&&Game.opts&&Game.opts.tod)==="night"});
+   mb.box(250,top+11,250,1.2,22,1.2,0xd8433b,{mu:.5,tag:"mast"});
+   mb.box(250,top+23,250,.5,4,.5,0xffd23e,{mu:.5,tag:"mast"});}
 
   /* --- 지구 2: 미드타운(북) — 중층 + 대형 주차장 + 드리프트 광장 --- */
   {const[mx,mz]=D.mid;
@@ -1062,35 +1063,58 @@ MAPS.push(
 
   /* 🕳️ 지하 구역 — 도심 동측 진입로로 내려가 지하 주차장/정비고 같은 음침한 대공간을 지나
      서측으로 다시 올라오는 지하 순환. 전 구간 지붕(슬래브)+기둥+조명으로 폐쇄감을 준다. */
-  {const UY=-9.5, EX=250, WX=-250, UZ=200;          // 지하 깊이 / 동·서 진입 x / 지하공간 z
-   const ramp=(x0,x1,z)=>{                          // 지상→지하 경사로(완만)
-     for(let t=0;t<=60;t++){const f=t/60,x=lerp(x0,x1,f);
-       const y=UY*(f<.12?0:f>.88?1:(f-.12)/.76);
-       mb.stamp(x,z,10,(i,j,d)=>{w.setH(i,j,y);w.setS(i,j,S_ASP);});}};
-   ramp(EX+96,EX,UZ);                                // 동측 진입(지상 x=346 → 지하 x=250)
-   ramp(WX-96,WX,UZ);                                // 서측 진입
-   // 지하 대공간(홀): 넓은 평면 + 연결 통로
-   mb.stamp(0,UZ,300,(i,j,d,px,pz)=>{
-     if(Math.abs(px)<=EX&&Math.abs(pz-UZ)<=78){w.setH(i,j,UY);w.setS(i,j,S_ASP);}});
-   // 슬래브(지붕) — 지상 도로 아래를 지나므로 지상과 분리
-   for(let x=-EX;x<=EX;x+=40)for(let z=UZ-70;z<=UZ+70;z+=40)
-     mb.box(x,UY+4.6,z,42,.8,42,0x2a2f36,{mu:.7,tag:"slab"});
-   // 기둥 격자(음침한 지하 주차장 느낌) + 조명
-   for(let x=-EX+40;x<EX;x+=56)for(let z=UZ-56;z<=UZ+56;z+=56){
-     mb.box(x,UY+2.2,z,2.4,4.4,2.4,0x3a4048,{mu:.7,tag:"pillar"});
-     if(((x+z)/56|0)%2===0)mb.box(x,UY+4.1,z+14,3.2,.14,.5,0xfff2b8,{mu:.5,tag:"striplight"});}
-   // 측벽(외곽) — 떨어지지 않게 막음
+  /*  실제 '지하 1층' 구조로 건설한다 — 완만한 크레이터(움푹 파임)가 아니라
+      · 바닥 슬래브는 평면(정확히 UY), 외벽은 수직 절벽 + 콘크리트 옹벽
+      · 지상과는 두 개의 진입 램프 코리도어로만 연결(그 외 전 구간은 수직 벽)
+      · 층고 4.4m 천장 슬래브 + 기둥 격자 + 조명 + 차선/주차구획      */
+  {const UY=-9.5, HX=250, HZ=86, UZ=200;             // 깊이 / 홀 반폭·반깊이 / 홀 중심 z
+   const RW=11;                                       // 램프 폭(반폭)
+   const RX0=HX, RX1=HX+120;                          // 램프 수평 구간(지하단→지상단)
+   const inHall=(x,z)=>Math.abs(x)<=HX&&Math.abs(z-UZ)<=HZ;
+   const rampY=(ax)=>{const f=clamp((ax-RX0)/(RX1-RX0),0,1);return lerp(UY,0,f*f*(3-2*f));};
+   const inRamp=(x,z)=>Math.abs(z-UZ)<=RW&&Math.abs(x)>HX&&Math.abs(x)<=RX1;
+   // ── 굴착: 홀은 완전 평면, 램프는 부드러운 S커브, 그 외는 손대지 않음(수직 절벽 유지)
+   mb.stamp(0,UZ,RX1+HZ+40,(i,j,d,px,pz)=>{
+     if(inHall(px,pz)){w.setH(i,j,UY);w.setS(i,j,S_ASP);}
+     else if(inRamp(px,pz)){w.setH(i,j,rampY(Math.abs(px)));w.setS(i,j,S_ASP);}});
+   // ── 외벽(수직 콘크리트 옹벽): 램프 개구부만 비우고 홀 둘레를 감싼다
+   // 벽은 바닥(UY)에서 지표(0)까지 완전히 세워 굴착면을 밀폐한다
+   //  → 밖이 보이는 틈이 없고, 지상에서 굴착부로 떨어질 수도 없다
+   const WH=-UY+.6, WY=UY+WH/2;                      // 벽 높이 / 중심 y
    for(const s of[-1,1]){
-     mb.box(s*(EX+2),UY+2.4,UZ,2,5,160,0x22262c,{mu:.8,tag:"wall"});
-     mb.box(0,UY+2.4,UZ+s*80,2*EX,5,2,0x22262c,{mu:.8,tag:"wall"});}
-   // 지하 노면 마킹 + 주차 구획 + 방치 차량(음침한 분위기)
-   mb.texRect(0,UZ,2*EX,156,0,"rgba(20,23,28,.55)");
-   for(let k=0;k<22;k++){const px=-EX+30+k*22;
-     mb.texRect(px,UZ-52,.3,9,0,"rgba(210,216,226,.35)");
-     mb.texRect(px,UZ+52,.3,9,0,"rgba(210,216,226,.35)");
-     if(k%4===1)mb.box(px+3,UY+.75,UZ-52,4.2,1.3,1.9,[0x55606e,0x6b5f4e,0x3d4550][k%3],{mu:.5,tag:"parkedcar"});}
-   mb.texText(0,UZ,16,"UNDERGROUND LEVEL","rgba(200,208,220,.30)");
-   mb.texText(EX-40,UZ-64,7,"EXIT ▶","rgba(220,180,90,.45)");}
+     // 남/북 장변
+     mb.box(0,WY,UZ+s*(HZ+1),2*HX+4,WH,2,0x272b31,{mu:.8,tag:"wall"});
+     // 동/서 단변 — 램프 개구부(|z-UZ|<=RW) 위·아래로 분할
+     const seg=(HZ-RW)/2;
+     for(const t of[-1,1])
+       mb.box(s*(HX+1),WY,UZ+t*(RW+seg),2,WH,seg*2,0x272b31,{mu:.8,tag:"wall"});}
+   // ── 램프 측벽(수직) — 램프 밖으로 이탈 방지
+   for(const s of[-1,1])for(const t of[-1,1])
+     for(let ax=RX0;ax<RX1;ax+=12){
+       const y0=rampY(ax),y1=rampY(ax+12),ym=(y0+y1)/2;
+       mb.box(s*(ax+6),ym+1.6,UZ+t*(RW+1),12,3.4,2,0x2b3037,{mu:.8,tag:"wall"});}
+   // ── 천장 슬래브(층고 4.4m) — 홀 위를 덮어 진짜 '지하층'이 되게
+   for(let x=-HX+20;x<HX;x+=40)for(let z=UZ-HZ+20;z<UZ+HZ;z+=40)
+     mb.box(x,UY+4.7,z,40,.7,40,0x23272d,{mu:.7,tag:"slab"});
+   // 램프 상부 슬래브(입구 캐노피) — 터널처럼 진입
+   for(const s of[-1,1])for(let ax=RX0;ax<RX0+56;ax+=14)
+     mb.box(s*(ax+7),rampY(ax)+4.9,UZ,14,.7,2*RW+4,0x23272d,{mu:.7,tag:"slab"});
+   // ── 기둥 격자 + 스트립 조명
+   for(let x=-HX+34;x<HX;x+=58)for(let z=UZ-58;z<=UZ+58;z+=58){
+     mb.box(x,UY+2.3,z,2.6,4.6,2.6,0x3c434b,{mu:.7,tag:"pillar"});
+     mb.box(x,UY+.12,z,4.2,.24,4.2,0x31373e,{mu:.8,tag:"plinthbase"});}
+   for(let x=-HX+20;x<HX;x+=44)for(const z of[UZ-44,UZ,UZ+44])
+     mb.box(x,UY+4.28,z,5.2,.12,.44,0xfff3c0,{mu:.5,tag:"striplight"});
+   // ── 노면 도색: 어두운 콘크리트 + 차선 + 주차 구획 + 방향 화살표
+   mb.texRect(0,UZ,2*HX,2*HZ,0,"rgba(24,27,32,.72)");
+   for(const s of[-1,1])mb.texRect(0,UZ+s*44,2*HX-20,.5,0,"rgba(226,232,240,.42)");
+   for(let k=0;k<26;k++){const px=-HX+22+k*19;
+     for(const s of[-1,1]){
+       mb.texRect(px,UZ+s*66,.34,11,0,"rgba(214,222,232,.40)");
+       if(k%3===1)mb.box(px+4.6,UY+.75,UZ+s*66,4.2,1.3,1.9,
+         [0x4c5560,0x5f5443,0x39424e,0x6a4a44][k%4],{mu:.5,tag:"parkedcar"});}}
+   mb.texText(0,UZ,18,"UNDERGROUND  B1","rgba(206,214,226,.26)");
+   for(const s of[-1,1])mb.texText(s*(HX-46),UZ,8,s>0?"EXIT ▶":"◀ EXIT","rgba(224,186,96,.5)");}
 
   /* 🚧 메가시티 도로 위 방지턱·요철·꿀렁임 — 가끔씩(도심 격자·순환로 일부 구간에만) */
   for(let k=-GK;k<=GK;k++){
