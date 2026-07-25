@@ -57,9 +57,11 @@ const CARS=[
   model:"rrghost",style:"sedan",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
   smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
   groundClear:.19,wheelVisFit:1.01,rideFix:true,rideLift:0,fitBumper:true,
+  wheelVisScale:1.13,             // 아치 개구부에 비해 타이어가 작아 보이던 문제(시각 전용)
   headlamp:{w:.40,h:.12,leds:5},   // 하우징+LED 5구+유리 렌즈
   wheelTuck:.055,                 // 뒤에서 봤을 때 휠이 차체 밖으로 4cm 튀어나오던 문제 보정
   chromeKit:{grilleW:.34,grilleH:.26,grilleY:.74,grilleZ:.20,slats:13,
+             rocker:false,        // 사이드실 몰딩 제거(옆면을 가로지르는 줄로 보였다)
              ornament:true,ornY:.30,ornZ:.46,exhaust:2,rearY:.80},
   body:{hx:1.02,hy:.76,hz:2.775},
   wheels:{track:.9,front:1.6,rear:1.6,y:-.5,radius:.376,width:.28},
@@ -520,6 +522,14 @@ class CarVisual{
       if(Math.abs(a[i+1]-y)<tolY&&Math.abs(a[i+2]-z)<tolZ){
         const q=Math.abs(a[i]);if(q>mx)mx=q;}
     return mx;}
+  /* (x,y) 근방 차체 앞면의 최전방 z — 앞면 장식이 코 안쪽에 파묻히거나
+     밖으로 튀어나오지 않게 붙일 기준면 */
+  bodyNoseZ(x,y,tolX,tolY){
+    const a=this.bodyMesh.geometry.attributes.position.array;
+    let mz=-1e9;
+    for(let i=0;i<a.length;i+=3)
+      if(Math.abs(a[i]-x)<tolX&&Math.abs(a[i+1]-y)<tolY&&a[i+2]>mz)mz=a[i+2];
+    return mz>-1e8?mz:0;}
   /* z 구간 전체에서 '가장 좁은' 반폭 — 길쭉한 몰딩(로커)이 양 끝에서 튀지 않게 한다 */
   bodySilMin(y,z0,z1,tolY,slices){
     let mn=1e9;
@@ -659,6 +669,10 @@ class CarVisual{
     // 휠 아치에 꽉 끼는 시각 스케일(물리는 그대로) — 스캔 차량의 아치 개구부 충전
     const wf=spec.wheelVisFit||1;
     this.wheelYOff=(wf-1)*spec.wheels.radius;
+    /* 시각 전용 휠 반경 배율 — 스캔 차체의 휠 아치가 타이어보다 커서 바퀴가
+       작아 보이는 문제를 물리(접지 반경)를 건드리지 않고 보정한다.
+       휠 지오메트리 축은 X이므로 Y·Z만 키우면 폭은 그대로다. */
+    const wvs=spec.wheelVisScale||1;
     this.wheelMeshes=[];
     // 리프트업 차량: 바퀴가 차체에서 동떨어져 보이지 않게 서스펜션 링크(스트럿+하프샤프트)로 연결
     const linked=spec.id==="offroad"||spec.id==="offroadc";
@@ -667,6 +681,7 @@ class CarVisual{
     for(let i=0;i<4;i++){
       const m=new THREE.Mesh(wg,MAT_DETAIL);m.castShadow=true;
       const br=new THREE.Mesh(bg,MAT_DETAIL);
+      if(wvs!==1){m.scale.set(1,wvs,wvs);br.scale.set(1,wvs,wvs);}
       const grp=new THREE.Group();grp.add(m);grp.add(br);
       if(linked){
         const inX=(i%2===0?1:-1)*spec.wheels.radius*.5;         // 차체 안쪽 방향
@@ -929,6 +944,72 @@ class CarVisual{
         delete this.detached[k];}}
   }
   storeHomes(){for(const k in this.parts)this.parts[k].userData.home=this.parts[k].position.clone();}
+  /* 🪟 윈도 그래픽(크롬 서라운드)
+     스캔 차체는 창 주변 모서리가 들쭉날쭉해 옆에서 보면 지저분하다. 실차의
+     '윈도 서라운드 몰딩'을 얹으면 그 경계가 한 줄로 정리돼 매끈해 보인다.
+     · 유리 실루엣을 z 구간으로 나눠 구간별 상·하단 y와 바깥 x를 뽑고
+     · 이동평균으로 라인을 펴서(들쭉날쭉 제거) 직선에 가깝게 만든 뒤
+     · 짧은 크롬 세그먼트를 기울여 이어 붙인다(벨트라인 + 루프라인). */
+  buildWindowTrim(glassGeo,cr,hx,hy,zF,zR,K){
+    const a=glassGeo.attributes.position.array;
+    let xMax=0,zLo=1e9,zHi=-1e9,yLo=1e9,yHi=-1e9;
+    for(let i=0;i<a.length;i+=3){const q=Math.abs(a[i]);if(q>xMax)xMax=q;}
+    const XT=xMax*.60;                              // 측면 유리만(윈드실드·리어글래스 제외)
+    for(let i=0;i<a.length;i+=3){
+      if(Math.abs(a[i])<XT)continue;
+      if(a[i+2]<zLo)zLo=a[i+2];if(a[i+2]>zHi)zHi=a[i+2];
+      if(a[i+1]<yLo)yLo=a[i+1];if(a[i+1]>yHi)yHi=a[i+1];}
+    /* 캐빈 범위를 벗어난 조각(램프 렌즈 등)은 잘라낸다 */
+    const cab=Math.abs(zF-zR)*.52;
+    zLo=Math.max(zLo,zR+ .06);zHi=Math.min(zHi,zF- .06);
+    if(!(zHi-zLo>.6))return;
+    const N=16,top=new Array(N).fill(NaN),bot=new Array(N).fill(NaN),xo=new Array(N).fill(0);
+    for(const sg of[-1,1]){
+      top.fill(NaN);bot.fill(NaN);xo.fill(0);
+      for(let i=0;i<a.length;i+=3){
+        const x=a[i],y=a[i+1],z=a[i+2];
+        if(Math.sign(x)!==sg||Math.abs(x)<XT)continue;
+        if(z<zLo||z>zHi)continue;
+        let k=((z-zLo)/(zHi-zLo)*N)|0;if(k>=N)k=N-1;
+        if(!(top[k]>y))top[k]=y;
+        if(!(bot[k]<y))bot[k]=y;
+        const q=Math.abs(x);if(q>xo[k])xo[k]=q;}
+      /* 빈 구간 보간 */
+      const fill=arr=>{
+        let last=NaN;
+        for(let k=0;k<N;k++){if(isNaN(arr[k]))arr[k]=last;else last=arr[k];}
+        last=NaN;
+        for(let k=N-1;k>=0;k--){if(isNaN(arr[k]))arr[k]=last;else last=arr[k];}};
+      fill(top);fill(bot);
+      if(isNaN(top[0])||isNaN(bot[0]))continue;
+      /* 이동평균 3회 — 들쭉날쭉한 경계를 곧게 편다 */
+      const smooth=arr=>{
+        for(let p=0;p<3;p++){
+          const c=arr.slice();
+          for(let k=0;k<N;k++){
+            const a0=c[Math.max(0,k-1)],a1=c[k],a2=c[Math.min(N-1,k+1)];
+            arr[k]=(a0+a1*2+a2)/4;}}};
+      smooth(top);smooth(bot);smooth(xo);
+      const seg=(ys,zs,ye,ze,x0,x1,w,h)=>{
+        const dz=ze-zs,dy=ye-ys,len=Math.hypot(dz,dy);
+        if(len<.02)return;
+        cr.push({geo:new THREE.BoxGeometry(w,h,len),
+          x:sg*((x0+x1)*.5),y:(ys+ye)*.5,z:(zs+ze)*.5,rx:-Math.atan2(dy,dz)});};
+      const zAt=k=>zLo+(k+.5)/N*(zHi-zLo);
+      for(let k=0;k<N-1;k++){
+        const xa=Math.min(xo[k],hx*.99)*.985, xb=Math.min(xo[k+1],hx*.99)*.985;
+        // 벨트라인(창 하단)
+        seg(bot[k]+.012,zAt(k),bot[k+1]+.012,zAt(k+1),xa,xb,.024,.026);
+        // 루프라인(창 상단) — 지붕 곡선을 따라간다
+        if(K.roofTrim!==false)
+          seg(top[k]-.010,zAt(k),top[k+1]-.010,zAt(k+1),xa*.985,xb*.985,.020,.022);}
+      /* A/C 필러 마감 — 앞뒤 끝을 세로로 막아 창틀이 닫혀 보이게 */
+      for(const k of[0,N-1]){
+        const x=Math.min(xo[k],hx*.99)*.985;
+        const h2=Math.max(.02,(top[k]-.010)-(bot[k]+.012));
+        cr.push({geo:new THREE.BoxGeometry(.022,h2,.024),
+          x:sg*x,y:(top[k]+bot[k])*.5,z:zAt(k)});}}
+  }
   buildChromeKit(spec,bx,by,hx,hy,glassGeo){
     const K=spec.chromeKit;
     const zF=bx.max.z,zR=bx.min.z;
@@ -943,6 +1024,11 @@ class CarVisual{
     cr.push({geo:new THREE.BoxGeometry(gW*2+.09,.05,.07),y:gY-gH,z:gZ});       // 하단 몰딩
     for(const sg of[-1,1])
       cr.push({geo:new THREE.BoxGeometry(.05,gH*2+.05,.07),x:sg*(gW+.02),y:gY,z:gZ});
+    /* 모서리 챔퍼 — 네 귀퉁이를 45°로 이어 프레임이 한 덩어리로 매끈하게 돌아가게 한다
+       (박스 4개만 겹치면 코너가 계단처럼 각져 보였다) */
+    for(const sy of[-1,1])for(const sx of[-1,1])
+      cr.push({geo:new THREE.BoxGeometry(.075,.048,.068),
+        x:sx*(gW-.006),y:gY+sy*(gH-.004),z:gZ,rz:sx*sy*.62});
     dk.push({geo:new THREE.BoxGeometry(gW*2,gH*2,.04),y:gY,z:gZ-.03});          // 그릴 배경(다크)
     /* 판테온 그릴 — 세로 슬랫은 가운데가 굵고 바깥으로 갈수록 얇아지며,
        뒤로 살짝 물러난 곡면(배럴)을 이룬다. 상단에는 굵은 크롬 바가 얹힌다. */
@@ -957,8 +1043,16 @@ class CarVisual{
        (앞으로 튀어나온 막대기처럼 보였다). 폭도 코 폭에 맞춰 좁게. */
     {const iw=hx*(K.intakeW||.52), ih=hy*.085, iy=by+hy*.30, iz=zF-.16;
      dk.push({geo:new THREE.BoxGeometry(iw*2,ih*2,.05),y:iy,z:iz});
-     for(let i=0;i<7;i++){const t=(i+.5)/7*2-1;
-       dk.push({geo:new THREE.BoxGeometry(.020,ih*1.7,.035),x:t*iw*.88,y:iy,z:iz+.012});}}
+     /* 세로 바 7개는 앞면을 잘게 쪼개 지저분했다 → 한 장의 매끈한 메시 패널로.
+        대신 아래에 '풀 폭 크롬 블레이드'를 깔아 좌우가 한 줄로 이어져 보이게 한다. */
+     dk.push({geo:new THREE.BoxGeometry(iw*1.94,ih*1.7,.030),y:iy,z:iz+.014});
+     /* 풀 폭 크롬 블레이드 — 중앙이 코 안쪽에 묻혀 좌우가 끊겨 보이지 않도록
+        해당 높이에서 실제 앞면 z를 재서 그 바로 앞에 붙인다. */
+     const by3=iy-ih*1.45;
+     const bw=this.bodySilMin(by3,zF-.22,zF-.06,hy*.10,5);
+     const bladeW=(bw>0?bw:hx*.8)*1.66;
+     const nz=this.bodyNoseZ(0,by3,.22,hy*.10);
+     cr.push({geo:new THREE.BoxGeometry(bladeW,.024,.032),y:by3,z:(nz||zF-.14)-.012});}
     /* ── 보닛 오너먼트(환희의 여신상 / 스리포인티드 스타 대용 조각) ── */
     if(K.ornament){
       const oy=topY*(K.ornY||.30)+hy*.02, oz=zF-(K.ornZ||.30);
@@ -970,23 +1064,7 @@ class CarVisual{
                  rz:sg*.5,ry:sg*.22});}
     /* ── 윈도 몰딩 — 실제 유리 메시의 경계상자에 맞춘다.
          차체 최대폭(xR)에 붙이면 휠아치가 가장 넓어서 캐빈 밖으로 판자처럼 떠 보였다. ── */
-    if(K.window!==false&&glassGeo){
-      glassGeo.computeBoundingBox();
-      const g=glassGeo.boundingBox;
-      /* 유리 마스크에는 램프 렌즈처럼 차 양끝의 조각도 섞여 있어 경계상자가 차 길이를
-         넘어설 수 있다 → 캐빈 길이·폭 범위로 확실히 제한한다(막대가 차 밖으로 튀는 문제). */
-      const gx=clamp(Math.min(Math.abs(g.min.x),Math.abs(g.max.x)),hx*.62,hx*.98);
-      const cabin=Math.abs(zF-zR)*.40;
-      const len=Math.min((g.max.z-g.min.z)*.9,cabin);
-      const zc=clamp((g.max.z+g.min.z)/2,zR+cabin*.6,zF-cabin*.6);
-      /* 벨트라인(도어 상단) 몰딩만 넣는다. 루프 라인은 곡선이라 직선 막대를 얹으면
-         지붕 위에 떠 있는 안테나처럼 보였다 → 상단 스트립은 넣지 않는다. */
-      /* 캐빈 실루엣보다 안쪽에 — 유리 경계상자는 곡면의 최대치라 그대로 쓰면 밖으로 뜬다 */
-      const by2=g.min.y+.02;
-      const lim=this.bodySilMin(by2,zc-len/2,zc+len/2,hy*.14,7);
-      const bx2=lim>0?Math.min(gx,lim)*.96:gx*.97;
-      for(const sg of[-1,1])
-        cr.push({geo:new THREE.BoxGeometry(.026,.026,len),x:sg*bx2,y:by2,z:zc});}
+    if(K.window!==false&&glassGeo)this.buildWindowTrim(glassGeo,cr,hx,hy,zF,zR,K);
     /* ── 로커(사이드 스커트) 크롬 ──
        차체 '최대폭'(휠아치)에 붙이면 실제로 좁은 사이드실 높이에서는 막대가 차 밖으로
        떠 보인다 → 해당 높이·구간의 실제 차체 폭을 재서 그보다 살짝 안쪽에 붙인다. */

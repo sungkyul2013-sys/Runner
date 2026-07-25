@@ -52,7 +52,7 @@ class Vehicle{
     this.steerIn=0;this.throttle=0;this.brake=0;this.handbrake=false;
     this.steer=0;this.gear=1;this.rpm=this.spec.engine.idle;this.shiftT=0;this.driveMode="D";
     this.peakG=0;this._pv.copy(b.vel);
-    for(const w of this.wheels){w.comp=0;w.prevComp=0;w.skid=0;w.omega=0;w.onGround=false;w.load=0;}
+    for(const w of this.wheels){w.comp=0;w.prevComp=0;w.cVelF=0;w.pv=0;w.skid=0;w.omega=0;w.onGround=false;w.load=0;}
     if(!keepDamage)this.clearDamage();
     this.impacts.length=0;
     this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};
@@ -70,7 +70,7 @@ class Vehicle{
     b.pos.y=this.world.height(b.pos.x,b.pos.z)+this.spec.susp.rest+this.spec.body.hy+.1;
     b.vel.set(0,0,0);b.angVel.set(0,0,0);b.force.set(0,0,0);b.torque.set(0,0,0);
     this.impacts.length=0;this.flipT=0;this.airT=0;this.throttle=0;this.brake=0;
-    for(const w of this.wheels){w.comp=0;w.prevComp=0;w.skid=0;w.omega=0;w.onGround=false;w.load=0;}
+    for(const w of this.wheels){w.comp=0;w.prevComp=0;w.cVelF=0;w.pv=0;w.skid=0;w.omega=0;w.onGround=false;w.load=0;}
     this.lastGood={pos:b.pos.clone(),quat:b.quat.clone()};
     b.snap();}                      // 렌더 보간 잔상 방지(순간 자세 변경)
   clearDamage(){
@@ -171,10 +171,15 @@ class Vehicle{
         w.onGround=true;groundCount++;
         const dist=Math.max(_hit.dist,r*.6);
         w.comp=clamp(maxRay-dist,0,susp.travel);
-        // 노면 미세 요철 (표면별 결정론적 노이즈 → 서스펜션 잔진동)
+        /* 노면 미세 요철 — 스프링 변위(compS)에만 더한다.
+           ⚠ 예전에는 w.comp 자체에 더했는데, 이 노이즈의 파장이 한 스텝 이동거리보다
+           짧아서 comp가 스텝마다 ±5mm씩 튀었다. 그걸 댐퍼가 미분하면 cVel이 ±0.6m/s가
+           되어 평지에서도 서스펜션 힘이 0↔10,000N으로 요동쳤다(측정치).
+           변위에만 반영하면 노면 결은 살아 있고 댐퍼는 조용하다. */
+        let compS=w.comp;
         if(!_hit.box){
           const ra=SURF_ROUGH[_hit.surf];
-          if(ra)w.comp=Math.max(0,w.comp+ra*Math.sin(w.cW.x*6.13)*Math.sin(w.cW.z*5.31)
+          if(ra)compS=Math.max(0,w.comp+ra*Math.sin(w.cW.x*6.13)*Math.sin(w.cW.z*5.31)
             +ra*.5*Math.sin(w.cW.x*17.7+w.cW.z*13.1));}
         w.visY=w.local.y-(dist-r);
         w.cW.copy(_vD).addScaledVector(_vE,dist); // contact point
@@ -183,29 +188,44 @@ class Vehicle{
         const other=this.wheels[w.front?(i===0?1:0):(i===2?3:2)];
         const arb=sp.arb*(w.comp-other.comp);
         // 댐퍼 속도 제한: 방지턱 모서리에서 comp가 급변해 코너가 튀어오르며 전복하는 것 방지
-        const cVel=clamp((w.comp-w.prevComp)/dt,-3.5,3.5);
+        const cVelRaw=clamp((w.comp-w.prevComp)/dt,-3.5,3.5);
+        /* 댐퍼 유압 지연(1차 저역통과) — 실제 댐퍼는 오일·호스 컴플라이언스 때문에
+           스텝 단위의 순간 속도를 그대로 힘으로 바꾸지 못한다. 이 필터가 없으면
+           격자 보간의 미세 계단이 그대로 힘 잡음이 된다. */
+        w.cVelF=(w.cVelF===undefined)?cVelRaw:w.cVelF+(cVelRaw-w.cVelF)*.28;
+        const cVel=w.cVelF;
         // 비대칭 댐핑: 리바운드(늘어남)는 압축보다 강하게 → 방지턱 후 위로 튀는 요동 억제(실차 댐퍼)
         const cAsym=cVel<0?(susp.rebMul||1.5):1;
         /* 프로그레시브 스프링(susp.prog) — 승차 높이 부근은 아주 부드럽고, 바닥칠 직전에만
            급격히 단단해진다. 실차 에어스프링의 비선형 레이트를 흉내내 잔진동을 크게 줄인다. */
         const cRel=susp.travel>0?w.comp/susp.travel:0;
         const kEff=susp.prog?susp.k*(1+susp.prog*cRel*cRel*3):susp.k;
-        let sF=kEff*kMul*w.comp+susp.c*kMul*dampMul*cVel*cAsym+arb;
-        if(susp.sky)sF-=b.vel.y*susp.sky;   // 스카이훅(전자제어 에어서스): 차체 상하 요동 직접 감쇠
+        const spring=kEff*kMul*compS;
+        /* 리바운드 댐핑 하한 — 댐퍼가 스프링을 완전히 상쇄해 지지력이 0이 되면
+           방지턱을 내려올 때 차체가 자유낙하했다가 쿵 하고 받는다(측정: 힘 0N 구간).
+           댐퍼는 스프링 힘의 일부까지만 깎을 수 있게 한다. */
+        let dF=susp.c*kMul*dampMul*cVel*cAsym;
+        if(dF<0)dF=Math.max(dF,-(spring*.62+sp.mass*GRAV*.03));
+        let sF=spring+dF+arb;
+        /* 스카이훅·헤이브·프리뷰는 '보조'다. 이 셋이 합쳐 지지력을 무너뜨리면
+           서스가 사라진 것처럼 느껴지므로, 총 감쇠량을 스프링 힘 기준으로 제한한다. */
+        let aid=0;
+        if(susp.sky)aid+=b.vel.y*susp.sky;     // 스카이훅(전자제어 에어서스): 차체 상하 요동 직접 감쇠
         /* 상승 억제 — 차체가 위로 뜨는 국면에서만 스프링력을 추가로 깎는다.
            방지턱을 넘을 때 서스가 차를 '들어올려' 꿀렁이는 것을 직접 없앤다
            (내려가는 국면은 건드리지 않아 접지력은 유지). */
-        if(susp.heave&&b.vel.y>0)sF-=b.vel.y*susp.heave;
+        if(susp.heave&&b.vel.y>0)aid+=b.vel.y*susp.heave;
         /* 노면 예측(플래너/매직카펫) — 진행 방향 앞쪽 노면 높이를 미리 읽어,
            올라오는 요철은 미리 힘을 빼 충격을 흡수하고 내려가는 곳은 미리 받쳐 준다. */
         if(susp.preview&&!_hit.box){
           const lead=susp.preview;
           const ah=world.height(w.cW.x+b.vel.x*lead,w.cW.z+b.vel.z*lead);
           w.pv=lerp(w.pv||0,clamp(ah-w.cW.y,-.14,.14),.3);
-          sF-=w.pv*(susp.pvGain||0)*sp.mass;}
+          aid+=w.pv*(susp.pvGain||0)*sp.mass;}
+        if(aid)sF-=clamp(aid,-sp.mass*GRAV*.35,spring*.40+sp.mass*GRAV*.05);
         /* 블로우오프 밸브 — 서스가 차체를 밀어올릴 수 있는 최대 힘을 제한한다.
            고급차 댐퍼의 블로우오프처럼, 큰 충격은 힘으로 전달하지 않고 흘려보낸다. */
-        sF=clamp(sF,0,sp.mass*GRAV*(susp.fCap||1.4));
+        sF=clamp(sF,spring*.18,sp.mass*GRAV*(susp.fCap||1.4));
         w.susF=sF;w.load=lerp(w.load,sF,.5);
         _vF.copy(_hit.n).multiplyScalar(.4).addScaledVector(up,.6).normalize().multiplyScalar(sF);
         _vG.copy(w.cW).sub(b.pos);
