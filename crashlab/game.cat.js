@@ -827,6 +827,10 @@ class Vehicle{
         const kEff=susp.prog?susp.k*(1+susp.prog*cRel*cRel*3):susp.k;
         let sF=kEff*kMul*w.comp+susp.c*kMul*dampMul*cVel*cAsym+arb;
         if(susp.sky)sF-=b.vel.y*susp.sky;   // 스카이훅(전자제어 에어서스): 차체 상하 요동 직접 감쇠
+        /* 상승 억제 — 차체가 위로 뜨는 국면에서만 스프링력을 추가로 깎는다.
+           방지턱을 넘을 때 서스가 차를 '들어올려' 꿀렁이는 것을 직접 없앤다
+           (내려가는 국면은 건드리지 않아 접지력은 유지). */
+        if(susp.heave&&b.vel.y>0)sF-=b.vel.y*susp.heave;
         /* 노면 예측(플래너/매직카펫) — 진행 방향 앞쪽 노면 높이를 미리 읽어,
            올라오는 요철은 미리 힘을 빼 충격을 흡수하고 내려가는 곳은 미리 받쳐 준다. */
         if(susp.preview&&!_hit.box){
@@ -834,7 +838,9 @@ class Vehicle{
           const ah=world.height(w.cW.x+b.vel.x*lead,w.cW.z+b.vel.z*lead);
           w.pv=lerp(w.pv||0,clamp(ah-w.cW.y,-.14,.14),.3);
           sF-=w.pv*(susp.pvGain||0)*sp.mass;}
-        sF=clamp(sF,0,sp.mass*GRAV*1.4);
+        /* 블로우오프 밸브 — 서스가 차체를 밀어올릴 수 있는 최대 힘을 제한한다.
+           고급차 댐퍼의 블로우오프처럼, 큰 충격은 힘으로 전달하지 않고 흘려보낸다. */
+        sF=clamp(sF,0,sp.mass*GRAV*(susp.fCap||1.4));
         w.susF=sF;w.load=lerp(w.load,sF,.5);
         _vF.copy(_hit.n).multiplyScalar(.4).addScaledVector(up,.6).normalize().multiplyScalar(sF);
         _vG.copy(w.cW).sub(b.pos);
@@ -1200,7 +1206,7 @@ const CARS=[
   desc:"실측 스캔 3D 모델. 6.75L V12 · 플래너 서스펜션. 무결점 도장과 매끈한 차체의 초호화 세단.",
   model:"rrghost",style:"sedan",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
   smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
-  groundClear:.15,wheelVisFit:1.01,rideFix:true,rideLift:.07,
+  groundClear:.19,wheelVisFit:1.01,rideFix:true,rideLift:0,fitBumper:true,
   wheelTuck:.055,                 // 뒤에서 봤을 때 휠이 차체 밖으로 4cm 튀어나오던 문제 보정
   chromeKit:{grilleW:.34,grilleH:.26,grilleY:.74,grilleZ:.20,slats:13,
              ornament:true,ornY:.30,ornZ:.46,exhaust:2,rearY:.80},
@@ -1208,10 +1214,12 @@ const CARS=[
   wheels:{track:.9,front:1.6,rear:1.6,y:-.5,radius:.376,width:.28},
   /* 🛋️ 롤스로이스 승차감 패키지 — 무른 1차 스프링 + 프로그레시브 레이트 +
      스카이훅 + 비대칭 리바운드 + 노면 예측 + 자세 안정. 실차의 플래너/매직카펫 계열. */
-  susp:{k:32000,c:6000,travel:.34,rest:.36,
+  susp:{k:36000,c:6600,travel:.32,rest:.28,
         prog:1.5,        // 프로그레시브 레이트(바닥칠 직전만 단단)
-        sky:13000,       // 스카이훅(차체 상하 요동 직접 감쇠)
-        rebMul:1.9,      // 리바운드 감쇠 강화(방지턱 후 되튐 억제)
+        sky:15000,       // 스카이훅(차체 상하 요동 직접 감쇠)
+        rebMul:2.9,      // 리바운드 감쇠 강화(방지턱 후 되튐 억제)
+        fCap:.88,        // 블로우오프 — 서스가 차체를 밀어올릴 수 있는 힘 상한(중력 배수)
+        heave:8500,     // 상승 억제: 차체가 위로 뜨려 할 때만 스프링력을 깎는다
         preview:.32,     // 노면 예측 시간(s)
         pvGain:5.0,      // 예측 보정 이득
         attq:2.8},       // 피치·롤 각속도 감쇠
@@ -1223,7 +1231,7 @@ const CARS=[
   stats:{spd:62,acc:74,grip:70,mass:88}},
  {id:"maybach",name:"메르세데스-마이바흐 GLS",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.9초",top:240,
   desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
-  model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,
+  model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,fitBumper:true,
   chromeKit:{grilleW:.40,grilleH:.22,grilleY:.82,grilleZ:.16,slats:11,
              ornament:true,ornY:.40,ornZ:.34,exhaust:4,rearY:.70},
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
@@ -1678,9 +1686,19 @@ class CarVisual{
     this.bodyMesh.geometry.computeBoundingBox();
     const bx=this.bodyMesh.geometry.boundingBox;
     const zF=bx.max.z,zR=bx.min.z,xR=Math.max(Math.abs(bx.min.x),Math.abs(bx.max.x));
+    /* 범퍼 파트 폭 — 예전엔 차체 최대폭(hx)으로 잡아, 코가 좁아지는 세단에서는
+       앞뒤로 '막대기'가 차체 밖으로 튀어나와 보였다. 해당 z 위치의 실제 차체 폭을 재서 맞춘다. */
+    const widthAt=(zt,tol)=>{
+      const a=this.bodyMesh.geometry.attributes.position.array;
+      let mx=0;
+      for(let i=0;i<a.length;i+=3)if(Math.abs(a[i+2]-zt)<tol){const q=Math.abs(a[i]);if(q>mx)mx=q;}
+      return mx||hx;};
+    const fbZ=zF-.16, rbZ=zR+.16;
+    const fbW=spec.fitBumper?widthAt(fbZ,.30)*.90:hx*1.02;
+    const rbW=spec.fitBumper?widthAt(rbZ,.30)*.90:hx*1.02;
     this.parts={
-      fb:this.mkPart(hx*1.02,hy*.15,.09,0,by+hy*.06,zF-.16,bumpMat),
-      rb:this.mkPart(hx*1.02,hy*.15,.09,0,by+hy*.06,zR+.16,bumpMat),
+      fb:this.mkPart(fbW,hy*.15,.09,0,by+hy*.06,fbZ,bumpMat),
+      rb:this.mkPart(rbW,hy*.15,.09,0,by+hy*.06,rbZ,bumpMat),
       ml:this.mkPart(.07,.08,.17,-xR*.96,hy*.1,zF*.34,bumpMat),
       mr:this.mkPart(.07,.08,.17,xR*.96,hy*.1,zF*.34,bumpMat)};
     this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
@@ -2055,12 +2073,12 @@ class CarVisual{
       const zBack=Math.abs(t)*Math.abs(t)*.045;              // 배럴 곡면
       cr.push({geo:new THREE.BoxGeometry(wSl,gH*2-.035,.05),x:t*gW*.94,y:gY,z:gZ+.014-zBack});}
     cr.push({geo:new THREE.BoxGeometry(gW*2+.14,.075,.085),y:gY+gH+.05,z:gZ+.01});   // 상단 굵은 크롬 바
-    /* 하단 에어인테이크 — 다크 메시 + 크롬 립(그릴만 있으면 앞모습이 비어 보인다) */
-    {const iw=hx*(K.intakeW||.86), ih=hy*.10, iy=by+hy*.30, iz=zF-.06;
-     dk.push({geo:new THREE.BoxGeometry(iw*2,ih*2,.05),y:iy,z:iz-.02});
-     cr.push({geo:new THREE.BoxGeometry(iw*2+.05,.032,.06),y:iy-ih,z:iz});
-     for(let i=0;i<9;i++){const t=(i+.5)/9*2-1;
-       dk.push({geo:new THREE.BoxGeometry(.022,ih*1.8,.04),x:t*iw*.92,y:iy,z:iz});}}
+    /* 하단 에어인테이크 — 차체 안쪽으로 '들어간' 다크 메시만. 크롬 립은 넣지 않는다
+       (앞으로 튀어나온 막대기처럼 보였다). 폭도 코 폭에 맞춰 좁게. */
+    {const iw=hx*(K.intakeW||.52), ih=hy*.085, iy=by+hy*.30, iz=zF-.16;
+     dk.push({geo:new THREE.BoxGeometry(iw*2,ih*2,.05),y:iy,z:iz});
+     for(let i=0;i<7;i++){const t=(i+.5)/7*2-1;
+       dk.push({geo:new THREE.BoxGeometry(.020,ih*1.7,.035),x:t*iw*.88,y:iy,z:iz+.012});}}
     /* ── 보닛 오너먼트(환희의 여신상 / 스리포인티드 스타 대용 조각) ── */
     if(K.ornament){
       const oy=topY*(K.ornY||.30)+hy*.02, oz=zF-(K.ornZ||.30);

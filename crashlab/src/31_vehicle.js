@@ -192,6 +192,10 @@ class Vehicle{
         const kEff=susp.prog?susp.k*(1+susp.prog*cRel*cRel*3):susp.k;
         let sF=kEff*kMul*w.comp+susp.c*kMul*dampMul*cVel*cAsym+arb;
         if(susp.sky)sF-=b.vel.y*susp.sky;   // 스카이훅(전자제어 에어서스): 차체 상하 요동 직접 감쇠
+        /* 상승 억제 — 차체가 위로 뜨는 국면에서만 스프링력을 추가로 깎는다.
+           방지턱을 넘을 때 서스가 차를 '들어올려' 꿀렁이는 것을 직접 없앤다
+           (내려가는 국면은 건드리지 않아 접지력은 유지). */
+        if(susp.heave&&b.vel.y>0)sF-=b.vel.y*susp.heave;
         /* 노면 예측(플래너/매직카펫) — 진행 방향 앞쪽 노면 높이를 미리 읽어,
            올라오는 요철은 미리 힘을 빼 충격을 흡수하고 내려가는 곳은 미리 받쳐 준다. */
         if(susp.preview&&!_hit.box){
@@ -199,7 +203,9 @@ class Vehicle{
           const ah=world.height(w.cW.x+b.vel.x*lead,w.cW.z+b.vel.z*lead);
           w.pv=lerp(w.pv||0,clamp(ah-w.cW.y,-.14,.14),.3);
           sF-=w.pv*(susp.pvGain||0)*sp.mass;}
-        sF=clamp(sF,0,sp.mass*GRAV*1.4);
+        /* 블로우오프 밸브 — 서스가 차체를 밀어올릴 수 있는 최대 힘을 제한한다.
+           고급차 댐퍼의 블로우오프처럼, 큰 충격은 힘으로 전달하지 않고 흘려보낸다. */
+        sF=clamp(sF,0,sp.mass*GRAV*(susp.fCap||1.4));
         w.susF=sF;w.load=lerp(w.load,sF,.5);
         _vF.copy(_hit.n).multiplyScalar(.4).addScaledVector(up,.6).normalize().multiplyScalar(sF);
         _vG.copy(w.cW).sub(b.pos);
