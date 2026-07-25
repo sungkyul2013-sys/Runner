@@ -386,10 +386,13 @@ const Game={
       Sfx.wind(v.speed);
       // flip prompt
       $("btnReset").classList.toggle("blink",v.flipT>3);
+      // 전복 시 자동 복구(설정) — 3초 이상 뒤집혀 있으면 제자리에서 세움
+      if(Settings.autoUpright&&v.flipT>3){v.uprightInPlace();toast("자동 복구");}
     }else{Sfx.engine(0,0,false);Sfx.skid(0);Sfx.wind(0);}
     this.cam.update(dt,this.veh,this.world);
-    // 속도감 FOV
-    const tgtFov=66+clamp(this.veh.speed-18,0,60)*.16;
+    // 속도감 FOV (설정: 기본 FOV · 속도감 on/off)
+    const baseFov=Settings.camFov||66;
+    const tgtFov=baseFov+(Settings.speedFov===false?0:clamp(this.veh.speed-18,0,60)*.16);
     if(Math.abs(camera.fov-tgtFov)>.05){
       camera.fov+=(tgtFov-camera.fov)*Math.min(1,dt*3);camera.updateProjectionMatrix();}
     this.vis.sync(this.veh,this.shakeT);
@@ -661,8 +664,10 @@ let _hudT=0;
 function updateHUD(dt){
   const v=Game.veh;if(!v)return;
   _hudT+=dt;if(_hudT<.05)return;_hudT=0;
+  const mph=Settings.units==="mph";
   const kmh=Math.abs(v.fwdSpeed())*3.6;
-  $("speedVal").childNodes[0].nodeValue=String(kmh|0);
+  $("speedVal").childNodes[0].nodeValue=String((mph?kmh*.621371:kmh)|0);
+  {const u=$("speedo").querySelector(".u");if(u)u.textContent=mph?"MPH":"KM/H";}
   $("gearVal").textContent=v.driveMode==="R"?"R":(v.speed<.3&&v.throttle===0?"N":v.gear);
   if(GAUGE.ready){
     $("gArc").style.strokeDashoffset=GAUGE.sL*(1-clamp(kmh/(v.spec.top+30),0,1));
@@ -673,6 +678,25 @@ function updateHUD(dt){
   if(Game.mapOpen)drawBigMap();
   const dz=(el,val)=>{el.style.background=val>66?"var(--bad)":val>33?"var(--warn)":"var(--ok)";};
   dz($("dmgF"),v.dmg.f);dz($("dmgB"),v.dmg.b);dz($("dmgL"),v.dmg.l);dz($("dmgR"),v.dmg.r);
+  // 휠 상태 표시(부위별 손상)
+  for(let i=0;i<4;i++){const el=$("whD"+i);if(!el)continue;
+    const d=v.wheels[i].dmg||0;
+    el.style.background=d>.55?"var(--bad)":d>.22?"var(--warn)":"#39424e";}
+  // 📊 텔레메트리 스트립
+  {const T=$("telem");
+   if(T){const on=Settings.showTelemetry!==false&&Game.mode!=="crash";
+     T.classList.toggle("on",on);
+     if(on){
+       const g=Math.min(Math.abs(v.peakG)/8,1);
+       const slip=Math.max(...v.wheels.map(x=>Math.abs(x.slipA)))/DEG;
+       const comp=Math.max(...v.wheels.map(x=>x.comp))/(v.spec.susp.travel||.2);
+       const rp=clamp(v.rpm/v.spec.engine.redline,0,1);
+       const set=(bar,val,txt,tv)=>{const b=$(bar);if(b)b.style.width=(clamp(val,0,1)*100).toFixed(0)+"%";
+         const t=$(tv);if(t)t.textContent=txt;};
+       set("tG",g,(Math.abs(v.peakG)).toFixed(1),"tGv");
+       set("tS",clamp(slip/22,0,1),(slip|0)+"°","tSv");
+       set("tU",clamp(comp,0,1),((clamp(comp,0,1)*100)|0)+"%","tUv");
+       set("tR",rp,String(v.rpm|0),"tRv");}}}
   updateModeWidget();
   if(Settings.debug){
     const w=v.wheels;

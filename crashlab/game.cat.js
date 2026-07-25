@@ -1154,19 +1154,47 @@ function carStations(spec){
     S(-.72,.99,-.95,-.15,.32,.74),S(-1,.84,-.75,-.3,.2,.7)];
 }
 const GLASS_COL=new THREE.Color(0x151d28);
+/* 종방향 세분화: 스테이션 사이를 카트멀-롬으로 보간해 차체 실루엣을 매끄럽게(각진 쐐기 → 유선형).
+   glass/top 플래그는 원본 구간의 것을 유지하고, 유리 경계는 원 스테이션에서만 바뀌게 한다. */
+function subdivStations(st,n){
+  if(n<2||st.length<2)return st;
+  const key=["z","w","y0","y1","y2","wt"];
+  const cr=(p0,p1,p2,p3,t)=>{const t2=t*t,t3=t2*t;
+    return .5*((2*p1)+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t2+(-p0+3*p1-3*p2+p3)*t3);};
+  const at=i=>st[clamp(i,0,st.length-1)];
+  const out=[];
+  for(let i=0;i<st.length-1;i++){
+    const p0=at(i-1),p1=st[i],p2=st[i+1],p3=at(i+2);
+    for(let s=0;s<n;s++){
+      const t=s/n,o={};
+      for(const k of key)o[k]=cr(p0[k],p1[k],p2[k],p3[k],t);
+      // 유리 구간 플래그는 원 구간을 그대로 계승(경계가 흐려지지 않게)
+      o.glass=p1.glass;o.top=p1.top;
+      out.push(o);}}
+  out.push(st[st.length-1]);
+  return out;
+}
 function buildCarBody(spec,colorHex){
-  const st=carStations(spec);
+  // 실루엣 품질: 스테이션 3배 세분화 + 어깨(숄더) 라운딩 → 실차처럼 매끈한 바디
+  const st=subdivStations(carStations(spec),3);
   const body=new THREE.Color(colorHex);
   const shade=body.clone().multiplyScalar(.66);
   const dark=body.clone().multiplyScalar(.42);
   const roof=body.clone().multiplyScalar(.88);
   const pos=[],col=[];
-  // 8 section points: 0 bl,1 br,2 rockerR,3 beltR,4 roofR,5 roofL,6 beltL,7 rockerL
+  // 12 section points (어깨 라운딩 추가): 0 bl,1 br,2 rockerR,3 beltR,
+  //   4 shoulderR(벨트→루프 라운딩), 5 roofR, 6 roofL, 7 shoulderL, 8 beltL, 9 rockerL
   const P=(s,k)=>{
     const wf=s.w*1.04,yf=s.y0+(s.y1-s.y0)*.3,wb=s.w*.985;
-    switch(k){case 0:return[-s.w*.92,s.y0];case 1:return[s.w*.92,s.y0];
-      case 2:return[wf,yf];case 3:return[wb,s.y1];case 4:return[s.wt,s.y2];
-      case 5:return[-s.wt,s.y2];case 6:return[-wb,s.y1];default:return[-wf,yf];}};
+    // 어깨: 벨트라인과 루프 사이를 안쪽으로 살짝 좁히며 올라가는 중간점(캐빈 곡면)
+    const sw=lerp(wb,s.wt,.62),sy=lerp(s.y1,s.y2,.74);
+    switch(k){
+      case 0:return[-s.w*.92,s.y0]; case 1:return[s.w*.92,s.y0];
+      case 2:return[wf,yf];         case 3:return[wb,s.y1];
+      case 4:return[sw,sy];         case 5:return[s.wt,s.y2];
+      case 6:return[-s.wt,s.y2];    case 7:return[-sw,sy];
+      case 8:return[-wb,s.y1];      default:return[-wf,yf];}};
+  const NP=10;   // 단면 점 개수
   const quad=(p1,p2,p3,p4,za,zb,c)=>{
     pos.push(p1[0],p1[1],za, p4[0],p4[1],zb, p3[0],p3[1],zb,
              p1[0],p1[1],za, p3[0],p3[1],zb, p2[0],p2[1],za);
@@ -1175,13 +1203,13 @@ function buildCarBody(spec,colorHex){
     const a=st[i],b=st[i+1];
     const sideGlass=(a.glass||b.glass)?GLASS_COL:body;
     const topC=(a.top||b.top)?GLASS_COL:roof;
-    const edges=[[0,1,dark],[1,2,shade],[2,3,body],[3,4,sideGlass],[4,5,topC],
-                 [5,6,sideGlass],[6,7,body],[7,0,shade]];
+    const edges=[[0,1,dark],[1,2,shade],[2,3,body],[3,4,sideGlass],[4,5,sideGlass],
+                 [5,6,topC],[6,7,sideGlass],[7,8,sideGlass],[8,9,body],[9,0,shade]];
     for(const[k1,k2,c]of edges)
       quad(P(a,k1),P(a,k2),P(b,k2),P(b,k1),a.z,b.z,c);}
   // caps (front & rear faces) as fans
   const cap=(s,rev,c)=>{
-    for(let k=1;k<7;k++){
+    for(let k=1;k<NP-1;k++){
       const[x0,y0]=P(s,0),[x1,y1]=P(s,k),[x2,y2]=P(s,k+1);
       if(rev)pos.push(x0,y0,s.z,x1,y1,s.z,x2,y2,s.z);
       else pos.push(x0,y0,s.z,x2,y2,s.z,x1,y1,s.z);
@@ -3045,8 +3073,17 @@ MAPS.push(
     for(let k=0;k<(dense?2:1);k++){
       const sc=(dense?24:16)+rnd()*(dense?20:12);
       const hsc=dense?1.7+rnd()*1.3:1.3+rnd()*.7;         // 도심은 더 높은 고층(넓이 그대로 높이만 ↑)
-      mb.baked(BLD2[(rnd()*4)|0],cx+(rnd()-.5)*(64-sc),cz+(rnd()-.5)*(64-sc),sc,
-        ((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92,hScale:hsc});}
+      const bx2=cx+(rnd()-.5)*(64-sc),bz2=cz+(rnd()-.5)*(64-sc);
+      mb.baked(BLD2[(rnd()*4)|0],bx2,bz2,sc,((rnd()*4)|0)*Math.PI/2,
+        {y:0,collide:true,shrink:.92,hScale:hsc});
+      // 🏢 옥상 구조물(냉각탑·기계실·헬리패드·안테나) — 저폴리 박스 스카이라인에 실루엣 디테일 추가
+      {const bh=sc*.86*hsc,hw=sc*.30;                      // 대략적 건물 높이/반폭
+       const rc=[0x6e7682,0x59606b,0x7b838f][(rnd()*3)|0];
+       mb.box(bx2+(rnd()-.5)*hw,bh+1.4,bz2+(rnd()-.5)*hw,hw*.7,2.8,hw*.7,rc,{mu:.5,tag:"roofunit",noVis:false});
+       if(rnd()<.55)                                        // 안테나 마스트
+         mb.box(bx2+(rnd()-.5)*hw*.6,bh+6.5,bz2+(rnd()-.5)*hw*.6,.5,8,.5,0x8a929c,{mu:.5,tag:"mast"});
+       if(rnd()<.35)                                        // 옥상 물탱크
+         mb.box(bx2-(rnd()*hw*.7),bh+2.6,bz2+(rnd()*hw*.7),hw*.42,4,hw*.42,0x8a7a5c,{mu:.5,tag:"tank"});}}
     if(rnd()<.5)mb.baked(rnd()<.5?"trees":"treesTall",cx+28,cz-28,10+rnd()*4,rnd()*6,{y:0});}
   // 랜드마크 타워(도심 남동) — 초고층 + 소공원(도심 북서)
   mb.baked("bldA",250,250,58,0,{y:0,collide:true,shrink:.9,hScale:3.0});
@@ -3561,8 +3598,9 @@ class GameCamera{
     if(world){const gy=world.height(this.pos.x,this.pos.z)+.5;if(this.pos.y<gy)this.pos.y=gy;}
     this.cam.position.copy(this.pos);
     if(this.shake>0&&Settings.camShake){
-      this.cam.position.x+=(Math.random()-.5)*this.shake*.5;
-      this.cam.position.y+=(Math.random()-.5)*this.shake*.5;}
+      const sa=(Settings.camShakeAmt!==undefined?Settings.camShakeAmt:1)*.5;
+      this.cam.position.x+=(Math.random()-.5)*this.shake*sa;
+      this.cam.position.y+=(Math.random()-.5)*this.shake*sa;}
     this.look.set(lx,ly,lz);
     this.cam.lookAt(this.look);
   }
@@ -3955,10 +3993,13 @@ const Game={
       Sfx.wind(v.speed);
       // flip prompt
       $("btnReset").classList.toggle("blink",v.flipT>3);
+      // 전복 시 자동 복구(설정) — 3초 이상 뒤집혀 있으면 제자리에서 세움
+      if(Settings.autoUpright&&v.flipT>3){v.uprightInPlace();toast("자동 복구");}
     }else{Sfx.engine(0,0,false);Sfx.skid(0);Sfx.wind(0);}
     this.cam.update(dt,this.veh,this.world);
-    // 속도감 FOV
-    const tgtFov=66+clamp(this.veh.speed-18,0,60)*.16;
+    // 속도감 FOV (설정: 기본 FOV · 속도감 on/off)
+    const baseFov=Settings.camFov||66;
+    const tgtFov=baseFov+(Settings.speedFov===false?0:clamp(this.veh.speed-18,0,60)*.16);
     if(Math.abs(camera.fov-tgtFov)>.05){
       camera.fov+=(tgtFov-camera.fov)*Math.min(1,dt*3);camera.updateProjectionMatrix();}
     this.vis.sync(this.veh,this.shakeT);
@@ -4230,8 +4271,10 @@ let _hudT=0;
 function updateHUD(dt){
   const v=Game.veh;if(!v)return;
   _hudT+=dt;if(_hudT<.05)return;_hudT=0;
+  const mph=Settings.units==="mph";
   const kmh=Math.abs(v.fwdSpeed())*3.6;
-  $("speedVal").childNodes[0].nodeValue=String(kmh|0);
+  $("speedVal").childNodes[0].nodeValue=String((mph?kmh*.621371:kmh)|0);
+  {const u=$("speedo").querySelector(".u");if(u)u.textContent=mph?"MPH":"KM/H";}
   $("gearVal").textContent=v.driveMode==="R"?"R":(v.speed<.3&&v.throttle===0?"N":v.gear);
   if(GAUGE.ready){
     $("gArc").style.strokeDashoffset=GAUGE.sL*(1-clamp(kmh/(v.spec.top+30),0,1));
@@ -4242,6 +4285,25 @@ function updateHUD(dt){
   if(Game.mapOpen)drawBigMap();
   const dz=(el,val)=>{el.style.background=val>66?"var(--bad)":val>33?"var(--warn)":"var(--ok)";};
   dz($("dmgF"),v.dmg.f);dz($("dmgB"),v.dmg.b);dz($("dmgL"),v.dmg.l);dz($("dmgR"),v.dmg.r);
+  // 휠 상태 표시(부위별 손상)
+  for(let i=0;i<4;i++){const el=$("whD"+i);if(!el)continue;
+    const d=v.wheels[i].dmg||0;
+    el.style.background=d>.55?"var(--bad)":d>.22?"var(--warn)":"#39424e";}
+  // 📊 텔레메트리 스트립
+  {const T=$("telem");
+   if(T){const on=Settings.showTelemetry!==false&&Game.mode!=="crash";
+     T.classList.toggle("on",on);
+     if(on){
+       const g=Math.min(Math.abs(v.peakG)/8,1);
+       const slip=Math.max(...v.wheels.map(x=>Math.abs(x.slipA)))/DEG;
+       const comp=Math.max(...v.wheels.map(x=>x.comp))/(v.spec.susp.travel||.2);
+       const rp=clamp(v.rpm/v.spec.engine.redline,0,1);
+       const set=(bar,val,txt,tv)=>{const b=$(bar);if(b)b.style.width=(clamp(val,0,1)*100).toFixed(0)+"%";
+         const t=$(tv);if(t)t.textContent=txt;};
+       set("tG",g,(Math.abs(v.peakG)).toFixed(1),"tGv");
+       set("tS",clamp(slip/22,0,1),(slip|0)+"°","tSv");
+       set("tU",clamp(comp,0,1),((clamp(comp,0,1)*100)|0)+"%","tUv");
+       set("tR",rp,String(v.rpm|0),"tRv");}}}
   updateModeWidget();
   if(Settings.debug){
     const w=v.wheels;
@@ -4639,22 +4701,59 @@ const UI=(()=>{
   /* ---------- settings ---------- */
   function settings(){
     const S=Settings;
+    // 슬라이더 행 헬퍼: 값 표시 + 즉시 반영
+    const sl=(label,key,min,max,stp,fmt,sub)=>
+      '<div class="optRow"><div class="lb">'+label+'<small>'+(sub?sub+' · ':'')+
+      (fmt?fmt(S[key]):S[key])+'</small></div>'+
+      '<div class="ct"><input type="range" data-sl="'+key+'" min="'+min+'" max="'+max+
+      '" step="'+stp+'" value="'+S[key]+'"></div></div>';
+    const grp=t=>'<div class="h2" style="margin:18px 0 8px;font-size:12px;font-weight:900;letter-spacing:.22em;color:var(--acc2)">'+t+'</div>';
     body().innerHTML='<div class="h1">설정</div>'+
+      grp("주행 · 어시스트")+
       seg2("어시스트 프리셋","assist",[["casual","캐주얼"],["sport","스포츠"],["sim","시뮬"]],S.assist)+
       tgl2("ABS","absOn",S.absOn)+tgl2("TCS (트랙션 컨트롤)","tcsOn",S.tcsOn)+
       tgl2("자동 카운터스티어","ctrSteer",S.ctrSteer)+tgl2("저속 안정화","stab",S.stab)+
+      tgl2("전복 시 자동 복구","autoUpright",S.autoUpright)+
+      grp("차량 물리")+
+      sl("타이어 그립","gripMul",.6,1.4,.05,v=>v.toFixed(2)+"×","노면 접지력")+
+      sl("서스펜션 댐핑","damperMul",.6,1.6,.05,v=>v.toFixed(2)+"×","감쇠 강도")+
+      sl("조향 응답 속도","steerSpeed",.6,1.6,.05,v=>v.toFixed(2)+"×")+
+      sl("손상 배율","damageMul",.3,2.5,.1,v=>v.toFixed(1)+"×","충돌 변형·파손 강도")+
+      seg2("소프트바디 품질","softQuality",[["low","낮음"],["normal","보통"],["high","높음"]],S.softQuality)+
+      grp("조작")+
       seg2("조향 방식","steerMode",[["slider","슬라이더"],["wheel","휠"],["buttons","버튼"],["tilt","틸트"]],S.steerMode)+
-      '<div class="optRow"><div class="lb">조향 감도 <small>'+S.sensitivity.toFixed(2)+'</small></div>'+
-      '<div class="ct"><input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="'+S.sensitivity+'"></div></div>'+
-      tgl2("사운드","sound",S.sound)+
-      '<div class="optRow"><div class="lb">볼륨</div><div class="ct"><input type="range" id="vol" min="0" max="1" step="0.05" value="'+S.volume+'"></div></div>'+
+      sl("조향 감도","sensitivity",.5,1.5,.05,v=>v.toFixed(2))+
+      grp("카메라")+
+      sl("시야각 (FOV)","camFov",55,92,1,v=>v+"°")+
+      tgl2("속도감 FOV 확장","speedFov",S.speedFov!==false)+
       tgl2("카메라 셰이크","camShake",S.camShake)+
+      sl("셰이크 강도","camShakeAmt",0,2,.1,v=>v.toFixed(1)+"×")+
+      grp("화면 · HUD")+
+      tgl2("텔레메트리 표시 (G·슬립·서스·RPM)","showTelemetry",S.showTelemetry!==false)+
+      seg2("속도 단위","units",[["kmh","km/h"],["mph","mph"]],S.units)+
+      tgl2("코너 미니맵 표시","minimapOn",S.minimapOn!==false)+
       tgl2("그림자","shadows",S.shadows)+
       tgl2("자동 슬로모션 (강한 충돌 시)","autoSlowmo",S.autoSlowmo)+
       tgl2("충돌 리포트 자동 표시","autoReport",S.autoReport!==false)+
-      tgl2("코너 미니맵 표시","minimapOn",S.minimapOn!==false)+
       tgl2("디버그 오버레이 (FPS·슬립각·접지력)","debug",S.debug)+
-      '<div class="btnRow"><button class="btn danger sm" id="wipe">저장 데이터 초기화</button></div>';
+      grp("사운드")+
+      tgl2("사운드","sound",S.sound)+
+      '<div class="optRow"><div class="lb">볼륨</div><div class="ct"><input type="range" id="vol" min="0" max="1" step="0.05" value="'+S.volume+'"></div></div>'+
+      '<div class="btnRow" style="margin-top:20px"><button class="btn sm" id="resetDef">기본값으로</button>'+
+      '<button class="btn danger sm" id="wipe">저장 데이터 초기화</button></div>';
+    // 슬라이더 공통 핸들러(즉시 반영)
+    body().querySelectorAll("[data-sl]").forEach(r=>{
+      r.oninput=e=>{S[r.dataset.sl]=+e.target.value;saveSettings();
+        const lb=r.closest(".optRow").querySelector(".lb small");
+        if(lb){const k=r.dataset.sl,v=S[k];
+          lb.textContent=(k==="camFov")?v+"°":(k==="sensitivity")?v.toFixed(2):
+            (k==="damageMul"||k==="camShakeAmt")?v.toFixed(1)+"×":v.toFixed(2)+"×";}};
+      r.onchange=()=>settings();});
+    const rd=$("resetDef");
+    if(rd)rd.onclick=()=>{Sfx.click();
+      Object.assign(S,{gripMul:1,damperMul:1,steerSpeed:1,damageMul:1,softQuality:"normal",
+        camFov:66,camShakeAmt:1,speedFov:true,showTelemetry:true,units:"kmh",sensitivity:1});
+      saveSettings();settings();toast("기본값 복원");};
     body().querySelectorAll("[data-seg]").forEach(b=>b.onclick=()=>{
       const k=b.dataset.seg;Sfx.click();
       if(k==="assist")applyAssistPreset(b.dataset.v);
@@ -4668,7 +4767,6 @@ const UI=(()=>{
       if(k==="debug")$("debugHud").classList.toggle("on",S.debug);
       if(k==="shadows")applyShadows();
       settings();});
-    $("sens").oninput=e=>{S.sensitivity=+e.target.value;saveSettings();};
     $("vol").oninput=e=>{S.volume=+e.target.value;saveSettings();Sfx.setMaster();};
     $("wipe").onclick=()=>{
       if(confirm("기록·설정·커스텀 맵을 모두 삭제할까요?")){

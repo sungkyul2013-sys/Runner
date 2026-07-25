@@ -771,8 +771,17 @@ MAPS.push(
     for(let k=0;k<(dense?2:1);k++){
       const sc=(dense?24:16)+rnd()*(dense?20:12);
       const hsc=dense?1.7+rnd()*1.3:1.3+rnd()*.7;         // 도심은 더 높은 고층(넓이 그대로 높이만 ↑)
-      mb.baked(BLD2[(rnd()*4)|0],cx+(rnd()-.5)*(64-sc),cz+(rnd()-.5)*(64-sc),sc,
-        ((rnd()*4)|0)*Math.PI/2,{y:0,collide:true,shrink:.92,hScale:hsc});}
+      const bx2=cx+(rnd()-.5)*(64-sc),bz2=cz+(rnd()-.5)*(64-sc);
+      mb.baked(BLD2[(rnd()*4)|0],bx2,bz2,sc,((rnd()*4)|0)*Math.PI/2,
+        {y:0,collide:true,shrink:.92,hScale:hsc});
+      // 🏢 옥상 구조물(냉각탑·기계실·헬리패드·안테나) — 저폴리 박스 스카이라인에 실루엣 디테일 추가
+      {const bh=sc*.86*hsc,hw=sc*.30;                      // 대략적 건물 높이/반폭
+       const rc=[0x6e7682,0x59606b,0x7b838f][(rnd()*3)|0];
+       mb.box(bx2+(rnd()-.5)*hw,bh+1.4,bz2+(rnd()-.5)*hw,hw*.7,2.8,hw*.7,rc,{mu:.5,tag:"roofunit",noVis:false});
+       if(rnd()<.55)                                        // 안테나 마스트
+         mb.box(bx2+(rnd()-.5)*hw*.6,bh+6.5,bz2+(rnd()-.5)*hw*.6,.5,8,.5,0x8a929c,{mu:.5,tag:"mast"});
+       if(rnd()<.35)                                        // 옥상 물탱크
+         mb.box(bx2-(rnd()*hw*.7),bh+2.6,bz2+(rnd()*hw*.7),hw*.42,4,hw*.42,0x8a7a5c,{mu:.5,tag:"tank"});}}
     if(rnd()<.5)mb.baked(rnd()<.5?"trees":"treesTall",cx+28,cz-28,10+rnd()*4,rnd()*6,{y:0});}
   // 랜드마크 타워(도심 남동) — 초고층 + 소공원(도심 북서)
   mb.baked("bldA",250,250,58,0,{y:0,collide:true,shrink:.9,hScale:3.0});

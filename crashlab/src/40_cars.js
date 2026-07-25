@@ -154,19 +154,47 @@ function carStations(spec){
     S(-.72,.99,-.95,-.15,.32,.74),S(-1,.84,-.75,-.3,.2,.7)];
 }
 const GLASS_COL=new THREE.Color(0x151d28);
+/* 종방향 세분화: 스테이션 사이를 카트멀-롬으로 보간해 차체 실루엣을 매끄럽게(각진 쐐기 → 유선형).
+   glass/top 플래그는 원본 구간의 것을 유지하고, 유리 경계는 원 스테이션에서만 바뀌게 한다. */
+function subdivStations(st,n){
+  if(n<2||st.length<2)return st;
+  const key=["z","w","y0","y1","y2","wt"];
+  const cr=(p0,p1,p2,p3,t)=>{const t2=t*t,t3=t2*t;
+    return .5*((2*p1)+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t2+(-p0+3*p1-3*p2+p3)*t3);};
+  const at=i=>st[clamp(i,0,st.length-1)];
+  const out=[];
+  for(let i=0;i<st.length-1;i++){
+    const p0=at(i-1),p1=st[i],p2=st[i+1],p3=at(i+2);
+    for(let s=0;s<n;s++){
+      const t=s/n,o={};
+      for(const k of key)o[k]=cr(p0[k],p1[k],p2[k],p3[k],t);
+      // 유리 구간 플래그는 원 구간을 그대로 계승(경계가 흐려지지 않게)
+      o.glass=p1.glass;o.top=p1.top;
+      out.push(o);}}
+  out.push(st[st.length-1]);
+  return out;
+}
 function buildCarBody(spec,colorHex){
-  const st=carStations(spec);
+  // 실루엣 품질: 스테이션 3배 세분화 + 어깨(숄더) 라운딩 → 실차처럼 매끈한 바디
+  const st=subdivStations(carStations(spec),3);
   const body=new THREE.Color(colorHex);
   const shade=body.clone().multiplyScalar(.66);
   const dark=body.clone().multiplyScalar(.42);
   const roof=body.clone().multiplyScalar(.88);
   const pos=[],col=[];
-  // 8 section points: 0 bl,1 br,2 rockerR,3 beltR,4 roofR,5 roofL,6 beltL,7 rockerL
+  // 12 section points (어깨 라운딩 추가): 0 bl,1 br,2 rockerR,3 beltR,
+  //   4 shoulderR(벨트→루프 라운딩), 5 roofR, 6 roofL, 7 shoulderL, 8 beltL, 9 rockerL
   const P=(s,k)=>{
     const wf=s.w*1.04,yf=s.y0+(s.y1-s.y0)*.3,wb=s.w*.985;
-    switch(k){case 0:return[-s.w*.92,s.y0];case 1:return[s.w*.92,s.y0];
-      case 2:return[wf,yf];case 3:return[wb,s.y1];case 4:return[s.wt,s.y2];
-      case 5:return[-s.wt,s.y2];case 6:return[-wb,s.y1];default:return[-wf,yf];}};
+    // 어깨: 벨트라인과 루프 사이를 안쪽으로 살짝 좁히며 올라가는 중간점(캐빈 곡면)
+    const sw=lerp(wb,s.wt,.62),sy=lerp(s.y1,s.y2,.74);
+    switch(k){
+      case 0:return[-s.w*.92,s.y0]; case 1:return[s.w*.92,s.y0];
+      case 2:return[wf,yf];         case 3:return[wb,s.y1];
+      case 4:return[sw,sy];         case 5:return[s.wt,s.y2];
+      case 6:return[-s.wt,s.y2];    case 7:return[-sw,sy];
+      case 8:return[-wb,s.y1];      default:return[-wf,yf];}};
+  const NP=10;   // 단면 점 개수
   const quad=(p1,p2,p3,p4,za,zb,c)=>{
     pos.push(p1[0],p1[1],za, p4[0],p4[1],zb, p3[0],p3[1],zb,
              p1[0],p1[1],za, p3[0],p3[1],zb, p2[0],p2[1],za);
@@ -175,13 +203,13 @@ function buildCarBody(spec,colorHex){
     const a=st[i],b=st[i+1];
     const sideGlass=(a.glass||b.glass)?GLASS_COL:body;
     const topC=(a.top||b.top)?GLASS_COL:roof;
-    const edges=[[0,1,dark],[1,2,shade],[2,3,body],[3,4,sideGlass],[4,5,topC],
-                 [5,6,sideGlass],[6,7,body],[7,0,shade]];
+    const edges=[[0,1,dark],[1,2,shade],[2,3,body],[3,4,sideGlass],[4,5,sideGlass],
+                 [5,6,topC],[6,7,sideGlass],[7,8,sideGlass],[8,9,body],[9,0,shade]];
     for(const[k1,k2,c]of edges)
       quad(P(a,k1),P(a,k2),P(b,k2),P(b,k1),a.z,b.z,c);}
   // caps (front & rear faces) as fans
   const cap=(s,rev,c)=>{
-    for(let k=1;k<7;k++){
+    for(let k=1;k<NP-1;k++){
       const[x0,y0]=P(s,0),[x1,y1]=P(s,k),[x2,y2]=P(s,k+1);
       if(rev)pos.push(x0,y0,s.z,x1,y1,s.z,x2,y2,s.z);
       else pos.push(x0,y0,s.z,x2,y2,s.z,x1,y1,s.z);

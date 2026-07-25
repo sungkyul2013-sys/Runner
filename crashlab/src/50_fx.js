@@ -224,8 +224,9 @@ class GameCamera{
     if(world){const gy=world.height(this.pos.x,this.pos.z)+.5;if(this.pos.y<gy)this.pos.y=gy;}
     this.cam.position.copy(this.pos);
     if(this.shake>0&&Settings.camShake){
-      this.cam.position.x+=(Math.random()-.5)*this.shake*.5;
-      this.cam.position.y+=(Math.random()-.5)*this.shake*.5;}
+      const sa=(Settings.camShakeAmt!==undefined?Settings.camShakeAmt:1)*.5;
+      this.cam.position.x+=(Math.random()-.5)*this.shake*sa;
+      this.cam.position.y+=(Math.random()-.5)*this.shake*sa;}
     this.look.set(lx,ly,lz);
     this.cam.lookAt(this.look);
   }

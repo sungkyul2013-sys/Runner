@@ -133,22 +133,59 @@ const UI=(()=>{
   /* ---------- settings ---------- */
   function settings(){
     const S=Settings;
+    // 슬라이더 행 헬퍼: 값 표시 + 즉시 반영
+    const sl=(label,key,min,max,stp,fmt,sub)=>
+      '<div class="optRow"><div class="lb">'+label+'<small>'+(sub?sub+' · ':'')+
+      (fmt?fmt(S[key]):S[key])+'</small></div>'+
+      '<div class="ct"><input type="range" data-sl="'+key+'" min="'+min+'" max="'+max+
+      '" step="'+stp+'" value="'+S[key]+'"></div></div>';
+    const grp=t=>'<div class="h2" style="margin:18px 0 8px;font-size:12px;font-weight:900;letter-spacing:.22em;color:var(--acc2)">'+t+'</div>';
     body().innerHTML='<div class="h1">설정</div>'+
+      grp("주행 · 어시스트")+
       seg2("어시스트 프리셋","assist",[["casual","캐주얼"],["sport","스포츠"],["sim","시뮬"]],S.assist)+
       tgl2("ABS","absOn",S.absOn)+tgl2("TCS (트랙션 컨트롤)","tcsOn",S.tcsOn)+
       tgl2("자동 카운터스티어","ctrSteer",S.ctrSteer)+tgl2("저속 안정화","stab",S.stab)+
+      tgl2("전복 시 자동 복구","autoUpright",S.autoUpright)+
+      grp("차량 물리")+
+      sl("타이어 그립","gripMul",.6,1.4,.05,v=>v.toFixed(2)+"×","노면 접지력")+
+      sl("서스펜션 댐핑","damperMul",.6,1.6,.05,v=>v.toFixed(2)+"×","감쇠 강도")+
+      sl("조향 응답 속도","steerSpeed",.6,1.6,.05,v=>v.toFixed(2)+"×")+
+      sl("손상 배율","damageMul",.3,2.5,.1,v=>v.toFixed(1)+"×","충돌 변형·파손 강도")+
+      seg2("소프트바디 품질","softQuality",[["low","낮음"],["normal","보통"],["high","높음"]],S.softQuality)+
+      grp("조작")+
       seg2("조향 방식","steerMode",[["slider","슬라이더"],["wheel","휠"],["buttons","버튼"],["tilt","틸트"]],S.steerMode)+
-      '<div class="optRow"><div class="lb">조향 감도 <small>'+S.sensitivity.toFixed(2)+'</small></div>'+
-      '<div class="ct"><input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="'+S.sensitivity+'"></div></div>'+
-      tgl2("사운드","sound",S.sound)+
-      '<div class="optRow"><div class="lb">볼륨</div><div class="ct"><input type="range" id="vol" min="0" max="1" step="0.05" value="'+S.volume+'"></div></div>'+
+      sl("조향 감도","sensitivity",.5,1.5,.05,v=>v.toFixed(2))+
+      grp("카메라")+
+      sl("시야각 (FOV)","camFov",55,92,1,v=>v+"°")+
+      tgl2("속도감 FOV 확장","speedFov",S.speedFov!==false)+
       tgl2("카메라 셰이크","camShake",S.camShake)+
+      sl("셰이크 강도","camShakeAmt",0,2,.1,v=>v.toFixed(1)+"×")+
+      grp("화면 · HUD")+
+      tgl2("텔레메트리 표시 (G·슬립·서스·RPM)","showTelemetry",S.showTelemetry!==false)+
+      seg2("속도 단위","units",[["kmh","km/h"],["mph","mph"]],S.units)+
+      tgl2("코너 미니맵 표시","minimapOn",S.minimapOn!==false)+
       tgl2("그림자","shadows",S.shadows)+
       tgl2("자동 슬로모션 (강한 충돌 시)","autoSlowmo",S.autoSlowmo)+
       tgl2("충돌 리포트 자동 표시","autoReport",S.autoReport!==false)+
-      tgl2("코너 미니맵 표시","minimapOn",S.minimapOn!==false)+
       tgl2("디버그 오버레이 (FPS·슬립각·접지력)","debug",S.debug)+
-      '<div class="btnRow"><button class="btn danger sm" id="wipe">저장 데이터 초기화</button></div>';
+      grp("사운드")+
+      tgl2("사운드","sound",S.sound)+
+      '<div class="optRow"><div class="lb">볼륨</div><div class="ct"><input type="range" id="vol" min="0" max="1" step="0.05" value="'+S.volume+'"></div></div>'+
+      '<div class="btnRow" style="margin-top:20px"><button class="btn sm" id="resetDef">기본값으로</button>'+
+      '<button class="btn danger sm" id="wipe">저장 데이터 초기화</button></div>';
+    // 슬라이더 공통 핸들러(즉시 반영)
+    body().querySelectorAll("[data-sl]").forEach(r=>{
+      r.oninput=e=>{S[r.dataset.sl]=+e.target.value;saveSettings();
+        const lb=r.closest(".optRow").querySelector(".lb small");
+        if(lb){const k=r.dataset.sl,v=S[k];
+          lb.textContent=(k==="camFov")?v+"°":(k==="sensitivity")?v.toFixed(2):
+            (k==="damageMul"||k==="camShakeAmt")?v.toFixed(1)+"×":v.toFixed(2)+"×";}};
+      r.onchange=()=>settings();});
+    const rd=$("resetDef");
+    if(rd)rd.onclick=()=>{Sfx.click();
+      Object.assign(S,{gripMul:1,damperMul:1,steerSpeed:1,damageMul:1,softQuality:"normal",
+        camFov:66,camShakeAmt:1,speedFov:true,showTelemetry:true,units:"kmh",sensitivity:1});
+      saveSettings();settings();toast("기본값 복원");};
     body().querySelectorAll("[data-seg]").forEach(b=>b.onclick=()=>{
       const k=b.dataset.seg;Sfx.click();
       if(k==="assist")applyAssistPreset(b.dataset.v);
@@ -162,7 +199,6 @@ const UI=(()=>{
       if(k==="debug")$("debugHud").classList.toggle("on",S.debug);
       if(k==="shadows")applyShadows();
       settings();});
-    $("sens").oninput=e=>{S.sensitivity=+e.target.value;saveSettings();};
     $("vol").oninput=e=>{S.volume=+e.target.value;saveSettings();Sfx.setMaster();};
     $("wipe").onclick=()=>{
       if(confirm("기록·설정·커스텀 맵을 모두 삭제할까요?")){
