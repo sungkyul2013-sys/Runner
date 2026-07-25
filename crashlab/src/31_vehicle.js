@@ -4,7 +4,8 @@
    ============================================================ */
 const _vA=V3(0,0,0),_vB=V3(0,0,0),_vC=V3(0,0,0),_vD=V3(0,0,0),_vE=V3(0,0,0),
       _vF=V3(0,0,0),_vG=V3(0,0,0),_vH=V3(0,0,0),_vUp=V3(0,1,0),_vFw=V3(0,0,1),_vUp2=V3(0,1,0),_vB2=V3(0,0,0),
-      _vAe1=V3(0,0,0),_vAe2=V3(0,0,0),_vAe3=V3(0,0,0);   // 에어로(다운포스) 전용 임시
+      _vAe1=V3(0,0,0),_vAe2=V3(0,0,0),_vAe3=V3(0,0,0),   // 에어로(다운포스) 전용 임시
+      _vLx1=V3(0,0,0),_vLx2=V3(0,0,0);                   // 럭셔리 승차감 전용 임시
 const _hit={dist:0,n:V3(0,1,0),mu:1,surf:0,box:null};
 
 function pacejka(a){ // normalized lateral grip vs slip angle(rad); peak ~1.0 @ ~8°
@@ -185,8 +186,19 @@ class Vehicle{
         const cVel=clamp((w.comp-w.prevComp)/dt,-3.5,3.5);
         // 비대칭 댐핑: 리바운드(늘어남)는 압축보다 강하게 → 방지턱 후 위로 튀는 요동 억제(실차 댐퍼)
         const cAsym=cVel<0?(susp.rebMul||1.5):1;
-        let sF=susp.k*kMul*w.comp+susp.c*kMul*dampMul*cVel*cAsym+arb;
+        /* 프로그레시브 스프링(susp.prog) — 승차 높이 부근은 아주 부드럽고, 바닥칠 직전에만
+           급격히 단단해진다. 실차 에어스프링의 비선형 레이트를 흉내내 잔진동을 크게 줄인다. */
+        const cRel=susp.travel>0?w.comp/susp.travel:0;
+        const kEff=susp.prog?susp.k*(1+susp.prog*cRel*cRel*3):susp.k;
+        let sF=kEff*kMul*w.comp+susp.c*kMul*dampMul*cVel*cAsym+arb;
         if(susp.sky)sF-=b.vel.y*susp.sky;   // 스카이훅(전자제어 에어서스): 차체 상하 요동 직접 감쇠
+        /* 노면 예측(플래너/매직카펫) — 진행 방향 앞쪽 노면 높이를 미리 읽어,
+           올라오는 요철은 미리 힘을 빼 충격을 흡수하고 내려가는 곳은 미리 받쳐 준다. */
+        if(susp.preview&&!_hit.box){
+          const lead=susp.preview;
+          const ah=world.height(w.cW.x+b.vel.x*lead,w.cW.z+b.vel.z*lead);
+          w.pv=lerp(w.pv||0,clamp(ah-w.cW.y,-.14,.14),.3);
+          sF-=w.pv*(susp.pvGain||0)*sp.mass;}
         sF=clamp(sF,0,sp.mass*GRAV*1.4);
         w.susF=sF;w.load=lerp(w.load,sF,.5);
         _vF.copy(_hit.n).multiplyScalar(.4).addScaledVector(up,.6).normalize().multiplyScalar(sF);
@@ -252,6 +264,17 @@ class Vehicle{
        · 액슬 분배 → 피치가 안정되고 좌우 하중이 늘어 롤을 억제
        · 하중이 늘면 타이어 한계(μ·load)가 함께 커져 고속 코너 그립이 자연히 상승 */
     b.force.addScaledVector(b.vel,-sp.aero.cd*speed);
+    /* 🛋️ 자세 안정(플래너 계열) — 차체 피치·롤 각속도를 직접 감쇠한다.
+       스프링을 무르게 두면 승차감은 좋아지지만 몸이 출렁이는데, 각속도만 따로 잡아 주면
+       무른 스프링의 부드러움을 유지하면서 흔들림(뱃멀미)은 사라진다. */
+    if(susp.attq&&groundCount>0){
+      b.vecToWorld(_vLx1.set(1,0,0),_vLx2);                 // 피치 축
+      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq);
+      b.vecToWorld(_vLx1.set(0,0,1),_vLx2);                 // 롤 축
+      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq*1.3);
+      // 수직 요동도 한 번 더 — 네 바퀴 접지 시에만(공중에서 부양 방지)
+      if(groundCount===4&&susp.sky)
+        b.force.y-=b.vel.y*susp.sky*.6;}
     if(sp.aero.df>0&&speed>5){
       const q=sp.aero.df*speed*speed*.01;
       for(const[frac,zoff]of[[.46,sp.wheels.front],[.54,-sp.wheels.rear]]){

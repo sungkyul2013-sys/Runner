@@ -57,11 +57,21 @@ const CARS=[
   model:"rrghost",style:"sedan",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
   smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
   groundClear:.15,wheelVisFit:1.01,rideFix:true,rideLift:.07,
+  wheelTuck:.055,                 // 뒤에서 봤을 때 휠이 차체 밖으로 4cm 튀어나오던 문제 보정
   chromeKit:{grilleW:.34,grilleH:.26,grilleY:.74,grilleZ:.20,slats:13,
              ornament:true,ornY:.30,ornZ:.46,exhaust:2,rearY:.80},
   body:{hx:1.02,hy:.76,hz:2.775},
   wheels:{track:.9,front:1.6,rear:1.6,y:-.5,radius:.376,width:.28},
-  susp:{k:64000,c:8200,travel:.19,rest:.25},arb:26000,
+  /* 🛋️ 롤스로이스 승차감 패키지 — 무른 1차 스프링 + 프로그레시브 레이트 +
+     스카이훅 + 비대칭 리바운드 + 노면 예측 + 자세 안정. 실차의 플래너/매직카펫 계열. */
+  susp:{k:32000,c:6000,travel:.34,rest:.36,
+        prog:1.5,        // 프로그레시브 레이트(바닥칠 직전만 단단)
+        sky:13000,       // 스카이훅(차체 상하 요동 직접 감쇠)
+        rebMul:1.9,      // 리바운드 감쇠 강화(방지턱 후 되튐 억제)
+        preview:.32,     // 노면 예측 시간(s)
+        pvGain:5.0,      // 예측 보정 이득
+        attq:2.8},       // 피치·롤 각속도 감쇠
+  arb:20000,
   engine:{maxT:850,redline:5600,idle:600},
   gears:[4.7,3.14,2.11,1.67,1.29,1.0,.84,.67],final:3.15,
   brakeF:19500,steerLo:.5,steerHi:.11,aero:{cd:1.15,df:16},gripF:1.06,gripR:1.06,
@@ -507,7 +517,14 @@ class CarVisual{
       for(let i=0;i<pa.length;i+=3)if(pa[i+2]>zMax-.4){
         const x=pa[i];yS+=pa[i+1];yc++;
         if(x<-.12){lxS+=x;lc++;}else if(x>.12){rxS+=x;rc++;}}
-      if(lc&&rc)this.hlAnchor=[[lxS/lc,yS/yc,zMax-.02],[rxS/rc,yS/yc,zMax-.02]];}
+      if(lc&&rc)this.hlAnchor=[[lxS/lc,yS/yc,zMax-.02],[rxS/rc,yS/yc,zMax-.02]];
+      /* 후미등 앵커(z 최소) — 실제로 빛나는 리어 램프를 위해 위치를 잡아 둔다 */
+      let zMin=1e9;for(let i=2;i<pa.length;i+=3)if(pa[i]<zMin)zMin=pa[i];
+      let tlS=0,tc=0,trS=0,tr=0,tyS=0,tyc=0;
+      for(let i=0;i<pa.length;i+=3)if(pa[i+2]<zMin+.4){
+        const x=pa[i];tyS+=pa[i+1];tyc++;
+        if(x<-.12){tlS+=x;tc++;}else if(x>.12){trS+=x;tr++;}}
+      if(tc&&tr)this.tlAnchor=[[tlS/tc,tyS/tyc,zMin+.02],[trS/tr,tyS/tyc,zMin+.02]];}
     if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,glassMatFor(spec));
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
     this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh,this.lampsMesh]);
@@ -885,10 +902,21 @@ class CarVisual{
     for(const sg of[-1,1])
       cr.push({geo:new THREE.BoxGeometry(.05,gH*2+.05,.07),x:sg*(gW+.02),y:gY,z:gZ});
     dk.push({geo:new THREE.BoxGeometry(gW*2,gH*2,.04),y:gY,z:gZ-.03});          // 그릴 배경(다크)
+    /* 판테온 그릴 — 세로 슬랫은 가운데가 굵고 바깥으로 갈수록 얇아지며,
+       뒤로 살짝 물러난 곡면(배럴)을 이룬다. 상단에는 굵은 크롬 바가 얹힌다. */
     const NS=K.slats||13;
     for(let i=0;i<NS;i++){
       const t=(i+.5)/NS*2-1;
-      cr.push({geo:new THREE.BoxGeometry(.028,gH*2-.03,.05),x:t*gW*.94,y:gY,z:gZ+.012});}
+      const wSl=.030-Math.abs(t)*.010;                       // 중앙 굵고 바깥 얇게
+      const zBack=Math.abs(t)*Math.abs(t)*.045;              // 배럴 곡면
+      cr.push({geo:new THREE.BoxGeometry(wSl,gH*2-.035,.05),x:t*gW*.94,y:gY,z:gZ+.014-zBack});}
+    cr.push({geo:new THREE.BoxGeometry(gW*2+.14,.075,.085),y:gY+gH+.05,z:gZ+.01});   // 상단 굵은 크롬 바
+    /* 하단 에어인테이크 — 다크 메시 + 크롬 립(그릴만 있으면 앞모습이 비어 보인다) */
+    {const iw=hx*(K.intakeW||.86), ih=hy*.10, iy=by+hy*.30, iz=zF-.06;
+     dk.push({geo:new THREE.BoxGeometry(iw*2,ih*2,.05),y:iy,z:iz-.02});
+     cr.push({geo:new THREE.BoxGeometry(iw*2+.05,.032,.06),y:iy-ih,z:iz});
+     for(let i=0;i<9;i++){const t=(i+.5)/9*2-1;
+       dk.push({geo:new THREE.BoxGeometry(.022,ih*1.8,.04),x:t*iw*.92,y:iy,z:iz});}}
     /* ── 보닛 오너먼트(환희의 여신상 / 스리포인티드 스타 대용 조각) ── */
     if(K.ornament){
       const oy=topY*(K.ornY||.30)+hy*.02, oz=zF-(K.ornZ||.30);
@@ -959,6 +987,29 @@ class CarVisual{
         const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
         if(this._hlI!==inten){this._hlI=inten;
           for(const h of this.hl){h.s.intensity=inten;h.g.visible=on&&inten>0;}}}}
+    /* 🔴 후미등 발광 — 상시 미등 + 제동 시 급격히 밝아지는 브레이크등.
+       (이 three 빌드에는 PointLight가 없어 가산합성 글로우 메시로 실제 발광을 표현) */
+    if(this.tlAnchor){
+      if(!this.tail){
+        this.tail=this.tlAnchor.map(([x,y,z])=>{
+          const g=new THREE.Mesh(new THREE.SphereGeometry(.085,10,8),
+            new THREE.MeshBasicMaterial({color:0xff2a18,transparent:true,opacity:.55,
+              blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+          g.scale.z=.45;g.position.set(x,y,z-.02);this.group.add(g);
+          const h=new THREE.Mesh(new THREE.SphereGeometry(.17,10,8),
+            new THREE.MeshBasicMaterial({color:0xff3a20,transparent:true,opacity:.16,
+              blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+          h.scale.z=.3;h.position.set(x,y,z-.04);this.group.add(h);
+          return{g,h};});}
+      const night=typeof Game!=="undefined"&&Game.opts&&Game.opts.tod==="night";
+      const brk=Math.min(1,(veh.brake||0)*1.4+(veh.handbrake?1:0));
+      const lvl=(night?.42:.24)+brk*.95;
+      if(this._tlL===undefined||Math.abs(this._tlL-lvl)>.02){
+        this._tlL=lvl;
+        for(const t of this.tail){
+          t.g.material.opacity=Math.min(1,lvl);
+          t.h.material.opacity=Math.min(.5,lvl*.34);
+          const sc=1+brk*.5;t.g.scale.set(sc,sc,.45*sc);t.h.scale.set(sc,sc,.3*sc);}}}
     const tv=this.baked?this.spec.wheels.trackVis:0;
     for(let i=0;i<4;i++){
       if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함

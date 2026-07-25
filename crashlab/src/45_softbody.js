@@ -179,7 +179,14 @@ class SoftLattice{
     this.hot=Math.min(this.hot+.6+sev*1.6,3.4);this.dirty=true;
   }
   update(dt){
-    if(this.hot<=0){if(this.dirty){this.write(false,true);this.dirty=false;}return false;}
+    if(this.hot<=0){
+      /* 충돌 종료 시 최종 확정 기록 — 위치 반영과 법선 재계산을 두 프레임으로 나눈다.
+         정점이 많은 메시(9만 삼각형대)는 둘을 한 프레임에 하면 70ms대 스파이크가 난다. */
+      if(this.dirty){this.write(true,true);this.dirty=false;this._needN=true;return false;}
+      if(this._needN){this._needN=false;
+        for(const bd of this.binds){this.ensureFast(bd);
+          if(!bd.flat)bd.mesh.geometry.computeVertexNormals();}}
+      return false;}
     this.hot-=dt;
     const P=this.pos,Q=this.prev,H=this.home,A=this.anchor,PL=this.plast,BK=this.bbrk;
     const bA=this.bA,bB=this.bB,bRest=this.bRest,bR0=this.bR0,nb=this.nb;
