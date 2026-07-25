@@ -60,12 +60,16 @@ const Settings=Object.assign({
   camFov:66,             // 기본 시야각 55~92
   camShakeAmt:1.0,       // 셰이크 강도
   speedFov:true,         // 속도감 FOV
-  showTelemetry:true,    // 텔레메트리 스트립
+  showTelemetry:false,   // 텔레메트리 스트립(G·슬립·서스·RPM) — 기본 off
   hudOn:true,            // HUD 전체 표시 (기본 on)
   hudScale:1.0,          // HUD 크기 0.8~1.3
   units:"kmh",           // kmh | mph
   autoUpright:false,     // 전복 시 자동 복구
 },Store.get("settings",{}));
+/* 텔레메트리 스트립(G·슬립·서스·RPM)은 기본 off로 변경.
+   이미 저장된 설정에는 예전 기본값(true)이 박혀 있으므로 1회만 강제로 내린다.
+   (설정에서 다시 켜면 그 선택은 그대로 유지된다) */
+if(!Settings.telemDefV){Settings.showTelemetry=false;Settings.telemDefV=1;saveSettings();}
 function applyAssistPreset(p){Settings.assist=p;
   if(p==="casual"){Settings.absOn=Settings.tcsOn=Settings.ctrSteer=Settings.stab=true;}
   else if(p==="sport"){Settings.absOn=Settings.tcsOn=true;Settings.ctrSteer=Settings.stab=false;}

@@ -258,7 +258,7 @@ const UI=(()=>{
       tgl2("카메라 셰이크","camShake",S.camShake)+
       sl("셰이크 강도","camShakeAmt",0,2,.1,v=>v.toFixed(1)+"×")+
       grp("화면 · HUD")+
-      tgl2("텔레메트리 표시 (G·슬립·서스·RPM)","showTelemetry",S.showTelemetry!==false)+
+      tgl2("텔레메트리 표시 (G·슬립·서스·RPM)","showTelemetry",S.showTelemetry===true)+
       seg2("속도 단위","units",[["kmh","km/h"],["mph","mph"]],S.units)+
       tgl2("코너 미니맵 표시","minimapOn",S.minimapOn!==false)+
       tgl2("그림자","shadows",S.shadows)+
@@ -281,7 +281,7 @@ const UI=(()=>{
     const rd=$("resetDef");
     if(rd)rd.onclick=()=>{Sfx.click();
       Object.assign(S,{gripMul:1,damperMul:1,steerSpeed:1,damageMul:1,softQuality:"normal",
-        camFov:66,camShakeAmt:1,speedFov:true,showTelemetry:true,units:"kmh",sensitivity:1});
+        camFov:66,camShakeAmt:1,speedFov:true,showTelemetry:false,units:"kmh",sensitivity:1});
       saveSettings();settings();toast("기본값 복원");};
     body().querySelectorAll("[data-seg]").forEach(b=>b.onclick=()=>{
       const k=b.dataset.seg;Sfx.click();

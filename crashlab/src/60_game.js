@@ -794,7 +794,7 @@ function updateHUD(dt){
     el.style.background=d>.55?"var(--bad)":d>.22?"var(--warn)":"#39424e";}
   // 📊 텔레메트리 스트립
   {const T=$("telem");
-   if(T){const on=Settings.showTelemetry!==false&&Game.mode!=="crash";
+   if(T){const on=Settings.showTelemetry===true&&Game.mode!=="crash";
      T.classList.toggle("on",on);
      if(on){
        const g=Math.min(Math.abs(v.peakG)/8,1);
