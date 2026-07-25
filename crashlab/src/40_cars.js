@@ -55,7 +55,7 @@ const CARS=[
  {id:"rrghost",name:"롤스로이스 고스트",icon:"🏛️",drive:"4WD",mass:2490,hp:571,acc:"4.8초",top:250,
   desc:"실측 스캔 3D 모델. 6.75L V12 · 플래너 서스펜션. 무결점 도장과 매끈한 차체의 초호화 세단.",
   model:"rrghost",style:"sedan",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
-  smoothShade:true,               // 고광택 클리어코트 머티리얼(환경 반사) — 원본 광택 재현
+  smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
   groundClear:.15,wheelVisFit:1.01,rideFix:true,rideLift:.07,
   body:{hx:1.02,hy:.76,hz:2.775},
   wheels:{track:.9,front:1.6,rear:1.6,y:-.5,radius:.376,width:.28},
@@ -373,6 +373,9 @@ const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,sh
   envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.12}); // 클리어코트 광택·양면(베이크 차량 투명 방지)
 const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:210,specular:0xc2cdd8,side:THREE.DoubleSide,
   envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.3}); // 유광 클리어코트+환경반사 — 매끈하게 이어진 표면(포르쉐·GLS), 크롬부는 밝아서 더 강하게 비침
+/* 초광택 클리어코트 — 롤스로이스급 도장(반짝임·환경반사 강화) */
+const MAT_CAR_GLOSS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:400,
+  specular:0xe6eef8,side:THREE.DoubleSide,envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.52});
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
   transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
 /* 유리 틴팅 — 커스텀 차의 glassTint(0 투명 ~ 1 블랙아웃)를 실제 머티리얼에 반영.
@@ -481,7 +484,7 @@ class CarVisual{
     const e=this.baked,{hx,hy,hz}=spec.body;
     const split=Assets.geoSplit(e,{scale:spec.modelScale,sy:spec.squashY||1,
       cx:spec.modelCx,cy:spec.modelCy,cz:spec.modelCz,paint:new THREE.Color(colorHex)});
-    this.bodyMesh=new THREE.Mesh(split.main,spec.smoothShade?MAT_CAR_SMOOTH:MAT_CAR);
+    this.bodyMesh=new THREE.Mesh(split.main,spec.gloss?MAT_CAR_GLOSS:(spec.smoothShade?MAT_CAR_SMOOTH:MAT_CAR));
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
     if(split.lamps){this.lampsMesh=new THREE.Mesh(split.lamps,MAT_LAMP);
       this.group.add(this.lampsMesh);

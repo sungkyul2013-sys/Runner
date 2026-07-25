@@ -13,6 +13,10 @@ const Assets=(()=>{
     if(e._arr)return e._arr;
     const P=b64ta(e.p,Int16Array),N=b64ta(e.n,Int8Array),C=b64ta(e.c,Uint8Array);
     const M=e.m?b64ta(e.m,Uint8Array):null;
+    /* 인덱스 메시(i) 지원 — 정점을 용접해 인덱스로 저장하면 같은 용량에 삼각형을
+       2배 이상 담을 수 있어 판(패널)이 매끈하게 유지된다. 소프트바디가 스키닝할
+       정점 수도 줄어 충돌 프레임까지 가벼워진다. */
+    const idx=e.i?b64ta(e.i,e.i16?Uint16Array:Uint32Array):null;
     const n=e.v,bb=e.bb;
     const pos=new Float32Array(n*3),nor=new Float32Array(n*3),col=new Float32Array(n*3);
     for(let i=0;i<n;i++)for(let a=0;a<3;a++){
@@ -24,7 +28,7 @@ const Assets=(()=>{
     if(M){const cnt={};
       for(let i=0;i<n;i++)if(M[i]&1){const k=C[i*3]+","+C[i*3+1]+","+C[i*3+2];cnt[k]=(cnt[k]||0)+1;}
       let mx=0;for(const k in cnt)if(cnt[k]>mx){mx=cnt[k];dom=k.split(",").map(Number);}}
-    e._arr={pos,nor,col,M,dom,n};
+    e._arr={pos,nor,col,M,dom,n,idx};
     return e._arr;}
   /* geometry: flip(+scale) → 게임 좌표(+z 전방), optional paint retint */
   function geo(e,opt){ // opt:{scale, sy(y-squash), cx,cy,cz(model-space center), paint:THREE.Color}
@@ -35,6 +39,8 @@ const Assets=(()=>{
     // 팔레트 텍스처 차량: 따뜻한 도색 클러스터를 휘도 보존하며 리틴트
     const ps=e.paintSrc,pr=opt.paint;
     const psLum=ps?(ps[0]+ps[1]+ps[2])/3/255:1;
+    // 원본 도색의 정규화 색조(밝기 1로 정규화) — 색조 비교 기준
+    const psN=ps?[(ps[0]/255)/(psLum||1),(ps[1]/255)/(psLum||1),(ps[2]/255)/(psLum||1)]:[1,1,1];
     for(let i=0;i<A.n;i++){
       pos[i*3]  =-(A.pos[i*3]-cx)*s;   // rotate 180° about Y + scale
       pos[i*3+1]= (A.pos[i*3+1]-cy)*sy;
@@ -42,11 +48,19 @@ const Assets=(()=>{
       nor[i*3]=-A.nor[i*3];nor[i*3+2]=-A.nor[i*3+2];
       if(pr&&A.M&&(A.M[i]&1)){
         const r=A.col[i*3],g=A.col[i*3+1],b=A.col[i*3+2];
-        if(ps){ // 휘도보존: 따뜻한(유채색·r≥b) 도색만 타깃색으로 · 검정 클래딩/광택 트림 보존
-          const chroma=Math.max(r,g,b)-Math.min(r,g,b);
-          if(chroma>=.02&&r>=b-.006){
-            const f=clamp(((r+g+b)/3)/(psLum||1),.32,1.9);
-            col[i*3]=clamp(pr.r*f,0,1);col[i*3+1]=clamp(pr.g*f,0,1);col[i*3+2]=clamp(pr.b*f,0,1);}
+        if(ps){
+          /* 휘도보존 리틴트 — '정규화 색조'가 원본 도색과 비슷한 정점만 타깃색으로 바꾸고
+             밝기(하이라이트·음영)는 그대로 살린다.
+             예전에는 chroma>=0.02 조건을 썼는데, 실버·흰색처럼 무채색에 가까운 원본 도장
+             (마이바흐 236,237,240 / 포르쉐 210,214,220)은 이 조건에 걸려 색이 아예
+             바뀌지 않았다. 색조 유사도로 판정하면 무채색 도장도 정상 인식된다. */
+          const lum=(r+g+b)/3;
+          if(lum>.012){
+            const nr=r/lum,ng=g/lum,nb=b/lum;
+            const dh=Math.abs(nr-psN[0])+Math.abs(ng-psN[1])+Math.abs(nb-psN[2]);
+            if(dh<.30){
+              const f=clamp(lum/(psLum||1),.32,1.9);
+              col[i*3]=clamp(pr.r*f,0,1);col[i*3+1]=clamp(pr.g*f,0,1);col[i*3+2]=clamp(pr.b*f,0,1);}}
         }else if(A.dom&&
            Math.abs(r*255-A.dom[0])<8&&Math.abs(g*255-A.dom[1])<8&&Math.abs(b*255-A.dom[2])<8){
           col[i*3]=pr.r;col[i*3+1]=pr.g;col[i*3+2]=pr.b;}}}
@@ -54,12 +68,43 @@ const Assets=(()=>{
     g.setAttribute("position",new THREE.BufferAttribute(pos,3));
     g.setAttribute("normal",new THREE.BufferAttribute(nor,3));
     g.setAttribute("color",new THREE.BufferAttribute(col,3));
+    if(A.idx)g.setIndex(new THREE.BufferAttribute(A.idx.slice(),1));
     return g;}
   /* 차체/유리/램프 분리 — 삼각형 단위 분류 (bit1 도색, bit2 유리, bit4 램프) */
   function geoSplit(e,opt){
-    const full=geo(e,opt),A=arrays(e);
-    if(!A.M)return{main:full,glass:null,lamps:null};
+    const A=arrays(e);
+    if(!A.M)return{main:geo(e,opt),glass:null,lamps:null};
+    const full=geo(e,opt);
     const P=full.attributes.position.array,N=full.attributes.normal.array,C=full.attributes.color.array;
+    if(A.idx){
+      /* 인덱스 메시: 삼각형을 그룹(차체/유리/램프)으로 나누고, 그룹별로 쓰인 정점만
+         추려 다시 인덱싱한다 → 인덱스 이점을 유지하면서 분리도 된다. */
+      const tri=A.idx.length/3,gm=[],gg=[],gl=[];
+      for(let t=0;t<tri;t++){
+        const a=A.idx[t*3],b=A.idx[t*3+1],c=A.idx[t*3+2];
+        const mb=(A.M[a]|A.M[b]|A.M[c]);
+        const d=(mb&4)?gl:(mb&2)?gg:gm;
+        d.push(a,b,c);}
+      const mk=(list)=>{
+        if(!list.length)return null;
+        const map=new Map(),vp=[],vn=[],vc=[],ii=[];
+        for(let k=0;k<list.length;k++){
+          const vi=list[k];
+          let m2=map.get(vi);
+          if(m2===undefined){m2=vp.length/3;map.set(vi,m2);
+            vp.push(P[vi*3],P[vi*3+1],P[vi*3+2]);
+            vn.push(N[vi*3],N[vi*3+1],N[vi*3+2]);
+            vc.push(C[vi*3],C[vi*3+1],C[vi*3+2]);}
+          ii.push(m2);}
+        const g2=new THREE.BufferGeometry();
+        g2.setAttribute("position",new THREE.Float32BufferAttribute(vp,3));
+        g2.setAttribute("normal",new THREE.Float32BufferAttribute(vn,3));
+        g2.setAttribute("color",new THREE.Float32BufferAttribute(vc,3));
+        g2.setIndex(ii);
+        return g2;};
+      const r={main:mk(gm),glass:mk(gg),lamps:mk(gl)};
+      full.dispose();
+      return r;}
     const mp=[],mn=[],mc=[],gp=[],gn=[],gc=[],lp=[],ln=[],lc=[];
     for(let t=0;t<A.n/3;t++){
       const mb=(A.M[t*3]|A.M[t*3+1]|A.M[t*3+2]);
