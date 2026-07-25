@@ -665,12 +665,19 @@ MAPS.push(
   mb.fill((x,z)=>{
     // 완만한 롤링 기저
     let h=1.9*Math.sin(x*.0045)*Math.cos(z*.005)+1.1*Math.sin(x*.011+1)*Math.cos(z*.0095);
+    /* 벨트웨이 회랑 억제 계수 —
+       산·언덕의 가우시안 치맛자락이 외곽 순환 고속도로를 그대로 덮어
+       도로가 30m 넘게 솟구치는 '거대한 언덕'이 생겼다(실측 (686,-737)에서 +34m).
+       벨트 반경 부근에서는 지형 융기를 0으로 눌러 고속도로를 평탄하게 유지한다. */
+    const rB=Math.hypot(x,z);
+    const bf=clamp((Math.abs(rB-R_BELT)-80)/200,0,1);
+    const beltEase=bf*bf*(3-2*bf);
     // 산악(남동, 벨트웨이 바깥) — 힐클라임용 큰 산
-    const dm=Math.hypot(x-D.mtn[0],z-D.mtn[1]);h+=46*Math.exp(-dm*dm/74000);
+    const dm=Math.hypot(x-D.mtn[0],z-D.mtn[1]);h+=46*Math.exp(-dm*dm/74000)*beltEase;
     // 남서 언덕(아레나 배후)
-    const da=Math.hypot(x-(D.arena[0]-120),z-(D.arena[1]-140));h+=26*Math.exp(-da*da/72000);
+    const da=Math.hypot(x-(D.arena[0]-120),z-(D.arena[1]-140));h+=26*Math.exp(-da*da/72000)*beltEase;
     // 북동 완만한 고원(모터스포츠 파크에 고저차 제공)
-    const ds=Math.hypot(x-(D.sport[0]+130),z-(D.sport[1]+60));h+=15*Math.exp(-ds*ds/56000);
+    const ds=Math.hypot(x-(D.sport[0]+130),z-(D.sport[1]+60));h+=15*Math.exp(-ds*ds/56000)*beltEase;
     // 도심권은 평평(높낮이는 입체교차로 표현)
     const rc=Math.hypot(x,z);
     if(rc<R_CBD+120)h*=.28;

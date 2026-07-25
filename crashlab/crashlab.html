@@ -5142,6 +5142,8 @@ const CARS=[
   model:"rrghost",style:"sedan",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
   smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
   groundClear:.15,wheelVisFit:1.01,rideFix:true,rideLift:.07,
+  chromeKit:{grilleW:.34,grilleH:.26,grilleY:.74,grilleZ:.20,slats:13,
+             ornament:true,ornY:.30,ornZ:.46,exhaust:2,rearY:.80},
   body:{hx:1.02,hy:.76,hz:2.775},
   wheels:{track:.9,front:1.6,rear:1.6,y:-.5,radius:.376,width:.28},
   susp:{k:64000,c:8200,travel:.19,rest:.25},arb:26000,
@@ -5153,6 +5155,8 @@ const CARS=[
  {id:"maybach",name:"메르세데스-마이바흐 GLS",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.9초",top:240,
   desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
   model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,
+  chromeKit:{grilleW:.40,grilleH:.22,grilleY:.82,grilleZ:.16,slats:11,
+             ornament:true,ornY:.40,ornZ:.34,exhaust:4,rearY:.70},
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
   susp:{k:60000,c:6200,travel:.22,rest:.28},arb:16000,
   engine:{maxT:640,redline:6000,idle:600},gears:[3.5,2.15,1.5,1.15,.9],final:3.9,
@@ -5458,9 +5462,16 @@ const MAT_CAR=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,sh
   envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.12}); // 클리어코트 광택·양면(베이크 차량 투명 방지)
 const MAT_CAR_SMOOTH=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:210,specular:0xc2cdd8,side:THREE.DoubleSide,
   envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.3}); // 유광 클리어코트+환경반사 — 매끈하게 이어진 표면(포르쉐·GLS), 크롬부는 밝아서 더 강하게 비침
+/* 크롬 — 거울에 가까운 금속(그릴·오너먼트·윈도 몰딩). 정점색 없이 단색 + 강한 환경반사 */
+const MAT_CHROME=new THREE.MeshPhongMaterial({color:0xeef3f9,shininess:520,specular:0xffffff,
+  envMap:ENV_CAR,combine:1/*Mix — 환경색이 베이스를 물들이지 않게*/,reflectivity:.72,flatShading:false});
+const MAT_CHROME_DARK=new THREE.MeshPhongMaterial({color:0x2d3238,shininess:420,specular:0xdfe7f2,
+  envMap:ENV_CAR,combine:1,reflectivity:.55,flatShading:false});   // 다크 크롬(그릴 안쪽·트림)
 /* 초광택 클리어코트 — 롤스로이스급 도장(반짝임·환경반사 강화) */
-const MAT_CAR_GLOSS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:400,
-  specular:0xe6eef8,side:THREE.DoubleSide,envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.52});
+/* 반짝임은 specular/shininess가 만든다. reflectivity를 너무 올리면 환경색이 디퓨즈를
+   덮어 검정 도장이 흰색처럼 떠 버리므로, 하이라이트는 강하게 두고 반사는 절제한다. */
+const MAT_CAR_GLOSS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,shininess:420,
+  specular:0xf0f6ff,side:THREE.DoubleSide,envMap:ENV_CAR,combine:1/*Mix*/,reflectivity:.26});
 const MAT_GLASS=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:160,specular:0xaFC4d8,
   transparent:true,opacity:.62,side:THREE.DoubleSide}); // 진짜 투명 유리(실내 비침)
 /* 유리 틴팅 — 커스텀 차의 glassTint(0 투명 ~ 1 블랙아웃)를 실제 머티리얼에 반영.
@@ -5597,6 +5608,10 @@ class CarVisual{
       ml:this.mkPart(.07,.08,.17,-xR*.96,hy*.1,zF*.34,bumpMat),
       mr:this.mkPart(.07,.08,.17,xR*.96,hy*.1,zF*.34,bumpMat)};
     this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
+    /* ✨ 크롬 킷 — 스캔 모델은 텍스처가 없어 그릴·오너먼트·몰딩이 도장과 같은 색으로
+       뭉쳐 나온다(원본이 단색 블랙 모델). 색이 구분되는 부위를 실제 부품으로 얹어
+       크롬 그릴·조각·몰딩이 반짝이게 한다. */
+    if(spec.chromeKit)this.buildChromeKit(spec,bx,by,hx,hy,split.glass);
     // 오프로드 몬스터 전용 액세서리(지프 스타일): 불바·루프 LED바·록슬라이더
     if(spec.id==="offroad"||spec.id==="offroadc"){
       const topY=bx.max.y,botY=bx.min.y;
@@ -5940,6 +5955,72 @@ class CarVisual{
         delete this.detached[k];}}
   }
   storeHomes(){for(const k in this.parts)this.parts[k].userData.home=this.parts[k].position.clone();}
+  buildChromeKit(spec,bx,by,hx,hy,glassGeo){
+    const K=spec.chromeKit;
+    const zF=bx.max.z,zR=bx.min.z;
+    const xR=Math.max(Math.abs(bx.min.x),Math.abs(bx.max.x));
+    const topY=bx.max.y;
+    const cr=[],dk=[];                       // 밝은 크롬 / 다크 크롬
+    const gW=hx*(K.grilleW||.62), gH=hy*(K.grilleH||.52);
+    // 그릴은 범퍼 면보다 살짝 '안쪽'에 앉힌다(앞으로 튀어나오면 부착물처럼 보인다)
+    const gY=by+hy*(K.grilleY||.62), gZ=zF-(K.grilleZ||.10);
+    /* ── 프런트 그릴: 크롬 프레임 + 세로 슬랫(롤스로이스 판테온 / 마이바흐 수직 그릴) ── */
+    cr.push({geo:new THREE.BoxGeometry(gW*2+.09,.055,.07),y:gY+gH,z:gZ});      // 상단 몰딩
+    cr.push({geo:new THREE.BoxGeometry(gW*2+.09,.05,.07),y:gY-gH,z:gZ});       // 하단 몰딩
+    for(const sg of[-1,1])
+      cr.push({geo:new THREE.BoxGeometry(.05,gH*2+.05,.07),x:sg*(gW+.02),y:gY,z:gZ});
+    dk.push({geo:new THREE.BoxGeometry(gW*2,gH*2,.04),y:gY,z:gZ-.03});          // 그릴 배경(다크)
+    const NS=K.slats||13;
+    for(let i=0;i<NS;i++){
+      const t=(i+.5)/NS*2-1;
+      cr.push({geo:new THREE.BoxGeometry(.028,gH*2-.03,.05),x:t*gW*.94,y:gY,z:gZ+.012});}
+    /* ── 보닛 오너먼트(환희의 여신상 / 스리포인티드 스타 대용 조각) ── */
+    if(K.ornament){
+      const oy=topY*(K.ornY||.30)+hy*.02, oz=zF-(K.ornZ||.30);
+      cr.push({geo:new THREE.CylinderGeometry(.045,.055,.022,14),y:oy,z:oz});          // 베이스
+      cr.push({geo:new THREE.CylinderGeometry(.012,.016,.10,10),y:oy+.06,z:oz});       // 몸통
+      cr.push({geo:new THREE.SphereGeometry(.021,10,8),y:oy+.125,z:oz});               // 머리
+      for(const sg of[-1,1])                                                            // 날개
+        cr.push({geo:new THREE.BoxGeometry(.075,.05,.012),x:sg*.045,y:oy+.10,z:oz-.02,
+                 rz:sg*.5,ry:sg*.22});}
+    /* ── 윈도 몰딩 — 실제 유리 메시의 경계상자에 맞춘다.
+         차체 최대폭(xR)에 붙이면 휠아치가 가장 넓어서 캐빈 밖으로 판자처럼 떠 보였다. ── */
+    if(K.window!==false&&glassGeo){
+      glassGeo.computeBoundingBox();
+      const g=glassGeo.boundingBox;
+      /* 유리 마스크에는 램프 렌즈처럼 차 양끝의 조각도 섞여 있어 경계상자가 차 길이를
+         넘어설 수 있다 → 캐빈 길이·폭 범위로 확실히 제한한다(막대가 차 밖으로 튀는 문제). */
+      const gx=clamp(Math.min(Math.abs(g.min.x),Math.abs(g.max.x)),hx*.62,hx*.98);
+      const cabin=Math.abs(zF-zR)*.40;
+      const len=Math.min((g.max.z-g.min.z)*.9,cabin);
+      const zc=clamp((g.max.z+g.min.z)/2,zR+cabin*.6,zF-cabin*.6);
+      /* 벨트라인(도어 상단) 몰딩만 넣는다. 루프 라인은 곡선이라 직선 막대를 얹으면
+         지붕 위에 떠 있는 안테나처럼 보였다 → 상단 스트립은 넣지 않는다. */
+      for(const sg of[-1,1])
+        cr.push({geo:new THREE.BoxGeometry(.028,.028,len),x:sg*gx*1.01,y:g.min.y+.02,z:zc});}
+    /* ── 로커(사이드 스커트) 크롬 + 휠아치 트림 ── */
+    if(K.rocker!==false)for(const sg of[-1,1])
+      cr.push({geo:new THREE.BoxGeometry(.045,.05,Math.abs(zF-zR)*.52),
+               x:sg*xR*.99,y:by+hy*.10,z:(zF+zR)/2});
+    /* ── 배기 팁 ── */
+    const NE=K.exhaust||2;
+    for(let i=0;i<NE;i++){
+      const sg=i<NE/2?-1:1, k=(i%Math.max(1,NE/2));
+      cr.push({geo:new THREE.CylinderGeometry(.052,.058,.11,14),
+               x:sg*(xR*.52+k*.13),y:by+hy*.16,z:zR+.06,rx:Math.PI/2});}
+    /* ── 리어 크롬 몰딩 + 배지 ── */
+    cr.push({geo:new THREE.BoxGeometry(hx*1.1,.035,.05),y:by+hy*(K.rearY||.90),z:zR+.05});
+    cr.push({geo:new THREE.CylinderGeometry(.038,.038,.02,16),y:by+hy*(K.rearY||.90)+.09,z:zR+.05,rx:Math.PI/2});
+    const mk=(items,mat)=>{
+      if(!items.length)return null;
+      const m=new THREE.Mesh(mergeGeoms(items),mat);
+      m.castShadow=true;this.group.add(m);return m;};
+    this.chromeMesh=mk(cr,MAT_CHROME);
+    this.chromeDarkMesh=mk(dk,MAT_CHROME_DARK);
+    // 크롬도 소프트바디 격자에 물려 충돌 시 함께 찌그러진다
+    if(this.chromeMesh)this.lattice.bind(this.chromeMesh);
+    if(this.chromeDarkMesh)this.lattice.bind(this.chromeDarkMesh);
+  }
   sync(veh,shakeT){
     // 렌더는 보간된 포즈를 쓴다(고정 스텝 물리 ↔ 가변 프레임 렌더 사이를 매끄럽게)
     this.group.position.copy(veh.body.rPos);
@@ -7588,12 +7669,19 @@ MAPS.push(
   mb.fill((x,z)=>{
     // 완만한 롤링 기저
     let h=1.9*Math.sin(x*.0045)*Math.cos(z*.005)+1.1*Math.sin(x*.011+1)*Math.cos(z*.0095);
+    /* 벨트웨이 회랑 억제 계수 —
+       산·언덕의 가우시안 치맛자락이 외곽 순환 고속도로를 그대로 덮어
+       도로가 30m 넘게 솟구치는 '거대한 언덕'이 생겼다(실측 (686,-737)에서 +34m).
+       벨트 반경 부근에서는 지형 융기를 0으로 눌러 고속도로를 평탄하게 유지한다. */
+    const rB=Math.hypot(x,z);
+    const bf=clamp((Math.abs(rB-R_BELT)-80)/200,0,1);
+    const beltEase=bf*bf*(3-2*bf);
     // 산악(남동, 벨트웨이 바깥) — 힐클라임용 큰 산
-    const dm=Math.hypot(x-D.mtn[0],z-D.mtn[1]);h+=46*Math.exp(-dm*dm/74000);
+    const dm=Math.hypot(x-D.mtn[0],z-D.mtn[1]);h+=46*Math.exp(-dm*dm/74000)*beltEase;
     // 남서 언덕(아레나 배후)
-    const da=Math.hypot(x-(D.arena[0]-120),z-(D.arena[1]-140));h+=26*Math.exp(-da*da/72000);
+    const da=Math.hypot(x-(D.arena[0]-120),z-(D.arena[1]-140));h+=26*Math.exp(-da*da/72000)*beltEase;
     // 북동 완만한 고원(모터스포츠 파크에 고저차 제공)
-    const ds=Math.hypot(x-(D.sport[0]+130),z-(D.sport[1]+60));h+=15*Math.exp(-ds*ds/56000);
+    const ds=Math.hypot(x-(D.sport[0]+130),z-(D.sport[1]+60));h+=15*Math.exp(-ds*ds/56000)*beltEase;
     // 도심권은 평평(높낮이는 입체교차로 표현)
     const rc=Math.hypot(x,z);
     if(rc<R_CBD+120)h*=.28;
