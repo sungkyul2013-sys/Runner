@@ -3,7 +3,8 @@
    + powertrain + damage model.  Local axes: +Z forward, +Y up.
    ============================================================ */
 const _vA=V3(0,0,0),_vB=V3(0,0,0),_vC=V3(0,0,0),_vD=V3(0,0,0),_vE=V3(0,0,0),
-      _vF=V3(0,0,0),_vG=V3(0,0,0),_vH=V3(0,0,0),_vUp=V3(0,1,0),_vFw=V3(0,0,1),_vUp2=V3(0,1,0),_vB2=V3(0,0,0);
+      _vF=V3(0,0,0),_vG=V3(0,0,0),_vH=V3(0,0,0),_vUp=V3(0,1,0),_vFw=V3(0,0,1),_vUp2=V3(0,1,0),_vB2=V3(0,0,0),
+      _vAe1=V3(0,0,0),_vAe2=V3(0,0,0),_vAe3=V3(0,0,0);   // 에어로(다운포스) 전용 임시
 const _hit={dist:0,n:V3(0,1,0),mu:1,surf:0,box:null};
 
 function pacejka(a){ // normalized lateral grip vs slip angle(rad); peak ~1.0 @ ~8°
@@ -242,9 +243,25 @@ class Vehicle{
     this.skidMax=skidMax;this.grounded=groundCount;
     this.airT=groundCount===0?this.airT+dt:0;
 
-    /* ----- aero + rolling resistance ----- */
+    /* ----- aero + rolling resistance -----
+       다운포스는 동압(v²)에 비례하며 '월드 기준 아래'로, 앞·뒤 액슬에 나눠 가한다.
+       · 월드 아래 방향 → 차가 기울거나 떠도 항상 노면으로 눌러 뜸·전복을 억제
+       · 액슬 분배 → 피치가 안정되고 좌우 하중이 늘어 롤을 억제
+       · 하중이 늘면 타이어 한계(μ·load)가 함께 커져 고속 코너 그립이 자연히 상승 */
     b.force.addScaledVector(b.vel,-sp.aero.cd*speed);
-    if(sp.aero.df>0&&speed>15)b.force.addScaledVector(up,-sp.aero.df*speed*speed*.01);
+    if(sp.aero.df>0&&speed>5){
+      const q=sp.aero.df*speed*speed*.01;
+      for(const[frac,zoff]of[[.46,sp.wheels.front],[.54,-sp.wheels.rear]]){
+        _vAe1.set(0,-sp.body.hy*.6,zoff);
+        b.localToWorld(_vAe1,_vAe2);
+        _vAe3.copy(_vAe2).sub(b.pos);
+        b.addForceAt(_vAe1.set(0,-q*frac,0),_vAe3);}
+      // 고속 롤 감쇠 — 다운포스가 큰 차일수록 강하게(전복 방지)
+      if(groundCount>0){
+        b.vecToWorld(_vAe1.set(0,0,1),_vAe2);
+        const rollR=b.angVel.dot(_vAe2);
+        b.torque.addScaledVector(_vAe2,
+          -rollR*sp.mass*Math.min(1.8,speed*.022)*Math.min(1.6,sp.aero.df/55));}}
     if(groundCount>0)b.force.addScaledVector(b.vel,-14);
 
     /* ----- stability assist (yaw damp) ----- */

@@ -50,7 +50,7 @@ const Settings=Object.assign({
   sound:true,volume:0.8,
   autoSlowmo:true,debug:false,
   autoReport:true,       // 충돌 후 리포트 자동 표시
-  minimapOn:false,       // 코너 미니맵 표시 (기본 off)
+  minimapOn:true,        // 코너 미니맵 표시
   /* ---- v3.0 확장 설정 ---- */
   softQuality:"normal",  // 소프트바디 솔버 품질 low|normal|high
   damageMul:1.0,         // 손상 배율 0.3~2.5
@@ -60,8 +60,8 @@ const Settings=Object.assign({
   camFov:66,             // 기본 시야각 55~92
   camShakeAmt:1.0,       // 셰이크 강도
   speedFov:true,         // 속도감 FOV
-  showTelemetry:false,   // 텔레메트리 스트립 (기본 off — 깔끔한 화면)
-  hudOn:false,           // HUD 전체 표시 (기본 off — 필요할 때만 켬)
+  showTelemetry:true,    // 텔레메트리 스트립
+  hudOn:true,            // HUD 전체 표시 (기본 on)
   hudScale:1.0,          // HUD 크기 0.8~1.3
   units:"kmh",           // kmh | mph
   autoUpright:false,     // 전복 시 자동 복구

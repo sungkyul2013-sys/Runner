@@ -94,12 +94,12 @@ const CARS=[
   style:"f1",procedural:true,rollFix:1.5,
   body:{hx:.9,hy:.30,hz:2.62},
   wheels:{track:.82,front:1.72,rear:1.66,y:-.12,radius:.34,width:.40},
-  // 실제 F1은 트래블 2~3cm·초고강성이지만 그대로 쓰면 노면 요철에서 접지를 잃는다.
-  // 시뮬 안정성을 위해 트래블·강성을 현실적 하한으로 조정(여전히 전 차량 중 가장 단단함).
-  susp:{k:88000,c:8600,travel:.10,rest:.16},arb:52000,
+  // 실제 F1에 가깝게 트래블을 더 짧게(7cm) — 대신 속도에 비례한 다운포스가 차를 눌러
+  // 뜸·전복·미끄러짐을 막는다(고속일수록 접지하중↑ → 타이어 한계↑).
+  susp:{k:96000,c:9200,travel:.07,rest:.125},arb:58000,
   engine:{maxT:760,redline:14500,idle:3800},
   gears:[3.05,2.25,1.78,1.45,1.2,1.0,.86,.75],final:3.2,
-  brakeF:26000,steerLo:.40,steerHi:.10,aero:{cd:1.05,df:72},   // 다운포스 지배적(안정 범위)
+  brakeF:26000,steerLo:.40,steerHi:.10,aero:{cd:1.05,df:128},  // 다운포스 지배적
   gripF:1.62,gripR:1.70,
   colors:[0xe10600,0x00d2be,0x0090ff,0xff8700,0xf5f5f5],
   stats:{spd:100,acc:100,grip:100,mass:8}},

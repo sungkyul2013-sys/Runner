@@ -4148,7 +4148,7 @@ const Settings=Object.assign({
   sound:true,volume:0.8,
   autoSlowmo:true,debug:false,
   autoReport:true,       // 충돌 후 리포트 자동 표시
-  minimapOn:false,       // 코너 미니맵 표시 (기본 off)
+  minimapOn:true,        // 코너 미니맵 표시
   /* ---- v3.0 확장 설정 ---- */
   softQuality:"normal",  // 소프트바디 솔버 품질 low|normal|high
   damageMul:1.0,         // 손상 배율 0.3~2.5
@@ -4158,8 +4158,8 @@ const Settings=Object.assign({
   camFov:66,             // 기본 시야각 55~92
   camShakeAmt:1.0,       // 셰이크 강도
   speedFov:true,         // 속도감 FOV
-  showTelemetry:false,   // 텔레메트리 스트립 (기본 off — 깔끔한 화면)
-  hudOn:false,           // HUD 전체 표시 (기본 off — 필요할 때만 켬)
+  showTelemetry:true,    // 텔레메트리 스트립
+  hudOn:true,            // HUD 전체 표시 (기본 on)
   hudScale:1.0,          // HUD 크기 0.8~1.3
   units:"kmh",           // kmh | mph
   autoUpright:false,     // 전복 시 자동 복구
@@ -4504,7 +4504,8 @@ function resolvePointContact(body,pWorld,ct,extraBounce,share){
    + powertrain + damage model.  Local axes: +Z forward, +Y up.
    ============================================================ */
 const _vA=V3(0,0,0),_vB=V3(0,0,0),_vC=V3(0,0,0),_vD=V3(0,0,0),_vE=V3(0,0,0),
-      _vF=V3(0,0,0),_vG=V3(0,0,0),_vH=V3(0,0,0),_vUp=V3(0,1,0),_vFw=V3(0,0,1),_vUp2=V3(0,1,0),_vB2=V3(0,0,0);
+      _vF=V3(0,0,0),_vG=V3(0,0,0),_vH=V3(0,0,0),_vUp=V3(0,1,0),_vFw=V3(0,0,1),_vUp2=V3(0,1,0),_vB2=V3(0,0,0),
+      _vAe1=V3(0,0,0),_vAe2=V3(0,0,0),_vAe3=V3(0,0,0);   // 에어로(다운포스) 전용 임시
 const _hit={dist:0,n:V3(0,1,0),mu:1,surf:0,box:null};
 
 function pacejka(a){ // normalized lateral grip vs slip angle(rad); peak ~1.0 @ ~8°
@@ -4743,9 +4744,25 @@ class Vehicle{
     this.skidMax=skidMax;this.grounded=groundCount;
     this.airT=groundCount===0?this.airT+dt:0;
 
-    /* ----- aero + rolling resistance ----- */
+    /* ----- aero + rolling resistance -----
+       다운포스는 동압(v²)에 비례하며 '월드 기준 아래'로, 앞·뒤 액슬에 나눠 가한다.
+       · 월드 아래 방향 → 차가 기울거나 떠도 항상 노면으로 눌러 뜸·전복을 억제
+       · 액슬 분배 → 피치가 안정되고 좌우 하중이 늘어 롤을 억제
+       · 하중이 늘면 타이어 한계(μ·load)가 함께 커져 고속 코너 그립이 자연히 상승 */
     b.force.addScaledVector(b.vel,-sp.aero.cd*speed);
-    if(sp.aero.df>0&&speed>15)b.force.addScaledVector(up,-sp.aero.df*speed*speed*.01);
+    if(sp.aero.df>0&&speed>5){
+      const q=sp.aero.df*speed*speed*.01;
+      for(const[frac,zoff]of[[.46,sp.wheels.front],[.54,-sp.wheels.rear]]){
+        _vAe1.set(0,-sp.body.hy*.6,zoff);
+        b.localToWorld(_vAe1,_vAe2);
+        _vAe3.copy(_vAe2).sub(b.pos);
+        b.addForceAt(_vAe1.set(0,-q*frac,0),_vAe3);}
+      // 고속 롤 감쇠 — 다운포스가 큰 차일수록 강하게(전복 방지)
+      if(groundCount>0){
+        b.vecToWorld(_vAe1.set(0,0,1),_vAe2);
+        const rollR=b.angVel.dot(_vAe2);
+        b.torque.addScaledVector(_vAe2,
+          -rollR*sp.mass*Math.min(1.8,speed*.022)*Math.min(1.6,sp.aero.df/55));}}
     if(groundCount>0)b.force.addScaledVector(b.vel,-14);
 
     /* ----- stability assist (yaw damp) ----- */
@@ -5055,12 +5072,12 @@ const CARS=[
   style:"f1",procedural:true,rollFix:1.5,
   body:{hx:.9,hy:.30,hz:2.62},
   wheels:{track:.82,front:1.72,rear:1.66,y:-.12,radius:.34,width:.40},
-  // 실제 F1은 트래블 2~3cm·초고강성이지만 그대로 쓰면 노면 요철에서 접지를 잃는다.
-  // 시뮬 안정성을 위해 트래블·강성을 현실적 하한으로 조정(여전히 전 차량 중 가장 단단함).
-  susp:{k:88000,c:8600,travel:.10,rest:.16},arb:52000,
+  // 실제 F1에 가깝게 트래블을 더 짧게(7cm) — 대신 속도에 비례한 다운포스가 차를 눌러
+  // 뜸·전복·미끄러짐을 막는다(고속일수록 접지하중↑ → 타이어 한계↑).
+  susp:{k:96000,c:9200,travel:.07,rest:.125},arb:58000,
   engine:{maxT:760,redline:14500,idle:3800},
   gears:[3.05,2.25,1.78,1.45,1.2,1.0,.86,.75],final:3.2,
-  brakeF:26000,steerLo:.40,steerHi:.10,aero:{cd:1.05,df:72},   // 다운포스 지배적(안정 범위)
+  brakeF:26000,steerLo:.40,steerHi:.10,aero:{cd:1.05,df:128},  // 다운포스 지배적
   gripF:1.62,gripR:1.70,
   colors:[0xe10600,0x00d2be,0x0090ff,0xff8700,0xf5f5f5],
   stats:{spd:100,acc:100,grip:100,mass:8}},
