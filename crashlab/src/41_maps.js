@@ -226,7 +226,9 @@ class MapBuilder{
     const w=this.world,R=w.res,N=R+1,cell=w.cell,half=w.size*.5;
     const S=SURF_IDS;
     const paved=s=>{const n=S[s];return n==="asphalt"||n==="lane"||n==="curb";};
-    const REMOVE=/^(rail|railpost|railbar|tree|treesTall|plinth|statue|monument|planter|hedge|bench|parasol|boat|dock|barrel|beam|scaffold|lightlamp|lighthouse|boathouse)$/;
+    // 소형 장식물 + 대형 구조물까지 — 도로 '내부'를 막고 있으면 무엇이든 제거한다.
+    // (활주로/도로를 가로막던 터미널·격납고·창고 같은 큰 벽이 남아 주행이 끊기는 문제 방지)
+    const REMOVE=/^(rail|railpost|railbar|tree|treesTall|plinth|statue|monument|planter|hedge|bench|parasol|boat|dock|barrel|beam|scaffold|lightlamp|lighthouse|boathouse|terminal|hangar|warehouse|tower|towercab|cranleg|cranbeam|stand|building|roofunit|tank|mast)$/;
     const kept=[];let removed=0;
     for(const b of w.boxes){
       const t=b.tag||"";
