@@ -5,6 +5,31 @@
 let renderer,scene,camera,sunLight,hemiLight,headlight,skyDome,clouds;
 const FPS={fps:60,ema:60,lowT:0,okT:0,tier:0};
 
+/* ============ 충돌·슬로모션 프레임 가드 ============
+   슬로모션 충돌은 '변형 중인 12만 정점 차체 + 파티클 + 그림자'가 한꺼번에 겹치는
+   가장 무거운 순간이다. 여기서만 즉각(0.15초) 반응해 부하를 단계적으로 덜어
+   30fps 아래로 내려가지 않게 유지하고, 여유가 생기면 원래 품질로 되돌린다.
+   (기존 autoQuality는 3초 관측이라 1.2초짜리 슬로모션 구간에는 아예 반응하지 못했다) */
+const PERF={level:0,ema:60,lowT:0,okT:0,meshSkip:0,shadowEvery:2};
+function applyPerfLevel(){
+  const L=PERF.level;
+  if(typeof Fx!=="undefined"&&Fx.setQuality)Fx.setQuality(L>=1?.45:1);
+  PERF.meshSkip=L>=2?1:0;                       // 차체 메시 반영을 한 프레임 걸러
+  PERF.shadowEvery=L>=3?5:(L>=1?3:2);           // 그림자 맵 갱신 주기
+}
+function perfGuard(dt){
+  PERF.ema+=(1/Math.max(dt,1e-3)-PERF.ema)*.25;   // 약 0.25초 반응
+  const heavy=Game.state==="play"&&
+    (Game.slowmoT>0||Game.manualSlow||Game.mode==="crash"||(Game.vis&&Game.vis.lattice.hot>0));
+  if(heavy&&PERF.ema<32){
+    PERF.okT=0;PERF.lowT+=dt;
+    if(PERF.lowT>.15&&PERF.level<3){PERF.level++;applyPerfLevel();PERF.lowT=0;}
+  }else if(PERF.ema>45){
+    PERF.lowT=0;PERF.okT+=dt;
+    if(PERF.okT>1.2&&PERF.level>0){PERF.level--;applyPerfLevel();PERF.okT=0;}
+  }else{PERF.lowT=0;PERF.okT=0;}
+}
+
 function disposeGroup(g){
   g.traverse(o=>{
     if(o.geometry)o.geometry.dispose();
@@ -56,6 +81,7 @@ function initRenderer(){
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.type=THREE.PCFShadowMap;
+  renderer.shadowMap.autoUpdate=false;   // 갱신 시점은 메인 루프가 직접 정한다
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=1.05;
   scene=new THREE.Scene();
@@ -105,12 +131,13 @@ function autoQuality(dt){
 }
 
 /* main loop */
-let _last=performance.now();
+let _last=performance.now(),_shTick=0;
 function mainLoop(t){
   requestAnimationFrame(mainLoop);
   let dt=(t-_last)/1000;_last=t;
   if(dt>.05)dt=.05;           // frame clamp (안정성 1)
   autoQuality(dt);
+  perfGuard(dt);
   try{
     if(Game.state==="play"){
       Game.frame(dt);
@@ -121,6 +148,11 @@ function mainLoop(t){
         _t6.set(0,0,Game.veh.spec.body.hz);b.rLocalToWorld(_t6,headlight.position);
         _t7.set(0,-1.5,30);b.rLocalToWorld(_t7,headlight.target.position);}
       skyDome.position.set(camera.position.x,0,camera.position.z);
+      /* 그림자 맵은 매 프레임 다시 그릴 필요가 없다 — 변형 중인 차체까지 셰도우 패스에
+         한 번 더 렌더되므로 충돌 순간 비용이 두 배가 된다. 몇 프레임에 한 번만 갱신. */
+      if(renderer.shadowMap.enabled){
+        _shTick=(_shTick+1)%Math.max(1,PERF.shadowEvery);
+        renderer.shadowMap.needsUpdate=(_shTick===0);}
       sunLight.target.position.copy(Game.veh.body.rPos);
       sunLight.position.set(Game.veh.body.rPos.x+TOD[Game.opts.tod].sunPos[0]*.5,
         Game.veh.body.rPos.y+TOD[Game.opts.tod].sunPos[1]*.5,
@@ -128,6 +160,8 @@ function mainLoop(t){
       renderer.render(scene,camera);
     }else if(Game.state==="menu"){
       if(Showroom.active)Showroom.update(dt);
+      // 메뉴/쇼룸도 그림자 갱신을 직접 요청해야 한다(autoUpdate=false)
+      if(renderer.shadowMap.enabled){_shTick=(_shTick+1)%3;renderer.shadowMap.needsUpdate=(_shTick===0);}
       if(Showroom.active||Game.world)renderer.render(scene,camera);}
   }catch(err){
     console.error(err);

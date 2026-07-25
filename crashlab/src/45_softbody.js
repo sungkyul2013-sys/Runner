@@ -106,8 +106,8 @@ class SoftLattice{
     bd.wi=wi;bd.ww=ww;bd.wo=wo;
     bd.big=vc>20000;
     bd.flat=!!(bd.mesh.material&&bd.mesh.material.flatShading);
-    bd.stripes=clamp(Math.round(vc/30000),1,4);
-    bd.sp=0;}
+    bd.stripes=clamp(Math.round(vc/16000),1,8);
+    bd.sp=0;bd.cyc=0;}
   impact(lp,ln,dv){
     // 현실적 방향성 크럼플:
     //  (1) 국소 크럼플 — 충돌한 부위만 충격 방향으로 함몰(접점서 거리로 감쇠, 종이처럼 구겨짐).
@@ -230,24 +230,40 @@ class SoftLattice{
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
     }
     /* 메시 반영: 매 프레임 스트라이프 하나씩 → 총 작업량은 같고 프레임당 부하는 균일.
-       법선은 4프레임에 한 번만(대형 스캔 메시는 충돌이 끝난 뒤 한 번). */
+       단, 격자가 사실상 안 움직인 프레임은 통째로 건너뛴다 —
+       슬로모션에서는 프레임당 변형량이 극히 작아 다시 써도 화면상 차이가 없으므로,
+       이 판정만으로 슬로모션 충돌의 메시 갱신 부하가 크게 줄어든다. */
     this._wr=(this._wr||0)+1;
-    this.write((this._wr&3)!==1);
+    const skip=(typeof PERF!=="undefined"&&PERF.meshSkip)?1:0;
+    if((!skip||(this._wr&1)===0)&&this.movedSinceWrite()>4e-4)
+      this.write((this._wr&3)!==1);
     this.dirty=true;   // hot 종료 시 마지막 상태 확정 기록
     return true;
   }
+  /* 마지막으로 메시에 쓴 격자 상태와 현재 상태의 최대 차이(m) */
+  movedSinceWrite(){
+    const P=this.pos,n3=this.n*3;
+    let W=this._wsnap;
+    if(!W){W=this._wsnap=new Float32Array(n3);W.set(P);return 1;}
+    let m=0;
+    for(let i=0;i<n3;i++){const d=P[i]-W[i],a=d<0?-d:d;if(a>m)m=a;}
+    if(m>4e-4)W.set(P);
+    return m;}
   write(skipNormals,full){
     const P=this.pos,H=this.home;
     for(const bd of this.binds){
       this.ensureFast(bd);
-      const arr=bd.mesh.geometry.attributes.position.array;
+      const pAttr=bd.mesh.geometry.attributes.position,arr=pAttr.array;
       const cAttr=bd.col?bd.mesh.geometry.attributes.color:null,cArr=cAttr?cAttr.array:null;
       const wi=bd.wi,ww=bd.ww,wo=bd.wo,orig=bd.orig,col=bd.col;
       // 스트라이프 = 연속 구간이라 시간이 섞이는 경계가 삼각형 1개뿐(육안으로 보이지 않음)
       const K=full?1:bd.stripes;
       const chunk=Math.ceil(bd.vc/K);
       const v0=full?0:bd.sp*chunk, v1=full?bd.vc:Math.min(bd.vc,v0+chunk);
-      if(!full)bd.sp=(bd.sp+1)%K;
+      /* 도장 크리즈(색) 갱신은 위치보다 훨씬 느리게 변하므로 한 사이클 걸러 한 번만.
+         업로드 대역폭이 절반으로 준다(모바일에서 이게 프레임을 잡아먹는다). */
+      const doCol=!!cArr&&(full||(bd.cyc&1)===0);
+      if(!full&&bd.sp===0)bd.cyc++;
       for(let v=v0;v<v1;v++){
         let dx=0,dy=0,dz=0;
         for(let q=wo[v],qe=wo[v+1];q<qe;q++){
@@ -255,12 +271,22 @@ class SoftLattice{
           dx+=(P[ni]-H[ni])*w;dy+=(P[ni+1]-H[ni+1])*w;dz+=(P[ni+2]-H[ni+2])*w;}
         const v3=v*3;
         arr[v3]=orig[v3]+dx;arr[v3+1]=orig[v3+1]+dy;arr[v3+2]=orig[v3+2]+dz;
-        if(cArr){ // 구겨진 부위 도장 크리즈(음영): 변형 깊이에 비례해 어두워짐
+        if(doCol){ // 구겨진 부위 도장 크리즈(음영): 변형 깊이에 비례해 어두워짐
           const d2=dx*dx+dy*dy+dz*dz;
           const f=d2<4e-4?1:Math.max(.42,1-Math.sqrt(d2)*.5);   // 안 구겨진 정점은 sqrt 생략
           cArr[v3]=col[v3]*f;cArr[v3+1]=col[v3+1]*f;cArr[v3+2]=col[v3+2]*f;}}
-      bd.mesh.geometry.attributes.position.needsUpdate=true;
-      if(cAttr)cAttr.needsUpdate=true;
+      /* ★ 바뀐 구간만 GPU로 올린다.
+         updateRange를 지정하지 않으면 three는 정점 버퍼 '전체'를 매번 다시 올린다.
+         스캔 차체(정점 12만)는 위치+색 전체가 약 2.9MB라, 프레임마다 이걸 통째로 올리면
+         모바일에서는 그 자체로 프레임이 무너진다(실측 평균 1.5MB/프레임, 최대 3.0MB). */
+      if(full){pAttr.updateRange.offset=0;pAttr.updateRange.count=-1;}
+      else{pAttr.updateRange.offset=v0*3;pAttr.updateRange.count=(v1-v0)*3;}
+      pAttr.needsUpdate=true;
+      if(doCol){
+        if(full){cAttr.updateRange.offset=0;cAttr.updateRange.count=-1;}
+        else{cAttr.updateRange.offset=v0*3;cAttr.updateRange.count=(v1-v0)*3;}
+        cAttr.needsUpdate=true;}
+      if(!full)bd.sp=(bd.sp+1)%K;
       /* 법선 재계산은 정말 필요할 때만.
          · 플랫 셰이딩 메시는 셰이더가 면 법선을 미분으로 구하므로 정점 법선을 쓰지 않는다.
          · 정점이 아주 많은 스캔 차체는 충돌 중에는 미루고 충돌이 끝난 뒤 한 번만 갱신한다. */
@@ -279,11 +305,12 @@ class SoftLattice{
     this.pos.set(this.home);this.prev.set(this.home);this.plast.fill(0);
     this.bbrk.fill(0);this.torn=0;
     this.bRest.set(this.bR0);
+    if(this._wsnap)this._wsnap.set(this.pos);
     for(const bd of this.binds){
-      bd.mesh.geometry.attributes.position.array.set(bd.orig);
-      bd.mesh.geometry.attributes.position.needsUpdate=true;
-      if(bd.col){bd.mesh.geometry.attributes.color.array.set(bd.col);
-        bd.mesh.geometry.attributes.color.needsUpdate=true;}
+      const pa=bd.mesh.geometry.attributes.position;
+      pa.array.set(bd.orig);pa.updateRange.offset=0;pa.updateRange.count=-1;pa.needsUpdate=true;
+      if(bd.col){const ca=bd.mesh.geometry.attributes.color;
+        ca.array.set(bd.col);ca.updateRange.offset=0;ca.updateRange.count=-1;ca.needsUpdate=true;}
       this.ensureFast(bd);
       if(!bd.flat)bd.mesh.geometry.computeVertexNormals();}
     this.hot=0;this.dirty=false;
