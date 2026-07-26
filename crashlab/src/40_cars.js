@@ -87,11 +87,13 @@ const CARS=[
  {id:"maybach",name:"메르세데스-마이바흐 GLS",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.9초",top:240,
   desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
   model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,
-  /* 마이바흐는 스캔 원본 그대로 둔다 — 크롬 킷·헤드램프 어셈블리·범퍼 피팅 등
-     덧붙이던 장식은 전부 제거(요청: 완전히 원래대로). */
+  /* 마이바흐는 v6.0 그대로 둔다 — 크롬 킷·헤드램프 어셈블리·범퍼 피팅 등
+     덧붙이던 장식은 전부 제거(요청: 6.0 버전대로). */
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
-  /* 마이바흐도 럭셔리 세팅 — 흡수는 부드럽게, 올라갈 땐 쪼인다 */
-  susp:{k:60000,c:6200,travel:.22,rest:.28,compMul:.38,rebMul:3.2,riseMul:4.0},arb:16000,
+  /* 서스펜션도 v6.0 거동으로 — 이후 전 차량에 들어간 비대칭 댐핑/차체 헤이브 댐퍼를
+     이 차만 무효화한다(compMul 1 = 압축 감쇠 원래대로, riseMul 1·bodyDamp 0 = 헤이브 댐퍼 없음).
+     rebMul은 지정하지 않아 v6.0과 같은 기본값 1.5가 쓰인다. */
+  susp:{k:60000,c:6200,travel:.22,rest:.28,compMul:1,riseMul:1,bodyDamp:0},arb:16000,
   engine:{maxT:640,redline:6000,idle:600},gears:[3.5,2.15,1.5,1.15,.9],final:3.9,
   brakeF:12500,steerLo:.54,steerHi:.13,aero:{cd:1.1,df:0},gripF:1.02,gripR:1.02,
   colors:[0xe9ecee,0x0b0d10,0x14203a,0x8a929a,0x3a2c1a],
