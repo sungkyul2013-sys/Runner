@@ -89,7 +89,8 @@ const CARS=[
   model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,fitBumper:true,
   headlamp:{w:.34,h:.13,leds:4},
   chromeKit:{grilleW:.40,grilleH:.22,grilleY:.82,grilleZ:.16,slats:11,
-             ornament:true,ornY:.40,ornZ:.34,exhaust:4,rearY:.70},
+             /* GLS 뒷면: 피니셔 4개는 테이프 붙인 것처럼 보여 2개로 */
+             ornament:true,ornY:.40,ornZ:.34,exhaust:2,rearY:.70},
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
   /* 마이바흐도 럭셔리 세팅 — 흡수는 부드럽게, 올라갈 땐 쪼인다 */
   susp:{k:60000,c:6200,travel:.22,rest:.28,compMul:.38,rebMul:3.2,riseMul:4.0},arb:16000,
@@ -577,6 +578,9 @@ class CarVisual{
       if(tc&&tr)this.tlAnchor=[[tlS/tc,tyS/tyc,zMin+.02],[trS/tr,tyS/tyc,zMin+.02]];}
     if(split.glass){this.glassMesh=new THREE.Mesh(split.glass,glassMatFor(spec));
       this.glassMesh.castShadow=true;this.group.add(this.glassMesh);}
+    /* 창틀 크롬 — 정점색만 바꾼다(덧붙이는 몰딩 없음). 래티스보다 먼저. */
+    if(spec.chromeKit&&spec.chromeKit.window!==false&&split.glass)
+      this.tintWindowTrim(split.glass,spec);
     this.lattice=new SoftLattice(spec,[this.bodyMesh,this.glassMesh,this.lampsMesh]);
     const bumpMat=new THREE.MeshPhongMaterial({color:0x191d24,flatShading:true,shininess:18});
     const by=Math.max(spec.modelWheelY,-hy*.62);
@@ -961,7 +965,13 @@ class CarVisual{
        · 벨트라인(창 하단) → 최소자승 '직선'  y = m·z + c   (실차도 직선이다)
        · 루프라인(창 상단) → 최소자승 '2차곡선'            (완만한 지붕 곡선)
      그 위에서 각 세그먼트의 x는 그 지점 차체 실루엣을 재서 붙이므로 뜨지 않는다. */
-  buildSideTrim(glassGeo,cr,hx,hy,zF,zR,K){
+  /* ⚠ 반드시 SoftLattice 생성 전에 호출해야 한다 — 래티스가 정점색 원본을
+     스냅샷해 두고 수리(reset) 때 되돌리기 때문. */
+  tintWindowTrim(glassGeo,spec){
+    const K=spec.chromeKit||{};
+    const hx=spec.body.hx,hy=spec.body.hy;
+    this.bodyMesh.geometry.computeBoundingBox();
+    const _bb=this.bodyMesh.geometry.boundingBox,zF=_bb.max.z,zR=_bb.min.z;
     const a=glassGeo.attributes.position.array;
     let xMax=0;
     for(let i=0;i<a.length;i+=3){const q=Math.abs(a[i]);if(q>xMax)xMax=q;}
@@ -1047,34 +1057,28 @@ class CarVisual{
         A=Math.abs(M[0][0])>1e-9?(R[0]-M[0][1]*B-M[0][2]*C)/M[0][0]:0;}
       const zc0=(z0+z1)/2;
       const roofY=z=>{const t=z-zc0;return A*t*t+B*t+C-.010;};
-      /* ③ 세그먼트로 잇기 — x는 그 지점 차체 실루엣에 맞춘다 */
-      const SEG=10;
-      const put=(fy,w2,h2,inset)=>{
-        for(let k=0;k<SEG;k++){
-          const za=z0+(k/SEG)*(z1-z0), zb=z0+((k+1)/SEG)*(z1-z0);
-          const ya=fy(za), yb=fy(zb);
-          const ym=(ya+yb)/2, zm=(za+zb)/2;
-          /* ⚠ 몰딩은 그 높이의 "차체 바깥면"보다 아주 살짝 바깥에 앉아야 보인다.
-             이 스캔의 유리 평면(glassX≈0.84)은 도어 외피(≈0.96)보다 12cm나 안쪽이라,
-             유리 기준으로 붙이면 몰딩이 통째로 차체 안에 묻힌다(계측 확인). */
-          let sil=this.bodySilWidth(ym,zm,hy*.10,(z1-z0)/SEG*.7);
-          if(!(sil>0))sil=Math.max(glassX(zm),hx*.90);
-          let xw=Math.min(sil*1.006,hx*1.02)*inset;
-          const dz=zb-za,dy=yb-ya,len=Math.hypot(dz,dy);
-          if(len<.02)continue;
-          cr.push({geo:new THREE.BoxGeometry(w2,h2,len*1.02),
-            x:sg*xw,y:ym,z:zm,rx:-Math.atan2(dy,dz)});}};
-      put(beltY,.028,.030,1.0);                          // 벨트라인
-      if(K.roofTrim!==false)put(roofY,.024,.026,1.0);    // 루프라인
-      /* ④ A/C 필러 — 앞뒤 끝을 세로로 닫아 창틀이 완성돼 보이게 */
-      for(const z of[z0+.02,z1-.02]){
-        const yb2=beltY(z), yt2=roofY(z);
-        if(yt2-yb2<.05)continue;
-        let sil2=this.bodySilWidth((yb2+yt2)/2,z,hy*.16,.10);
-        if(!(sil2>0))sil2=Math.max(glassX(z),hx*.90);
-        const xw=Math.min(sil2*1.004,hx*1.02);
-        cr.push({geo:new THREE.BoxGeometry(.022,yt2-yb2,.026),
-          x:sg*xw,y:(yb2+yt2)/2,z});}}
+      /* ③ 창틀 = "덧붙이기"가 아니라 "원래 차체 정점의 색만 크롬으로".
+         스캔 차체 위에 박스를 얹으면 아무리 맞춰도 덧댄 티가 나고 충돌 시 따로 논다.
+         창틀 라인 근처의 기존 정점을 골라 정점색만 바꾸면 형상은 그대로면서
+         크롬 몰딩처럼 보이고, 소프트바디 변형도 차체와 완전히 같이 움직인다. */
+      const P=this.bodyMesh.geometry.attributes.position.array;
+      const CC=this.bodyMesh.geometry.attributes.color.array;
+      const CHR=[.76,.80,.86];                 // 밝은 크롬(정점색)
+      const BW=.030;                           // 몰딩 두께(라인에서의 y 허용치)
+      for(let i=0;i<P.length;i+=3){
+        const x=P[i],y=P[i+1],z=P[i+2];
+        if(Math.sign(x)!==sg)continue;
+        if(z<z0-.03||z>z1+.03)continue;
+        let sil=this.bodySilWidth(y,z,hy*.06,.10);
+        if(sil>0&&Math.abs(x)<sil*.86)continue;   // 바깥 껍질만
+        const db=Math.abs(y-beltY(z));
+        const dr=K.roofTrim===false?9:Math.abs(y-roofY(z));
+        /* A/C 필러 — 창틀 앞뒤 끝의 세로 구간 */
+        const dpz=Math.min(Math.abs(z-z0),Math.abs(z-z1));
+        const inWin=(y>beltY(z)-BW&&y<roofY(z)+BW);
+        if(db<BW||dr<BW||(dpz<.045&&inWin)){
+          CC[i]=CHR[0];CC[i+1]=CHR[1];CC[i+2]=CHR[2];}}
+      this.bodyMesh.geometry.attributes.color.needsUpdate=true;}
   }
   buildChromeKit(spec,bx,by,hx,hy,glassGeo){
     const K=spec.chromeKit;
@@ -1120,8 +1124,7 @@ class CarVisual{
       for(const sg of[-1,1])                                                            // 날개
         cr.push({geo:new THREE.BoxGeometry(.075,.05,.012),x:sg*.045,y:oy+.10,z:oz-.02,
                  rz:sg*.5,ry:sg*.22});}
-    /* ── 윈도 서라운드(사이드 크롬) — 최소자승 피팅으로 '딱 맞게' ── */
-    if(K.window!==false&&glassGeo)this.buildSideTrim(glassGeo,cr,hx,hy,zF,zR,K);
+    /* 윈도 서라운드는 정점색 변경으로 처리한다(tintWindowTrim) — 덧붙이지 않는다 */
     /* ── 로커(사이드 스커트) 크롬 ──
        차체 '최대폭'(휠아치)에 붙이면 실제로 좁은 사이드실 높이에서는 막대가 차 밖으로
        떠 보인다 → 해당 높이·구간의 실제 차체 폭을 재서 그보다 살짝 안쪽에 붙인다. */
@@ -1147,28 +1150,8 @@ class CarVisual{
          어두운 사각 팁을 얹어 얇은 크롬 테두리만 비치게 한다. */
       cr.push({geo:new THREE.BoxGeometry(.145,.062,.012),x:sg*ex,y:exY,z:exZ+.010});
       dk.push({geo:new THREE.BoxGeometry(.125,.044,.070),x:sg*ex,y:exY,z:exZ-.020});}
-    /* ── 리어 크롬 — '딱 맞게'.
-         테일램프 앵커(tlAnchor)에서 실제 램프의 안쪽 끝과 높이를 읽어,
-         두 램프 사이를 정확히 잇는 트렁크 가니시를 만든다. 램프에 물리지도,
-         모자라지도 않게 끝이 램프 안쪽 모서리에 닿는다. ── */
-    {const T=this.tlAnchor;
-     const ry2=T?T[0][1]:(by+hy*(K.rearY||.90));
-     /* 뒷면 실제 위치를 재서 그 바로 바깥(−z)에 붙인다 */
-     const tz=this.bodyTailZ(0,ry2,.30,hy*.12);
-     const rz2=(tz?tz:zR+.04)-.012;
-     /* 램프 사이 간격 = 두 앵커의 |x| 평균 − 램프 폭 절반(추정) */
-     let inner=T?Math.min(Math.abs(T[0][0]),Math.abs(T[1][0]))-.10:hx*.5;
-     const rLim=this.bodySilWidth(ry2,rz2+.06,hy*.16,.20);
-     if(rLim>0)inner=Math.min(inner,rLim*.94);
-     const rW=Math.max(.30,inner*2);
-     cr.push({geo:new THREE.BoxGeometry(rW,.024,.038),y:ry2,z:rz2});
-     /* 램프 아래를 잇는 얇은 하단 라인 — 뒷면 폭에 정확히 맞춘다 */
-     const ly=ry2-.10;
-     const ltz=this.bodyTailZ(0,ly,.30,hy*.10);
-     const lLim=this.bodySilWidth(ly,(ltz||zR)+.10,hy*.10,.20);
-     if(lLim>0)cr.push({geo:new THREE.BoxGeometry(lLim*1.56,.020,.030),
-       y:ly,z:(ltz?ltz:zR+.04)-.010});
-     }
+    /* 리어 크롬 바는 넣지 않는다 — 트렁크를 가로지르는 줄 두 개가 지저분했다.
+       뒷면은 테일램프와 배기 피니셔만으로 정리한다. */
     const mk=(items,mat)=>{
       if(!items.length)return null;
       const m=new THREE.Mesh(mergeGeoms(items),mat);
