@@ -19,22 +19,54 @@ class SoftLattice{
     this.anchor=new Float32Array(n);
     const idx=(i,j,k)=>(k*NY+j)*NX+i;
     this.idx=idx;
+    /* ══ 승객셀(세이프티 셀) 범위 실측 ══
+       그린하우스(유리)가 있는 z 구간이 곧 사람이 타는 칸이다. 유리 메시가 있으면
+       그 z 범위를 쓰고, 없으면 차 길이의 가운데 구간으로 잡는다.
+       zt: 0(뒤) ~ 1(앞) — 로컬 +z가 전방이므로 z=-hz가 뒤. */
+    {let c0=.30,c1=.72;                              // 기본값(세단 대략치)
+     const gm=meshes&&meshes[1];
+     if(gm&&gm.geometry&&gm.geometry.attributes.position){
+       const a=gm.geometry.attributes.position.array;
+       /* 유리 마스크에는 램프 렌즈처럼 차 양 끝 조각도 섞여 있다.
+          그대로 min/max를 쓰면 셀이 차 전체로 번지므로(계측: 0.18~0.86)
+          하위/상위 8% 분위수로 자르고, 다시 상식 범위로 제한한다. */
+       const zs=[];
+       for(let i=2;i<a.length;i+=3)zs.push(a[i]);
+       if(zs.length>20){
+         zs.sort((p,q)=>p-q);
+         const zmin=zs[Math.floor(zs.length*.08)], zmax=zs[Math.floor(zs.length*.92)];
+         const t0=(zmin+hz)/(2*hz), t1=(zmax+hz)/(2*hz);
+         c0=clamp(Math.min(t0,t1),.28,.44);
+         c1=clamp(Math.max(t0,t1),.60,.76);}}
+     this.cellZ=[c0,c1];
+     const FADE=.10;                                  // 셀↔크럼플 전이 구간
+     this._cellAt=zt=>{
+       if(zt>=c0&&zt<=c1)return 1;
+       const d=zt<c0?(c0-zt):(zt-c1);
+       return Math.max(0,1-d/FADE);};}
     for(let k=0;k<NZ;k++)for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){
       const a=idx(i,j,k)*3;
       this.home[a]=this.min[0]+i*this.cell[0];
       this.home[a+1]=this.min[1]+j*this.cell[1];
       this.home[a+2]=this.min[2]+k*this.cell[2];
-      // 크럼플 존 모델: 앞/뒤 끝은 앵커 거의 0(변형이 소성 빔으로 영구 고정),
-      // 가운데 승객셀만 앵커 강함(강체 유지) → 정면 충돌 시 아코디언 압축(복원·팽창 없음)
-      const zt=NZ>1?k/(NZ-1):.5;                     // 0(앞)~1(뒤)
-      const central=1-Math.min(1,Math.abs(zt-.5)/.30);
-      const cell=.08*central*central;                // 승객셀 강성(가운데)
+      /* 크럼플 존 모델: 앞/뒤 끝은 앵커 거의 0(변형이 소성 빔으로 영구 고정),
+         승객셀만 앵커 강함(강체 유지) → 정면 충돌 시 아코디언 압축(복원·팽창 없음).
+         승객셀 범위는 아래에서 유리(그린하우스) 위치로 실측한 값을 쓴다. */
+      const zt=NZ>1?k/(NZ-1):.5;                     // 0(뒤)~1(앞) : 로컬 +z가 전방
+      const cellF=this._cellAt?this._cellAt(zt):(1-Math.min(1,Math.abs(zt-.5)/.30));
+      const cell=.10*cellF*cellF;                    // 승객셀 강성
       const floor=(j===0)?.012:0;                    // 바닥 프레임 살짝
       this.anchor[idx(i,j,k)]=.03+cell+floor;}       // 기본 앵커 ↑ → 소성(plast) 목표 형태를 확실히 유지
     this.pos.set(this.home);this.prev.set(this.home);
     // 노드별 재질 편차(찢김 재현): 같은 충격에도 노드마다 밀리는 양이 달라 면이 아닌 '뜯긴' 형태가 됨
     this.rag=new Float32Array(n);
     for(let i=0;i<n;i++){const s=Math.sin(i*127.1+13.7)*43758.5453;this.rag[i]=s-Math.floor(s);}
+    /* 노드별 승객셀 계수(1=승객칸, 0=크럼플존).
+       impact()의 변형장 자체를 이 값으로 나눠 주어야 실제로 '앞은 뭉개지고 승객칸은 버틴다'.
+       빔 재질(bYld/bTear)만 바꾸면 찢김 수만 달라지고 형상은 그대로다(A/B 계측 확인). */
+    this.nCell=new Float32Array(n);
+    for(let k=0;k<NZ;k++){const cf=this._cellAt(NZ>1?k/(NZ-1):.5);
+      for(let j=0;j<NY;j++)for(let i=0;i<NX;i++)this.nCell[idx(i,j,k)]=cf;}
     // beams
     const dirs=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,-1,0],[1,0,1],[1,0,-1],[0,1,1],[0,1,-1],[1,1,1],[1,-1,1]];
     const beams=[];
@@ -44,17 +76,47 @@ class SoftLattice{
         if(i2<0||i2>=NX||j2<0||j2>=NY||k2<0||k2>=NZ)continue;
         const a=idx(i,j,k),b=idx(i2,j2,k2);
         const r=Math.hypot(dx*this.cell[0],dy*this.cell[1],dz*this.cell[2]);
-        beams.push(a,b,r,r);}       // a,b,rest,rest0
+        beams.push(a,b,r,r,i,j,k,dx,dy,dz);}   // a,b,rest,rest0, i,j,k, dir
     /* 빔 데이터는 종류별 타입배열로 분리한다 —
        하나의 Float32Array에 인덱스까지 섞어 담으면 배열 첨자로 쓸 때마다 float→int 변환이
        끼어들어 솔버 내부 루프가 크게 느려진다(충돌 프레임의 남은 스파이크 원인). */
-    const nb=beams.length/4;
+    const STRIDE=10;
+    const nb=beams.length/STRIDE;
     this.nb=nb;
     this.bA=new Int32Array(nb);this.bB=new Int32Array(nb);
     this.bRest=new Float32Array(nb);this.bR0=new Float32Array(nb);
+    /* ══ 부위별 재료 물성 — "본넷은 잘 찌그러지고 찢어지되, 사람 타는 칸은 버틴다" ══
+       빔마다 세 값을 따로 준다.
+         bYld  항복 변형률 : 넘으면 영구(소성) 변형. 낮을수록 잘 찌그러진다.
+         bTear 파열 변형률 : 넘으면 용접부가 뜯겨 구속 해제(판금이 찢어져 벌어짐).
+         bStf  구속 강성   : 클수록 형상을 끝까지 유지(승객셀 = 강체에 가깝게).
+       승객셀은 항복·파열 문턱을 크게, 강성을 최대로 → 거의 안 찌그러진다.
+       앞(엔진룸·본넷)·뒤(트렁크)는 반대로 → 먼저 무너지며 충격을 흡수한다. */
+    this.bYld=new Float32Array(nb);
+    this.bTear=new Float32Array(nb);
+    this.bStf=new Float32Array(nb);
     for(let b=0;b<nb;b++){
-      this.bA[b]=beams[b*4]*3;this.bB[b]=beams[b*4+1]*3;   // 미리 *3 해 둔 성분 오프셋
-      this.bRest[b]=beams[b*4+2];this.bR0[b]=beams[b*4+3];}
+      const o=b*STRIDE;
+      this.bA[b]=beams[o]*3;this.bB[b]=beams[o+1]*3;       // 미리 *3 해 둔 성분 오프셋
+      this.bRest[b]=beams[o+2];this.bR0[b]=beams[o+3];
+      const bi=beams[o+4],bj=beams[o+5],bk=beams[o+6];
+      const ddx=beams[o+7],ddy=beams[o+8],ddz=beams[o+9];
+      const zt=NZ>1?(bk+ddz*.5)/(NZ-1):.5;                 // 빔 중점의 0(뒤)~1(앞)
+      const c=this._cellAt(zt);                            // 1=승객셀, 0=크럼플존
+      const jt=NY>1?(bj+ddy*.5)/(NY-1):.5;                 // 0(바닥)~1(지붕)
+      let yld=.010+.075*c*c;                               // 크럼플 0.010 ↔ 셀 0.085
+      let tear=.38+2.4*c*c;                                // 크럼플 0.38 ↔ 셀 2.78(사실상 안 찢김)
+      let stf=.34+.66*c;                                   // 구속 강성
+      /* ① 프레임 레일(바닥)은 찢어지지 않고 '접힌다' — 파열 문턱만 크게 */
+      if(bj===0){tear+=1.4;yld*=.85;}
+      /* ② 본넷·트렁크 상판(크럼플존 윗면)은 가장 잘 찢어진다 */
+      if(c<.5&&jt>.62){tear*=.55;yld*=.75;}
+      /* ③ 종방향(z) 레일에 좌굴 개시부를 교대로 심는다 —
+            균일하게 뭉개지지 않고 아코디언처럼 '특이하게 접히는' 형태가 나온다. */
+      if(ddz!==0&&c<.75)yld*=(bk&1)?.50:1.7;
+      /* ④ B필러(셀 앞뒤 경계)의 세로 기둥은 특별히 단단하게 — 캐빈이 접히지 않게 */
+      if(ddy!==0&&c>.85){stf=1;tear+=1.2;yld*=1.6;}
+      this.bYld[b]=yld;this.bTear[b]=tear;this.bStf[b]=stf;}
     // 빔 파열(tearing): 인장 변형률이 한계를 넘으면 끊어져 구속 해제 → 판금이 '찢어져' 벌어짐
     this.bbrk=new Uint8Array(this.nb);
     this.torn=0;
@@ -134,9 +196,15 @@ class SoftLattice{
     const gFrac=Math.min(.4,sev*sev*.34+sev*.2)*(.48+.52*axFrac); // 전역 프레임 손상: 속도 제곱 성분(고속일수록 전체가 굽음)
     const micro=Math.min(.05,Math.max(0,dv-5)*.0011); // 전신 미세 소성: 모든 부품·프레임이 충돌 가속도에 비례해 약간씩 틀어짐
     const s0=-axExt*1.05;
-    const P=this.pos,Q=this.prev,PL=this.plast,HM=this.home,RG=this.rag;
+    const P=this.pos,Q=this.prev,PL=this.plast,HM=this.home,RG=this.rag,CL=this.nCell;
+    /* 아코디언 주름축 — 충격축에 수직인 방향으로 한 칸씩 반대로 접는다.
+       (정면·측면 충돌이면 상하로, 지붕 충돌이면 앞뒤로 접힌다) */
+    const foldY=Math.abs(ly)<.72?1:0, foldZ=1-foldY;
+    const FW=Math.max(.20,axExt*.26);                  // 주름 간격
     for(let i=0;i<this.n;i++){
       const a=i*3;
+      const cf=CL?CL[i]:0;                             // 1=승객칸(잘 안 부서짐) 0=크럼플존
+      const crushW=1.22-1.10*cf;                       // 크럼플존 ×1.22 ↔ 승객칸 ×0.12
       const dx=P[a]-lp.x,dy=P[a+1]-lp.y,dz=P[a+2]-lp.z;
       const proj=dx*lx+dy*ly+dz*lz;                    // 충격축 방향(차 안쪽 +)
       const ex=dx-proj*lx,ey=dy-proj*ly,ez=dz-proj*lz; // 직교 성분
@@ -145,16 +213,24 @@ class SoftLattice{
       if(proj>-.65&&proj<crushLen&&perpH<RH&&perpV<RV){
         const wh=1-perpH/RH,wv=1-perpV/RV;
         const wl=proj<0?1:1-proj/crushLen;             // 접촉면서 최대 → 안쪽으로 감쇠
-        const f=depth*wh*wh*wv*Math.max(0,wl)*(.55+.9*RG[i]);
+        const f=depth*wh*wh*wv*Math.max(0,wl)*(.55+.9*RG[i])*crushW;
         const uy=ly>0?ly*.3:ly*.72;                    // 위로 솟구침 억제
         // 포아송 팽출: 앞뒤로 눌린 재료가 위아래로 밀려남 → 프레임이 상하로 약간 늘어남
         const by=f*.22*(HM[a+1]>.02?1:HM[a+1]<-.02?-1:0)*(1-Math.abs(ly));
         P[a]+=lx*f;P[a+1]+=uy*f+by;P[a+2]+=lz*f;
         PL[a]+=lx*f;PL[a+1]+=uy*f+by;PL[a+2]+=lz*f;
-        Q[a]+=lx*f;Q[a+1]+=uy*f+by;Q[a+2]+=lz*f;}
+        Q[a]+=lx*f;Q[a+1]+=uy*f+by;Q[a+2]+=lz*f;
+        /* 아코디언 좌굴 — 크럼플존에서만. 충격축을 따라 한 칸 걸러 반대로 밀어
+           균일하게 뭉개지는 대신 프레임이 주름지며 특이하게 접힌다. */
+        if(cf<.55){
+          const sgn=(Math.floor((proj+40)/FW)&1)?1:-1;
+          const amp=f*.44*(1-cf/.55)*(.6+.8*RG[i]);
+          P[a+1]+=foldY*sgn*amp;P[a+2]+=foldZ*sgn*amp;
+          PL[a+1]+=foldY*sgn*amp;PL[a+2]+=foldZ*sgn*amp;
+          Q[a+1]+=foldY*sgn*amp;Q[a+2]+=foldZ*sgn*amp;}}
       // (3) 전신 미세 소성: 재질 편차(rag)로 노드마다 다르게 → 프레임 전체가 가속도에 비례해 미세하게 뒤틀림
       if(micro>0){
-        const mj=micro*(.35+.65*RG[i]);
+        const mj=micro*(.35+.65*RG[i])*(1-.62*cf);
         P[a]+=lx*mj;P[a+1]+=ly*mj*.5;P[a+2]+=lz*mj;
         PL[a]+=lx*mj;PL[a+1]+=ly*mj*.5;PL[a+2]+=lz*mj;
         Q[a]+=lx*mj;Q[a+1]+=ly*mj*.5;Q[a+2]+=lz*mj;}
@@ -162,7 +238,7 @@ class SoftLattice{
       if(gFrac>0){
         const s=-(P[a]*lx+P[a+1]*ly+P[a+2]*lz);
         if(s>s0){
-          const mvs=gFrac*(s-s0)*.4;
+          const mvs=gFrac*(s-s0)*.4*(1-.74*cf);        // 승객칸은 전역 프레임 압축도 거의 안 먹는다
           P[a]+=lx*mvs;P[a+1]+=ly*mvs;P[a+2]+=lz*mvs;
           PL[a]+=lx*mvs;PL[a+1]+=ly*mvs;PL[a+2]+=lz*mvs;
           Q[a]+=lx*mvs;Q[a+1]+=ly*mvs;Q[a+2]+=lz*mvs;}}
@@ -176,6 +252,13 @@ class SoftLattice{
       P[a]  =clamp(P[a],  mn[0]-pg,-mn[0]+pg); Q[a]  =clamp(Q[a],  mn[0]-pg,-mn[0]+pg);
       P[a+1]=clamp(P[a+1],mn[1]-.07,-mn[1]+pg); Q[a+1]=clamp(Q[a+1],mn[1]-.07,-mn[1]+pg); // 아래로는 7cm까지만(범퍼가 바닥 밑으로 안 들어감)
       P[a+2]=clamp(P[a+2],mn[2]-pg,-mn[2]+pg); Q[a+2]=clamp(Q[a+2],mn[2]-pg,-mn[2]+pg);}
+    /* 접힘 단조성 — 주름이 깊어도 격자 판이 앞뒤로 뒤집히지는 않게 한다.
+       (뒤집히면 메시 면이 반전돼 차가 안팎이 뒤바뀐 것처럼 보인다) */
+    {const NXl=this.NX,NYl=this.NY,NZl=this.NZ,ix=this.idx,GAP=this.cell[2]*.12;
+     for(let k=1;k<NZl;k++)for(let j=0;j<NYl;j++)for(let i=0;i<NXl;i++){
+       const a=ix(i,j,k)*3,b=ix(i,j,k-1)*3;
+       const d=P[b+2]+GAP-P[a+2];
+       if(d>0){P[a+2]+=d;Q[a+2]+=d;PL[a+2]+=d;}}}
     this.hot=Math.min(this.hot+.6+sev*1.6,3.4);this.dirty=true;
   }
   update(dt){
@@ -212,18 +295,19 @@ class SoftLattice{
       /* beam constraints + plasticity + tearing
          소성·파열 판정은 첫 반복에서만 필요하므로 루프를 분리한다
          (핫 루프에서 분기를 빼 반복당 비용을 줄인다 — 결과는 동일). */
+      const YL=this.bYld,TR=this.bTear,SF=this.bStf;
       for(let b=0;b<nb;b++){
         if(BK[b])continue;                     // 끊어진 빔: 구속 없음(판금 찢김)
         const ia=bA[b],ib=bB[b];
         const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
         const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
         const rest0=bR0[b],rc=bRest[b],strain=(len-rc)/rest0;
-        // 파열: 인장이 한계(90%)를 넘으면 용접부가 뜯김 → 이후 구속 해제
-        if(strain>.9){BK[b]=1;this.torn++;continue;}
-        if(Math.abs(strain)>.014)              // 항복: 압축은 깊게, 인장은 찢김 허용(1.4배까지)
+        // 파열: 부위별 문턱을 넘으면 용접부가 뜯김 → 이후 구속 해제
+        if(strain>TR[b]){BK[b]=1;this.torn++;continue;}
+        if(Math.abs(strain)>YL[b])             // 항복: 압축은 깊게, 인장은 찢김 허용(1.4배까지)
           bRest[b]=clamp(rc+(len-rc)*.92,rest0*.05,rest0*1.4);
         const rest=bRest[b];
-        const diff=(len-rest)/len*.5*.42;
+        const diff=(len-rest)/len*.5*.42*SF[b];
         P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
         P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
       for(let it=1;it<iters;it++)
@@ -232,7 +316,7 @@ class SoftLattice{
           const ia=bA[b],ib=bB[b];
           const dx=P[ib]-P[ia],dy=P[ib+1]-P[ia+1],dz=P[ib+2]-P[ia+2];
           const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1e-6;
-          const diff=(len-bRest[b])/len*.5*.42;
+          const diff=(len-bRest[b])/len*.5*.42*SF[b];
           P[ia]+=dx*diff;P[ia+1]+=dy*diff;P[ia+2]+=dz*diff;
           P[ib]-=dx*diff;P[ib+1]-=dy*diff;P[ib+2]-=dz*diff;}
     }

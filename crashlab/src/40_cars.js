@@ -87,6 +87,7 @@ const CARS=[
  {id:"maybach",name:"메르세데스-마이바흐 GLS",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.9초",top:240,
   desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
   model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,
+  wheelStyle:"multi",          // GLS 순정 멀티스포크 알로이(밝은 폴리시드)
   /* 마이바흐는 v6.0 그대로 둔다 — 크롬 킷·헤드램프 어셈블리·범퍼 피팅 등
      덧붙이던 장식은 전부 제거(요청: 6.0 버전대로). */
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
@@ -432,31 +433,76 @@ function glassMatFor(spec){
 const MAT_LAMP=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.9,
   side:THREE.DoubleSide,toneMapped:false}); // 자체발광(조명 무시) 투명 렌즈 — 실제 빛나는 램프
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222,side:THREE.DoubleSide}); // 양면 → 타이어 측벽이 비쳐 보이지 않음
+/* 원본 스캔 휠용 — 림이 매끈해야 하므로 평면음영을 끄고 금속 광택을 준다 */
+const MAT_WHEEL_REAL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,
+  shininess:110,specular:0x8d97a4,side:THREE.DoubleSide});
+/* 타이어는 무광 고무 — 림과 같은 스페큘러를 주면 검은 고무가 하얗게 타 버린다 */
+const MAT_TIRE_REAL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,
+  shininess:6,specular:0x101216,side:THREE.DoubleSide});
+/* 모델에 실제 휠 지오메트리가 구워져 있으면(entry.wheel.v>0) 그것을 쓴다.
+   좌우는 거울상이어야 타이어 바깥면·스포크 오목면이 제대로 바깥을 본다. */
+const _realWheelCache={};
+function realWheelGeo(e,scale,mirror){
+  /* 구형 베이크에는 wheel.v 만 있고 실제 정점 데이터(p)는 없다 — 그때는 절차 휠을 쓴다 */
+  if(!e||!e.wheel||!e.wheel.v||!e.wheel.p)return null;
+  const k=(e.wheel.p.length)+"@"+scale.toFixed(4)+(mirror?"M":"");
+  if(_realWheelCache[k])return _realWheelCache[k];
+  const g=Assets.geo(e.wheel,{scale});
+  if(mirror){
+    const p=g.attributes.position.array,nr=g.attributes.normal.array;
+    for(let i=0;i<p.length;i+=3){p[i]=-p[i];nr[i]=-nr[i];}
+    const ix=g.index;                       // x 반전 → 삼각형 감김이 뒤집히므로 되돌린다
+    if(ix){const a=ix.array;for(let i=0;i<a.length;i+=3){const t=a[i+1];a[i+1]=a[i+2];a[i+2]=t;}}}
+  /* 인덱스 앞쪽 tire개는 타이어(무광 고무), 나머지는 림·디스크·캘리퍼(금속) */
+  const ti=e.wheel.tire|0,tot=g.index?g.index.count:0;
+  if(ti>0&&ti<tot){g.clearGroups();g.addGroup(0,ti,0);g.addGroup(ti,tot-ti,1);}
+  g.computeBoundingSphere();
+  return _realWheelCache[k]=g;}
 let _wheelGeoCache={};
-function wheelGeo(r,wd,rimS){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부). rimS=대구경 휠 배율
+/* style="multi": 밝은 폴리시드 멀티스포크(마이바흐 GLS 순정 23인치 계열).
+   원본 GLS 메시의 휠은 휠당 600삼각형 남짓에 림·타이어가 같은 재질(Color_M02)이라
+   그대로 옮기면 시커먼 원반이 된다 — 그래서 같은 디자인을 절차로 다시 만든다. */
+function wheelGeo(r,wd,rimS,style){ // 실감형: 타이어(고무)+알로이 림+스포크+센터캡 (회전부). rimS=대구경 휠 배율
   rimS=Math.min(rimS||1,1.28);
-  const k=(r*100|0)+"_"+(wd*100|0)+"_"+(rimS*100|0);
+  const k=(r*100|0)+"_"+(wd*100|0)+"_"+(rimS*100|0)+"_"+(style||"");
   if(!_wheelGeoCache[k]){
-    const rim=r*.62*rimS;                       // 림 페이스 반경(대구경일수록 사이드월 얇게)
+    const multi=style==="multi";
+    const rim=r*(multi?.70:.62)*rimS;           // 림 페이스 반경(대구경일수록 사이드월 얇게)
     const tw=Math.min(Math.max(wd*.55,r*.19),(r-rim)*1.15+.02);
+    /* 타이어 토러스는 '튜브 반경' 하나로 폭과 사이드월 두께를 동시에 정한다.
+       두꺼운 타이어를 만들려고 tw 를 키우면 사이드월이 휠 페이스를 통째로 덮어
+       림·스포크가 하나도 안 보이는 '민무늬 원반'이 된다.
+       multi 는 단면을 얇게 잡고 축방향(로컬 z)만 늘려 폭을 되찾는다. */
+    const ttR=multi?Math.max((r-rim)*.52,r*.06):tw;
     const items=[
       // 타이어: 토러스(림이 보이는 실제 단면)
-      {geo:new THREE.TorusGeometry(r-tw,tw,10,28),color:0x0c0d0f,ry:Math.PI/2,sx:1,sy:1,sz:1},
+      {geo:new THREE.TorusGeometry(r-ttR,ttR,10,multi?30:28),color:0x0c0d0f,ry:Math.PI/2,
+       sx:1,sy:1,sz:multi?Math.max(1,(wd*.52)/ttR):1},
       // 림 배럴 (딥 건메탈)
-      {geo:new THREE.CylinderGeometry(rim*1.03,rim*1.03,wd*.66,20),color:0x17191d,rz:Math.PI/2},
-      // 림 디쉬 (다크 알로이 페이스 — AMG 스타일)
-      {geo:new THREE.CylinderGeometry(rim,rim,wd*.68,20),color:0x2c3138,rz:Math.PI/2},
+      {geo:new THREE.CylinderGeometry(rim*1.03,rim*1.03,wd*.66,20),color:multi?0x23272d:0x17191d,rz:Math.PI/2},
+      /* 림 디쉬. multi 는 얇게 만들어 안쪽으로 물린다 —
+         두꺼운 원반이면 스포크가 그 속에 파묻혀 휠이 '민무늬 접시'로 보인다. */
+      {geo:new THREE.CylinderGeometry(multi?rim*.94:rim,multi?rim*.94:rim,multi?wd*.26:wd*.68,multi?26:20),
+       color:multi?0x0c0e11:0x2c3138,rz:Math.PI/2},
       // 폴리시드 림 립(밝은 링)
-      {geo:new THREE.TorusGeometry(rim,r*.03,6,26),color:0xc7ced6,ry:Math.PI/2},
+      {geo:new THREE.TorusGeometry(rim,r*.03,6,26),color:multi?0xdfe5ec:0xc7ced6,ry:Math.PI/2},
       // 센터 캡 + 허브 링
       {geo:new THREE.CylinderGeometry(r*.12,r*.12,wd*.74,12),color:0xd8dde3,rz:Math.PI/2},
-      {geo:new THREE.TorusGeometry(r*.2,r*.02,5,16),color:0x8f979f,ry:Math.PI/2},
+      {geo:new THREE.TorusGeometry(r*.2,r*.02,5,16),color:multi?0xb6bec8:0x8f979f,ry:Math.PI/2},
       // 브레이크 디스크(회전부 — 휠과 함께 돈다)
-      {geo:new THREE.CylinderGeometry(r*.46,r*.46,wd*.3,16),color:0x484d54,rz:Math.PI/2}];
-    // 트윈 5-스포크(10개, 폴리시드 페이스 + 얇은 단면)
-    for(let sp=0;sp<10;sp++){
-      const a=sp*Math.PI/5+(sp%2?.11:-.11);
-      items.push({geo:new THREE.BoxGeometry(wd*.62,rim*1.87,r*.055),color:sp%2?0xb9c2cc:0xd4dae0,rx:a});}
+      {geo:new THREE.CylinderGeometry(r*(multi?.34:.46),r*(multi?.34:.46),wd*.3,16),color:0x484d54,rz:Math.PI/2}];
+    if(multi){
+      /* 22개 얇은 폴리시드 스포크 — 디쉬(wd*.26)보다 넓게 만들어 양면 모두에서 도드라진다.
+         (휠 지오메트리는 좌우 공용이라 한쪽 면에만 붙이면 반대편이 민무늬가 된다) */
+      for(let sp=0;sp<22;sp++)
+        items.push({geo:new THREE.BoxGeometry(wd*.72,rim*1.76,r*.028),
+          color:sp%2?0xcdd5de:0xe8edf3,rx:sp*Math.PI/11});
+      items.push({geo:new THREE.TorusGeometry(rim*.36,r*.030,6,22),color:0xb8c1cb,ry:Math.PI/2});
+    }else{
+      // 트윈 5-스포크(10개, 폴리시드 페이스 + 얇은 단면)
+      for(let sp=0;sp<10;sp++){
+        const a=sp*Math.PI/5+(sp%2?.11:-.11);
+        items.push({geo:new THREE.BoxGeometry(wd*.62,rim*1.87,r*.055),color:sp%2?0xb9c2cc:0xd4dae0,rx:a});}}
     // 밸브 마커(오프센터 포인트) — 회전이 어느 속도에서도 또렷이 보임
     items.push({geo:new THREE.BoxGeometry(wd*.8,r*.09,r*.09),color:0xffd23e,y:r*.48});
     _wheelGeoCache[k]=mergeGeoms(items);}
@@ -678,7 +724,7 @@ class CarVisual{
            rx:Math.PI/2,x:(sp-1.5)*hx*.42,y:by+hy*.78,z:zF+.06});
        this.podMesh=new THREE.Mesh(mergeGeoms(pods),lensMat);
        this.group.add(this.podMesh);}}
-    const wg=wheelGeo(spec.wheels.radius,spec.wheels.width,spec.rimScale);
+    const wg=wheelGeo(spec.wheels.radius,spec.wheels.width,spec.rimScale,spec.wheelStyle);
     const bg=brakeGeo(spec.wheels.radius,spec.wheels.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
     // 휠 아치에 꽉 끼는 시각 스케일(물리는 그대로) — 스캔 차량의 아치 개구부 충전
@@ -693,11 +739,20 @@ class CarVisual{
     const linked=spec.id==="offroad"||spec.id==="offroadc";
     const linkMat=linked?new THREE.MeshPhongMaterial({color:0x2a2e35,flatShading:true,shininess:26}):null;
     const susLen=linked?spec.susp.rest*.62:0;   // 허브→차체 바닥까지만(펜더 위로 튀어나오지 않게)
+    /* 원본 휠(림·타이어·브레이크까지 한 덩어리)이 있으면 절차 휠·브레이크를 대체한다 */
+    const rwR=realWheelGeo(e,spec.modelScale,false),rwL=realWheelGeo(e,spec.modelScale,true);
+    if(rwR)this._wheelGeo=rwR;
+    /* 절차 휠은 spec.wheels.radius 로 만들어지지만 원본 휠은 모델 치수 그대로다.
+       wheelRadMul 등으로 물리 반경을 손봤다면 그 비율만큼 시각 반경도 맞춘다. */
+    const rwK=rwR?spec.wheels.radius/((((e.wheel.bb[4]-e.wheel.bb[1])/2)*spec.modelScale)||1):1;
     for(let i=0;i<4;i++){
-      const m=new THREE.Mesh(wg,MAT_DETAIL);m.castShadow=true;
-      const br=new THREE.Mesh(bg,MAT_DETAIL);
-      if(wvs!==1){m.scale.set(1,wvs,wvs);br.scale.set(1,wvs,wvs);}
-      const grp=new THREE.Group();grp.add(m);grp.add(br);
+      const left=(i%2===0);                                   // 0,2 = 좌
+      const m=new THREE.Mesh(rwR?(left?rwL:rwR):wg,
+        rwR?(rwR.groups.length>1?[MAT_TIRE_REAL,MAT_WHEEL_REAL]:MAT_WHEEL_REAL):MAT_DETAIL);
+      m.castShadow=true;
+      const br=rwR?null:new THREE.Mesh(bg,MAT_DETAIL);        // 원본 휠엔 디스크·캘리퍼가 이미 있다
+      if(wvs*rwK!==1){m.scale.set(1,wvs*rwK,wvs*rwK);if(br)br.scale.set(1,wvs,wvs);}
+      const grp=new THREE.Group();grp.add(m);if(br)grp.add(br);
       if(linked){
         const inX=(i%2===0?1:-1)*spec.wheels.radius*.5;         // 차체 안쪽 방향
         const strut=new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,susLen,8),linkMat);
@@ -783,7 +838,7 @@ class CarVisual{
     this.parts={};
     // 휠(슬릭 타이어) — 다른 절차 차량과 동일한 파이프라인
     this.wheelMeshes=[];
-    const wg=wheelGeo(W.radius,W.width,spec.rimScale);
+    const wg=wheelGeo(W.radius,W.width,spec.rimScale,spec.wheelStyle);
     const bg=brakeGeo(W.radius,W.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
     for(let i=0;i<4;i++){
@@ -840,7 +895,7 @@ class CarVisual{
       trunk:this.mkPart(hx*1.35,hy*.55,.05,0,stationLerp(st,-hz*.99,"y1")+hy*.28,-hz-.02,partMat)};
     this.partHp={fb:1,rb:1,hood:1,trunk:1,dl:1,dr:1,ml:.35,mr:.35};
     this.wheelMeshes=[];
-    const wg=wheelGeo(W.radius,W.width,spec.rimScale);
+    const wg=wheelGeo(W.radius,W.width,spec.rimScale,spec.wheelStyle);
     const bg=brakeGeo(W.radius,W.width);
     this._wheelGeo=wg;this.wheelOff=[false,false,false,false];
     for(let i=0;i<4;i++){
