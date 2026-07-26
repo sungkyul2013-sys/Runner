@@ -297,14 +297,18 @@ class Vehicle{
     /* 🛋️ 자세 안정(플래너 계열) — 차체 피치·롤 각속도를 직접 감쇠한다.
        스프링을 무르게 두면 승차감은 좋아지지만 몸이 출렁이는데, 각속도만 따로 잡아 주면
        무른 스프링의 부드러움을 유지하면서 흔들림(뱃멀미)은 사라진다. */
+    /* 충돌 직후에는 자세 제어를 풀어 준다 — 안 그러면 반동(뒤가 들리며 밀려남)이
+       생기는 순간 바로 눌려 없어진다. crashKick 은 CarVisual.applyImpact 가 세운다. */
+    if(this.crashKick>0)this.crashKick=Math.max(0,this.crashKick-dt);
+    const attF=this.crashKick>0?.14:1;
     if(susp.attq&&groundCount>0){
       b.vecToWorld(_vLx1.set(1,0,0),_vLx2);                 // 피치 축
-      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq);
+      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq*attF);
       b.vecToWorld(_vLx1.set(0,0,1),_vLx2);                 // 롤 축
-      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq*1.3);
+      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq*1.3*attF);
       // 수직 요동도 한 번 더 — 네 바퀴 접지 시에만(공중에서 부양 방지)
       if(groundCount===4&&susp.sky)
-        b.force.y-=b.vel.y*susp.sky*.6;}
+        b.force.y-=b.vel.y*susp.sky*.6*attF;}
     /* 🛋️ 차체 헤이브 댐퍼 — 휠 지지력(sF)과 무관한 '별도의' 힘이라 접지를 해치지
        않으면서 차체 상하 흔들림만 잡는다. 스프링을 깎는 방식(sky/heave)과 달리
        지지력이 0으로 무너질 수 없어, 승차감을 올려도 방지턱 뒷면에서 자유낙하하지

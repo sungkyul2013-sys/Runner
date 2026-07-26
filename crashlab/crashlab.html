@@ -4965,14 +4965,18 @@ class Vehicle{
     /* 🛋️ 자세 안정(플래너 계열) — 차체 피치·롤 각속도를 직접 감쇠한다.
        스프링을 무르게 두면 승차감은 좋아지지만 몸이 출렁이는데, 각속도만 따로 잡아 주면
        무른 스프링의 부드러움을 유지하면서 흔들림(뱃멀미)은 사라진다. */
+    /* 충돌 직후에는 자세 제어를 풀어 준다 — 안 그러면 반동(뒤가 들리며 밀려남)이
+       생기는 순간 바로 눌려 없어진다. crashKick 은 CarVisual.applyImpact 가 세운다. */
+    if(this.crashKick>0)this.crashKick=Math.max(0,this.crashKick-dt);
+    const attF=this.crashKick>0?.14:1;
     if(susp.attq&&groundCount>0){
       b.vecToWorld(_vLx1.set(1,0,0),_vLx2);                 // 피치 축
-      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq);
+      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq*attF);
       b.vecToWorld(_vLx1.set(0,0,1),_vLx2);                 // 롤 축
-      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq*1.3);
+      b.torque.addScaledVector(_vLx2,-b.angVel.dot(_vLx2)*sp.mass*susp.attq*1.3*attF);
       // 수직 요동도 한 번 더 — 네 바퀴 접지 시에만(공중에서 부양 방지)
       if(groundCount===4&&susp.sky)
-        b.force.y-=b.vel.y*susp.sky*.6;}
+        b.force.y-=b.vel.y*susp.sky*.6*attF;}
     /* 🛋️ 차체 헤이브 댐퍼 — 휠 지지력(sF)과 무관한 '별도의' 힘이라 접지를 해치지
        않으면서 차체 상하 흔들림만 잡는다. 스프링을 깎는 방식(sky/heave)과 달리
        지지력이 0으로 무너질 수 없어, 승차감을 올려도 방지턱 뒷면에서 자유낙하하지
@@ -5364,7 +5368,9 @@ const CARS=[
         preview:.36,pvGain:9,attq:14},
   arb:60000,
   engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
-  brakeF:9200,steerLo:.56,steerHi:.11,aero:{cd:.5,df:55},gripF:1.12,gripR:1.1,
+  brakeF:9200,steerLo:.56,steerHi:.11,aero:{cd:.5,df:55},
+  /* 접지 강화 — 쉽게 미끄러지지 않게. 리어엔진 4WD라 뒤가 더 물린다. */
+  gripF:1.30,gripR:1.38,
   style:"super",colors:[0xd7dce2,0xd7263d,0xffe600,0x101418,0x00a8e8],
   stats:{spd:100,acc:100,grip:95,mass:35}},
  {id:"tractor",name:"막강 트랙터",icon:"🚜",drive:"4WD",mass:3200,hp:95,acc:"—",top:62,
@@ -6229,6 +6235,29 @@ class CarVisual{
     const d=Math.min(.72,.026*dv),R=.72+.032*dv;
     // 차체: 노드-빔 소프트바디에 충격 주입 (소성 변형은 격자가 계산)
     this.lattice.impact(imp.lp,imp.ln,dv);
+    /* ── 충돌 반동 ──
+       범퍼는 무게중심보다 낮다. 그 높이에서 수평으로 받아 급감속하면
+       실제로 차가 뒤로 튕기면서 반대쪽(뒤)이 들린다.
+       접촉 임펄스만으로는 서스펜션 자세 제어(attq·sky)가 곧바로 눌러 버려
+       거의 보이지 않으므로, 반동을 한 번 더 명시적으로 넣고
+       잠깐(0.5초) 자세 제어를 풀어 그 움직임이 보이게 한다. */
+    if(dv>4&&veh&&veh.body){
+      const b=veh.body, sev=Math.min(1,(dv-4)/26);
+      // 타격면 반대 방향으로 되튐(월드 좌표)
+      _vA.copy(imp.ln).applyQuaternion(b.quat).multiplyScalar(-1);
+      const back=sev*(1.6+2.4*sev);                 // 되튐 속도(m/s)
+      b.vel.addScaledVector(_vA,back);
+      /* 타격점이 무게중심보다 아래면 반대쪽이 들리는 피치 모멘트가 생긴다.
+         (임펄스를 접촉점에 걸면 팔길이가 자동으로 그 부호를 만든다) */
+      _vB.copy(imp.lp).applyQuaternion(b.quat);      // CoM→타격점(월드)
+      _vC.copy(_vA).multiplyScalar(b.mass*back*.16);
+      b.applyImpulse(_vC,_vB);
+      b.vel.y+=sev*.28;                              // 전체적으로 살짝 들썩
+      /* 각속도 상한 — 가벼운 스포츠카는 이 임펄스로 44°까지 곤두섰다(계측).
+         '약간 뜨면서 뒤로 밀리는' 정도로만 남긴다. */
+      {const w2=b.angVel.length(), LIM=1.15;
+       if(w2>LIM)b.angVel.multiplyScalar(LIM/w2);}
+      veh.crashKick=Math.max(veh.crashKick||0,.42);}
     /* 부품 손상은 '실제 타격 지점과의 거리'로 가중한다 — 정통으로 맞은 부품이 확실히
        뜯겨 나가고, 스친 부품은 휘기만 한다(예전엔 반경 안 모든 부품이 동일 피해). */
     const REACH=R+.5;
