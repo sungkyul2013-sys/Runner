@@ -75,17 +75,20 @@ const CARS=[
      스카이훅 + 비대칭 리바운드 + 노면 예측 + 자세 안정. 실차의 플래너/매직카펫 계열. */
   /* 포르쉐 직전 세팅(사용자 평: 그쪽이 더 부드럽고 흡수가 좋다)의 비율을 그대로 옮기고
      무게 2,490kg·긴 휠베이스에 맞춰 스트로크·스카이훅만 키웠다. */
-  susp:{k:36000,c:6600,travel:.46,rest:.28,
+  /* 요청: 더 가볍고 물렁하게 흡수는 많이 — 단, 바퀴만 움직이고 차체는 안 움직이게.
+     스프링을 무르게(k↓) + 스트로크를 길게 해서 흡수는 바퀴가 하고,
+     차체 쪽은 스카이훅·헤이브·자세감쇠를 크게 올려 그대로 붙잡는다. */
+  susp:{k:27000,c:6600,travel:.56,rest:.28,
         prog:1.7,        // 프로그레시브 레이트(바닥칠 직전만 단단)
-        sky:26000,       // 스카이훅(차체 상하 요동 직접 감쇠)
-        compMul:.18,     // 압축(흡수)은 부드럽게 — 충격이 차체로 안 올라간다
+        sky:52000,       // 스카이훅(차체 상하 요동 직접 감쇠)
+        compMul:.12,     // 압축(흡수)은 아주 부드럽게 — 충격이 차체로 안 올라간다
         rebMul:4.2,      // 신장은 조여 방지턱 후 차체·뒷축이 솟지 않게
         riseMul:3.4,     // 차체 상승 시 헤이브 댐퍼 강화
-        fCap:.46,        // 블로우오프 — 서스가 차체를 밀어올릴 힘 상한(중력 배수)
-        heave:30000,     // 상승 억제
-        preview:.44,     // 노면 예측 — 턱을 미리 읽고 스트로크를 준비
-        pvGain:11,
-        attq:13},        // 피치·롤 각속도 감쇠
+        fCap:.40,        // 블로우오프 — 서스가 차체를 밀어올릴 힘 상한(중력 배수)
+        heave:42000,     // 상승 억제
+        preview:.52,     // 노면 예측 — 턱을 미리 읽고 스트로크를 준비
+        pvGain:16,
+        attq:20},        // 피치·롤 각속도 감쇠
   arb:20000,
   engine:{maxT:850,redline:5600,idle:600},
   gears:[4.7,3.14,2.11,1.67,1.29,1.0,.84,.67],final:3.15,
@@ -99,7 +102,7 @@ const CARS=[
   /* 휠 치수 정합 — 계측: 아치 최고점이 타이어 위보다 12.7cm 높고(휠이 아치에 비해 너무 작다)
      휠 바깥면이 차체 최외곽보다 5.8cm 안으로 들어가 있었다. GLS 580 은 23인치(직경 0.8m)다.
      반경 0.269 → 0.40, 트랙 4.8cm 바깥으로. (기준: 포르쉐는 아치여유 -8.8cm·돌출 +4.5cm) */
-  wheelRadMul:1.55, wheelOutset:.062,
+  wheelRadMul:1.62, wheelOutset:.062, rideFix:true, rideLift:-.07,
   interior:true,               // 바닥·방화벽·프레임레일·시트·연료탱크 + 밀려드는 엔진 블록
   /* 마이바흐는 v6.0 그대로 둔다 — 크롬 킷·헤드램프 어셈블리·범퍼 피팅 등
      덧붙이던 장식은 전부 제거(요청: 6.0 버전대로). */
@@ -516,6 +519,29 @@ function realCaliperGeo(e,scale,mirror){
   full.setIndex(new THREE.BufferAttribute(new Uint32Array(ia),1));
   full.clearGroups();full.computeBoundingSphere();
   return _realCalCache[k]=full;}
+/* 원본 휠(림)에 맞춰 타이어를 새로 만든다.
+   원본 타이어는 두 소스가 겹쳐 지저분했고 폭·반경이 아치와 맞지 않았다.
+   림의 실측 외경(rimR)에서 접지 반경까지를 정확히 채운다. */
+const _realTyreCache={};
+function realTyreGeo(rimR,outR,width){
+  const k=(rimR*1000|0)+"_"+(outR*1000|0)+"_"+(width*1000|0);
+  if(_realTyreCache[k])return _realTyreCache[k];
+  const Ri=Math.max(rimR*.985,outR*.60), tr=Math.max(.012,(outR-Ri)/2);
+  const Rc=outR-tr;                                  // 토러스 중심 반경
+  const items=[
+    // 사이드월 — 단면은 얇게, 축방향으로만 늘려 폭을 맞춘다(휠 페이스를 덮지 않게)
+    {geo:new THREE.TorusGeometry(Rc,tr,10,34),color:0x0c0d0f,ry:Math.PI/2,
+     sx:1,sy:1,sz:Math.max(1,(width*.5)/tr)},
+    // 트레드 밴드
+    {geo:new THREE.CylinderGeometry(outR*.999,outR*.999,width*.94,34,1,true),
+     color:0x111214,rz:Math.PI/2}];
+  // 트레드 블록 — 회전이 눈에 보이게(911 타이어와 같은 느낌)
+  for(let i=0;i<28;i++){
+    const a=i*Math.PI*2/28;
+    items.push({geo:new THREE.BoxGeometry(width*.86,outR*.030,outR*.075),
+      color:i%2?0x191b1e:0x0a0b0d,
+      y:Math.cos(a)*(outR*.985),z:Math.sin(a)*(outR*.985),rx:-a});}
+  return _realTyreCache[k]=mergeGeoms(items);}
 let _wheelGeoCache={};
 /* style="multi": 밝은 폴리시드 멀티스포크(마이바흐 GLS 순정 23인치 계열).
    원본 GLS 메시의 휠은 휠당 600삼각형 남짓에 림·타이어가 같은 재질(Color_M02)이라
@@ -854,6 +880,12 @@ class CarVisual{
       const cg=rwR?realCaliperGeo(e,spec.modelScale,left):null;
       const br=cg?new THREE.Mesh(cg,MAT_WHEEL_REAL):(rwR?null:new THREE.Mesh(bg,MAT_DETAIL));
       if(wvs*rwK!==1){m.scale.set(1,wvs*rwK,wvs*rwK);if(br)br.scale.set(1,wvs*rwK,wvs*rwK);}
+      /* 새 타이어를 회전 메시의 자식으로 붙인다 — children[0] 이 돌면 함께 돈다 */
+      if(rwR&&e.wheel.rimR){
+        const rimR=e.wheel.rimR*spec.modelScale;
+        const tg=realTyreGeo(rimR,spec.wheels.radius/(wvs*rwK||1),
+                             spec.wheels.width/(wvs*rwK||1));
+        m.add(new THREE.Mesh(tg,MAT_TIRE_REAL));}
       const grp=new THREE.Group();grp.add(m);if(br)grp.add(br);
       if(linked){
         const inX=(i%2===0?1:-1)*spec.wheels.radius*.5;         // 차체 안쪽 방향

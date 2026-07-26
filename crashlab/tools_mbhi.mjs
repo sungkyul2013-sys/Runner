@@ -149,8 +149,10 @@ console.log('cells',cellMap.size,'kept tris',keptTris.length);
 const HEAD=[250,246,215].map(srgb2lin),TAIL=[196,24,24].map(srgb2lin);
 const lampCol=r=>{
   const ax=Math.abs(r.x);
-  if(r.z<-2.46&&r.y>.82&&r.y<1.16&&ax>.46&&ax<1.06)return HEAD;
-  if(r.z>2.42&&r.y>.96&&r.y<1.30&&ax>.52&&ax<1.10)return TAIL;
+  if(r.z<-2.46&&r.y>.80&&r.y<1.20&&ax>.42&&ax<1.10)return HEAD;
+  /* 테일램프는 '뒷면 판' 위에만. z 문턱이 낮으면 리어 쿼터패널까지 붉게 칠해져
+     차 옆구리에 빨간 얼룩이 생긴다(스크린샷 지적). z를 뒤로 더 밀고 폭도 좁힌다. */
+  if(r.z>2.66&&r.y>.98&&r.y<1.28&&ax>.56&&ax<1.06)return TAIL;
   return null;};
 /* ── 유리 ──
    그린하우스의 어두운(Interior 재질) 바깥 껍질 = 창유리다. 예전에는 이게 그냥 새까만

@@ -36,7 +36,9 @@ function add(S){
      · soup(차체 수프의 휠 원통) → 타이어 + 림 면   ← 스포크 '면'과 바깥 트레드가 여기에 있다
      · gltf(휠 재질)             → 림 스포크 + 캘리퍼 (타이어만 버린다)
    (림을 통째로 버려 봤더니 한쪽은 속이 들여다보이고 다른 쪽은 민무늬 원반이 됐다) */
-A.drop=[1]; B2.drop=[];
+/* 타이어는 양쪽 소스 모두 버린다 — 게임이 림 치수에 맞춰 새로 만든다.
+   원본 타이어는 두 소스가 겹쳐 지저분했고, 폭·반경이 아치와도 맞지 않았다. */
+A.drop=[1]; B2.drop=[1];
 add(A);add(B2);
 /* 회전부는 '휠(림·스포크·센터캡) + 타이어'만, 브레이크(캘리퍼·디스크)는 비회전.
    구분은 gltf 재질 이름으로 한다(tools_rrwheel). x좌표로 안/밖을 가르려 했더니
@@ -50,7 +52,27 @@ for(const t of tri){
   if(t[3]===2&&calIdx<0)calIdx=IDX.length;       // 여기부터 비회전
   IDX.push(t[0],t[1],t[2]);}
 if(calIdx<0)calIdx=IDX.length;
+/* ── 회전축 정확히 맞추기 ──
+   허브 추정이 조금 어긋나 있어(계측: z 중심이 2.4cm 편심) 휠이 축을 벗어나 돌았다.
+   남은 지오메트리(림)의 y·z 바운딩 중심을 원점으로 다시 잡는다. */
 const v=pos.length/3;
+{let yb=[1e9,-1e9],zb=[1e9,-1e9];
+ for(let i=0;i<v;i++){const y=pos[i*3+1],z=pos[i*3+2];
+   if(y<yb[0])yb[0]=y;if(y>yb[1])yb[1]=y;
+   if(z<zb[0])zb[0]=z;if(z>zb[1])zb[1]=z;}
+ const cy=(yb[0]+yb[1])/2, cz=(zb[0]+zb[1])/2;
+ for(let i=0;i<v;i++){pos[i*3+1]-=cy;pos[i*3+2]-=cz;}
+ console.log('회전축 보정 dy',cy.toFixed(4),'dz',cz.toFixed(4),
+   '→ 림반경',((yb[1]-yb[0])/2).toFixed(3));}
+/* 회전부(림)의 실제 최대 반경 — 게임이 이 값부터 타이어를 만든다.
+   전체 bb 는 비회전 캘리퍼까지 포함하므로 쓸 수 없다. */
+let rimR=0,rimHW=0;
+{const seen=new Set();
+ for(let t=0;t<calIdx;t+=3)for(let k=0;k<3;k++){
+   const q=IDX[t+k];if(seen.has(q))continue;seen.add(q);
+   const r=Math.hypot(pos[q*3+1],pos[q*3+2]);if(r>rimR)rimR=r;
+   const ax=Math.abs(pos[q*3]);if(ax>rimHW)rimHW=ax;}}
+console.log('회전 림 최대반경',rimR.toFixed(3),'반폭',rimHW.toFixed(3));
 let bb=[1e9,1e9,1e9,-1e9,-1e9,-1e9];
 for(let i=0;i<v;i++)for(let a=0;a<3;a++){const q=pos[i*3+a];
   if(q<bb[a])bb[a]=q;if(q>bb[3+a])bb[3+a]=q;}
@@ -62,7 +84,7 @@ for(let i=0;i<v;i++)for(let a=0;a<3;a++){const sc=(bb[3+a]-bb[a])||1;
 const b64=ta=>Buffer.from(ta.buffer,ta.byteOffset,ta.byteLength).toString('base64');
 const u16=v<=65535;
 const entry={v,bb:bb.map(x=>+x.toFixed(4)),p:b64(P),n:b64(N),c:b64(C),
-  i:b64(u16?new Uint16Array(IDX):new Uint32Array(IDX)),i16:u16,tire:tireIdx,cal:calIdx};
+  i:b64(u16?new Uint16Array(IDX):new Uint32Array(IDX)),i16:u16,tire:tireIdx,cal:calIdx,rimR:+rimR.toFixed(4),rimHW:+rimHW.toFixed(4)};
 let js=fs.readFileSync(SRC,'utf8');
 const j0=js.indexOf('{',js.indexOf('const BAKED=')),j1=js.lastIndexOf('};')+1;
 const BK=JSON.parse(js.slice(j0,j1));
