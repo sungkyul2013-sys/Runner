@@ -178,13 +178,56 @@ const MAPS=[
    mb.rumbleZone(CB,sz0+90,0,24,.007,.42,false);
    mb.texText(CB,sz0-8,2.8,"COBBLE","rgba(240,244,250,.7)");}
 
+  /* ══ 서스펜션 시험장 확장 2차 (15~18레인) ══ */
+
+  /* 15: 저턱 레인 — 3~7cm짜리 낮고 완만한 턱 연속.
+        큰 턱에서는 안 보이는 '잔거동'(초기 감쇠·미세 상하 진동)을 본다. */
+  {const LB=510;
+   mb.stamp(LB,sz0+80,12,(i,j)=>w.setS(i,j,S_ASP));
+   mb.texRect(LB,sz0+80,20,190,0,SURF_CSS[S_ASP]);
+   for(let k=0;k<14;k++)
+     mb.bump(LB,sz0+10+k*12.5,0,11,.030+(k%4)*.013,"round");
+   mb.texText(LB,sz0-8,2.8,"LOW BUMP","rgba(240,244,250,.7)");}
+
+  /* 16: 꿀렁임(롱웨이브) 레인 — 파장 9~16m의 완만한 기복.
+        차체 고유진동(1~1.5Hz)을 정면으로 때려 '출렁임'을 그대로 드러낸다. */
+  {const WV=534;
+   mb.stamp(WV,sz0+80,12,(i,j)=>w.setS(i,j,S_ASP));
+   mb.texRect(WV,sz0+80,20,190,0,SURF_CSS[S_ASP]);
+   let zz=sz0+12;
+   for(let k=0;k<13&&zz<sz0+180;k++){
+     const wl=9+(k%3)*3.5;                       // 파장 9 / 12.5 / 16m
+     mb.bump(WV,zz,0,11,.085+(k%2)*.035,"round");
+     zz+=wl;}
+   mb.texText(WV,sz0-8,2.8,"WAVE","rgba(240,244,250,.7)");}
+
+  /* 17: 트위스트 레인 — 좌·우 턱이 엇갈려 배치된다.
+        한쪽 앞바퀴가 올라갈 때 반대쪽은 내려가 차체가 비틀린다(대각 비틀림 강성 시험). */
+  {const TW=558;
+   mb.stamp(TW,sz0+80,13,(i,j)=>w.setS(i,j,S_ASP));
+   mb.texRect(TW,sz0+80,22,190,0,SURF_CSS[S_ASP]);
+   for(let k=0;k<16;k++){
+     const sx=(k%2)?1:-1;                        // 한 칸 걸러 좌·우
+     mb.bump(TW+sx*4.6,sz0+10+k*11,0,6.4,.115,"round");}
+   mb.texText(TW,sz0-8,2.8,"TWIST","rgba(240,244,250,.7)");}
+
+  /* 18: 숏하이 레인 — 짧고 높은 턱(폭 0.7m·높이 18~26cm).
+        천천히 넘으면 스트로크, 빠르게 넘으면 충격 — 블로우오프 특성이 드러난다. */
+  {const SH=582;
+   mb.stamp(SH,sz0+80,12,(i,j)=>w.setS(i,j,S_ASP));
+   mb.texRect(SH,sz0+80,20,190,0,SURF_CSS[S_ASP]);
+   for(let k=0;k<7;k++)
+     mb.bump(SH,sz0+18+k*24,0,11,.18+(k%3)*.04,"sharp");
+   mb.texText(SH,sz0-8,2.8,"SHORT-HIGH","rgba(240,244,250,.7)");}
+
   /* 신설 레인 진입·탈출 에이프런 — 기존 시험장 포장과 이어 붙여 고립 구역이 생기지 않게.
      (감사 결과 신설 레인만 별도 섬으로 잡히던 문제) */
   {const A0=sz0-16, A1=sz0+192;
    for(const az of[A0,A1])
-     mb.paintPath([{x:352,y:0,z:az},{x:494,y:0,z:az}],20,S_ASP,false,false);
+     mb.paintPath([{x:352,y:0,z:az},{x:594,y:0,z:az}],20,S_ASP,false,false);
    mb.paintPath([{x:352,y:0,z:A0},{x:352,y:0,z:A1}],18,S_ASP,false,false);
    mb.paintPath([{x:494,y:0,z:A0},{x:494,y:0,z:A1}],18,S_ASP,false,false);
+   mb.paintPath([{x:594,y:0,z:A0},{x:594,y:0,z:A1}],18,S_ASP,false,false);
    /* 시험장 본체(x≈180, '🔩 서스펜션 시험장' 지점)까지 연결 — 동쪽 레인 전체가
       별도 네트워크로 떨어져 차로 갈 수 없던 문제(꿀렁임 레인 포함)를 함께 해결 */
    mb.paintPath([{x:150,y:0,z:A0},{x:352,y:0,z:A0}],20,S_ASP,false,false);
@@ -283,6 +326,9 @@ const MAPS=[
     {name:"🗼 낙하 타워",x:-300,z:230,yaw:0},
     {name:"🚧 IIHS 충돌시험",x:30,z:270,yaw:0},
     {name:"🌊 꿀렁임 레인",x:362,z:-266,yaw:0},
+    {name:"🪶 저턱 레인",x:510,z:-266,yaw:0},
+    {name:"🌀 트위스트 레인",x:558,z:-266,yaw:0},
+    {name:"⛰️ 숏하이 레인",x:582,z:-266,yaw:0},
     {name:"🏁 핸들링 서킷",x:14,z:66,yaw:Math.PI*.35}];
   return mb.finalize(this);}},
 

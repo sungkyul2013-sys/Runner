@@ -70,17 +70,17 @@ const CARS=[
   wheels:{track:.9,front:1.6,rear:1.6,y:-.5,radius:.376,width:.28},
   /* 🛋️ 롤스로이스 승차감 패키지 — 무른 1차 스프링 + 프로그레시브 레이트 +
      스카이훅 + 비대칭 리바운드 + 노면 예측 + 자세 안정. 실차의 플래너/매직카펫 계열. */
-  susp:{k:36000,c:6600,travel:.32,rest:.28,
+  susp:{k:36000,c:6600,travel:.433,rest:.28,
         prog:1.5,        // 프로그레시브 레이트(바닥칠 직전만 단단)
         sky:15000,       // 스카이훅(차체 상하 요동 직접 감쇠)
-        compMul:.34,     // 압축(흡수) 국면은 아주 부드럽게 — 충격이 차체로 안 올라간다
-        rebMul:3.4,      // 신장(올라가는) 국면은 쪼인다 — 방지턱 후 차체가 솟지 않게
+        compMul:.22,     // 압축(흡수) 국면은 아주 부드럽게 — 충격이 차체로 안 올라간다
+        rebMul:5.0,      // 신장(올라가는) 국면은 쪼인다 — 방지턱 후 차체·뒷축이 솟지 않게
         riseMul:4.5,     // 차체가 상승할 때 헤이브 댐퍼 추가 강화
-        fCap:.88,        // 블로우오프 — 서스가 차체를 밀어올릴 수 있는 힘 상한(중력 배수)
-        heave:8500,     // 상승 억제: 차체가 위로 뜨려 할 때만 스프링력을 깎는다
-        preview:.32,     // 노면 예측 시간(s)
-        pvGain:5.0,      // 예측 보정 이득
-        attq:2.8},       // 피치·롤 각속도 감쇠
+        fCap:.62,        // 블로우오프 — 서스가 차체를 밀어올릴 수 있는 힘 상한(중력 배수)
+        heave:19000,     // 상승 억제: 차체가 위로 뜨려 할 때만 스프링력을 깎는다
+        preview:.42,     // 노면 예측 시간(s)
+        pvGain:9,        // 예측 보정 이득
+        attq:7.5},       // 피치·롤 각속도 감쇠
   arb:20000,
   engine:{maxT:850,redline:5600,idle:600},
   gears:[4.7,3.14,2.11,1.67,1.29,1.0,.84,.67],final:3.15,
@@ -459,11 +459,33 @@ function realWheelGeo(e,scale,mirror){
     for(let i=0;i<p.length;i+=3){p[i]=-p[i];nr[i]=-nr[i];}
     const ix=g.index;                       // x 반전 → 삼각형 감김이 뒤집히므로 되돌린다
     if(ix){const a=ix.array;for(let i=0;i<a.length;i+=3){const t=a[i+1];a[i+1]=a[i+2];a[i+2]=t;}}}
-  /* 인덱스 앞쪽 tire개는 타이어(무광 고무), 나머지는 림·디스크·캘리퍼(금속) */
-  const ti=e.wheel.tire|0,tot=g.index?g.index.count:0;
-  if(ti>0&&ti<tot){g.clearGroups();g.addGroup(0,ti,0);g.addGroup(ti,tot-ti,1);}
+  /* 인덱스 배치 = [타이어][림][캘리퍼].
+     캘리퍼는 브레이크라 휠과 같이 돌면 안 되므로 회전 메시에서 잘라낸다. */
+  const tot=g.index?g.index.count:0;
+  const ti=Math.min(e.wheel.tire|0,tot);
+  const cal=e.wheel.cal===undefined?tot:Math.min(e.wheel.cal,tot);
+  if(g.index)g.setIndex(new THREE.BufferAttribute(g.index.array.slice(0,cal),1));
+  g.clearGroups();
+  if(ti>0&&ti<cal){g.addGroup(0,ti,0);g.addGroup(ti,cal-ti,1);}
   g.computeBoundingSphere();
   return _realWheelCache[k]=g;}
+/* 회전하지 않는 브레이크(캘리퍼·디스크) — 원본 휠 인덱스의 캘리퍼 구간만 뽑는다 */
+const _realCalCache={};
+function realCaliperGeo(e,scale,mirror){
+  if(!e||!e.wheel||!e.wheel.p||e.wheel.cal===undefined)return null;
+  const k=(e.wheel.p.length)+"@"+scale.toFixed(4)+(mirror?"M":"");
+  if(_realCalCache[k]!==undefined)return _realCalCache[k];
+  const full=Assets.geo(e.wheel,{scale});
+  const idx=full.index;
+  if(!idx||e.wheel.cal>=idx.count){full.dispose();return _realCalCache[k]=null;}
+  const p=full.attributes.position.array,nr=full.attributes.normal.array;
+  const ia=Array.from(idx.array.slice(e.wheel.cal));
+  if(mirror){
+    for(let i=0;i<p.length;i+=3){p[i]=-p[i];nr[i]=-nr[i];}
+    for(let i=0;i<ia.length;i+=3){const t=ia[i+1];ia[i+1]=ia[i+2];ia[i+2]=t;}}
+  full.setIndex(new THREE.BufferAttribute(new Uint32Array(ia),1));
+  full.clearGroups();full.computeBoundingSphere();
+  return _realCalCache[k]=full;}
 let _wheelGeoCache={};
 /* style="multi": 밝은 폴리시드 멀티스포크(마이바흐 GLS 순정 23인치 계열).
    원본 GLS 메시의 휠은 휠당 600삼각형 남짓에 림·타이어가 같은 재질(Color_M02)이라
@@ -791,8 +813,10 @@ class CarVisual{
       const m=new THREE.Mesh(rwR?(left?rwL:rwR):wg,
         rwR?(rwR.groups.length>1?[MAT_TIRE_REAL,MAT_WHEEL_REAL]:MAT_WHEEL_REAL):MAT_DETAIL);
       m.castShadow=true;
-      const br=rwR?null:new THREE.Mesh(bg,MAT_DETAIL);        // 원본 휠엔 디스크·캘리퍼가 이미 있다
-      if(wvs*rwK!==1){m.scale.set(1,wvs*rwK,wvs*rwK);if(br)br.scale.set(1,wvs,wvs);}
+      /* 원본 휠의 캘리퍼는 회전부에서 빼내 여기(비회전 형제)로 붙인다 */
+      const cg=rwR?realCaliperGeo(e,spec.modelScale,left):null;
+      const br=cg?new THREE.Mesh(cg,MAT_WHEEL_REAL):(rwR?null:new THREE.Mesh(bg,MAT_DETAIL));
+      if(wvs*rwK!==1){m.scale.set(1,wvs*rwK,wvs*rwK);if(br)br.scale.set(1,wvs*rwK,wvs*rwK);}
       const grp=new THREE.Group();grp.add(m);if(br)grp.add(br);
       if(linked){
         const inX=(i%2===0?1:-1)*spec.wheels.radius*.5;         // 차체 안쪽 방향
@@ -1305,14 +1329,27 @@ class CarVisual{
       y:by+hy*.72,z:zFire-.20});                                     // 대시보드
     G.push({geo:new THREE.BoxGeometry(.30,.26,len*.24),color:0x181b20,
       y:by+hy*.34,z:(zRow[0]+zRow[1])/2});                           // 센터 콘솔
-    /* ⑥ 연료탱크 + 트렁크 바닥 */
+    /* ⑥ 휠 하우스 라이너 — 없으면 낮은 각도에서 아치가 옆으로 뻥 뚫려 반대편이 보인다 */
+    {const wf=spec.wheels.front,wr2=spec.wheels.rear,tv=spec.wheels.trackVis||spec.wheels.track;
+     const R=spec.wheels.radius*1.24, wI=Math.max(.10,tv-spec.wheels.width*.62);
+     for(const zc of[wf,-wr2])for(const sx of[-1,1]){
+       // 아치 안쪽 벽(세로판) — 휠과 실내 사이를 막는다
+       G.push({geo:new THREE.BoxGeometry(.035,R*1.15,R*2.0),color:0x1a1d22,
+         x:sx*wI,y:by+R*.52,z:zc});
+       // 아치 천장(반원 대신 납작한 아치 3장)
+       for(let q=0;q<3;q++){
+         const a2=(q-1)*.62;
+         G.push({geo:new THREE.BoxGeometry(spec.wheels.width*1.5,.03,R*.78),
+           color:0x1a1d22,x:sx*(tv-.01),y:by+R*.95-Math.abs(a2)*R*.22,
+           z:zc+a2*R*.72,rx:a2*.5});}}}
+    /* ⑦ 연료탱크 + 트렁크 바닥 */
     G.push({geo:new THREE.BoxGeometry(fw(zTank)*1.5,.22,.42),color:0x21262c,y:by+.16,z:zTank});
     G.push({geo:new THREE.BoxGeometry(fw(zR+len*.09)*1.7,.04,len*.16),color:0x23272e,
       y:by+hy*.30,z:zR+len*.09});
     this.interiorMesh=new THREE.Mesh(mergeGeoms(G),MI);
     this.group.add(this.interiorMesh);
     this.lattice.bind(this.interiorMesh);              // 껍데기와 함께 찌그러지고 찢긴다
-    /* ⑦ 엔진 블록 — 격자에 묶지 않는 강체. 충돌 시 통째로 밀려 들어온다. */
+    /* ⑧ 엔진 블록 — 격자에 묶지 않는 강체. 충돌 시 통째로 밀려 들어온다. */
     const E=[
       {geo:new THREE.BoxGeometry(.60,.52,.74),color:0x30353d},            // 블록
       {geo:new THREE.BoxGeometry(.66,.14,.56),color:0x3a4049,y:.32},      // 헤드커버

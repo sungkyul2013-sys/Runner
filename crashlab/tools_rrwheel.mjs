@@ -182,7 +182,11 @@ for(const t of WT){
 for(const r of cells.values()){r.x/=r.n;r.y/=r.n;r.z/=r.n;
   const L=Math.hypot(r.nx,r.ny,r.nz)||1;r.nx/=L;r.ny/=L;r.nz/=L;}
 /* 고무 삼각형을 앞으로 정렬 → 게임에서 두 머티리얼 그룹으로 분리 */
-kept.sort((a,b)=>(b[3]===1?1:0)-(a[3]===1?1:0));
+/* 정렬 순서 = 타이어 → 림 → 캘리퍼.
+   캘리퍼(브레이크)는 휠과 함께 돌면 안 되므로 게임이 인덱스 뒷부분만 떼어
+   회전하지 않는 별도 메시로 그린다. */
+const RANK={1:0,0:1,2:2};
+kept.sort((a,b)=>RANK[a[3]]-RANK[b[3]]);
 const map=new Map(),wp=[],wn=[],wc=[],widx=[];
 let tireIdx=0;
 const vert=k=>{
@@ -191,9 +195,12 @@ const vert=k=>{
   wp.push(r.x,r.y,r.z);wn.push(r.nx,r.ny,r.nz);
   const col=CLSCOL[r.cls];wc.push(col[0],col[1],col[2]);
   return v;};
+let calIdx=-1;
 for(const[ka,kb,kc,cls]of kept){
   if(cls===1)tireIdx+=3;
+  if(cls===2&&calIdx<0)calIdx=widx.length;
   widx.push(vert(ka),vert(kb),vert(kc));}
+if(calIdx<0)calIdx=widx.length;
 const wv=wp.length/3;
 let wbb=[1e9,1e9,1e9,-1e9,-1e9,-1e9];
 for(let i=0;i<wv;i++)for(let a=0;a<3;a++){const q=wp[i*3+a];
@@ -206,8 +213,8 @@ for(let i=0;i<wv;i++)for(let a=0;a<3;a++){const sc=(wbb[3+a]-wbb[a])||1;
 const b64=ta=>Buffer.from(ta.buffer,ta.byteOffset,ta.byteLength).toString('base64');
 const u16=wv<=65535;
 const OUT={v:wv,bb:wbb.map(x=>+x.toFixed(4)),p:b64(WP),n:b64(WN),c:b64(WC),
-  i:b64(u16?new Uint16Array(widx):new Uint32Array(widx)),i16:u16,tire:tireIdx};
+  i:b64(u16?new Uint16Array(widx):new Uint32Array(widx)),i16:u16,tire:tireIdx,cal:calIdx};
 fs.writeFileSync('/tmp/claude-0/-home-user-Runner/40ffe11b-8311-5c4c-9817-c1f9ffde4576/scratchpad/rr_wheel_gltf.json',JSON.stringify(OUT));
-console.log('휠(gltf) 정점',wv,'삼각형',widx.length/3,'고무',tireIdx/3,
+console.log('휠(gltf) 정점',wv,'삼각형',widx.length/3,'고무',tireIdx/3,'캘리퍼시작',calIdx,
   'r',((wbb[4]-wbb[1])/2).toFixed(3),'폭',(wbb[3]-wbb[0]).toFixed(3),
   'KB',(JSON.stringify(OUT).length/1024|0));

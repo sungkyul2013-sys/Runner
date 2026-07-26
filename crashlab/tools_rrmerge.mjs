@@ -26,12 +26,20 @@ function add(S){
     pos.push(S.pos[i*3],S.pos[i*3+1],S.pos[i*3+2]);
     nor.push(S.nor[i*3],S.nor[i*3+1],S.nor[i*3+2]);
     col.push(S.C[i*3],S.C[i*3+1],S.C[i*3+2]);}
-  for(let t=0;t<S.I.length;t+=3)
-    tri.push([off+S.I[t],off+S.I[t+1],off+S.I[t+2],(t<S.e.tire)?1:0]);}
+  const cal=S.e.cal===undefined?S.I.length:S.e.cal;
+  for(let t=0;t<S.I.length;t+=3){
+    const cls=t<S.e.tire?1:(t<cal?0:2);          // 1=고무 0=림 2=캘리퍼
+    tri.push([off+S.I[t],off+S.I[t+1],off+S.I[t+2],cls]);}}
 add(A);add(B2);
-tri.sort((a,b)=>b[3]-a[3]);                       // 고무 먼저
-const IDX=[];let tireIdx=0;
-for(const t of tri){if(t[3])tireIdx+=3;IDX.push(t[0],t[1],t[2]);}
+/* 타이어 → 림 → 캘리퍼 순. 캘리퍼는 회전하지 않는 별도 메시로 나간다. */
+const RANK={1:0,0:1,2:2};
+tri.sort((a,b)=>RANK[a[3]]-RANK[b[3]]);
+const IDX=[];let tireIdx=0,calIdx=-1;
+for(const t of tri){
+  if(t[3]===1)tireIdx+=3;
+  if(t[3]===2&&calIdx<0)calIdx=IDX.length;
+  IDX.push(t[0],t[1],t[2]);}
+if(calIdx<0)calIdx=IDX.length;
 const v=pos.length/3;
 let bb=[1e9,1e9,1e9,-1e9,-1e9,-1e9];
 for(let i=0;i<v;i++)for(let a=0;a<3;a++){const q=pos[i*3+a];
@@ -44,12 +52,12 @@ for(let i=0;i<v;i++)for(let a=0;a<3;a++){const sc=(bb[3+a]-bb[a])||1;
 const b64=ta=>Buffer.from(ta.buffer,ta.byteOffset,ta.byteLength).toString('base64');
 const u16=v<=65535;
 const entry={v,bb:bb.map(x=>+x.toFixed(4)),p:b64(P),n:b64(N),c:b64(C),
-  i:b64(u16?new Uint16Array(IDX):new Uint32Array(IDX)),i16:u16,tire:tireIdx};
+  i:b64(u16?new Uint16Array(IDX):new Uint32Array(IDX)),i16:u16,tire:tireIdx,cal:calIdx};
 let js=fs.readFileSync(SRC,'utf8');
 const j0=js.indexOf('{',js.indexOf('const BAKED=')),j1=js.lastIndexOf('};')+1;
 const BK=JSON.parse(js.slice(j0,j1));
 BK.rrghost.wheel=entry;
 fs.writeFileSync(SRC,js.slice(0,j0)+JSON.stringify(BK)+js.slice(j1));
-console.log('합친 휠 정점',v,'삼각형',IDX.length/3,'고무',tireIdx/3,
+console.log('합친 휠 정점',v,'삼각형',IDX.length/3,'고무',tireIdx/3,'캘리퍼시작',calIdx,
   'r',((bb[4]-bb[1])/2).toFixed(3),'폭',(bb[3]-bb[0]).toFixed(3),
   'KB',(JSON.stringify(entry).length/1024|0));
