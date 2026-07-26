@@ -42,6 +42,7 @@ for(const id of (process.argv[3]||'rrghost,maybach,gt').split(',')){
     return {셀범위:L.cellZ.map(x=>+x.toFixed(2)),
       구간변형cm:seg, 구간수축pct:shrink, 앞대셀_배수:+(seg[4]/Math.max(cellAvg,.01)).toFixed(1),
       찢김_뒤:tr,셀:tc,앞:tf, 전체찢김:L.torn,
-      dmg:[v.dmg.f|0,v.dmg.b|0], defVol:+Game.vis.defVol.toFixed(0)};})));
+      dmg:[v.dmg.f|0,v.dmg.b|0], defVol:+Game.vis.defVol.toFixed(0),
+      엔진밀림cm:Game.vis.engineMesh?+((Game.vis.engineHome.z-Game.vis.engineMesh.position.z)*100).toFixed(1):null};})));
 }
 await b.close();

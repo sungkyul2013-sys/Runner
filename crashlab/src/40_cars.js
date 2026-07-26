@@ -58,7 +58,7 @@ const CARS=[
   smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
   groundClear:.19,wheelVisFit:1.01,rideFix:true,rideLift:0,fitBumper:true,
   wheelVisScale:1.13,             // 아치 개구부에 비해 타이어가 작아 보이던 문제(시각 전용)
-  headlamp:{w:.40,h:.12,leds:5},   // 하우징+LED 5구+유리 렌즈
+  lampInset:.055,                 // 램프 어셈블리 제거 — 원본 렌즈면을 5.5cm 프레임 안쪽으로
   wheelTuck:.055,                 // 뒤에서 봤을 때 휠이 차체 밖으로 4cm 튀어나오던 문제 보정
   chromeKit:{grilleW:.34,grilleH:.26,grilleY:.74,grilleZ:.20,slats:13,
              rocker:false,        // 사이드실 몰딩 제거(옆면을 가로지르는 줄로 보였다)
@@ -88,6 +88,7 @@ const CARS=[
   desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
   model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,
   wheelStyle:"multi",          // GLS 순정 멀티스포크 알로이(밝은 폴리시드)
+  interior:true,               // 바닥·방화벽·프레임레일·시트·연료탱크 + 밀려드는 엔진 블록
   /* 마이바흐는 v6.0 그대로 둔다 — 크롬 킷·헤드램프 어셈블리·범퍼 피팅 등
      덧붙이던 장식은 전부 제거(요청: 6.0 버전대로). */
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
@@ -434,8 +435,10 @@ const MAT_LAMP=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,o
   side:THREE.DoubleSide,toneMapped:false}); // 자체발광(조명 무시) 투명 렌즈 — 실제 빛나는 램프
 const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,shininess:30,specular:0x222222,side:THREE.DoubleSide}); // 양면 → 타이어 측벽이 비쳐 보이지 않음
 /* 원본 스캔 휠용 — 림이 매끈해야 하므로 평면음영을 끄고 금속 광택을 준다 */
+/* 스페큘러를 넓고 밝게 주면 림 페이스처럼 큰 평면이 통째로 하얗게 탄다 —
+   좁고(높은 shininess) 어두운 하이라이트로 금속감만 남긴다. */
 const MAT_WHEEL_REAL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,
-  shininess:110,specular:0x8d97a4,side:THREE.DoubleSide});
+  shininess:280,specular:0x2e343d,side:THREE.DoubleSide});
 /* 타이어는 무광 고무 — 림과 같은 스페큘러를 주면 검은 고무가 하얗게 타 버린다 */
 const MAT_TIRE_REAL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,
   shininess:6,specular:0x101216,side:THREE.DoubleSide});
@@ -565,13 +568,33 @@ class CarVisual{
      크롬 몰딩·램프 하우징·미러 같은 '얹는 부품'을 차체 밖으로 튀어나오지 않게
      붙이는 기준. 세단은 휠아치가 가장 넓어서 차체 최대폭(xR)을 그대로 쓰면
      좁은 사이드실·코·램프 높이에서 막대기가 공중에 뜬 것처럼 보인다. */
-  bodySilWidth(y,z,tolY,tolZ){
+  /* 실루엣 격자 — (y,z) 칸마다 최대 |x| 를 한 번의 패스로 구워 둔다.
+     예전에는 질의마다 차체 정점을 전부 훑었는데, tintWindowTrim 이 정점마다 이걸
+     부르는 바람에 O(n²)가 됐다. 롤스로이스(17만 정점)에서 CarVisual 하나에 21.6초.
+     격자를 쓰면 굽는 데 한 번 O(n), 질의는 O(1)이고 결과는 사실상 같다. */
+  _silGrid(){
+    if(this._sg)return this._sg;
     const a=this.bodyMesh.geometry.attributes.position.array;
-    let mx=0;
-    for(let i=0;i<a.length;i+=3)
-      if(Math.abs(a[i+1]-y)<tolY&&Math.abs(a[i+2]-z)<tolZ){
-        const q=Math.abs(a[i]);if(q>mx)mx=q;}
-    return mx;}
+    const CY=.020,CZ=.025;                     // 칸 크기(질의 허용치보다 촘촘하게)
+    let y0=1e9,y1=-1e9,z0=1e9,z1=-1e9;
+    for(let i=0;i<a.length;i+=3){
+      const y=a[i+1],z=a[i+2];
+      if(y<y0)y0=y;if(y>y1)y1=y;if(z<z0)z0=z;if(z>z1)z1=z;}
+    const NY=Math.max(1,Math.ceil((y1-y0)/CY)+1),NZ=Math.max(1,Math.ceil((z1-z0)/CZ)+1);
+    const mx=new Float32Array(NY*NZ);          // 최대 |x|
+    for(let i=0;i<a.length;i+=3){
+      const x=Math.abs(a[i]),yi=((a[i+1]-y0)/CY)|0,zi=((a[i+2]-z0)/CZ)|0;
+      const k=yi*NZ+zi;
+      if(x>mx[k])mx[k]=x;}
+    return this._sg={mx,y0,z0,CY,CZ,NY,NZ};}
+  bodySilWidth(y,z,tolY,tolZ){
+    const g=this._silGrid();
+    const yA=Math.max(0,Math.floor((y-tolY-g.y0)/g.CY)),yB=Math.min(g.NY-1,Math.floor((y+tolY-g.y0)/g.CY));
+    const zA=Math.max(0,Math.floor((z-tolZ-g.z0)/g.CZ)),zB=Math.min(g.NZ-1,Math.floor((z+tolZ-g.z0)/g.CZ));
+    let m=0;
+    for(let yi=yA;yi<=yB;yi++){const row=yi*g.NZ;
+      for(let zi=zA;zi<=zB;zi++){const q=g.mx[row+zi];if(q>m)m=q;}}
+    return m;}
   /* (x,y) 근방 차체 앞면의 최전방 z — 앞면 장식이 코 안쪽에 파묻히거나
      밖으로 튀어나오지 않게 붙일 기준면 */
   bodyNoseZ(x,y,tolX,tolY){
@@ -604,6 +627,20 @@ class CarVisual{
       cx:spec.modelCx,cy:spec.modelCy,cz:spec.modelCz,paint:new THREE.Color(colorHex)});
     this.bodyMesh=new THREE.Mesh(split.main,spec.gloss?MAT_CAR_GLOSS:(spec.smoothShade?MAT_CAR_SMOOTH:MAT_CAR));
     this.bodyMesh.castShadow=true;this.group.add(this.bodyMesh);
+    /* ── 램프를 차체 프레임 안쪽으로 ──
+       하우징·LED·립을 덧대는 대신, 원본 모델의 램프 렌즈면 자체를 개구부 안쪽으로
+       후퇴시킨다. 그러면 차체 개구부 테두리가 렌즈보다 앞에 남아 램프가 프레임 속에
+       박혀 보이고, 밖으로 튀어나온 조각이 하나도 없다. */
+    if(spec.lampInset&&split.lamps){
+      const pa=split.lamps.attributes.position.array;
+      let zx=-1e9,zn=1e9;
+      for(let i=2;i<pa.length;i+=3){if(pa[i]>zx)zx=pa[i];if(pa[i]<zn)zn=pa[i];}
+      const mid=(zx+zn)/2,d=spec.lampInset;
+      for(let i=0;i<pa.length;i+=3){
+        pa[i+2]+=(pa[i+2]>mid?-d:d);       // 앞램프는 뒤로, 뒷램프는 앞으로 = 각자 차 안쪽
+        pa[i]*=.985;}                       // 좌우도 살짝 안으로(펜더를 뚫지 않게)
+      split.lamps.attributes.position.needsUpdate=true;
+      split.lamps.computeVertexNormals();}
     if(split.lamps){this.lampsMesh=new THREE.Mesh(split.lamps,MAT_LAMP);
       this.group.add(this.lampsMesh);
       // 전조등 앵커만 계산해 저장(실제 SpotLight는 플레이어 차에서만 지연 생성 →
@@ -636,11 +673,8 @@ class CarVisual{
     const zF=bx.max.z,zR=bx.min.z,xR=Math.max(Math.abs(bx.min.x),Math.abs(bx.max.x));
     /* 범퍼 파트 폭 — 예전엔 차체 최대폭(hx)으로 잡아, 코가 좁아지는 세단에서는
        앞뒤로 '막대기'가 차체 밖으로 튀어나와 보였다. 해당 z 위치의 실제 차체 폭을 재서 맞춘다. */
-    const widthAt=(zt,tol)=>{
-      const a=this.bodyMesh.geometry.attributes.position.array;
-      let mx=0;
-      for(let i=0;i<a.length;i+=3)if(Math.abs(a[i+2]-zt)<tol){const q=Math.abs(a[i]);if(q>mx)mx=q;}
-      return mx||hx;};
+    // 해당 z 단면의 최대 반폭(모든 y) — 실루엣 격자 질의
+    const widthAt=(zt,tol)=>this.bodySilWidth(0,zt,1e9,tol)||hx;
     const fbZ=zF-.16, rbZ=zR+.16;
     const fbW=spec.fitBumper?widthAt(fbZ,.30)*.90:hx*1.02;
     const rbW=spec.fitBumper?widthAt(rbZ,.30)*.90:hx*1.02;
@@ -656,6 +690,7 @@ class CarVisual{
        뭉쳐 나온다(원본이 단색 블랙 모델). 색이 구분되는 부위를 실제 부품으로 얹어
        크롬 그릴·조각·몰딩이 반짝이게 한다. */
     if(spec.chromeKit)this.buildChromeKit(spec,bx,by,hx,hy,split.glass);
+    if(spec.interior)this.buildInterior(spec,bx,hy);
     if(spec.headlamp&&this.hlAnchor)this.buildHeadlamps(spec,bx,hy);
     // 오프로드 몬스터 전용 액세서리(지프 스타일): 불바·루프 LED바·록슬라이더
     if(spec.id==="offroad"||spec.id==="offroadc"){
@@ -1217,6 +1252,96 @@ class CarVisual{
     if(this.chromeMesh)this.lattice.bind(this.chromeMesh);
     if(this.chromeDarkMesh)this.lattice.bind(this.chromeDarkMesh);
   }
+  /* ═══ 실내·기계부 충진 ═══
+     스캔 차체는 '껍데기'라서 판금이 찢어지면 안이 텅 빈 게 그대로 보인다.
+     바닥 팬·방화벽·프레임 레일·시트·연료탱크로 속을 채우고, 이것들을 소프트바디 격자에
+     물려 껍데기와 함께 찌그러지고 찢겨 나가게 한다.
+     엔진 블록만은 격자에 묶지 않는다 — 쇳덩이는 찌그러지지 않고 '통째로 밀려 들어와야'
+     하므로, 엔진룸 격자 노드의 평균 변위를 따라 강체로 이동시킨다. */
+  buildInterior(spec,bx,hy){
+    const zF=bx.max.z,zR=bx.min.z,xR=Math.max(Math.abs(bx.min.x),Math.abs(bx.max.x));
+    const len=zF-zR;
+    const by=Math.max(spec.modelWheelY,-hy*.62);      // 바닥 높이
+    const fw=z=>Math.max(.12,this.bodySilWidth(by+hy*.35,z,hy*.55,.22)*.80); // 그 z의 내부 반폭
+    const MI=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true,
+      shininess:14,specular:0x1a1d22,side:THREE.DoubleSide});
+    const G=[];
+    const zEng=zF-len*.16;                             // 엔진룸 중심
+    const zFire=zF-len*.30;                            // 방화벽
+    const zTank=zR+len*.20;                            // 연료탱크
+    /* ① 바닥 팬 — 언더바디를 막아 아래에서 봐도 뚫려 보이지 않는다 */
+    for(let i=0;i<7;i++){
+      const z=zR+len*(i+.5)/7, w=fw(z);
+      G.push({geo:new THREE.BoxGeometry(w*2,.035,len/7*1.02),color:0x23272e,y:by+.02,z});}
+    /* ② 세로 프레임 레일 2개 — 접히고 부러지는 뼈대(크럼플 존의 주역) */
+    for(const sx of[-1,1])
+      G.push({geo:new THREE.BoxGeometry(.09,.11,len*.94),color:0x2c3138,
+        x:sx*xR*.52,y:by+.09,z:(zF+zR)/2});
+    /* ③ 방화벽(벌크헤드) + 리어 벌크헤드 — 승객칸을 앞뒤로 닫는다 */
+    G.push({geo:new THREE.BoxGeometry(fw(zFire)*2,hy*1.05,.05),color:0x2a2e35,y:by+hy*.55,z:zFire});
+    G.push({geo:new THREE.BoxGeometry(fw(zTank)*2,hy*.75,.05),color:0x2a2e35,y:by+hy*.42,z:zTank});
+    /* ④ 엔진 주변부(라디에이터·배터리·서스펜션 타워) — 엔진룸을 채운다 */
+    G.push({geo:new THREE.BoxGeometry(fw(zF-len*.05)*1.5,hy*.55,.07),color:0x1b1f25,
+      y:by+hy*.42,z:zF-len*.045});                                   // 라디에이터
+    for(const sx of[-1,1])
+      G.push({geo:new THREE.BoxGeometry(.16,hy*.62,.30),color:0x2b3037,
+        x:sx*xR*.62,y:by+hy*.55,z:zEng});                            // 스트럿 타워
+    /* ⑤ 좌석 4개 + 대시 + 센터 콘솔 */
+    const zRow=[zFire-len*.10,zFire-len*.26];
+    for(let r=0;r<2;r++)for(const sx of[-1,1]){
+      const z=zRow[r], w=fw(z);
+      G.push({geo:new THREE.BoxGeometry(.46,.14,.48),color:0x14161a,x:sx*w*.45,y:by+hy*.32,z});
+      G.push({geo:new THREE.BoxGeometry(.46,.58,.13),color:0x14161a,x:sx*w*.45,y:by+hy*.62,z:z-.24});}
+    G.push({geo:new THREE.BoxGeometry(fw(zFire)*1.7,.22,.34),color:0x181b20,
+      y:by+hy*.72,z:zFire-.20});                                     // 대시보드
+    G.push({geo:new THREE.BoxGeometry(.30,.26,len*.24),color:0x181b20,
+      y:by+hy*.34,z:(zRow[0]+zRow[1])/2});                           // 센터 콘솔
+    /* ⑥ 연료탱크 + 트렁크 바닥 */
+    G.push({geo:new THREE.BoxGeometry(fw(zTank)*1.5,.22,.42),color:0x21262c,y:by+.16,z:zTank});
+    G.push({geo:new THREE.BoxGeometry(fw(zR+len*.09)*1.7,.04,len*.16),color:0x23272e,
+      y:by+hy*.30,z:zR+len*.09});
+    this.interiorMesh=new THREE.Mesh(mergeGeoms(G),MI);
+    this.group.add(this.interiorMesh);
+    this.lattice.bind(this.interiorMesh);              // 껍데기와 함께 찌그러지고 찢긴다
+    /* ⑦ 엔진 블록 — 격자에 묶지 않는 강체. 충돌 시 통째로 밀려 들어온다. */
+    const E=[
+      {geo:new THREE.BoxGeometry(.60,.52,.74),color:0x30353d},            // 블록
+      {geo:new THREE.BoxGeometry(.66,.14,.56),color:0x3a4049,y:.32},      // 헤드커버
+      {geo:new THREE.BoxGeometry(.40,.30,.44),color:0x272b31,z:-.56},     // 변속기
+      {geo:new THREE.CylinderGeometry(.09,.09,.34,10),color:0x4a5058,rz:Math.PI/2,y:.20,z:.30}];
+    this.engineMesh=new THREE.Mesh(mergeGeoms(E),MI);
+    this.engineHome=new THREE.Vector3(0,by+hy*.44,zEng);
+    /* 엔진이 방화벽을 뚫고 승객칸까지 들어가지는 않게 — 실차도 서브프레임이 엔진을
+       바닥 밑으로 흘려보낸다. 계측: 무제한이면 110km/h에서 90cm 밀려 발밑까지 왔다. */
+    this.engineMaxIn=Math.max(.10,(zEng-zFire)*.92);
+    this.engineMesh.position.copy(this.engineHome);
+    this.group.add(this.engineMesh);
+    /* 엔진룸을 감싸는 격자 노드 8개 — 이 노드들의 평균 변위가 엔진의 이동량이다 */
+    {const L=this.lattice,mn=L.min,ce=L.cell;
+     const fx=clamp((this.engineHome.x-mn[0])/ce[0],0,L.NX-1.001);
+     const fy=clamp((this.engineHome.y-mn[1])/ce[1],0,L.NY-1.001);
+     const fz=clamp((this.engineHome.z-mn[2])/ce[2],0,L.NZ-1.001);
+     const i0=fx|0,j0=fy|0,k0=fz|0;
+     this.engNodes=[];
+     for(let dk=0;dk<2;dk++)for(let dj=0;dj<2;dj++)for(let di=0;di<2;di++)
+       this.engNodes.push(L.idx(i0+di,j0+dj,k0+dk)*3);}
+  }
+  /* 엔진 강체 추종 — 격자 노드 평균 변위를 그대로 따라간다(형상은 안 변한다) */
+  syncEngine(){
+    if(!this.engineMesh||!this.engNodes)return;
+    const L=this.lattice,P=L.pos,H=L.home,N=this.engNodes;
+    let dx=0,dy=0,dz=0;
+    for(const a of N){dx+=P[a]-H[a];dy+=P[a+1]-H[a+1];dz+=P[a+2]-H[a+2];}
+    const n=N.length;
+    const lim=this.engineMaxIn||9;
+    const iz=clamp(dz/n,-lim,lim);
+    /* 밀려 들어간 만큼 아래로도 흘러내린다(서브프레임 이탈) */
+    const drop=Math.max(0,-iz)*.22;
+    this.engineMesh.position.set(this.engineHome.x+clamp(dx/n,-.35,.35),
+      this.engineHome.y+dy/n*.6-drop,
+      this.engineHome.z+iz);
+    this.engineMesh.rotation.x=Math.max(0,-iz)*.30;   // 앞이 들리며 비스듬히 박힌다
+  }
   /* 💡 헤드램프 어셈블리 — 동그란 구슬이 앞으로 튀어나온 모양이 아니라,
      실차처럼 '차체에 파인 램프 하우징 + 그 안의 여러 개 LED 프로젝터 + 앞면 유리 렌즈'로 만든다. */
   buildHeadlamps(spec,bx,hy){
@@ -1277,6 +1402,7 @@ class CarVisual{
     // 렌더는 보간된 포즈를 쓴다(고정 스텝 물리 ↔ 가변 프레임 렌더 사이를 매끄럽게)
     this.group.position.copy(veh.body.rPos);
     this.group.quaternion.copy(veh.body.rQuat);
+    if(this.engineMesh)this.syncEngine();
     if(shakeT>0&&Settings.camShake){
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
     // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게. SpotLight는 최초 1회 지연 생성.
@@ -1340,6 +1466,8 @@ class CarVisual{
       m.children[0].rotation.x=(w.rSpin===undefined?w.spin:w.rSpin);}
   }
   dispose(){
+    if(this.interiorMesh)this.interiorMesh.geometry.dispose();
+    if(this.engineMesh)this.engineMesh.geometry.dispose();
     this.group.parent&&this.group.parent.remove(this.group);
     this.bodyMesh.geometry.dispose();
     if(this.glassMesh)this.glassMesh.geometry.dispose();
