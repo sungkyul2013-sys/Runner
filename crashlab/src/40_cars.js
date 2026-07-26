@@ -56,10 +56,13 @@ const CARS=[
   desc:"실측 스캔 3D 모델. 6.75L V12 · 플래너 서스펜션. 무결점 도장과 매끈한 차체의 초호화 세단.",
   model:"rrghost",style:"sedan",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
   smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
-  groundClear:.19,wheelVisFit:1.01,rideFix:true,rideLift:0,fitBumper:true,
-  wheelVisScale:1.13,             // 아치 개구부에 비해 타이어가 작아 보이던 문제(시각 전용)
-  lampInset:.055,                 // 램프 어셈블리 제거 — 원본 렌즈면을 5.5cm 프레임 안쪽으로
-  wheelTuck:.055,                 // 뒤에서 봤을 때 휠이 차체 밖으로 4cm 튀어나오던 문제 보정
+  groundClear:.19,wheelVisFit:1,rideFix:true,rideLift:0,fitBumper:true,
+  /* 원본 휠을 쓰기 전에는 절차 휠이 아치보다 작아 보여 시각 배율 1.13을 넣었는데,
+     이제 휠 지오메트리 반경(0.371)이 접지 반경과 정확히 같다. 배율을 남겨 두면
+     보이는 타이어만 0.419가 돼 '휠과 타이어가 안 맞는' 상태가 된다 → 1로 되돌린다. */
+  wheelVisScale:1,
+  lampInset:.105,                 // 램프를 프레임 더 깊숙이(앞·뒤 모두) — 안에서 밖으로 비춘다
+  wheelTuck:.018,                 // 실측 휠 폭(0.298)에 맞춰 인셋 축소
   chromeKit:{grilleW:.34,grilleH:.26,grilleY:.74,grilleZ:.20,slats:13,
              rocker:false,        // 사이드실 몰딩 제거(옆면을 가로지르는 줄로 보였다)
              ornament:true,ornY:.30,ornZ:.46,exhaust:2,rearY:.80},
