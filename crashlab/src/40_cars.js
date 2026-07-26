@@ -678,14 +678,17 @@ class CarVisual{
     const fbZ=zF-.16, rbZ=zR+.16;
     const fbW=spec.fitBumper?widthAt(fbZ,.30)*.90:hx*1.02;
     const rbW=spec.fitBumper?widthAt(rbZ,.30)*.90:hx*1.02;
-    /* 미러 — 차체 최대폭(휠아치)에 붙이면 어깨선이 좁은 앞도어에서 밖으로 뜬다 */
-    const mxW=spec.fitBumper?widthAt(zF*.34,.30)*.99:xR*.96;
+    /* 스캔 차체에는 사이드미러가 이미 메시로 들어 있다. 절차 미러를 또 붙이면
+       중복인 데다, 이 부품들은 격자에 안 묶여 있어서 앞이 뭉개져도 제자리에 남는다
+       → 포르쉐처럼 코가 짧은 차는 본넷에서 판때기 두 개가 튀어나온 꼴이 됐다. */
     this.parts={
       fb:this.mkPart(fbW,hy*.15,.09,0,by+hy*.06,fbZ,bumpMat),
-      rb:this.mkPart(rbW,hy*.15,.09,0,by+hy*.06,rbZ,bumpMat),
-      ml:this.mkPart(.07,.08,.17,-mxW,hy*.1,zF*.34,bumpMat),
-      mr:this.mkPart(.07,.08,.17,mxW,hy*.1,zF*.34,bumpMat)};
-    this.partHp={fb:1.3,rb:1.3,ml:.3,mr:.3};
+      rb:this.mkPart(rbW,hy*.15,.09,0,by+hy*.06,rbZ,bumpMat)};
+    this.partHp={fb:1.3,rb:1.3};
+    /* 범퍼도 격자를 따라 움직인다 — 안 그러면 코가 접혀 들어가도 범퍼만 허공에 남는다 */
+    this.partFollow=[];
+    for(const k in this.parts)this.partFollow.push([this.parts[k],this.parts[k].position.clone(),
+      this.latticeNodesAt(this.parts[k].position)]);
     /* ✨ 크롬 킷 — 스캔 모델은 텍스처가 없어 그릴·오너먼트·몰딩이 도장과 같은 색으로
        뭉쳐 나온다(원본이 단색 블랙 모델). 색이 구분되는 부위를 실제 부품으로 얹어
        크롬 그릴·조각·몰딩이 반짝이게 한다. */
@@ -965,6 +968,9 @@ class CarVisual{
         const bend=Math.min(.42,dv*.013*prox);
         p.rotation.x+=imp.ln.z*bend*.5;
         p.rotation.z-=imp.ln.x*bend*.5;
+        /* 위치는 syncParts 가 매 프레임 격자에서 다시 쓰므로, 휨은 오프셋으로 누적한다 */
+        const bo=p.userData.bendOff||(p.userData.bendOff={x:0,y:0,z:0});
+        bo.x+=imp.ln.x*bend*.16;bo.y+=imp.ln.y*bend*.10;bo.z+=imp.ln.z*bend*.16;
         p.position.x+=imp.ln.x*bend*.16;
         p.position.y+=imp.ln.y*bend*.10;
         p.position.z+=imp.ln.z*bend*.16;}
@@ -1326,6 +1332,27 @@ class CarVisual{
      for(let dk=0;dk<2;dk++)for(let dj=0;dj<2;dj++)for(let di=0;di<2;di++)
        this.engNodes.push(L.idx(i0+di,j0+dj,k0+dk)*3);}
   }
+  /* 어떤 로컬 좌표를 감싸는 격자 노드 8개의 성분 오프셋 */
+  latticeNodesAt(p){
+    const L=this.lattice,mn=L.min,ce=L.cell,out=[];
+    const fx=clamp((p.x-mn[0])/ce[0],0,L.NX-1.001);
+    const fy=clamp((p.y-mn[1])/ce[1],0,L.NY-1.001);
+    const fz=clamp((p.z-mn[2])/ce[2],0,L.NZ-1.001);
+    const i0=fx|0,j0=fy|0,k0=fz|0;
+    for(let dk=0;dk<2;dk++)for(let dj=0;dj<2;dj++)for(let di=0;di<2;di++)
+      out.push(L.idx(i0+di,j0+dj,k0+dk)*3);
+    return out;}
+  /* 얹은 부품(범퍼)이 격자를 따라간다 — 탈락한 부품은 건드리지 않는다 */
+  syncParts(){
+    if(!this.partFollow)return;
+    const L=this.lattice,P=L.pos,H=L.home;
+    for(const[m,home,N]of this.partFollow){
+      if(!m.parent)continue;                       // 탈락(제거)된 부품
+      let dx=0,dy=0,dz=0;
+      for(const a of N){dx+=P[a]-H[a];dy+=P[a+1]-H[a+1];dz+=P[a+2]-H[a+2];}
+      const n=N.length;
+      const b=m.userData.bendOff;
+      m.position.set(home.x+dx/n+(b?b.x:0),home.y+dy/n+(b?b.y:0),home.z+dz/n+(b?b.z:0));}}
   /* 엔진 강체 추종 — 격자 노드 평균 변위를 그대로 따라간다(형상은 안 변한다) */
   syncEngine(){
     if(!this.engineMesh||!this.engNodes)return;
@@ -1403,6 +1430,7 @@ class CarVisual{
     this.group.position.copy(veh.body.rPos);
     this.group.quaternion.copy(veh.body.rQuat);
     if(this.engineMesh)this.syncEngine();
+    if(this.partFollow)this.syncParts();
     if(shakeT>0&&Settings.camShake){
       this.group.position.x+=(Math.random()-.5)*.02;this.group.position.y+=(Math.random()-.5)*.02;}
     // 전조등 점등: 플레이어 차량만(광원 수 제한) — 밤에는 더 밝게. SpotLight는 최초 1회 지연 생성.

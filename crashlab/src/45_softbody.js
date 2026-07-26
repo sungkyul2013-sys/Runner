@@ -104,13 +104,13 @@ class SoftLattice{
       const zt=NZ>1?(bk+ddz*.5)/(NZ-1):.5;                 // 빔 중점의 0(뒤)~1(앞)
       const c=this._cellAt(zt);                            // 1=승객셀, 0=크럼플존
       const jt=NY>1?(bj+ddy*.5)/(NY-1):.5;                 // 0(바닥)~1(지붕)
-      let yld=.010+.075*c*c;                               // 크럼플 0.010 ↔ 셀 0.085
-      let tear=.38+2.4*c*c;                                // 크럼플 0.38 ↔ 셀 2.78(사실상 안 찢김)
-      let stf=.34+.66*c;                                   // 구속 강성
+      let yld=.014+.058*c*c;                               // 크럼플 0.014 ↔ 셀 0.072
+      let tear=.64+1.72*c*c;                               // 크럼플 0.64 ↔ 셀 2.36
+      let stf=.40+.58*c;                                   // 구속 강성
       /* ① 프레임 레일(바닥)은 찢어지지 않고 '접힌다' — 파열 문턱만 크게 */
       if(bj===0){tear+=1.4;yld*=.85;}
       /* ② 본넷·트렁크 상판(크럼플존 윗면)은 가장 잘 찢어진다 */
-      if(c<.5&&jt>.62){tear*=.55;yld*=.75;}
+      if(c<.5&&jt>.62){tear*=.72;yld*=.82;}
       /* ③ 종방향(z) 레일에 좌굴 개시부를 교대로 심는다 —
             균일하게 뭉개지지 않고 아코디언처럼 '특이하게 접히는' 형태가 나온다. */
       if(ddz!==0&&c<.75)yld*=(bk&1)?.50:1.7;
@@ -193,8 +193,8 @@ class SoftLattice{
     const RH=.55+.34*sev;                              // 수평 직교 반경(좁게 = 부딪힌 부위만)
     const RV=hy*2.3+.4;                                // 수직 반경(바닥·지붕까지)
     const crushLen=Math.min(.5+3.3*sev,axExt*1.1);     // 압축 전파 ≤ 구조 깊이
-    const gFrac=Math.min(.4,sev*sev*.34+sev*.2)*(.48+.52*axFrac); // 전역 프레임 손상: 속도 제곱 성분(고속일수록 전체가 굽음)
-    const micro=Math.min(.05,Math.max(0,dv-5)*.0011); // 전신 미세 소성: 모든 부품·프레임이 충돌 가속도에 비례해 약간씩 틀어짐
+    const gFrac=Math.min(.40,sev*sev*.33+sev*.20)*(.48+.52*axFrac); // 전역 프레임 손상: 속도 제곱 성분(고속일수록 전체가 굽음)
+    const micro=Math.min(.038,Math.max(0,dv-5)*.0009); // 전신 미세 소성: 모든 부품·프레임이 충돌 가속도에 비례해 약간씩 틀어짐
     const s0=-axExt*1.05;
     const P=this.pos,Q=this.prev,PL=this.plast,HM=this.home,RG=this.rag,CL=this.nCell;
     /* 아코디언 주름축 — 충격축에 수직인 방향으로 한 칸씩 반대로 접는다.
@@ -204,7 +204,7 @@ class SoftLattice{
     for(let i=0;i<this.n;i++){
       const a=i*3;
       const cf=CL?CL[i]:0;                             // 1=승객칸(잘 안 부서짐) 0=크럼플존
-      const crushW=1.22-1.10*cf;                       // 크럼플존 ×1.22 ↔ 승객칸 ×0.12
+      const crushW=1.08-0.76*cf;                       // 크럼플존 ×1.08 ↔ 승객칸 ×0.32
       const dx=P[a]-lp.x,dy=P[a+1]-lp.y,dz=P[a+2]-lp.z;
       const proj=dx*lx+dy*ly+dz*lz;                    // 충격축 방향(차 안쪽 +)
       const ex=dx-proj*lx,ey=dy-proj*ly,ez=dz-proj*lz; // 직교 성분
@@ -224,21 +224,24 @@ class SoftLattice{
            균일하게 뭉개지는 대신 프레임이 주름지며 특이하게 접힌다. */
         if(cf<.55){
           const sgn=(Math.floor((proj+40)/FW)&1)?1:-1;
-          const amp=f*.44*(1-cf/.55)*(.6+.8*RG[i]);
+          const amp=f*.40*(1-cf/.55)*(.6+.8*RG[i]);
           P[a+1]+=foldY*sgn*amp;P[a+2]+=foldZ*sgn*amp;
           PL[a+1]+=foldY*sgn*amp;PL[a+2]+=foldZ*sgn*amp;
           Q[a+1]+=foldY*sgn*amp;Q[a+2]+=foldZ*sgn*amp;}}
       // (3) 전신 미세 소성: 재질 편차(rag)로 노드마다 다르게 → 프레임 전체가 가속도에 비례해 미세하게 뒤틀림
       if(micro>0){
-        const mj=micro*(.35+.65*RG[i])*(1-.62*cf);
+        const mj=micro*(.35+.65*RG[i])*(1-.52*cf);
         P[a]+=lx*mj;P[a+1]+=ly*mj*.5;P[a+2]+=lz*mj;
         PL[a]+=lx*mj;PL[a+1]+=ly*mj*.5;PL[a+2]+=lz*mj;
         Q[a]+=lx*mj;Q[a+1]+=ly*mj*.5;Q[a+2]+=lz*mj;}
-      // (2) 전역 프레임 충격: 충격축 따라 차 전체 약하게 압축(뒤 프레임도 굽음)
+      /* (2) 전역 프레임 충격: 충격축 따라 프레임이 굽는다.
+         예전에는 차 폭 전체에 똑같이 먹여서 '어디를 받아도 차 전체가 균일하게' 뭉개졌다.
+         맞은 자리에서 옆으로 멀어질수록 급히 약해지게 해 타격 부위가 집중적으로 망가진다. */
       if(gFrac>0){
+        const gw=1/(1+perpH*perpH*.85);
         const s=-(P[a]*lx+P[a+1]*ly+P[a+2]*lz);
         if(s>s0){
-          const mvs=gFrac*(s-s0)*.4*(1-.74*cf);        // 승객칸은 전역 프레임 압축도 거의 안 먹는다
+          const mvs=gFrac*(s-s0)*.4*(1-.48*cf)*gw;     // 승객칸은 전역 프레임 압축을 덜 먹는다
           P[a]+=lx*mvs;P[a+1]+=ly*mvs;P[a+2]+=lz*mvs;
           PL[a]+=lx*mvs;PL[a+1]+=ly*mvs;PL[a+2]+=lz*mvs;
           Q[a]+=lx*mvs;Q[a+1]+=ly*mvs;Q[a+2]+=lz*mvs;}}
