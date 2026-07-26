@@ -86,11 +86,9 @@ const CARS=[
   stats:{spd:62,acc:74,grip:70,mass:88}},
  {id:"maybach",name:"메르세데스-마이바흐 GLS",icon:"🚘",drive:"4WD",mass:2560,hp:621,acc:"4.9초",top:240,
   desc:"실측 스캔 3D 모델(GLS 580). V8 4.0 트윈터보 · 롱휠베이스 · 최상급 럭셔리 SUV.",
-  model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,fitBumper:true,
-  headlamp:{w:.34,h:.13,leds:4},
-  chromeKit:{grilleW:.40,grilleH:.22,grilleY:.82,grilleZ:.16,slats:11,
-             /* GLS 뒷면: 피니셔 4개는 테이프 붙인 것처럼 보여 2개로 */
-             ornament:true,ornY:.40,ornZ:.34,exhaust:2,rearY:.70},
+  model:"maybach",style:"suv",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,wheelVisFit:1.02,
+  /* 마이바흐는 스캔 원본 그대로 둔다 — 크롬 킷·헤드램프 어셈블리·범퍼 피팅 등
+     덧붙이던 장식은 전부 제거(요청: 완전히 원래대로). */
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
   /* 마이바흐도 럭셔리 세팅 — 흡수는 부드럽게, 올라갈 땐 쪼인다 */
   susp:{k:60000,c:6200,travel:.22,rest:.28,compMul:.38,rebMul:3.2,riseMul:4.0},arb:16000,
