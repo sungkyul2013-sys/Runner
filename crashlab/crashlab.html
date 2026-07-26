@@ -4862,8 +4862,12 @@ class Vehicle{
            격자 보간의 미세 계단이 그대로 힘 잡음이 된다. */
         w.cVelF=(w.cVelF===undefined)?cVelRaw:w.cVelF+(cVelRaw-w.cVelF)*.42;
         const cVel=w.cVelF;
-        // 비대칭 댐핑: 리바운드(늘어남)는 압축보다 강하게 → 방지턱 후 위로 튀는 요동 억제(실차 댐퍼)
-        const cAsym=cVel<0?(susp.rebMul||1.5):1;
+        /* 비대칭 댐핑 — 실차 댐퍼의 핵심 세팅.
+           · 압축(cVel>0, 바퀴가 차체 쪽으로 올라옴) = '흡수' 국면 → 부드럽게(compMul<1).
+             여기서 댐핑을 세게 걸면 충격이 그대로 차체로 올라가 차가 들린다.
+           · 신장(cVel<0, 스프링이 차체를 밀어 올림) = '올라가는' 국면 → 쪼인다(rebMul>1).
+             방지턱을 넘은 뒤 차체가 위로 확 솟는 걸 여기서 잡는다. */
+        const cAsym=cVel<0?(susp.rebMul||1.5):(susp.compMul||.55);
         /* 프로그레시브 스프링(susp.prog) — 승차 높이 부근은 아주 부드럽고, 바닥칠 직전에만
            급격히 단단해진다. 실차 에어스프링의 비선형 레이트를 흉내내 잔진동을 크게 줄인다. */
         const cRel=susp.travel>0?w.comp/susp.travel:0;
@@ -4974,7 +4978,10 @@ class Vehicle{
        지지력이 0으로 무너질 수 없어, 승차감을 올려도 방지턱 뒷면에서 자유낙하하지
        않는다. 접지 바퀴 수에 비례시켜 공중에서는 작용하지 않는다. */
     if(groundCount>0){
-      const bd=(susp.bodyDamp===undefined?.55:susp.bodyDamp)*sp.mass*(groundCount*.25);
+      let bd=(susp.bodyDamp===undefined?.55:susp.bodyDamp)*sp.mass*(groundCount*.25);
+      /* 위로 올라가는 국면만 '쪼인다' — 차체가 솟는 힘에는 강하게, 가라앉는 쪽은
+         그대로 둬서 바퀴가 노면을 따라 내려가는 걸 방해하지 않는다. */
+      if(b.vel.y>0)bd*=(susp.riseMul===undefined?2.6:susp.riseMul);
       if(bd>0)b.force.y-=b.vel.y*bd;}
     if(sp.aero.df>0&&speed>5){
       const q=sp.aero.df*speed*speed*.01;
@@ -5280,7 +5287,9 @@ const CARS=[
   susp:{k:36000,c:6600,travel:.32,rest:.28,
         prog:1.5,        // 프로그레시브 레이트(바닥칠 직전만 단단)
         sky:15000,       // 스카이훅(차체 상하 요동 직접 감쇠)
-        rebMul:2.9,      // 리바운드 감쇠 강화(방지턱 후 되튐 억제)
+        compMul:.34,     // 압축(흡수) 국면은 아주 부드럽게 — 충격이 차체로 안 올라간다
+        rebMul:3.4,      // 신장(올라가는) 국면은 쪼인다 — 방지턱 후 차체가 솟지 않게
+        riseMul:4.5,     // 차체가 상승할 때 헤이브 댐퍼 추가 강화
         fCap:.88,        // 블로우오프 — 서스가 차체를 밀어올릴 수 있는 힘 상한(중력 배수)
         heave:8500,     // 상승 억제: 차체가 위로 뜨려 할 때만 스프링력을 깎는다
         preview:.32,     // 노면 예측 시간(s)
@@ -5299,7 +5308,8 @@ const CARS=[
   chromeKit:{grilleW:.40,grilleH:.22,grilleY:.82,grilleZ:.16,slats:11,
              ornament:true,ornY:.40,ornZ:.34,exhaust:4,rearY:.70},
   body:{hx:1.0,hy:.82,hz:2.55},wheels:{track:.9,front:1.5,rear:1.55,y:-.34,radius:.36,width:.3},
-  susp:{k:60000,c:6200,travel:.22,rest:.28},arb:16000,
+  /* 마이바흐도 럭셔리 세팅 — 흡수는 부드럽게, 올라갈 땐 쪼인다 */
+  susp:{k:60000,c:6200,travel:.22,rest:.28,compMul:.38,rebMul:3.2,riseMul:4.0},arb:16000,
   engine:{maxT:640,redline:6000,idle:600},gears:[3.5,2.15,1.5,1.15,.9],final:3.9,
   brakeF:12500,steerLo:.54,steerHi:.13,aero:{cd:1.1,df:0},gripF:1.02,gripR:1.02,
   colors:[0xe9ecee,0x0b0d10,0x14203a,0x8a929a,0x3a2c1a],
@@ -5740,6 +5750,14 @@ class CarVisual{
     for(let i=0;i<a.length;i+=3)
       if(Math.abs(a[i]-x)<tolX&&Math.abs(a[i+1]-y)<tolY&&a[i+2]>mz)mz=a[i+2];
     return mz>-1e8?mz:0;}
+  /* (x,y) 근방 차체 뒷면의 최후방 z — 리어 장식을 뒷면에 딱 붙이는 기준.
+     테일램프 앵커의 z를 그대로 쓰면 장식이 트렁크 안에 묻힌다(계측 확인). */
+  bodyTailZ(x,y,tolX,tolY){
+    const a=this.bodyMesh.geometry.attributes.position.array;
+    let mz=1e9;
+    for(let i=0;i<a.length;i+=3)
+      if(Math.abs(a[i]-x)<tolX&&Math.abs(a[i+1]-y)<tolY&&a[i+2]<mz)mz=a[i+2];
+    return mz<1e8?mz:0;}
   /* z 구간 전체에서 '가장 좁은' 반폭 — 길쭉한 몰딩(로커)이 양 끝에서 튀지 않게 한다 */
   bodySilMin(y,z0,z1,tolY,slices){
     let mn=1e9;
@@ -6154,6 +6172,127 @@ class CarVisual{
         delete this.detached[k];}}
   }
   storeHomes(){for(const k in this.parts)this.parts[k].userData.home=this.parts[k].position.clone();}
+  /* 🪟 사이드 크롬(윈도 서라운드) — '딱 맞게' 붙이는 게 전부다.
+     예전 실패는 구간별 최대/최소값을 그대로 이어 붙여 라인이 들쭉날쭉했던 것.
+     이번엔 유리 실루엣 점군에 수식을 피팅한다:
+       · 벨트라인(창 하단) → 최소자승 '직선'  y = m·z + c   (실차도 직선이다)
+       · 루프라인(창 상단) → 최소자승 '2차곡선'            (완만한 지붕 곡선)
+     그 위에서 각 세그먼트의 x는 그 지점 차체 실루엣을 재서 붙이므로 뜨지 않는다. */
+  buildSideTrim(glassGeo,cr,hx,hy,zF,zR,K){
+    const a=glassGeo.attributes.position.array;
+    let xMax=0;
+    for(let i=0;i<a.length;i+=3){const q=Math.abs(a[i]);if(q>xMax)xMax=q;}
+    const XT=xMax*.62;                                   // 측면 유리만
+    const cab=Math.abs(zF-zR);
+    for(const sg of[-1,1]){
+      /* 구간별 상·하단 점 뽑기 */
+      /* 1차 스캔: 차 전체 z를 촘촘히 나눠 '창 높이'를 재고, 높이가 충분한
+         연속 구간만 남긴다 = 도어 윈도(캐빈). 유리 마스크에는 윈드실드·리어글래스
+         조각도 섞여 있어 이 과정을 빼면 라인이 차 앞뒤로 뻗어 나간다. */
+      const M0=40;
+      const t0=new Array(M0).fill(NaN),b0=new Array(M0).fill(NaN);
+      for(let i=0;i<a.length;i+=3){
+        const x=a[i],y=a[i+1],z=a[i+2];
+        if(Math.sign(x)!==sg||Math.abs(x)<XT)continue;
+        let k=((z-zR)/(zF-zR)*M0)|0;if(k<0||k>=M0)continue;
+        if(!(t0[k]>y))t0[k]=y;
+        if(!(b0[k]<y))b0[k]=y;}
+      let hMax=0,kBest=-1;
+      for(let k=0;k<M0;k++){
+        const hh=(t0[k]-b0[k]);
+        if(hh>hMax){hMax=hh;kBest=k;}}
+      if(kBest<0||!(hMax>.08))continue;
+      /* B필러에서 유리가 끊겨 높이가 잠깐 낮아진다. 연속 조건만 쓰면 앞문 창에서
+         멈춰 버리므로(계측: 캐빈이 0.83m로 잘림) 최대 2칸까지 건너뛴다. */
+      const hh=k=>{const v2=t0[k]-b0[k];return isFinite(v2)?v2:0;};
+      let kA=kBest,kB=kBest;
+      for(let gap=0,k=kBest-1;k>=0;k--){
+        if(hh(k)>hMax*.45){kA=k;gap=0;}else if(++gap>2)break;}
+      for(let gap=0,k=kBest+1;k<M0;k++){
+        if(hh(k)>hMax*.45){kB=k;gap=0;}else if(++gap>2)break;}
+      let z0=zR+(kA/M0)*(zF-zR), z1=zR+((kB+1)/M0)*(zF-zR);
+      z0=Math.max(z0,zR+cab*.05);z1=Math.min(z1,zF-cab*.05);
+      if(!(z1-z0>.8))continue;
+      const N=14;
+      const top=new Array(N).fill(NaN),bot=new Array(N).fill(NaN),gx=new Array(N).fill(0);
+      for(let i=0;i<a.length;i+=3){
+        const x=a[i],y=a[i+1],z=a[i+2];
+        if(Math.sign(x)!==sg||Math.abs(x)<XT)continue;
+        if(z<z0||z>z1)continue;
+        let k=((z-z0)/(z1-z0)*N)|0;if(k>=N)k=N-1;
+        if(!(top[k]>y))top[k]=y;
+        if(!(bot[k]<y))bot[k]=y;
+        const q=Math.abs(x);if(q>gx[k])gx[k]=q;}
+      const zAt=k=>z0+(k+.5)/N*(z1-z0);
+      /* 유리면 x — 몰딩은 도어 어깨선이 아니라 '유리 평면'에 앉아야 한다.
+         차체 실루엣(어깨)이 더 넓어서 그걸 쓰면 몰딩이 도어 안에 묻힌다. */
+      {let last=0;for(let k=0;k<N;k++){if(gx[k]>0)last=gx[k];else gx[k]=last;}
+       for(let k=N-1;k>=0;k--){if(gx[k]>0)last=gx[k];else gx[k]=last;}
+       for(let pass=0;pass<2;pass++){const c2=gx.slice();
+         for(let k=0;k<N;k++)gx[k]=(c2[Math.max(0,k-1)]+c2[k]*2+c2[Math.min(N-1,k+1)])/4;}}
+      const glassX=z=>{
+        let k=((z-z0)/(z1-z0)*N)|0;k=Math.max(0,Math.min(N-1,k));
+        return gx[k];};
+      /* ① 벨트라인 — 최소자승 직선 */
+      let n=0,Sz=0,Sy=0,Szz=0,Szy=0;
+      for(let k=0;k<N;k++){if(isNaN(bot[k]))continue;
+        const z=zAt(k),y=bot[k];n++;Sz+=z;Sy+=y;Szz+=z*z;Szy+=z*y;}
+      if(n<4)continue;
+      const den=n*Szz-Sz*Sz;
+      /* 실차 벨트라인은 거의 수평이다 — 피팅이 튀어도 기울기를 제한해 둔다 */
+      const m1=clamp(Math.abs(den)>1e-9?(n*Szy-Sz*Sy)/den:0,-.10,.10), c1=(Sy-m1*Sz)/n;
+      const beltY=z=>m1*z+c1+.014;
+      /* ② 루프라인 — 최소자승 2차곡선(정규방정식 3×3) */
+      let q0=0,q1=0,q2=0,q3=0,q4=0,r0=0,r1=0,r2=0,m=0;
+      for(let k=0;k<N;k++){if(isNaN(top[k]))continue;
+        const z=zAt(k)-((z0+z1)/2),y=top[k];
+        m++;q0+=1;q1+=z;q2+=z*z;q3+=z*z*z;q4+=z*z*z*z;
+        r0+=y;r1+=z*y;r2+=z*z*y;}
+      let A=0,B=0,C=0;
+      if(m>=5){
+        const M=[[q4,q3,q2],[q3,q2,q1],[q2,q1,q0]],R=[r2,r1,r0];
+        for(let i2=0;i2<3;i2++){                         // 가우스 소거
+          let p=i2;for(let j2=i2+1;j2<3;j2++)if(Math.abs(M[j2][i2])>Math.abs(M[p][i2]))p=j2;
+          [M[i2],M[p]]=[M[p],M[i2]];[R[i2],R[p]]=[R[p],R[i2]];
+          const d=M[i2][i2];if(Math.abs(d)<1e-9)continue;
+          for(let j2=i2+1;j2<3;j2++){
+            const f=M[j2][i2]/d;
+            for(let k2=i2;k2<3;k2++)M[j2][k2]-=f*M[i2][k2];
+            R[j2]-=f*R[i2];}}
+        C=Math.abs(M[2][2])>1e-9?R[2]/M[2][2]:0;
+        B=Math.abs(M[1][1])>1e-9?(R[1]-M[1][2]*C)/M[1][1]:0;
+        A=Math.abs(M[0][0])>1e-9?(R[0]-M[0][1]*B-M[0][2]*C)/M[0][0]:0;}
+      const zc0=(z0+z1)/2;
+      const roofY=z=>{const t=z-zc0;return A*t*t+B*t+C-.010;};
+      /* ③ 세그먼트로 잇기 — x는 그 지점 차체 실루엣에 맞춘다 */
+      const SEG=10;
+      const put=(fy,w2,h2,inset)=>{
+        for(let k=0;k<SEG;k++){
+          const za=z0+(k/SEG)*(z1-z0), zb=z0+((k+1)/SEG)*(z1-z0);
+          const ya=fy(za), yb=fy(zb);
+          const ym=(ya+yb)/2, zm=(za+zb)/2;
+          /* ⚠ 몰딩은 그 높이의 "차체 바깥면"보다 아주 살짝 바깥에 앉아야 보인다.
+             이 스캔의 유리 평면(glassX≈0.84)은 도어 외피(≈0.96)보다 12cm나 안쪽이라,
+             유리 기준으로 붙이면 몰딩이 통째로 차체 안에 묻힌다(계측 확인). */
+          let sil=this.bodySilWidth(ym,zm,hy*.10,(z1-z0)/SEG*.7);
+          if(!(sil>0))sil=Math.max(glassX(zm),hx*.90);
+          let xw=Math.min(sil*1.006,hx*1.02)*inset;
+          const dz=zb-za,dy=yb-ya,len=Math.hypot(dz,dy);
+          if(len<.02)continue;
+          cr.push({geo:new THREE.BoxGeometry(w2,h2,len*1.02),
+            x:sg*xw,y:ym,z:zm,rx:-Math.atan2(dy,dz)});}};
+      put(beltY,.028,.030,1.0);                          // 벨트라인
+      if(K.roofTrim!==false)put(roofY,.024,.026,1.0);    // 루프라인
+      /* ④ A/C 필러 — 앞뒤 끝을 세로로 닫아 창틀이 완성돼 보이게 */
+      for(const z of[z0+.02,z1-.02]){
+        const yb2=beltY(z), yt2=roofY(z);
+        if(yt2-yb2<.05)continue;
+        let sil2=this.bodySilWidth((yb2+yt2)/2,z,hy*.16,.10);
+        if(!(sil2>0))sil2=Math.max(glassX(z),hx*.90);
+        const xw=Math.min(sil2*1.004,hx*1.02);
+        cr.push({geo:new THREE.BoxGeometry(.022,yt2-yb2,.026),
+          x:sg*xw,y:(yb2+yt2)/2,z});}}
+  }
   buildChromeKit(spec,bx,by,hx,hy,glassGeo){
     const K=spec.chromeKit;
     const zF=bx.max.z,zR=bx.min.z;
@@ -6177,8 +6316,10 @@ class CarVisual{
       const wSl=.030-Math.abs(t)*.010;                       // 중앙 굵고 바깥 얇게
       const zBack=Math.abs(t)*Math.abs(t)*.045;              // 배럴 곡면
       cr.push({geo:new THREE.BoxGeometry(wSl,gH*2-.035,.05),x:t*gW*.94,y:gY,z:gZ+.014-zBack});}
-    /* (상단 굵은 크롬 바는 넣지 않는다 — 그릴 위에 크롬 줄이 하나 더 얹혀
-       앞면을 가로지르는 불필요한 선으로 보였다) */
+    /* 상단 크롬 바 — 그릴 '폭에 딱 맞춰' 얹는다.
+       예전엔 그릴보다 넓게(+.14) 만들어 앞면을 가로지르는 별도의 줄로 보였다.
+       프레임과 같은 폭이면 판테온 그릴의 두꺼운 윗변으로 자연스럽게 읽힌다. */
+    cr.push({geo:new THREE.BoxGeometry(gW*2+.09,.052,.072),y:gY+gH+.042,z:gZ});
     /* 하단 에어인테이크 — 차체 안쪽으로 '들어간' 다크 메시만. 크롬 립은 넣지 않는다
        (앞으로 튀어나온 막대기처럼 보였다). 폭도 코 폭에 맞춰 좁게. */
     {const iw=hx*(K.intakeW||.52), ih=hy*.085, iy=by+hy*.30, iz=zF-.16;
@@ -6196,10 +6337,8 @@ class CarVisual{
       for(const sg of[-1,1])                                                            // 날개
         cr.push({geo:new THREE.BoxGeometry(.075,.05,.012),x:sg*.045,y:oy+.10,z:oz-.02,
                  rz:sg*.5,ry:sg*.22});}
-    /* ── 윈도 몰딩 — 실제 유리 메시의 경계상자에 맞춘다.
-         차체 최대폭(xR)에 붙이면 휠아치가 가장 넓어서 캐빈 밖으로 판자처럼 떠 보였다. ── */
-    /* 윈도 몰딩은 넣지 않는다 — 스캔 차체의 창 경계에 크롬 줄을 얹으면
-       차 옆면이 줄무늬로 잘게 쪼개져 조잡해 보였다. 차체는 한 장으로 매끈하게 둔다. */
+    /* ── 윈도 서라운드(사이드 크롬) — 최소자승 피팅으로 '딱 맞게' ── */
+    if(K.window!==false&&glassGeo)this.buildSideTrim(glassGeo,cr,hx,hy,zF,zR,K);
     /* ── 로커(사이드 스커트) 크롬 ──
        차체 '최대폭'(휠아치)에 붙이면 실제로 좁은 사이드실 높이에서는 막대가 차 밖으로
        떠 보인다 → 해당 높이·구간의 실제 차체 폭을 재서 그보다 살짝 안쪽에 붙인다. */
@@ -6225,11 +6364,27 @@ class CarVisual{
          어두운 사각 팁을 얹어 얇은 크롬 테두리만 비치게 한다. */
       cr.push({geo:new THREE.BoxGeometry(.145,.062,.012),x:sg*ex,y:exY,z:exZ+.010});
       dk.push({geo:new THREE.BoxGeometry(.125,.044,.070),x:sg*ex,y:exY,z:exZ-.020});}
-    /* ── 리어 크롬 몰딩 + 배지 — 실루엣 안으로 클램프(밖으로 삐져나오던 판자) ── */
-    {const ry2=by+hy*(K.rearY||.90), rz2=zR+.04;
-     const rLim=this.bodySilWidth(ry2,rz2+.06,hy*.20,.22);
-     const rW=rLim>0?Math.min(hx*1.05,rLim*1.94):hx*1.05;
-     cr.push({geo:new THREE.BoxGeometry(rW,.028,.045),y:ry2,z:rz2});
+    /* ── 리어 크롬 — '딱 맞게'.
+         테일램프 앵커(tlAnchor)에서 실제 램프의 안쪽 끝과 높이를 읽어,
+         두 램프 사이를 정확히 잇는 트렁크 가니시를 만든다. 램프에 물리지도,
+         모자라지도 않게 끝이 램프 안쪽 모서리에 닿는다. ── */
+    {const T=this.tlAnchor;
+     const ry2=T?T[0][1]:(by+hy*(K.rearY||.90));
+     /* 뒷면 실제 위치를 재서 그 바로 바깥(−z)에 붙인다 */
+     const tz=this.bodyTailZ(0,ry2,.30,hy*.12);
+     const rz2=(tz?tz:zR+.04)-.012;
+     /* 램프 사이 간격 = 두 앵커의 |x| 평균 − 램프 폭 절반(추정) */
+     let inner=T?Math.min(Math.abs(T[0][0]),Math.abs(T[1][0]))-.10:hx*.5;
+     const rLim=this.bodySilWidth(ry2,rz2+.06,hy*.16,.20);
+     if(rLim>0)inner=Math.min(inner,rLim*.94);
+     const rW=Math.max(.30,inner*2);
+     cr.push({geo:new THREE.BoxGeometry(rW,.024,.038),y:ry2,z:rz2});
+     /* 램프 아래를 잇는 얇은 하단 라인 — 뒷면 폭에 정확히 맞춘다 */
+     const ly=ry2-.10;
+     const ltz=this.bodyTailZ(0,ly,.30,hy*.10);
+     const lLim=this.bodySilWidth(ly,(ltz||zR)+.10,hy*.10,.20);
+     if(lLim>0)cr.push({geo:new THREE.BoxGeometry(lLim*1.56,.020,.030),
+       y:ly,z:(ltz?ltz:zR+.04)-.010});
      }
     const mk=(items,mat)=>{
       if(!items.length)return null;

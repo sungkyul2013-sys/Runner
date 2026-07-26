@@ -194,8 +194,12 @@ class Vehicle{
            격자 보간의 미세 계단이 그대로 힘 잡음이 된다. */
         w.cVelF=(w.cVelF===undefined)?cVelRaw:w.cVelF+(cVelRaw-w.cVelF)*.42;
         const cVel=w.cVelF;
-        // 비대칭 댐핑: 리바운드(늘어남)는 압축보다 강하게 → 방지턱 후 위로 튀는 요동 억제(실차 댐퍼)
-        const cAsym=cVel<0?(susp.rebMul||1.5):1;
+        /* 비대칭 댐핑 — 실차 댐퍼의 핵심 세팅.
+           · 압축(cVel>0, 바퀴가 차체 쪽으로 올라옴) = '흡수' 국면 → 부드럽게(compMul<1).
+             여기서 댐핑을 세게 걸면 충격이 그대로 차체로 올라가 차가 들린다.
+           · 신장(cVel<0, 스프링이 차체를 밀어 올림) = '올라가는' 국면 → 쪼인다(rebMul>1).
+             방지턱을 넘은 뒤 차체가 위로 확 솟는 걸 여기서 잡는다. */
+        const cAsym=cVel<0?(susp.rebMul||1.5):(susp.compMul||.55);
         /* 프로그레시브 스프링(susp.prog) — 승차 높이 부근은 아주 부드럽고, 바닥칠 직전에만
            급격히 단단해진다. 실차 에어스프링의 비선형 레이트를 흉내내 잔진동을 크게 줄인다. */
         const cRel=susp.travel>0?w.comp/susp.travel:0;
@@ -306,7 +310,10 @@ class Vehicle{
        지지력이 0으로 무너질 수 없어, 승차감을 올려도 방지턱 뒷면에서 자유낙하하지
        않는다. 접지 바퀴 수에 비례시켜 공중에서는 작용하지 않는다. */
     if(groundCount>0){
-      const bd=(susp.bodyDamp===undefined?.55:susp.bodyDamp)*sp.mass*(groundCount*.25);
+      let bd=(susp.bodyDamp===undefined?.55:susp.bodyDamp)*sp.mass*(groundCount*.25);
+      /* 위로 올라가는 국면만 '쪼인다' — 차체가 솟는 힘에는 강하게, 가라앉는 쪽은
+         그대로 둬서 바퀴가 노면을 따라 내려가는 걸 방해하지 않는다. */
+      if(b.vel.y>0)bd*=(susp.riseMul===undefined?2.6:susp.riseMul);
       if(bd>0)b.force.y-=b.vel.y*bd;}
     if(sp.aero.df>0&&speed>5){
       const q=sp.aero.df*speed*speed*.01;
