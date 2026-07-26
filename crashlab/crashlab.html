@@ -5290,17 +5290,19 @@ const CARS=[
   wheels:{track:.9,front:1.6,rear:1.6,y:-.5,radius:.376,width:.28},
   /* 🛋️ 롤스로이스 승차감 패키지 — 무른 1차 스프링 + 프로그레시브 레이트 +
      스카이훅 + 비대칭 리바운드 + 노면 예측 + 자세 안정. 실차의 플래너/매직카펫 계열. */
-  susp:{k:36000,c:6600,travel:.50,rest:.28,
-        prog:1.5,        // 프로그레시브 레이트(바닥칠 직전만 단단)
-        sky:15000,       // 스카이훅(차체 상하 요동 직접 감쇠)
-        compMul:.15,     // 압축(흡수) 국면은 아주 부드럽게 — 충격이 차체로 안 올라간다
-        rebMul:6.0,      // 신장(올라가는) 국면은 쪼인다 — 방지턱 후 차체·뒷축이 솟지 않게
-        riseMul:4.5,     // 차체가 상승할 때 헤이브 댐퍼 추가 강화
-        fCap:.50,        // 블로우오프 — 서스가 차체를 밀어올릴 수 있는 힘 상한(중력 배수)
-        heave:44000,     // 상승 억제: 차체가 위로 뜨려 할 때만 스프링력을 깎는다
-        preview:.60,     // 노면 예측 시간(s) — 턱을 미리 읽고 스트로크를 준비한다
-        pvGain:20,       // 예측 보정 이득
-        attq:20},        // 피치·롤 각속도 감쇠 — 평지와 턱의 거동 차이를 거의 없앤다
+  /* 포르쉐 직전 세팅(사용자 평: 그쪽이 더 부드럽고 흡수가 좋다)의 비율을 그대로 옮기고
+     무게 2,490kg·긴 휠베이스에 맞춰 스트로크·스카이훅만 키웠다. */
+  susp:{k:36000,c:6600,travel:.46,rest:.28,
+        prog:1.7,        // 프로그레시브 레이트(바닥칠 직전만 단단)
+        sky:26000,       // 스카이훅(차체 상하 요동 직접 감쇠)
+        compMul:.18,     // 압축(흡수)은 부드럽게 — 충격이 차체로 안 올라간다
+        rebMul:4.2,      // 신장은 조여 방지턱 후 차체·뒷축이 솟지 않게
+        riseMul:3.4,     // 차체 상승 시 헤이브 댐퍼 강화
+        fCap:.46,        // 블로우오프 — 서스가 차체를 밀어올릴 힘 상한(중력 배수)
+        heave:30000,     // 상승 억제
+        preview:.44,     // 노면 예측 — 턱을 미리 읽고 스트로크를 준비
+        pvGain:11,
+        attq:13},        // 피치·롤 각속도 감쇠
   arb:20000,
   engine:{maxT:850,redline:5600,idle:600},
   gears:[4.7,3.14,2.11,1.67,1.29,1.0,.84,.67],final:3.15,
@@ -5314,7 +5316,7 @@ const CARS=[
   /* 휠 치수 정합 — 계측: 아치 최고점이 타이어 위보다 12.7cm 높고(휠이 아치에 비해 너무 작다)
      휠 바깥면이 차체 최외곽보다 5.8cm 안으로 들어가 있었다. GLS 580 은 23인치(직경 0.8m)다.
      반경 0.269 → 0.40, 트랙 4.8cm 바깥으로. (기준: 포르쉐는 아치여유 -8.8cm·돌출 +4.5cm) */
-  wheelRadMul:1.49, wheelOutset:.048,
+  wheelRadMul:1.55, wheelOutset:.062,
   interior:true,               // 바닥·방화벽·프레임레일·시트·연료탱크 + 밀려드는 엔진 블록
   /* 마이바흐는 v6.0 그대로 둔다 — 크롬 킷·헤드램프 어셈블리·범퍼 피팅 등
      덧붙이던 장식은 전부 제거(요청: 6.0 버전대로). */
@@ -5322,7 +5324,14 @@ const CARS=[
   /* 서스펜션도 v6.0 거동으로 — 이후 전 차량에 들어간 비대칭 댐핑/차체 헤이브 댐퍼를
      이 차만 무효화한다(compMul 1 = 압축 감쇠 원래대로, riseMul 1·bodyDamp 0 = 헤이브 댐퍼 없음).
      rebMul은 지정하지 않아 v6.0과 같은 기본값 1.5가 쓰인다. */
-  susp:{k:60000,c:6200,travel:.22,rest:.28,compMul:1,riseMul:1,bodyDamp:0},arb:16000,
+  /* 롤스로이스·포르쉐와 같은 계열(부드러운 압축 + 조인 신장 + 예측·자세 안정)로 통일.
+     v6.0 의 '보정 무효화'(compMul 1 / riseMul 1 / bodyDamp 0)는 해제한다. */
+  susp:{k:60000,c:6200,travel:.30,rest:.28,
+        prog:1.7,sky:24000,
+        compMul:.20,rebMul:4.0,riseMul:3.2,
+        fCap:.50,heave:28000,
+        preview:.42,pvGain:10,attq:12},
+  arb:16000,
   engine:{maxT:640,redline:6000,idle:600},gears:[3.5,2.15,1.5,1.15,.9],final:3.9,
   brakeF:12500,steerLo:.54,steerHi:.13,aero:{cd:1.1,df:0},gripF:1.02,gripR:1.02,
   colors:[0xe9ecee,0x0b0d10,0x14203a,0x8a929a,0x3a2c1a],
@@ -5345,13 +5354,14 @@ const CARS=[
      계측(12cm 턱 40km/h): 트래블이 0.047m뿐이라 바퀴가 위로 못 움직여
      차 전체가 튀어올랐다(차체상승 12.3cm·피치 5.67°·공중 76프레임).
      스프링 강성은 그대로 두고 상방 스트로크와 압축 감쇠만 손본다. */
-  susp:{k:98000,c:7200,travel:.361,rest:.2,
-        prog:1.7,        // 프로그레시브 — 끝단만 급격히 단단(바닥 안 침)
-        compMul:.18,     // 압축은 부드럽게 = 위로 잘 흡수(스프링은 그대로 딱딱)
-        rebMul:4.2,      // 신장은 조여 튀어오름 억제
-        sky:22000,heave:26000,
-        fCap:.46,        // 서스가 차체를 밀어올릴 힘 상한 — 충격이 차체로 안 올라간다
-        preview:.40,pvGain:10,attq:13},
+  /* 요청: 좀만 더 짧고 단단하게. 스트로크를 줄이고 스프링·압축 감쇠를 올린다. */
+  susp:{k:118000,c:7900,travel:.235,rest:.2,
+        prog:2.0,        // 프로그레시브 — 끝단이 급격히 단단(짧은 스트로크 보호)
+        compMul:.26,     // 압축 감쇠 ↑ = 더 단단한 감각
+        rebMul:4.0,
+        sky:24000,heave:28000,
+        fCap:.52,
+        preview:.36,pvGain:9,attq:14},
   arb:60000,
   engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
   brakeF:9200,steerLo:.56,steerHi:.11,aero:{cd:.5,df:55},gripF:1.12,gripR:1.1,
@@ -6043,6 +6053,13 @@ class CarVisual{
     /* 절차 휠은 spec.wheels.radius 로 만들어지지만 원본 휠은 모델 치수 그대로다.
        wheelRadMul 등으로 물리 반경을 손봤다면 그 비율만큼 시각 반경도 맞춘다. */
     const rwK=rwR?spec.wheels.radius/((((e.wheel.bb[4]-e.wheel.bb[1])/2)*spec.modelScale)||1):1;
+    /* 휠 아치 천장을 실측해 시각 휠의 상한을 만든다(아치 천장 - 타이어 반경*0.92). */
+    {const pa=this.bodyMesh.geometry.attributes.position.array;
+     const zw=spec.wheels.front, xw=spec.wheels.trackVis||spec.wheels.track;
+     let top=-1e9;
+     for(let i=0;i<pa.length;i+=3)
+       if(Math.abs(pa[i+2]-zw)<.22&&Math.abs(pa[i])>xw*.5&&pa[i+1]<hy&&pa[i+1]>top)top=pa[i+1];
+     if(top>-1e8)this.wheelVisTop=top-spec.wheels.radius*.92;}
     for(let i=0;i<4;i++){
       const left=(i%2===0);                                   // 0,2 = 좌
       const m=new THREE.Mesh(rwR?(left?rwL:rwR):wg,
@@ -6762,7 +6779,10 @@ class CarVisual{
     for(let i=0;i<4;i++){
       if(this.wheelOff&&this.wheelOff[i])continue;   // 탈락한 바퀴는 재배치 안 함
       const w=veh.wheels[i],m=this.wheelMeshes[i];
-      const vy=(w.rVisY===undefined?w.visY:w.rVisY);
+      let vy=(w.rVisY===undefined?w.visY:w.rVisY);
+      /* 시각 상한 — 트래블을 크게 준 차는 압축이 깊을 때 휠이 펜더를 뚫고 차체 위로
+         올라온다(포르쉐). 물리 스트로크는 그대로 두고 '보이는 위치'만 아치 안에서 멈춘다. */
+      if(this.wheelVisTop!==undefined&&vy>this.wheelVisTop)vy=this.wheelVisTop;
       m.position.set(this.baked?(w.left?-tv:tv):w.local.x,vy+(this.wheelYOff||0),w.local.z);
       const st=(w.front?veh.steer:0)+(w.left?-veh.toe:veh.toe)*8;
       m.rotation.set(0,st,0);
