@@ -74,12 +74,13 @@ function applyShadows(){
 }
 
 /* 프레임버퍼 화소 수 예산(약 2.3MP)에 맞춰 픽셀 비율을 고른다 */
-const PIX_BUDGET=2.3e6;
+const PIX_BUDGET=2.3e6, PIX_BUDGET_HI=4.6e6;
 function pickPixelRatio(){
-  const dpr=Math.min(devicePixelRatio||1,2);
+  const hi=Settings.quality==="high";
+  const dpr=Math.min(devicePixelRatio||1,hi?3:2);
   const px=innerWidth*innerHeight;
   if(px<=0)return dpr;
-  return Math.max(1,Math.min(dpr,Math.sqrt(PIX_BUDGET/px)));
+  return Math.max(1,Math.min(dpr,Math.sqrt((hi?PIX_BUDGET_HI:PIX_BUDGET)/px)));
 }
 function initRenderer(){
   try{
@@ -88,13 +89,15 @@ function initRenderer(){
        · 픽셀 비율은 '프레임버퍼 화소 수' 예산으로 정한다(단순히 min(dpr,2)로 두면
          큰 화면 고DPI 폰에서 프레임버퍼가 3~4메가픽셀까지 커져 그것만으로 프레임이 무너진다). */
     const _dpr=devicePixelRatio||1;
-    renderer=new THREE.WebGLRenderer({canvas:$("gl"),antialias:_dpr<=1.5,powerPreference:"high-performance"});
+    /* 최고 품질에서는 DPI와 무관하게 MSAA를 켠다(계단현상 제거가 체감 1순위) */
+    renderer=new THREE.WebGLRenderer({canvas:$("gl"),
+      antialias:Settings.quality==="high"||_dpr<=1.5,powerPreference:"high-performance"});
   }catch(err){
     $("loadTip").textContent="⚠️ WebGL을 사용할 수 없습니다 — 브라우저/기기 설정을 확인해 주세요";
     throw err;}
   renderer.setPixelRatio(pickPixelRatio());
   renderer.setSize(innerWidth,innerHeight);
-  renderer.shadowMap.type=THREE.PCFShadowMap;
+  renderer.shadowMap.type=Settings.quality==="high"?THREE.PCFSoftShadowMap:THREE.PCFShadowMap;
   renderer.shadowMap.autoUpdate=false;   // 갱신 시점은 메인 루프가 직접 정한다
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=1.05;
@@ -114,7 +117,7 @@ function initRenderer(){
   clouds=new THREE.Mesh(mergeGeoms(cl),new THREE.MeshBasicMaterial({vertexColors:true,fog:false,transparent:true,opacity:.85}));
   scene.add(clouds);
   sunLight=new THREE.DirectionalLight(0xffffff,1);
-  sunLight.shadow.mapSize.set(1024,1024);
+  {const sm=Settings.quality==="high"?2048:1024;sunLight.shadow.mapSize.set(sm,sm);}
   const sc=90;
   sunLight.shadow.camera.left=-sc;sunLight.shadow.camera.right=sc;
   sunLight.shadow.camera.top=sc;sunLight.shadow.camera.bottom=-sc;
@@ -168,7 +171,7 @@ function mainLoop(t){
       /* 그림자 맵은 매 프레임 다시 그릴 필요가 없다 — 변형 중인 차체까지 셰도우 패스에
          한 번 더 렌더되므로 충돌 순간 비용이 두 배가 된다. 몇 프레임에 한 번만 갱신. */
       if(renderer.shadowMap.enabled){
-        _shTick=(_shTick+1)%Math.max(1,PERF.shadowEvery);
+        _shTick=(_shTick+1)%Math.max(1,Settings.quality==="high"?1:PERF.shadowEvery);
         renderer.shadowMap.needsUpdate=(_shTick===0);}
       sunLight.target.position.copy(Game.veh.body.rPos);
       sunLight.position.set(Game.veh.body.rPos.x+TOD[Game.opts.tod].sunPos[0]*.5,

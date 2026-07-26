@@ -46,7 +46,7 @@ const Settings=Object.assign({
   absOn:true,tcsOn:true,ctrSteer:true,stab:true,
   steerMode:"slider",    // slider | buttons | tilt
   sensitivity:1.0,
-  camShake:true,shadows:true,quality:"auto", // auto|high|low
+  camShake:true,shadows:true,quality:"high", // auto|high|low — 기본을 최고 품질로
   sound:true,volume:0.8,
   autoSlowmo:true,debug:false,
   autoReport:true,       // 충돌 후 리포트 자동 표시

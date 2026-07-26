@@ -29,7 +29,14 @@ function add(S){
   const cal=S.e.cal===undefined?S.I.length:S.e.cal;
   for(let t=0;t<S.I.length;t+=3){
     const cls=t<S.e.tire?1:(t<cal?0:2);          // 1=고무 0=림 2=캘리퍼
+    if(S.drop&&S.drop.indexOf(cls)>=0)continue;
     tri.push([off+S.I[t],off+S.I[t+1],off+S.I[t+2],cls]);}}
+/* 두 소스가 겹치는 부분이 있어 그대로 합치면 고무가 두 겹으로 쌓인다(Z파이팅).
+   겹치는 것은 '타이어' 하나뿐이므로 그것만 한쪽에서 버린다.
+     · soup(차체 수프의 휠 원통) → 타이어 + 림 면   ← 스포크 '면'과 바깥 트레드가 여기에 있다
+     · gltf(휠 재질)             → 림 스포크 + 캘리퍼 (타이어만 버린다)
+   (림을 통째로 버려 봤더니 한쪽은 속이 들여다보이고 다른 쪽은 민무늬 원반이 됐다) */
+A.drop=[1]; B2.drop=[];
 add(A);add(B2);
 /* 타이어 → 림 → 캘리퍼 순. 캘리퍼는 회전하지 않는 별도 메시로 나간다. */
 const RANK={1:0,0:1,2:2};
