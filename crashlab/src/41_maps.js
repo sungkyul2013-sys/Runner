@@ -198,6 +198,22 @@ class MapBuilder{
      방지턱과 물리는 동일하고 비주얼만 아스팔트색으로 깐다. */
   rough(x,z,yaw,width,h,type){
     return this.bump(x,z,yaw,width,h,type,[.226,.239,.263]);}
+  /* 🥁 럼블 존 — 짧은 파장의 규칙적 홈이 깔린 구역('두두둑').
+     방지턱을 수십 개 놓는 대신 높이함수로 처리해 지오메트리·드로우콜이 늘지 않는다.
+     노면색만 살짝 어둡게 칠해 눈으로도 구간이 구분된다. */
+  rumbleZone(x,z,yaw,r,amp,pitch,paint){
+    this.world.addRumble(x,z,yaw,r,amp,pitch);
+    if(paint!==false){
+      this.texCircle(x,z,r,"rgba(28,30,34,.30)");
+      const si=Math.sin(yaw||0),co=Math.cos(yaw||0);
+      const n=Math.floor(r*2/(pitch||.55));
+      for(let k=-(n>>1);k<=(n>>1);k+=2){
+        const off=k*(pitch||.55);
+        if(Math.abs(off)>r)continue;
+        const hw=Math.sqrt(Math.max(0,r*r-off*off));
+        this.texPath([{x:x+co*hw+si*off,z:z+si*hw-co*off},
+                      {x:x-co*hw+si*off,z:z-si*hw-co*off}],.18,"rgba(212,218,226,.35)");}}
+    return this;}
   bump(x,z,yaw,width,h,type,solidCol){ // 과속방지턱: 지형 높이에 매끈히 반영(뚝뚝 끊김 없음) + 매칭 비주얼
     h=h||.1;type=type||"arch";yaw=yaw||0;
     const hw=width/2, y0=this.world.height(x,z);   // 방지턱 추가 전 지면 높이(더블카운트 방지)
@@ -298,7 +314,7 @@ class MapBuilder{
       /* 진폭 계수 — 계측으로 고름(60km/h 롤스로이스, 차고 진폭 / 수직가속 RMS):
            1.0 → 0.9cm / 1.01   0.7 → 0.6cm / 0.73   0.5 → 0.4cm / 0.55   0 → 0 / 0.26
          0.5면 노면 결은 확실히 느껴지면서 차체는 거의 움직이지 않는다. */
-      w.roadRough=.5;
+      w.roadRough=.45;
       let sd=(w.size*13|0)+7,rr=()=>{sd=(sd*1103515245+12345)&0x7fffffff;return sd/0x7fffffff;};
       const avoid=[w.spawn,...(w.places||[])];
       const paved=(x,z)=>{const q=w.surf(x,z);

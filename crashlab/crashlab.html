@@ -4513,9 +4513,30 @@ class World{
        울렁임'으로 증폭됐다(계측: 차고 진폭 0.8cm → 3.2cm).
        파장을 2.5m 이하로만 두면 60km/h에서 6.7Hz 이상 → 차체는 거의 반응하지 않고
        타이어·서스펜션만 잘게 움직여 '노면 결'로만 느껴진다. */
+    /* 뒤쪽 두 항이 '두두둑' 담당 — 파장 1.0m·0.5m라 60km/h에서 17Hz·33Hz.
+       차체(1.2Hz)는 전혀 못 따라가고 타이어·서스펜션만 잘게 때려 노면 결이 손에 온다. */
     return a*(Math.sin(x*2.51)*Math.sin(z*2.13)*.0026
              +Math.sin(x*4.47+z*3.91)*.0016
-             +Math.sin(z*7.93-x*6.11)*.0011);}
+             +Math.sin(z*7.93-x*6.11)*.0011
+             +Math.sin(x*6.28+z*5.13)*.0016
+             +Math.sin(z*12.6-x*9.7)*.0011);}
+  /* 🥁 럼블 스트립(두두둑) 구역 — 톨게이트 진입로·연석 옆의 홈처럼, 짧은 파장의
+     규칙적인 홈이 연속으로 이어져 '두두둑' 진동을 만든다. 진폭은 작지만 파장이
+     아주 짧아 차체는 뜨지 않고 스티어링·시트에만 전달된다. */
+  addRumble(x,z,yaw,r,amp,pitch){
+    (this.rumbles||(this.rumbles=[])).push({x,z,r,r2:r*r,
+      co:Math.cos(yaw||0),si:Math.sin(yaw||0),amp:amp||.010,k:(Math.PI*2)/(pitch||.55)});}
+  rumbleH(x,z){
+    const R=this.rumbles;
+    if(!R)return 0;
+    let add=0;
+    for(let i=0;i<R.length;i++){
+      const b=R[i],dx=x-b.x,dz=z-b.z,d2=dx*dx+dz*dz;
+      if(d2>=b.r2)continue;
+      const w=1-Math.sqrt(d2)/b.r;                 // 가장자리에서 매끈하게 0
+      const lz=-dx*b.si+dz*b.co;                   // 진행 방향 좌표
+      add+=b.amp*w*w*(.5+.5*Math.cos(lz*b.k));}    // 항상 0 이상(홈이 위로 솟은 형태)
+    return add;}
   bumpH(x,z){
     let add=0;
     const B=this.bumps;
@@ -4564,6 +4585,7 @@ class World{
                    rz.p===3?Math.sin(x*rz.f+z*rz.f*.7)*Math.cos(z*rz.f*.45):
                    Math.sin(x*rz.f)*Math.sin(z*rz.f*1.13)+.5*Math.sin(x*rz.f*2.2+1.3)*Math.cos(z*rz.f*1.9));}
     if(this.roadRough)h+=this.roadRoughH(x,z);
+    if(this.rumbles)h+=this.rumbleH(x,z);
     return h;}
   normal(x,z,out){
     const e=this.cell;
@@ -4947,6 +4969,13 @@ class Vehicle{
       // 수직 요동도 한 번 더 — 네 바퀴 접지 시에만(공중에서 부양 방지)
       if(groundCount===4&&susp.sky)
         b.force.y-=b.vel.y*susp.sky*.6;}
+    /* 🛋️ 차체 헤이브 댐퍼 — 휠 지지력(sF)과 무관한 '별도의' 힘이라 접지를 해치지
+       않으면서 차체 상하 흔들림만 잡는다. 스프링을 깎는 방식(sky/heave)과 달리
+       지지력이 0으로 무너질 수 없어, 승차감을 올려도 방지턱 뒷면에서 자유낙하하지
+       않는다. 접지 바퀴 수에 비례시켜 공중에서는 작용하지 않는다. */
+    if(groundCount>0){
+      const bd=(susp.bodyDamp===undefined?.55:susp.bodyDamp)*sp.mass*(groundCount*.25);
+      if(bd>0)b.force.y-=b.vel.y*bd;}
     if(sp.aero.df>0&&speed>5){
       const q=sp.aero.df*speed*speed*.01;
       for(const[frac,zoff]of[[.46,sp.wheels.front],[.54,-sp.wheels.rear]]){
@@ -6148,7 +6177,8 @@ class CarVisual{
       const wSl=.030-Math.abs(t)*.010;                       // 중앙 굵고 바깥 얇게
       const zBack=Math.abs(t)*Math.abs(t)*.045;              // 배럴 곡면
       cr.push({geo:new THREE.BoxGeometry(wSl,gH*2-.035,.05),x:t*gW*.94,y:gY,z:gZ+.014-zBack});}
-    cr.push({geo:new THREE.BoxGeometry(gW*2+.14,.075,.085),y:gY+gH+.05,z:gZ+.01});   // 상단 굵은 크롬 바
+    /* (상단 굵은 크롬 바는 넣지 않는다 — 그릴 위에 크롬 줄이 하나 더 얹혀
+       앞면을 가로지르는 불필요한 선으로 보였다) */
     /* 하단 에어인테이크 — 차체 안쪽으로 '들어간' 다크 메시만. 크롬 립은 넣지 않는다
        (앞으로 튀어나온 막대기처럼 보였다). 폭도 코 폭에 맞춰 좁게. */
     {const iw=hx*(K.intakeW||.52), ih=hy*.085, iy=by+hy*.30, iz=zF-.16;
@@ -6232,27 +6262,38 @@ class CarVisual{
       const w=Math.max(.16,outer-.014-inner);
       const ax=sgn*(inner+w/2);
       this.hlBox.push([ax,ay,az,w,h]);
+      /* ── 깊이 ──
+         예전엔 렌즈가 차체 면 바로 밑(1cm)이라 램프가 '흰 스티커'처럼 납작하게 보였다.
+         렌즈를 4cm 안으로 넣고 그 앞에 하우징 개구부(테두리 립)를 두면, 어느 각도에서
+         봐도 안쪽 벽·LED가 겹쳐 보여 램프 형상이 살아난다. */
+      const DEEP=.040;                       // 렌즈를 차체 면에서 얼마나 안으로 넣을지
       // 하우징: 안쪽으로 파인 어두운 상자(램프가 차체 안에 들어가 보이게)
-      housing.push({geo:new THREE.BoxGeometry(w,h,.10),x:ax,y:ay,z:az-.055});
-      // 크롬 베젤(둘레)
-      housing.push({geo:new THREE.BoxGeometry(w+.024,.014,.045),x:ax,y:ay+h/2,z:az-.022});
-      housing.push({geo:new THREE.BoxGeometry(w+.024,.014,.045),x:ax,y:ay-h/2,z:az-.022});
-      // LED 프로젝터 여러 개 — 하우징 '안쪽'에 나란히
+      housing.push({geo:new THREE.BoxGeometry(w,h,.13),x:ax,y:ay,z:az-DEEP-.070});
+      // 개구부 립(상·하·좌·우) — 파인 구멍의 테두리. 이게 있어야 깊이가 읽힌다.
+      housing.push({geo:new THREE.BoxGeometry(w+.030,.020,.052),x:ax,y:ay+h/2+.006,z:az-.020});
+      housing.push({geo:new THREE.BoxGeometry(w+.030,.020,.052),x:ax,y:ay-h/2-.006,z:az-.020});
+      for(const sx of[-1,1])
+        housing.push({geo:new THREE.BoxGeometry(.020,h+.026,.052),x:ax+sx*(w/2+.008),y:ay,z:az-.020});
+      // LED 프로젝터 여러 개 — 렌즈 뒤(더 깊은 곳)에 나란히
       for(let i=0;i<n;i++){
         const t=(i+.5)/n*2-1;
-        leds.push({geo:new THREE.CylinderGeometry(h*.30,h*.30,.02,12),
-          rx:Math.PI/2,x:ax+t*(w*.5-h*.34)*sgn,y:ay,z:az-.028});}
-      // 앞면 유리 렌즈(차체 면과 나란히, 살짝 안쪽)
-      const lens=new THREE.Mesh(new THREE.BoxGeometry(w,h,.012),
-        new THREE.MeshPhongMaterial({color:0x9fc4dd,transparent:true,opacity:.34,
+        leds.push({geo:new THREE.CylinderGeometry(h*.30,h*.30,.022,12),
+          rx:Math.PI/2,x:ax+t*(w*.5-h*.34)*sgn,y:ay,z:az-DEEP-.026});
+        // 각 LED 둘레의 크롬 리플렉터 컵 — 램프 알갱이가 또렷하게 보인다
+        housing.push({geo:new THREE.CylinderGeometry(h*.40,h*.40,.030,12),
+          rx:Math.PI/2,x:ax+t*(w*.5-h*.34)*sgn,y:ay,z:az-DEEP-.044});}
+      // 앞면 유리 렌즈 — 개구부보다 안쪽에
+      const lens=new THREE.Mesh(new THREE.BoxGeometry(w-.006,h-.006,.010),
+        new THREE.MeshPhongMaterial({color:0x9fc4dd,transparent:true,opacity:.26,
           shininess:300,specular:0xffffff,side:THREE.DoubleSide}));
-      lens.position.set(ax,ay,az-.010);
+      lens.position.set(ax,ay,az-DEEP);
       this.group.add(lens);this.hlLens.push(lens);}
     this.hlHousing=new THREE.Mesh(mergeGeoms(housing),MAT_CHROME_DARK);
     this.hlHousing.castShadow=true;this.group.add(this.hlHousing);
-    // LED는 자체발광(항상 형태가 보이고, 점등 시 더 밝아진다)
-    this.hlLed=new THREE.Mesh(mergeGeoms(leds),
-      new THREE.MeshBasicMaterial({color:0xfff6e2,toneMapped:false}));
+    /* LED 본체 — 소등 시에도 흰 스티커처럼 튀지 않게 은은한 색으로 두고,
+       점등은 sync()에서 색을 올려 표현한다(toneMapped:false 라 색이 곧 밝기). */
+    this.hlLedMat=new THREE.MeshBasicMaterial({color:0x8c94a0,toneMapped:false});
+    this.hlLed=new THREE.Mesh(mergeGeoms(leds),this.hlLedMat);
     this.group.add(this.hlLed);
     this.lattice.bind(this.hlHousing);this.lattice.bind(this.hlLed);
   }
@@ -6286,7 +6327,9 @@ class CarVisual{
       if(this.hl){
         const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
         if(this._hlI!==inten){this._hlI=inten;
-          for(const h of this.hl){h.s.intensity=inten;h.g.visible=on&&inten>0;}}}}
+          for(const h of this.hl){h.s.intensity=inten;h.g.visible=on&&inten>0;}
+          // LED 알갱이도 점등 상태에 따라 밝기 변화(소등 시 은은한 회색)
+          if(this.hlLedMat)this.hlLedMat.color.setHex(inten>0?0xfff4d8:0x8c94a0);}}}
     /* 🔴 후미등 발광 — 상시 미등 + 제동 시 급격히 밝아지는 브레이크등.
        (이 three 빌드에는 PointLight가 없어 가산합성 글로우 메시로 실제 발광을 표현) */
     if(this.tlAnchor){
@@ -6855,6 +6898,22 @@ class MapBuilder{
      방지턱과 물리는 동일하고 비주얼만 아스팔트색으로 깐다. */
   rough(x,z,yaw,width,h,type){
     return this.bump(x,z,yaw,width,h,type,[.226,.239,.263]);}
+  /* 🥁 럼블 존 — 짧은 파장의 규칙적 홈이 깔린 구역('두두둑').
+     방지턱을 수십 개 놓는 대신 높이함수로 처리해 지오메트리·드로우콜이 늘지 않는다.
+     노면색만 살짝 어둡게 칠해 눈으로도 구간이 구분된다. */
+  rumbleZone(x,z,yaw,r,amp,pitch,paint){
+    this.world.addRumble(x,z,yaw,r,amp,pitch);
+    if(paint!==false){
+      this.texCircle(x,z,r,"rgba(28,30,34,.30)");
+      const si=Math.sin(yaw||0),co=Math.cos(yaw||0);
+      const n=Math.floor(r*2/(pitch||.55));
+      for(let k=-(n>>1);k<=(n>>1);k+=2){
+        const off=k*(pitch||.55);
+        if(Math.abs(off)>r)continue;
+        const hw=Math.sqrt(Math.max(0,r*r-off*off));
+        this.texPath([{x:x+co*hw+si*off,z:z+si*hw-co*off},
+                      {x:x-co*hw+si*off,z:z-si*hw-co*off}],.18,"rgba(212,218,226,.35)");}}
+    return this;}
   bump(x,z,yaw,width,h,type,solidCol){ // 과속방지턱: 지형 높이에 매끈히 반영(뚝뚝 끊김 없음) + 매칭 비주얼
     h=h||.1;type=type||"arch";yaw=yaw||0;
     const hw=width/2, y0=this.world.height(x,z);   // 방지턱 추가 전 지면 높이(더블카운트 방지)
@@ -6955,7 +7014,7 @@ class MapBuilder{
       /* 진폭 계수 — 계측으로 고름(60km/h 롤스로이스, 차고 진폭 / 수직가속 RMS):
            1.0 → 0.9cm / 1.01   0.7 → 0.6cm / 0.73   0.5 → 0.4cm / 0.55   0 → 0 / 0.26
          0.5면 노면 결은 확실히 느껴지면서 차체는 거의 움직이지 않는다. */
-      w.roadRough=.5;
+      w.roadRough=.45;
       let sd=(w.size*13|0)+7,rr=()=>{sd=(sd*1103515245+12345)&0x7fffffff;return sd/0x7fffffff;};
       const avoid=[w.spawn,...(w.places||[])];
       const paved=(x,z)=>{const q=w.surf(x,z);
@@ -7329,7 +7388,7 @@ const S_ASP=SURF_ID.asphalt,S_GRS=SURF_ID.grass,S_SND=SURF_ID.sand,S_GRV=SURF_ID
 
 const MAPS=[
 /* ---------- 1. 프루빙 그라운드 ---------- */
-{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"초대형 뱅크드 오벌·가속로·충돌벽·압착기·서스펜션 랩(대형턱·급단차·뱅크·잔요철·자갈·젖은노면·오르막턱)·힐클라임·오프로드·램프·스키드패드·낙하타워·IIHS",
+{id:"proving",name:"프루빙 그라운드",icon:"🧪",desc:"초대형 뱅크드 오벌·가속로·충돌벽·압착기·서스펜션 랩 14레인(대형턱·급단차·뱅크·럼블스트립·편측턱·포트홀·주파수스윕·자갈길·젖은노면·오르막턱)·힐클라임·오프로드·램프·스키드패드·낙하타워·IIHS",
  modes:["free","crash","drift"],
  build(){
   const mb=new MapBuilder(1020,288),w=mb.world;
@@ -7447,6 +7506,72 @@ const MAPS=[
    for(let k=0;k<6;k++)mb.bump(LX,sz0+20+k*30,0,13,.20+.05*(k%3),"flat");
    mb.texText(LX,sz0-8,2.8,"UNDULATION","rgba(240,244,250,.7)");}
 
+  /* ══ 서스펜션 시험장 확장 (10~14레인) — 실제 시험장의 대표 노면들 ══ */
+
+  /* 10: 럼블 스트립 레인 — 홈 간격 3단계(0.35 / 0.55 / 0.90m).
+        '두두둑' 진동이 속도에 따라 어떻게 변하는지 그대로 느껴지는 구간. */
+  {const RX=386;
+   mb.stamp(RX,sz0+80,15,(i,j)=>w.setS(i,j,S_ASP));
+   mb.texRect(RX,sz0+80,26,190,0,SURF_CSS[S_ASP]);
+   [[.35,.009],[.55,.012],[.90,.016]].forEach(([pitch,amp],k)=>{
+     mb.rumbleZone(RX,sz0+22+k*56,0,22,amp,pitch);
+     mb.texText(RX-9,sz0+22+k*56-26,2.2,(pitch*100|0)+"mm","rgba(240,244,250,.6)");});
+   mb.texText(RX,sz0-8,2.8,"RUMBLE","rgba(240,244,250,.7)");}
+
+  /* 11: 스플릿(편측) 레인 — 좌·우 한쪽 바퀴만 타는 턱.
+        롤 강성·안티롤바·좌우 하중 이동이 드러난다. */
+  {const PX=412;
+   mb.stamp(PX,sz0+80,14,(i,j)=>w.setS(i,j,S_ASP));
+   mb.texRect(PX,sz0+80,24,190,0,SURF_CSS[S_ASP]);
+   for(let k=0;k<12;k++){
+     const sgn=k%2?1:-1;                       // 좌/우 교대
+     /* 폭 2.6m·중심 ±1.0m — 한쪽 바퀴만 정확히 타고 반대쪽은 평지에 남는다 */
+     mb.bump(PX+sgn*1.0,sz0+12+k*14,0,2.6,.10+.03*(k%3),k%3===2?"sharp":"round");}
+   mb.texText(PX,sz0-8,2.8,"SPLIT","rgba(240,244,250,.7)");}
+
+  /* 12: 포트홀 군집 레인 — 깊이·지름이 다른 구덩이 연속.
+        리바운드가 부족하면 바퀴가 구덩이를 못 따라가고 '쿵' 하고 받는다. */
+  {const HX2=438;
+   mb.stamp(HX2,sz0+80,13,(i,j)=>w.setS(i,j,S_ASP));
+   mb.texRect(HX2,sz0+80,22,190,0,SURF_CSS[S_ASP]);
+   let sd=311;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<22;k++)
+     mb.pothole(HX2+(rr()-.5)*11,sz0+8+k*8+(rr()-.5)*3,1.1+rr()*1.8,.09+rr()*.15);
+   mb.texText(HX2,sz0-8,2.8,"POTHOLE","rgba(240,244,250,.7)");}
+
+  /* 13: 주파수 스윕 레인 — 턱 간격이 12m→2m로 점점 좁아진다.
+        일정 속도로 달리면 어느 지점에서 차체가 공진하는지(울렁임 최대) 바로 보인다. */
+  {const FX=462;
+   mb.stamp(FX,sz0+80,13,(i,j)=>w.setS(i,j,S_ASP));
+   mb.texRect(FX,sz0+80,22,190,0,SURF_CSS[S_ASP]);
+   let zz=sz0+10;
+   for(let k=0;k<16&&zz<sz0+178;k++){
+     mb.bump(FX,zz,0,12,.055,"round");
+     zz+=12-k*.62;}                            // 간격 12m → 2.7m
+   mb.texText(FX,sz0-8,2.8,"SWEEP","rgba(240,244,250,.7)");}
+
+  /* 14: 자갈·돌길(코블스톤) — 자잘한 요철이 촘촘. 잔진동 흡수 능력 시험 */
+  {const CB=486;
+   mb.stamp(CB,sz0+80,12,(i,j)=>w.setS(i,j,S_GRV));
+   let sd=733;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
+   for(let k=0;k<70;k++)
+     mb.rough(CB+(rr()-.5)*18,sz0+6+rr()*180,rr()*3.14,2.2+rr()*2.4,.02+rr()*.05,
+              rr()<.5?"round":"sharp");
+   mb.rumbleZone(CB,sz0+90,0,24,.007,.42,false);
+   mb.texText(CB,sz0-8,2.8,"COBBLE","rgba(240,244,250,.7)");}
+
+  /* 신설 레인 진입·탈출 에이프런 — 기존 시험장 포장과 이어 붙여 고립 구역이 생기지 않게.
+     (감사 결과 신설 레인만 별도 섬으로 잡히던 문제) */
+  {const A0=sz0-16, A1=sz0+192;
+   for(const az of[A0,A1])
+     mb.paintPath([{x:352,y:0,z:az},{x:494,y:0,z:az}],20,S_ASP,false,false);
+   mb.paintPath([{x:352,y:0,z:A0},{x:352,y:0,z:A1}],18,S_ASP,false,false);
+   mb.paintPath([{x:494,y:0,z:A0},{x:494,y:0,z:A1}],18,S_ASP,false,false);
+   /* 시험장 본체(x≈180, '🔩 서스펜션 시험장' 지점)까지 연결 — 동쪽 레인 전체가
+      별도 네트워크로 떨어져 차로 갈 수 없던 문제(꿀렁임 레인 포함)를 함께 해결 */
+   mb.paintPath([{x:150,y:0,z:A0},{x:352,y:0,z:A0}],20,S_ASP,false,false);
+   mb.paintPath([{x:150,y:0,z:A0},{x:150,y:0,z:sz0+40}],18,S_ASP,false,false);}
+
   /* === 🏁 핸들링 서킷(인필드 로드코스) — 헤어핀·에스·고속 코너 복합 폐곡선 === */
   {const CX=110,CZ=150;
    const raw=[[CX-96,CZ-84],[CX-20,CZ-98],[CX+62,CZ-74],[CX+98,CZ-18],
@@ -7528,6 +7653,11 @@ const MAPS=[
     {name:"💥 충돌벽",x:-140,z:250,yaw:0},
     {name:"🗜️ 압착기",x:110,z:-58,yaw:0},
     {name:"🔩 서스펜션 시험장",x:180,z:-282,yaw:0},
+    {name:"🥁 럼블 스트립",x:386,z:-278,yaw:0},
+    {name:"↔️ 편측 턱(스플릿)",x:412,z:-278,yaw:0},
+    {name:"🕳️ 포트홀 구간",x:438,z:-278,yaw:0},
+    {name:"📈 주파수 스윕",x:462,z:-278,yaw:0},
+    {name:"🪨 자갈·돌길",x:486,z:-278,yaw:0},
     {name:"⛰️ 힐클라임 오르막",x:-250,z:12,yaw:Math.PI},
     {name:"🏔️ 러프 오프로드",x:250,z:250,yaw:0},
     {name:"🛞 스키드패드",x:-250,z:-150,yaw:0},
@@ -8578,6 +8708,54 @@ MAPS.push(
     w.addRippleZone(Math.cos(a)*R_INNER,Math.sin(a)*R_INNER,58,.012+.004*(k%3),1.4+.3*(k%3),1+(k%3));}
   for(const[bx3,bz3]of[[GRID,GRID],[-GRID,GRID],[GRID,-GRID],[-GRID,-GRID]])
     w.addRippleZone(bx3,bz3,44,.011,2.2,1+((bx3+bz3)%2));
+
+  /* ══ 🏙️ 메가시티 잔요철 — 실제 도심 노면처럼 '어디를 달려도 노면이 살아 있게' ══
+     전역 roadRough(㎜급)에 더해, 도심 특유의 국소 노면을 손으로 깐다.
+     - 노후 포장 구간: 아스팔트색 잔요철 다발(눈에 띄는 마킹 없음)
+     - 럼블 스트립: 교차로 진입·터널 입구 '두두둑'
+     - 보수 패치/맨홀: 작은 단차
+     예약 코리도어(대로 직진축)는 건드리지 않으므로 '쭉 직진'은 그대로 유지된다. */
+  {let sd=20250726;const rr=()=>{sd=(sd*1103515245+12345)&0x7fffffff;return sd/0x7fffffff;};
+   const okAt=(x,z)=>{
+     if(inUG(x,z))return false;                       // 지하 데크 위는 제외
+     const s=w.surf(x,z);
+     return s===SURF_ID.asphalt||s===SURF_ID.lane;};
+   /* ① 노후 포장 — 아스팔트색 잔요철 다발 34곳 × 4~7개 */
+   let laid=0;
+   for(let k=0;k<900&&laid<34;k++){
+     const cx=(rr()-.5)*2100, cz=(rr()-.5)*2100;
+     if(!okAt(cx,cz)||!okAt(cx+6,cz)||!okAt(cx-6,cz)||!okAt(cx,cz+6)||!okAt(cx,cz-6))continue;
+     if(Math.hypot(cx,cz+200)<70)continue;            // 스폰 주변은 비움
+     const yaw=rr()<.5?0:Math.PI/2, n=4+((rr()*4)|0);
+     for(let q=0;q<n;q++){
+       const ox=(rr()-.5)*16, oz=(rr()-.5)*16;
+       if(!okAt(cx+ox,cz+oz))continue;
+       mb.rough(cx+ox,cz+oz,yaw+(rr()-.5)*.4,7+rr()*6,.016+rr()*.030,
+                rr()<.34?"flat":rr()<.7?"round":"arch");}
+     laid++;}
+   /* ② 럼블 스트립 — 격자 교차로 진입부(두두둑). 대로 축(k=0)은 제외 */
+   let rz2=0;
+   for(let k=-4;k<=4&&rz2<14;k++){
+     if(k===0)continue;
+     for(const[ax,az,yw]of[[k*GRID,GRID*1.5,0],[GRID*1.5,k*GRID,Math.PI/2],
+                           [k*GRID,-GRID*1.5,0],[-GRID*1.5,k*GRID,Math.PI/2]]){
+       if(rz2>=14)break;
+       if(!okAt(ax,az))continue;
+       mb.rumbleZone(ax,az,yw,11,.010+.004*(k&1),.45+.2*(k&1));
+       rz2++;}}
+   /* ③ 보수 패치·맨홀 — 작은 단차(높이 2~4cm) */
+   let pat=0;
+   for(let k=0;k<700&&pat<46;k++){
+     const px=(rr()-.5)*2150, pz=(rr()-.5)*2150;
+     if(!okAt(px,pz))continue;
+     if(Math.hypot(px,pz+200)<56)continue;
+     mb.rough(px,pz,rr()*3.14,2.4+rr()*2.6,.020+rr()*.022,"flat");
+     mb.texCircle(px,pz,1.5+rr()*1.2,"rgba(38,41,46,.42)");
+     pat++;}
+   /* ④ 순환 벨트웨이 — 완만한 노면 굴곡(고속에서 서스가 계속 일한다) */
+   for(let k=0;k<10;k++){
+     const a=(k+.5)/10*6.283;
+     w.addRippleZone(Math.cos(a)*R_BELT,Math.sin(a)*R_BELT,50,.008,2.9+(k%3)*.5,1+(k%3));}}
 
   w.checkpoints=pathCheckpoints(belt,30,22);
   w.waypoints=pathWaypoints(belt,true,60);

@@ -301,6 +301,13 @@ class Vehicle{
       // 수직 요동도 한 번 더 — 네 바퀴 접지 시에만(공중에서 부양 방지)
       if(groundCount===4&&susp.sky)
         b.force.y-=b.vel.y*susp.sky*.6;}
+    /* 🛋️ 차체 헤이브 댐퍼 — 휠 지지력(sF)과 무관한 '별도의' 힘이라 접지를 해치지
+       않으면서 차체 상하 흔들림만 잡는다. 스프링을 깎는 방식(sky/heave)과 달리
+       지지력이 0으로 무너질 수 없어, 승차감을 올려도 방지턱 뒷면에서 자유낙하하지
+       않는다. 접지 바퀴 수에 비례시켜 공중에서는 작용하지 않는다. */
+    if(groundCount>0){
+      const bd=(susp.bodyDamp===undefined?.55:susp.bodyDamp)*sp.mass*(groundCount*.25);
+      if(bd>0)b.force.y-=b.vel.y*bd;}
     if(sp.aero.df>0&&speed>5){
       const q=sp.aero.df*speed*speed*.01;
       for(const[frac,zoff]of[[.46,sp.wheels.front],[.54,-sp.wheels.rear]]){

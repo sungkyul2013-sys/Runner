@@ -967,7 +967,8 @@ class CarVisual{
       const wSl=.030-Math.abs(t)*.010;                       // 중앙 굵고 바깥 얇게
       const zBack=Math.abs(t)*Math.abs(t)*.045;              // 배럴 곡면
       cr.push({geo:new THREE.BoxGeometry(wSl,gH*2-.035,.05),x:t*gW*.94,y:gY,z:gZ+.014-zBack});}
-    cr.push({geo:new THREE.BoxGeometry(gW*2+.14,.075,.085),y:gY+gH+.05,z:gZ+.01});   // 상단 굵은 크롬 바
+    /* (상단 굵은 크롬 바는 넣지 않는다 — 그릴 위에 크롬 줄이 하나 더 얹혀
+       앞면을 가로지르는 불필요한 선으로 보였다) */
     /* 하단 에어인테이크 — 차체 안쪽으로 '들어간' 다크 메시만. 크롬 립은 넣지 않는다
        (앞으로 튀어나온 막대기처럼 보였다). 폭도 코 폭에 맞춰 좁게. */
     {const iw=hx*(K.intakeW||.52), ih=hy*.085, iy=by+hy*.30, iz=zF-.16;
@@ -1051,27 +1052,38 @@ class CarVisual{
       const w=Math.max(.16,outer-.014-inner);
       const ax=sgn*(inner+w/2);
       this.hlBox.push([ax,ay,az,w,h]);
+      /* ── 깊이 ──
+         예전엔 렌즈가 차체 면 바로 밑(1cm)이라 램프가 '흰 스티커'처럼 납작하게 보였다.
+         렌즈를 4cm 안으로 넣고 그 앞에 하우징 개구부(테두리 립)를 두면, 어느 각도에서
+         봐도 안쪽 벽·LED가 겹쳐 보여 램프 형상이 살아난다. */
+      const DEEP=.040;                       // 렌즈를 차체 면에서 얼마나 안으로 넣을지
       // 하우징: 안쪽으로 파인 어두운 상자(램프가 차체 안에 들어가 보이게)
-      housing.push({geo:new THREE.BoxGeometry(w,h,.10),x:ax,y:ay,z:az-.055});
-      // 크롬 베젤(둘레)
-      housing.push({geo:new THREE.BoxGeometry(w+.024,.014,.045),x:ax,y:ay+h/2,z:az-.022});
-      housing.push({geo:new THREE.BoxGeometry(w+.024,.014,.045),x:ax,y:ay-h/2,z:az-.022});
-      // LED 프로젝터 여러 개 — 하우징 '안쪽'에 나란히
+      housing.push({geo:new THREE.BoxGeometry(w,h,.13),x:ax,y:ay,z:az-DEEP-.070});
+      // 개구부 립(상·하·좌·우) — 파인 구멍의 테두리. 이게 있어야 깊이가 읽힌다.
+      housing.push({geo:new THREE.BoxGeometry(w+.030,.020,.052),x:ax,y:ay+h/2+.006,z:az-.020});
+      housing.push({geo:new THREE.BoxGeometry(w+.030,.020,.052),x:ax,y:ay-h/2-.006,z:az-.020});
+      for(const sx of[-1,1])
+        housing.push({geo:new THREE.BoxGeometry(.020,h+.026,.052),x:ax+sx*(w/2+.008),y:ay,z:az-.020});
+      // LED 프로젝터 여러 개 — 렌즈 뒤(더 깊은 곳)에 나란히
       for(let i=0;i<n;i++){
         const t=(i+.5)/n*2-1;
-        leds.push({geo:new THREE.CylinderGeometry(h*.30,h*.30,.02,12),
-          rx:Math.PI/2,x:ax+t*(w*.5-h*.34)*sgn,y:ay,z:az-.028});}
-      // 앞면 유리 렌즈(차체 면과 나란히, 살짝 안쪽)
-      const lens=new THREE.Mesh(new THREE.BoxGeometry(w,h,.012),
-        new THREE.MeshPhongMaterial({color:0x9fc4dd,transparent:true,opacity:.34,
+        leds.push({geo:new THREE.CylinderGeometry(h*.30,h*.30,.022,12),
+          rx:Math.PI/2,x:ax+t*(w*.5-h*.34)*sgn,y:ay,z:az-DEEP-.026});
+        // 각 LED 둘레의 크롬 리플렉터 컵 — 램프 알갱이가 또렷하게 보인다
+        housing.push({geo:new THREE.CylinderGeometry(h*.40,h*.40,.030,12),
+          rx:Math.PI/2,x:ax+t*(w*.5-h*.34)*sgn,y:ay,z:az-DEEP-.044});}
+      // 앞면 유리 렌즈 — 개구부보다 안쪽에
+      const lens=new THREE.Mesh(new THREE.BoxGeometry(w-.006,h-.006,.010),
+        new THREE.MeshPhongMaterial({color:0x9fc4dd,transparent:true,opacity:.26,
           shininess:300,specular:0xffffff,side:THREE.DoubleSide}));
-      lens.position.set(ax,ay,az-.010);
+      lens.position.set(ax,ay,az-DEEP);
       this.group.add(lens);this.hlLens.push(lens);}
     this.hlHousing=new THREE.Mesh(mergeGeoms(housing),MAT_CHROME_DARK);
     this.hlHousing.castShadow=true;this.group.add(this.hlHousing);
-    // LED는 자체발광(항상 형태가 보이고, 점등 시 더 밝아진다)
-    this.hlLed=new THREE.Mesh(mergeGeoms(leds),
-      new THREE.MeshBasicMaterial({color:0xfff6e2,toneMapped:false}));
+    /* LED 본체 — 소등 시에도 흰 스티커처럼 튀지 않게 은은한 색으로 두고,
+       점등은 sync()에서 색을 올려 표현한다(toneMapped:false 라 색이 곧 밝기). */
+    this.hlLedMat=new THREE.MeshBasicMaterial({color:0x8c94a0,toneMapped:false});
+    this.hlLed=new THREE.Mesh(mergeGeoms(leds),this.hlLedMat);
     this.group.add(this.hlLed);
     this.lattice.bind(this.hlHousing);this.lattice.bind(this.hlLed);
   }
@@ -1105,7 +1117,9 @@ class CarVisual{
       if(this.hl){
         const inten=on?(Game.opts&&Game.opts.tod==="night"?4.6:1.9):0;
         if(this._hlI!==inten){this._hlI=inten;
-          for(const h of this.hl){h.s.intensity=inten;h.g.visible=on&&inten>0;}}}}
+          for(const h of this.hl){h.s.intensity=inten;h.g.visible=on&&inten>0;}
+          // LED 알갱이도 점등 상태에 따라 밝기 변화(소등 시 은은한 회색)
+          if(this.hlLedMat)this.hlLedMat.color.setHex(inten>0?0xfff4d8:0x8c94a0);}}}
     /* 🔴 후미등 발광 — 상시 미등 + 제동 시 급격히 밝아지는 브레이크등.
        (이 three 빌드에는 PointLight가 없어 가산합성 글로우 메시로 실제 발광을 표현) */
     if(this.tlAnchor){

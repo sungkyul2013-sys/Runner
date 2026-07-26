@@ -166,9 +166,30 @@ class World{
        울렁임'으로 증폭됐다(계측: 차고 진폭 0.8cm → 3.2cm).
        파장을 2.5m 이하로만 두면 60km/h에서 6.7Hz 이상 → 차체는 거의 반응하지 않고
        타이어·서스펜션만 잘게 움직여 '노면 결'로만 느껴진다. */
+    /* 뒤쪽 두 항이 '두두둑' 담당 — 파장 1.0m·0.5m라 60km/h에서 17Hz·33Hz.
+       차체(1.2Hz)는 전혀 못 따라가고 타이어·서스펜션만 잘게 때려 노면 결이 손에 온다. */
     return a*(Math.sin(x*2.51)*Math.sin(z*2.13)*.0026
              +Math.sin(x*4.47+z*3.91)*.0016
-             +Math.sin(z*7.93-x*6.11)*.0011);}
+             +Math.sin(z*7.93-x*6.11)*.0011
+             +Math.sin(x*6.28+z*5.13)*.0016
+             +Math.sin(z*12.6-x*9.7)*.0011);}
+  /* 🥁 럼블 스트립(두두둑) 구역 — 톨게이트 진입로·연석 옆의 홈처럼, 짧은 파장의
+     규칙적인 홈이 연속으로 이어져 '두두둑' 진동을 만든다. 진폭은 작지만 파장이
+     아주 짧아 차체는 뜨지 않고 스티어링·시트에만 전달된다. */
+  addRumble(x,z,yaw,r,amp,pitch){
+    (this.rumbles||(this.rumbles=[])).push({x,z,r,r2:r*r,
+      co:Math.cos(yaw||0),si:Math.sin(yaw||0),amp:amp||.010,k:(Math.PI*2)/(pitch||.55)});}
+  rumbleH(x,z){
+    const R=this.rumbles;
+    if(!R)return 0;
+    let add=0;
+    for(let i=0;i<R.length;i++){
+      const b=R[i],dx=x-b.x,dz=z-b.z,d2=dx*dx+dz*dz;
+      if(d2>=b.r2)continue;
+      const w=1-Math.sqrt(d2)/b.r;                 // 가장자리에서 매끈하게 0
+      const lz=-dx*b.si+dz*b.co;                   // 진행 방향 좌표
+      add+=b.amp*w*w*(.5+.5*Math.cos(lz*b.k));}    // 항상 0 이상(홈이 위로 솟은 형태)
+    return add;}
   bumpH(x,z){
     let add=0;
     const B=this.bumps;
@@ -217,6 +238,7 @@ class World{
                    rz.p===3?Math.sin(x*rz.f+z*rz.f*.7)*Math.cos(z*rz.f*.45):
                    Math.sin(x*rz.f)*Math.sin(z*rz.f*1.13)+.5*Math.sin(x*rz.f*2.2+1.3)*Math.cos(z*rz.f*1.9));}
     if(this.roadRough)h+=this.roadRoughH(x,z);
+    if(this.rumbles)h+=this.rumbleH(x,z);
     return h;}
   normal(x,z,out){
     const e=this.cell;
