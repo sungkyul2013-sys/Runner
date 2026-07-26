@@ -8,7 +8,7 @@ for(let i=0;i<60;i++){await p.waitForTimeout(250);
   if(await p.evaluate(()=>document.getElementById('loading').classList.contains('off')))break;}
 console.log(JSON.stringify(await p.evaluate(()=>{
   const out={};
-  for(const id of['maybach','veloce']){
+  for(const id of['rrghost','maybach','veloce']){
     Game.mode='free';Game.opts.carIdx=CARS.findIndex(c=>c.id===id);
     Game.opts.mapId='proving';Game.startGame();
     const v=Game.vis,sp=Game.veh.spec;

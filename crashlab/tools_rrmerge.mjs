@@ -38,13 +38,16 @@ function add(S){
    (림을 통째로 버려 봤더니 한쪽은 속이 들여다보이고 다른 쪽은 민무늬 원반이 됐다) */
 A.drop=[1]; B2.drop=[];
 add(A);add(B2);
-/* 타이어 → 림 → 캘리퍼 순. 캘리퍼는 회전하지 않는 별도 메시로 나간다. */
+/* 회전부는 '휠(림·스포크·센터캡) + 타이어'만, 브레이크(캘리퍼·디스크)는 비회전.
+   구분은 gltf 재질 이름으로 한다(tools_rrwheel). x좌표로 안/밖을 가르려 했더니
+   타이어 중앙면과 캘리퍼 평균 x가 똑같이 0.050 이어서 판별이 안 되고
+   림 페이스가 잘못 옮겨졌다. */
 const RANK={1:0,0:1,2:2};
-tri.sort((a,b)=>RANK[a[3]]-RANK[b[3]]);
+tri.sort((a,b)=>RANK[a[3]]-RANK[b[3]]);          // 타이어 → 림 → 브레이크
 const IDX=[];let tireIdx=0,calIdx=-1;
 for(const t of tri){
   if(t[3]===1)tireIdx+=3;
-  if(t[3]===2&&calIdx<0)calIdx=IDX.length;
+  if(t[3]===2&&calIdx<0)calIdx=IDX.length;       // 여기부터 비회전
   IDX.push(t[0],t[1],t[2]);}
 if(calIdx<0)calIdx=IDX.length;
 const v=pos.length/3;

@@ -8,13 +8,14 @@ for(let i=0;i<80;i++){await p.waitForTimeout(300);if(await p.evaluate(()=>!!wind
 for(let i=0;i<60;i++){await p.waitForTimeout(250);
   if(await p.evaluate(()=>document.getElementById('loading').classList.contains('off')))break;}
 const SETS=JSON.parse(process.argv[3]);
+const CARID=process.env.CARID||'rrghost';
 const H=+(process.argv[4]||.16), KMH=+(process.argv[5]||45);
 console.log('== bump h='+H+' v='+KMH+' ==');
-for(const S of SETS){
+for(const S of SETS){S.__id=CARID;
   const r=await p.evaluate(({S,H,KMH})=>{
-    const spec=CARS.find(c=>c.id==='rrghost');
+    const spec=CARS.find(c=>c.id===S.__id);
     Object.assign(spec.susp,S.susp||{});
-    Game.mode='free';Game.opts.carIdx=CARS.findIndex(c=>c.id==='rrghost');
+    Game.mode='free';Game.opts.carIdx=CARS.findIndex(c=>c.id===S.__id);
     Game.opts.mapId='proving';Game.startGame();
     const v=Game.veh,bd=v.body,w=Game.world;
     w.bumps=[];w.potholes=[];w.rippleZones=null;w.roadRough=0;

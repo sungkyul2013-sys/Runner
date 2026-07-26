@@ -56,7 +56,10 @@ const CARS=[
   desc:"실측 스캔 3D 모델. 6.75L V12 · 플래너 서스펜션. 무결점 도장과 매끈한 차체의 초호화 세단.",
   model:"rrghost",style:"sedan",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
   smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
-  groundClear:.19,wheelVisFit:1,rideFix:true,rideLift:0,fitBumper:true,
+  /* 차고 — 계측: 차체 0.695m(포르쉐 0.557)로 14cm 높고, 그 때문에 타이어가 아치에
+     1.6cm 모자라게 들어가 프레임과 안 맞아 보였다(포르쉐는 -8.8cm로 아치에 묻힌다).
+     10cm 낮추면 아치여유가 포르쉐와 거의 같아진다. */
+  groundClear:.13,wheelVisFit:1,rideFix:true,rideLift:-.10,fitBumper:true,
   /* 원본 휠을 쓰기 전에는 절차 휠이 아치보다 작아 보여 시각 배율 1.13을 넣었는데,
      이제 휠 지오메트리 반경(0.371)이 접지 반경과 정확히 같다. 배율을 남겨 두면
      보이는 타이어만 0.419가 돼 '휠과 타이어가 안 맞는' 상태가 된다 → 1로 되돌린다. */
@@ -121,7 +124,18 @@ const CARS=[
   model:"porsche",rollFix:1.34,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
   wheelRadMul:1.03,wheelTuck:.01,rimScale:1.28,  // 바퀴·림 크게 + 살짝 안으로(펜더 안쪽으로 5cm 인셋)
   body:{hx:.92,hy:.42,hz:2.2},wheels:{track:.86,front:1.35,rear:1.42,y:-.24,radius:.33,width:.3},
-  susp:{k:98000,c:7200,travel:.09,rest:.2},arb:60000,
+  /* 포르쉐 — 스프링은 딱딱하게(노면 그대로), 대신 위로 흡수는 넉넉하게.
+     계측(12cm 턱 40km/h): 트래블이 0.047m뿐이라 바퀴가 위로 못 움직여
+     차 전체가 튀어올랐다(차체상승 12.3cm·피치 5.67°·공중 76프레임).
+     스프링 강성은 그대로 두고 상방 스트로크와 압축 감쇠만 손본다. */
+  susp:{k:98000,c:7200,travel:.361,rest:.2,
+        prog:1.7,        // 프로그레시브 — 끝단만 급격히 단단(바닥 안 침)
+        compMul:.18,     // 압축은 부드럽게 = 위로 잘 흡수(스프링은 그대로 딱딱)
+        rebMul:4.2,      // 신장은 조여 튀어오름 억제
+        sky:22000,heave:26000,
+        fCap:.46,        // 서스가 차체를 밀어올릴 힘 상한 — 충격이 차체로 안 올라간다
+        preview:.40,pvGain:10,attq:13},
+  arb:60000,
   engine:{maxT:710,redline:7200,idle:900},gears:[3.15,2.1,1.55,1.2,.95],final:3.5,
   brakeF:9200,steerLo:.56,steerHi:.11,aero:{cd:.5,df:55},gripF:1.12,gripR:1.1,
   style:"super",colors:[0xd7dce2,0xd7263d,0xffe600,0x101418,0x00a8e8],

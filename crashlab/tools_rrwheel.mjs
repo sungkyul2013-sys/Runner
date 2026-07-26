@@ -77,7 +77,9 @@ function walk(ni,parent){
       const idx=prim.indices!=null?acc(prim.indices):null;
       const cnt=idx?idx.count:pa.count;
       /* 재질 이름으로 고무/금속 구분 — 한 머티리얼로 그리면 림 스페큘러가 타이어를 태운다 */
-      const caliper=/caliper/.test(mlow);
+      /* 비회전 브레이크류 — 캘리퍼(amdb11_caliper.002)와 디스크(etk_wheel_05a.002).
+         .002 재질은 림 본체(etk_wheel_05a)와 따로 분리돼 있어 브레이크 로터로 본다. */
+      const caliper=/caliper/.test(mlow)||/\.002$/.test(mlow);
       for(let i=0;i<cnt;i+=3){
         const T=[];
         for(let k=0;k<3;k++){
