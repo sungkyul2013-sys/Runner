@@ -146,13 +146,17 @@ console.log('cells',cellMap.size,'kept tris',keptTris.length);
    이 OBJ에는 램프 재질이 따로 없다. 위치로 골라 색을 입히는데, 예전에는 마스크를 0으로
    두는 바람에 그 삼각형들이 '차체'에 남아 뒷면을 가로지르는 붉은 얼룩으로 보였다.
    이제 마스크 4를 줘서 발광 램프 메시로 분리한다. */
-const HEAD=[250,246,215].map(srgb2lin),TAIL=[196,24,24].map(srgb2lin);
+/* 요청: 뒷면 빨간색은 완전히 제거, 앞 헤드램프는 회색 유리로.
+   앞·뒤 모두 같은 회색 유리로 채우고 마스크 2(유리)를 준다. */
+const HEAD=[104,112,124].map(srgb2lin),TAIL=[104,112,124].map(srgb2lin);
 const lampCol=r=>{
   const ax=Math.abs(r.x);
-  if(r.z<-2.46&&r.y>.80&&r.y<1.20&&ax>.42&&ax<1.10)return HEAD;
+  /* 범위를 넓히면 그릴·범퍼까지 유리가 되어 앞면 전체에 유리판이 덮인 꼴이 된다.
+     실제 램프 포드 두 개에만 딱 맞춘다. */
+  if(r.z<-2.52&&r.y>.86&&r.y<1.10&&ax>.52&&ax<1.00)return HEAD;
   /* 테일램프는 '뒷면 판' 위에만. z 문턱이 낮으면 리어 쿼터패널까지 붉게 칠해져
      차 옆구리에 빨간 얼룩이 생긴다(스크린샷 지적). z를 뒤로 더 밀고 폭도 좁힌다. */
-  if(r.z>2.66&&r.y>.98&&r.y<1.28&&ax>.56&&ax<1.06)return TAIL;
+  if(r.z>2.70&&r.y>1.00&&r.y<1.24&&ax>.58&&ax<1.02)return TAIL;
   return null;};
 /* ── 유리 ──
    그린하우스의 어두운(Interior 재질) 바깥 껍질 = 창유리다. 예전에는 이게 그냥 새까만
@@ -185,7 +189,7 @@ function vert(k,mat){
   vi=pos.length/3;vmap.set(vk,vi);
   pos.push(r.x,r.y,r.z);nrm.push(r.nx,r.ny,r.nz);
   col.push(lc[0],lc[1],lc[2]);
-  mask.push(lp?4:(gl?2:m.paint));
+  mask.push((lp||gl)?2:m.paint);
   return vi;}
 for(const[ka,kb,kc,mat]of keptTris)IDX.push(vert(ka,mat),vert(kb,mat),vert(kc,mat));
 const nOut=pos.length/3;

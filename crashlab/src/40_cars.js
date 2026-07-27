@@ -59,13 +59,14 @@ const CARS=[
   /* 차고 — 계측: 차체 0.695m(포르쉐 0.557)로 14cm 높고, 그 때문에 타이어가 아치에
      1.6cm 모자라게 들어가 프레임과 안 맞아 보였다(포르쉐는 -8.8cm로 아치에 묻힌다).
      10cm 낮추면 아치여유가 포르쉐와 거의 같아진다. */
-  groundClear:.13,wheelVisFit:1,rideFix:true,rideLift:-.10,fitBumper:true,
+  groundClear:.13,wheelVisFit:1,rideFix:true,rideLift:-.075,fitBumper:true,
   /* 원본 휠을 쓰기 전에는 절차 휠이 아치보다 작아 보여 시각 배율 1.13을 넣었는데,
      이제 휠 지오메트리 반경(0.371)이 접지 반경과 정확히 같다. 배율을 남겨 두면
      보이는 타이어만 0.419가 돼 '휠과 타이어가 안 맞는' 상태가 된다 → 1로 되돌린다. */
   wheelVisScale:1,
   lampInset:.105,                 // 램프를 프레임 더 깊숙이(앞·뒤 모두) — 안에서 밖으로 비춘다
-  wheelTuck:.018,                 // 실측 휠 폭(0.298)에 맞춰 인셋 축소
+  wheelTuck:.045,                 // 요청: 바퀴를 안쪽으로 약간 더
+  tyreVisMul:.965,                // 요청: 타이어를 아주 약간 작게(시각 전용)
   chromeKit:{grilleW:.34,grilleH:.26,grilleY:.74,grilleZ:.20,slats:13,
              rocker:false,        // 사이드실 몰딩 제거(옆면을 가로지르는 줄로 보였다)
              ornament:true,ornY:.30,ornZ:.46,exhaust:2,rearY:.80},
@@ -102,7 +103,7 @@ const CARS=[
   /* 휠 치수 정합 — 계측: 아치 최고점이 타이어 위보다 12.7cm 높고(휠이 아치에 비해 너무 작다)
      휠 바깥면이 차체 최외곽보다 5.8cm 안으로 들어가 있었다. GLS 580 은 23인치(직경 0.8m)다.
      반경 0.269 → 0.40, 트랙 4.8cm 바깥으로. (기준: 포르쉐는 아치여유 -8.8cm·돌출 +4.5cm) */
-  wheelRadMul:1.62, wheelOutset:.062, rideFix:true, rideLift:-.07,
+  wheelRadMul:1.66, wheelOutset:.062, rideFix:true, rideLift:-.07,
   interior:true,               // 바닥·방화벽·프레임레일·시트·연료탱크 + 밀려드는 엔진 블록
   /* 마이바흐는 v6.0 그대로 둔다 — 크롬 킷·헤드램프 어셈블리·범퍼 피팅 등
      덧붙이던 장식은 전부 제거(요청: 6.0 버전대로). */
@@ -474,7 +475,7 @@ const MAT_DETAIL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:true
 /* 스페큘러를 넓고 밝게 주면 림 페이스처럼 큰 평면이 통째로 하얗게 탄다 —
    좁고(높은 shininess) 어두운 하이라이트로 금속감만 남긴다. */
 const MAT_WHEEL_REAL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,
-  shininess:280,specular:0x2e343d,side:THREE.DoubleSide});
+  shininess:420,specular:0x5a6472,side:THREE.DoubleSide});
 /* 타이어는 무광 고무 — 림과 같은 스페큘러를 주면 검은 고무가 하얗게 타 버린다 */
 const MAT_TIRE_REAL=new THREE.MeshPhongMaterial({vertexColors:true,flatShading:false,
   shininess:6,specular:0x101216,side:THREE.DoubleSide});
@@ -883,7 +884,7 @@ class CarVisual{
       /* 새 타이어를 회전 메시의 자식으로 붙인다 — children[0] 이 돌면 함께 돈다 */
       if(rwR&&e.wheel.rimR){
         const rimR=e.wheel.rimR*spec.modelScale;
-        const tg=realTyreGeo(rimR,spec.wheels.radius/(wvs*rwK||1),
+        const tg=realTyreGeo(rimR,spec.wheels.radius*(spec.tyreVisMul||1)/(wvs*rwK||1),
                              spec.wheels.width/(wvs*rwK||1));
         m.add(new THREE.Mesh(tg,MAT_TIRE_REAL));}
       const grp=new THREE.Group();grp.add(m);if(br)grp.add(br);
@@ -1421,19 +1422,8 @@ class CarVisual{
       y:by+hy*.72,z:zFire-.20});                                     // 대시보드
     G.push({geo:new THREE.BoxGeometry(.30,.26,len*.24),color:0x181b20,
       y:by+hy*.34,z:(zRow[0]+zRow[1])/2});                           // 센터 콘솔
-    /* ⑥ 휠 하우스 라이너 — 없으면 낮은 각도에서 아치가 옆으로 뻥 뚫려 반대편이 보인다 */
-    {const wf=spec.wheels.front,wr2=spec.wheels.rear,tv=spec.wheels.trackVis||spec.wheels.track;
-     const R=spec.wheels.radius*1.24, wI=Math.max(.10,tv-spec.wheels.width*.62);
-     for(const zc of[wf,-wr2])for(const sx of[-1,1]){
-       // 아치 안쪽 벽(세로판) — 휠과 실내 사이를 막는다
-       G.push({geo:new THREE.BoxGeometry(.035,R*1.15,R*2.0),color:0x1a1d22,
-         x:sx*wI,y:by+R*.52,z:zc});
-       // 아치 천장(반원 대신 납작한 아치 3장)
-       for(let q=0;q<3;q++){
-         const a2=(q-1)*.62;
-         G.push({geo:new THREE.BoxGeometry(spec.wheels.width*1.5,.03,R*.78),
-           color:0x1a1d22,x:sx*(tv-.01),y:by+R*.95-Math.abs(a2)*R*.22,
-           z:zc+a2*R*.72,rx:a2*.5});}}}
+    /* 휠 하우스 라이너는 뺐다 — 아치 밖으로 삐져나와 옆면에 덕지덕지 붙은 판으로 보였다.
+       (안쪽을 막는 효과보다 밖에서 보이는 부작용이 컸다) */
     /* ⑦ 연료탱크 + 트렁크 바닥 */
     G.push({geo:new THREE.BoxGeometry(fw(zTank)*1.5,.22,.42),color:0x21262c,y:by+.16,z:zTank});
     G.push({geo:new THREE.BoxGeometry(fw(zR+len*.09)*1.7,.04,len*.16),color:0x23272e,
