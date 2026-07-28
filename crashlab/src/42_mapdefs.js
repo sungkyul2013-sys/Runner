@@ -1527,6 +1527,180 @@ MAPS.push(
   w.spawn={x:0,z:-300,yaw:0};
   return mb.finalize(this);}});
 
+/* ═══════════════════════════════════════════════════════════════════
+   🛣️ 인피니티 하이웨이 — 한 방향으로 계속 이어지는 초장거리 고속도로.
+   요철·꿀렁임·구불구불·오르내림·직선을 순서대로 통과하고,
+   끝에는 하늘로 솟은 종착지가 기다린다.
+   ═══════════════════════════════════════════════════════════════════ */
+MAPS.push(
+{id:"infinity",name:"인피니티 하이웨이",icon:"🛣️",
+ desc:"3.4km 편도 초장거리 고속도로 — 요철 직선·롱웨이브 꿀렁임·S자 와인딩·계곡 대교·산악 오르내림·초고속 직선, 그리고 종착지 '스카이 링'",
+ modes:["free","crash","time"],
+ build(){
+  const SZ=3600;
+  const mb=new MapBuilder(SZ,320),w=mb.world;
+  const S_ASP=SURF_ID.asphalt,S_GRS=SURF_ID.grass,S_DRT=SURF_ID.dirt;
+
+  /* ── 노선 중심선 ──
+     z=-1700(출발) → z=+1700(종착). 구간마다 성격이 다르다.
+       A 요철 직선   z -1700 ~ -1150
+       B 꿀렁임      z -1150 ~ -700
+       C S자 와인딩  z  -700 ~   50
+       D 계곡 대교   z    50 ~  420
+       E 산악 오르내림 z 420 ~ 1050
+       F 초고속 직선 z 1050 ~ 1500
+       G 종착지      z 1500 ~ 1700                                   */
+  const routeX=z=>{
+    if(z<-700)return 0;
+    if(z<50){const t=(z+700)/750;                       // S자
+      return Math.sin(t*Math.PI*2.1)*170*Math.sin(t*Math.PI);}
+    if(z<420)return 0;
+    if(z<1050){const t=(z-420)/630;                     // 산악 완만한 굽이
+      return Math.sin(t*Math.PI*1.6)*95;}
+    return 0;};
+  /* 노선 고도 — 계곡은 다리로 건너므로 도로 고도와 지형 고도를 따로 둔다 */
+  const routeY=z=>{
+    if(z<50)return 0;
+    if(z<420)return 22;                                  // 계곡 대교(고가)
+    if(z<1050){const t=(z-420)/630;                      // 산 넘기: 오르막→정상→내리막
+      return 22*(1-t)+Math.sin(t*Math.PI)*44;}
+    if(z<1500)return 0;
+    return (z-1500)/200*8;};                             // 종착 진입 상승
+  const route=[];
+  for(let z=-1740;z<=1700;z+=10)route.push({x:routeX(z),y:routeY(z),z});
+
+  /* ── 지형 ── */
+  mb.fill((x,z)=>{
+    let h=0;
+    // 계곡 (z 50~420) — 대교 아래 깊은 협곡
+    if(z>30&&z<440){
+      const t=(z-30)/410, d=Math.sin(t*Math.PI);
+      h-=d*58*Math.exp(-Math.abs(x)/900);}
+    // 산맥 (z 420~1050)
+    if(z>380&&z<1100){
+      const t=(z-380)/720;
+      h+=Math.sin(t*Math.PI)*62*Math.exp(-Math.abs(x)/1100);}
+    // 바깥 구릉
+    h+=Math.sin(x/380)*Math.cos(z/430)*9;
+    h+=Math.sin(x/97+z/121)*2.2;
+    // 종착 고원
+    if(z>1480)h=Math.max(h,10);
+    const near=Math.abs(x-routeX(z));
+    return[h,near<70?S_ASP:(h<-12?S_DRT:S_GRS)];});
+
+  /* ── 노선 회랑 확보 + 포장 ── */
+  /* 계곡 구간(z 50~420)은 지형을 깎지 않는다 — 그 위로 다리를 놓는다.
+     flattenCorridor 의 getY 는 (x,z) 를 받는다(점이 아니다). 인자를 생략하면
+     경로점의 y 를 보간해 쓰므로 그대로 둔다. */
+  const land=route.filter(p=>p.z<44||p.z>426);
+  flattenCorridor(mb,land,26,42);
+  mb.paintPath(land,30,S_ASP,true,true);
+  mb.paintPath(land,40,S_ASP,false,false);          // 갓길
+
+  /* ── A 구간: 요철 직선 (z -1700 ~ -1150) ── */
+  for(let z=-1680;z<-1150;z+=26)
+    mb.bump(routeX(z),z,0,30,.045+((z|0)%3)*.012,"round");
+  for(let z=-1660;z<-1160;z+=120)
+    mb.rumbleZone(routeX(z),z,0,26,.010,.5,false);
+  mb.texText(0,-1700,9,"INFINITY HIGHWAY","rgba(240,244,250,.8)");
+  mb.texText(0,-1400,6,"ROUGH","rgba(240,244,250,.6)");
+
+  /* ── B 구간: 롱웨이브 꿀렁임 (z -1150 ~ -700) ── */
+  {let z=-1140;
+   for(let k=0;z<-700;k++){
+     mb.bump(routeX(z),z,0,30,.11+(k%3)*.045,"round");
+     z+=13+(k%4)*4;}}
+  mb.texText(0,-950,6,"WAVE","rgba(240,244,250,.6)");
+
+  /* ── C 구간: S자 와인딩 (z -700 ~ 50) ── */
+  for(let z=-690;z<40;z+=34){
+    const x=routeX(z);
+    mb.rough(x,z,0,26,.03,"round");}
+  mb.texText(0,-380,6,"WINDING","rgba(240,244,250,.6)");
+
+  /* ── D 구간: 계곡 대교 (z 50 ~ 420, 고도 22m) ── */
+  {const seg=route.filter(p=>p.z>=30&&p.z<=444);
+   bridgeDeck(mb,seg,30,{deck:0x4e5560,rail:0xd7dee6,pillar:0x7b838e});
+   mb.texText(0,470,7,"CANYON BRIDGE","rgba(240,244,250,.55)");}
+
+  /* ── E 구간: 산악 오르내림 (z 420 ~ 1050) ── */
+  for(let z=440;z<1040;z+=30)
+    mb.bump(routeX(z),z,0,28,.06+((z/30|0)%3)*.03,"round");
+  mb.texText(0,700,6,"MOUNTAIN PASS","rgba(240,244,250,.55)");
+
+  /* ── F 구간: 초고속 직선 (z 1050 ~ 1500) ── */
+  for(let k=0;k<10;k++)
+    mb.texPath([{x:-13,z:1060+k*44},{x:-13,z:1092+k*44}],.5,"rgba(255,255,255,.75)");
+  for(let k=0;k<10;k++)
+    mb.texPath([{x:13,z:1060+k*44},{x:13,z:1092+k*44}],.5,"rgba(255,255,255,.75)");
+  mb.texText(0,1240,10,"FULL THROTTLE","rgba(255,210,80,.7)");
+
+  /* ═══ G 종착지: 스카이 링 ═══
+     초대형 발사 램프 → 공중 고리 통과 → 나선 타워 전망대 → 빛기둥 광장 */
+  {const CZ=1620;
+   /* 종착 구조물은 도로 중심선 위에 세운다 — 회랑 예약이 켜져 있으면 전부 거부된다
+      (계측: z>1350 충돌체 0개, 비주얼도 10개만 살아남았다). 이 블록만 예약을 끈다. */
+   const _rv=mb._resvOn;mb._resvOn=false;
+   // 종착 고원 포장
+   mb.stamp(0,CZ,240,(i,j)=>w.setS(i,j,S_ASP));
+   mb.texCircle(0,CZ,230,"rgba(26,30,38,.85)");
+   mb.texCircle(0,CZ,150,"rgba(255,210,80,.10)");
+   // ① 초대형 발사 램프 — 직선 끝에서 하늘로
+   mb.ramp(0,1520,0,26,58,30,0xd8a13a);
+   mb.texText(0,1492,6,"LAUNCH","rgba(255,210,80,.8)");
+   // ② 공중 고리(스카이 링) — 램프 끝 상공을 지나는 거대한 원환
+   {const RR=64, cy=52;
+    for(let k=0;k<40;k++){
+      const a=k/40*Math.PI*2;
+      const yy=cy+Math.sin(a)*RR, xx=Math.cos(a)*RR;
+      if(yy<2)continue;                                   // 지면 아래 조각은 생략
+      mb.visBox(xx,yy,CZ-40,7,7,9,k%2?0xffd23e:0x3ddc84,{roll:a});}
+    // 고리를 받치는 두 기둥
+    for(const sx of[-1,1])
+      mb.box(sx*RR,cy/2,CZ-40,9,cy,9,0x6f7883,{mu:.9,tag:"ringleg"});}
+   // ③ 나선 타워 — 240m, 위로 감아 올라가는 리본
+   for(let k=0;k<170;k++){
+     const t=k/170, a=t*Math.PI*8, r=54*(1-t*.62), y=6+t*234;
+     mb.visBox(Math.cos(a)*r, y, CZ+70+Math.sin(a)*r, 11,3.4,11,
+       k%3===0?0x6ee7ff:(k%3===1?0xffd23e:0xff7ab8),{yaw:a});}
+   mb.box(0,120,CZ+70,14,240,14,0x39414d,{mu:.9,tag:"towercore"});
+   // ④ 빛기둥 서클 — 광장을 둘러싼 24개 네온 기둥
+   for(let k=0;k<24;k++){
+     const a=k/24*Math.PI*2, r=205;
+     mb.visBox(Math.cos(a)*r,44,CZ+Math.sin(a)*r,5,88,5,
+       k%2?0x6ee7ff:0xff7ab8,{});
+     mb.box(Math.cos(a)*r,6,CZ+Math.sin(a)*r,6,12,6,0x2a3038,{mu:.9,tag:"pillar"});}
+   // ⑤ 공중 부유 링 3단 — 타워 주변을 감싼 고리들
+   for(let ring=0;ring<3;ring++){
+     const ry=96+ring*58, rr2=86-ring*17;
+     for(let k=0;k<28;k++){
+       const a=k/28*Math.PI*2;
+       mb.visBox(Math.cos(a)*rr2,ry,CZ+70+Math.sin(a)*rr2,6,2.4,6,
+         ring===0?0xffd23e:(ring===1?0x6ee7ff:0x3ddc84),{yaw:a});}}
+   // ⑥ 종착 표지
+   mb.texText(0,CZ+200,12,"THE END OF THE ROAD","rgba(255,255,255,.85)");
+   mb.texCircle(0,CZ+70,26,"rgba(255,210,80,.28)");
+   mb._resvOn=_rv;}
+
+  /* ── 노선 재확정 — 어떤 장식도 도로를 끊지 못하게 ── */
+  flattenCorridor(mb,land,24,36);
+  mb.paintPath(land,30,S_ASP,true,true);
+
+  /* ── 가드레일 (대교 구간은 위에서 별도로 세웠다) ── */
+  railAlong(mb,route.filter(p=>p.z<40||p.z>440),34,0xb9c2cc);
+
+  /* ── 장소·스폰 ── */
+  w.places=[
+    {name:"🚦 출발 게이트",x:0,z:-1700,yaw:0},
+    {name:"🌊 꿀렁임 구간",x:0,z:-1000,yaw:0},
+    {name:"🐍 S자 와인딩",x:routeX(-350),z:-350,yaw:0},
+    {name:"🌉 계곡 대교",x:0,z:200,yaw:0},
+    {name:"⛰️ 산악 고갯길",x:routeX(730),z:730,yaw:0},
+    {name:"🏁 초고속 직선",x:0,z:1200,yaw:0},
+    {name:"✨ 스카이 링(종착)",x:0,z:1560,yaw:0}];
+  w.spawn={x:0,z:-1700,yaw:0};
+  return mb.finalize(this);}});
+
 /* ---------- custom map from editor tiles ---------- */
 const ED_TILES=[
   {id:"road", name:"직선로", col:"#4a5058"},
