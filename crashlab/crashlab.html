@@ -8822,7 +8822,7 @@ MAPS.push(
 
   /* ===== ④ 도색: 간선 먼저 ===== */
   // 벨트웨이(6차선급)
-  flattenCorridor(mb,belt,14,20);
+  flattenCorridor(mb,belt,17,30);
   mb.paintPath(belt,26,S_ASP,true,true);
   // 내부 순환(4차선)
   flattenCorridor(mb,inner,12,16,()=>0);
@@ -9186,7 +9186,7 @@ MAPS.push(
   /* ===== ⑥ 간선 재확정 — 이후 어떤 작업도 간선을 덮어 길을 끊지 못하게 (구조적 보장) ===== */
   flattenCorridor(mb,inner,12,16,()=>0);
   mb.paintPath(inner,20,S_ASP,true,true);
-  flattenCorridor(mb,belt,14,20);
+  flattenCorridor(mb,belt,17,30);
   mb.paintPath(belt,26,S_ASP,true,true);
   for(const rp of radials){flattenCorridor(mb,rp,9,14);mb.paintPath(rp,16,S_ASP,true,true);}
   for(const[a,b]of feeders)
@@ -9195,6 +9195,7 @@ MAPS.push(
   paintGrid(true);
   // 그랜드 불러바드 재확정 — 어떤 지구 콘텐츠도 관통 직선을 끊지 못하게(마지막에 한 번 더)
   paintBlvd();
+
   // 불러바드 중앙분리 도색 + 표지
   for(const bp of[blvdH,blvdV])for(let k=6;k<bp.length-6;k+=3){const p=bp[k];
     mb.texRect(p.x,p.z,bp===blvdH?12:.5,bp===blvdH?.5:12,0,"rgba(240,214,120,.5)");}
