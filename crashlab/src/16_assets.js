@@ -188,6 +188,10 @@ function applyModelSpec(spec){
   if(spec.wheelTuck)spec.wheels.trackVis-=spec.wheelTuck;  // 시각 트랙만 안으로(펜더 밖 돌출 방지)
   spec.wheels.front=Math.abs((fw[0]?fw[0][2]:-len*.35)-spec.modelCz)*s;
   spec.wheels.rear=Math.abs((rw[0]?rw[0][2]:len*.35)-spec.modelCz)*s;
+  /* 휠베이스 미세 조정 — 스캔 모델의 휠 중심이 아치 중심과 어긋날 때 앞/뒤로 당긴다.
+     (+)면 바깥쪽(앞바퀴는 더 앞, 뒷바퀴는 더 뒤), (-)면 안쪽으로 들어온다. */
+  if(spec.wheelFrontAdj)spec.wheels.front+=spec.wheelFrontAdj;
+  if(spec.wheelRearAdj)spec.wheels.rear+=spec.wheelRearAdj;
   spec.wheels.y=(w[0][1]-spec.modelCy)*s*sq+spec.susp.rest-drop;
   /* 정하중 처짐 보정(옵트인) — 스캔 모델은 '설계 차고'로 만들어져 있는데,
      휠 마운트를 모델 휠 위치+rest에 두면 정지 시 스프링이 눌린 만큼(compEq)
