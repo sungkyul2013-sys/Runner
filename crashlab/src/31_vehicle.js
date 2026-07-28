@@ -223,8 +223,14 @@ class Vehicle{
            올라오는 요철은 미리 힘을 빼 충격을 흡수하고 내려가는 곳은 미리 받쳐 준다. */
         if(susp.preview&&!_hit.box){
           const lead=susp.preview;
-          const ah=world.height(w.cW.x+b.vel.x*lead,w.cW.z+b.vel.z*lead);
-          w.pv=lerp(w.pv||0,clamp(ah-w.cW.y,-.14,.14),.3);
+          /* '앞쪽 높이 - 지금 높이'를 쓰면 일정한 오르막에서 값이 계속 양수로 포화돼
+             스프링력을 상시로 깎아 버린다 → 등판 중 서스펜션이 납작해진다
+             (계측: pv 가 +0.14 로 붙어 2,490kg·pvGain 16 에서 5,578N 상시 감산).
+             일정 경사는 상쇄되고 요철·크레스트만 남도록 2차 차분을 쓴다. */
+          const h1=world.height(w.cW.x+b.vel.x*lead*.5,w.cW.z+b.vel.z*lead*.5);
+          const h2=world.height(w.cW.x+b.vel.x*lead,   w.cW.z+b.vel.z*lead);
+          const curv=h2-2*h1+w.cW.y;
+          w.pv=lerp(w.pv||0,clamp(curv,-.14,.14),.3);
           aid+=w.pv*(susp.pvGain||0)*sp.mass;}
         if(aid)sF-=clamp(aid,-sp.mass*GRAV*.35,spring*.40+sp.mass*GRAV*.05);
         /* 블로우오프 밸브 — 서스가 차체를 밀어올릴 수 있는 최대 힘을 제한한다.

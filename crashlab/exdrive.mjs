@@ -22,6 +22,9 @@ console.log(JSON.stringify(await p.evaluate(mapId=>{
       const a=route[k],b2=route[Math.min(route.length-1,k+1)];
       const yaw=Math.atan2(b2.x-a.x,b2.z-a.z);
       v.reset(a.x,a.z,yaw,true);for(const q in v.dmg)v.dmg[q]=0;
+      /* 다리 경간에서는 지형이 한참 아래라 그대로 두면 차가 협곡으로 떨어진다.
+         설계 고도가 지면보다 3m 이상 높으면 상판 위에 올려놓고 시작한다. */
+      if(a.y-w.height(a.x,a.z)>3){bd.pos.y=a.y+1.3;bd.vel.set(0,0,0);}
       for(let i=0;i<40;i++){Game.state='play';Game.frame(1/120);Game.state='__p';}
       const x0=bd.pos.x,z0=bd.pos.z;
       for(let i=0;i<90;i++){bd.vel.x=Math.sin(yaw)*16;bd.vel.z=Math.cos(yaw)*16;

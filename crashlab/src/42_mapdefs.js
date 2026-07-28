@@ -1642,8 +1642,7 @@ MAPS.push(
 
   /* ── 고속도로 생성 ── */
   const EX=buildExpressway(mb,{route,halfWidth:15,
-    isBridge:t=>{const p=route[Math.min(route.length-1,Math.round(t*(route.length-1)))];
-      return p.x<-900&&p.z>=-300&&p.z<=160;}});
+    isBridge:p=>p.x<-900&&p.z>=-300&&p.z<=160});
 
   /* ── 장소·스폰 ── */
   const P=EX.at;
@@ -1740,7 +1739,10 @@ function buildExpressway(mb,cfg){
   const land=[],bridge=[];
   {let cur=null;
    for(let k=0;k<route.length;k++){
-     const t=acc[k]/TOTAL, br=isBridge(t);
+     /* 판정은 '점'으로 한다. t(호길이)로 인덱스를 역산하면 직선·호의 점 간격이
+        달라 다리/지상 경계가 어긋나고, 램프가 평탄화되지 않아 노면이 지면에
+        남은 채 난간만 공중에 뜬다(실측: 설계 18.7m 지점의 지면이 -3.4m). */
+     const br=isBridge(route[k],k,acc[k]/TOTAL);
      if(br){if(cur!=='b'){bridge.push([]);cur='b';}bridge[bridge.length-1].push(route[k]);}
      else{if(cur!=='l'){land.push([]);cur='l';}land[land.length-1].push(route[k]);}}}
   for(const seg of land){

@@ -57,7 +57,11 @@ if(calIdx<0)calIdx=IDX.length;
    남은 지오메트리(림)의 y·z 바운딩 중심을 원점으로 다시 잡는다. */
 const v=pos.length/3;
 {let yb=[1e9,-1e9],zb=[1e9,-1e9];
- for(let i=0;i<v;i++){const y=pos[i*3+1],z=pos[i*3+2];
+ /* 중심은 '회전부(타이어·림)'만으로 잡는다 — 비회전 캘리퍼까지 넣으면
+    바운딩 중심이 캘리퍼 쪽으로 끌려가 휠이 축을 벗어나 돈다. */
+ const rot=new Set();
+ for(let q=0;q<calIdx;q++)rot.add(IDX[q]);
+ for(const i of rot){const y=pos[i*3+1],z=pos[i*3+2];
    if(y<yb[0])yb[0]=y;if(y>yb[1])yb[1]=y;
    if(z<zb[0])zb[0]=z;if(z>zb[1])zb[1]=z;}
  const cy=(yb[0]+yb[1])/2, cz=(zb[0]+zb[1])/2;

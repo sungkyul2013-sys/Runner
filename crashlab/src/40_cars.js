@@ -52,7 +52,7 @@ const CARS=[
   brakeF:12500,steerLo:.56,steerHi:.13,aero:{cd:1.4,df:0},gripF:1.02,gripR:1.02,
   style:"suv",colors:[0x1c3a2a,0x12161b,0xe9ecee,0x8a929a,0x2a3f66],
   stats:{spd:55,acc:60,grip:74,mass:64}},
- {id:"rrghost",name:"롤스로이스 고스트",icon:"🏛️",drive:"4WD",mass:2490,hp:571,acc:"4.8초",top:250,
+ {id:"rrghost",name:"롤스로이스 고스트",icon:"🏛️",drive:"4WD",mass:2490,hp:700,acc:"4.2초",top:265,
   desc:"실측 스캔 3D 모델. 6.75L V12 · 플래너 서스펜션. 무결점 도장과 매끈한 차체의 초호화 세단.",
   model:"rrghost",style:"sedan",rollFix:1.2,squashY:1,comFromWheels:true,realWheels:true,
   smoothShade:true,gloss:true,    // 초광택 클리어코트(환경 반사 강화) — 원본 도장 광택 재현
@@ -138,7 +138,7 @@ const CARS=[
   brakeF:38000,steerLo:.5,steerHi:.1,aero:{cd:6,df:0},gripF:.85,gripR:.88,
   style:"truck",colors:[0x8899aa,0xcf6a2f,0x3d5a80,0x9b2226,0xdddddd],
   stats:{spd:18,acc:12,grip:35,mass:100}},
- {id:"veloce",name:"포르쉐 911 터보",icon:"🏁",drive:"4WD",mass:1595,hp:520,acc:"3.2초",top:315,
+ {id:"veloce",name:"포르쉐 911 터보",icon:"🏁",drive:"4WD",mass:1595,hp:580,acc:"3.0초",top:350,
   desc:"실차 3D 모델(911 터보 2014). 3.8L 수평대향 6기통 트윈터보 · 리어엔진 4WD.",
   model:"porsche",rollFix:1.34,squashY:1,comFromWheels:true,realWheels:true,smoothShade:true,
   wheelRadMul:1.03,wheelTuck:.01,rimScale:1.28,  // 바퀴·림 크게 + 살짝 안으로(펜더 안쪽으로 5cm 인셋)
@@ -171,7 +171,7 @@ const CARS=[
   brakeF:15000,steerLo:.72,steerHi:.2,aero:{cd:8,df:0},gripF:1.05,gripR:1.08,
   style:"suv",colors:[0x62a844,0xd7263d,0x3d5a80,0xffb340,0x8899aa],
   stats:{spd:6,acc:14,grip:85,mass:62}},
- {id:"f1",name:"아폴로 F1-X",icon:"🏎️",drive:"RWD",mass:798,hp:1010,acc:"2.4초",top:355,
+ {id:"f1",name:"아폴로 F1-X",icon:"🏎️",drive:"RWD",mass:798,hp:1080,acc:"2.3초",top:400,
   desc:"포뮬러 원 머신. 1.6L V6 터보하이브리드 1010마력 · 798kg · 다운포스 3,200kg급.\n극단적 그립과 제동력 — 코너에서 5G, 100→0을 2초 안에.",
   // 급조향 전복 방지: 실차처럼 트랙을 넓히고(1.96m) 무게중심을 낮춘다.
   // 전복 한계 ≈ (트랙/2)/무게중심높이 → 넓은 트랙 + 낮은 CoG로 한계를 크게 끌어올림.
