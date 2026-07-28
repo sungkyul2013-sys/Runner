@@ -183,7 +183,9 @@ const MAPS=[
   /* 15: 저턱 레인 — 3~7cm짜리 낮고 완만한 턱 연속.
         큰 턱에서는 안 보이는 '잔거동'(초기 감쇠·미세 상하 진동)을 본다. */
   {const LB=510;
-   mb.stamp(LB,sz0+80,12,(i,j)=>w.setS(i,j,S_ASP));
+   /* stamp 는 반경만큼의 '원' 하나라 레인 전체가 칠해지지 않는다 —
+      레인 축을 따라 포장한다 */
+   mb.paintPath([{x:510,y:0,z:sz0-4},{x:510,y:0,z:sz0+188}],24,S_ASP,false,true);
    mb.texRect(LB,sz0+80,20,190,0,SURF_CSS[S_ASP]);
    for(let k=0;k<14;k++)
      mb.bump(LB,sz0+10+k*12.5,0,11,.030+(k%4)*.013,"round");
@@ -192,7 +194,9 @@ const MAPS=[
   /* 16: 꿀렁임(롱웨이브) 레인 — 파장 9~16m의 완만한 기복.
         차체 고유진동(1~1.5Hz)을 정면으로 때려 '출렁임'을 그대로 드러낸다. */
   {const WV=534;
-   mb.stamp(WV,sz0+80,12,(i,j)=>w.setS(i,j,S_ASP));
+   /* stamp 는 반경만큼의 '원' 하나라 레인 전체가 칠해지지 않는다 —
+      레인 축을 따라 포장한다 */
+   mb.paintPath([{x:534,y:0,z:sz0-4},{x:534,y:0,z:sz0+188}],24,S_ASP,false,true);
    mb.texRect(WV,sz0+80,20,190,0,SURF_CSS[S_ASP]);
    let zz=sz0+12;
    for(let k=0;k<13&&zz<sz0+180;k++){
@@ -204,7 +208,9 @@ const MAPS=[
   /* 17: 트위스트 레인 — 좌·우 턱이 엇갈려 배치된다.
         한쪽 앞바퀴가 올라갈 때 반대쪽은 내려가 차체가 비틀린다(대각 비틀림 강성 시험). */
   {const TW=558;
-   mb.stamp(TW,sz0+80,13,(i,j)=>w.setS(i,j,S_ASP));
+   /* stamp 는 반경만큼의 '원' 하나라 레인 전체가 칠해지지 않는다 —
+      레인 축을 따라 포장한다 */
+   mb.paintPath([{x:558,y:0,z:sz0-4},{x:558,y:0,z:sz0+188}],26,S_ASP,false,true);
    mb.texRect(TW,sz0+80,22,190,0,SURF_CSS[S_ASP]);
    for(let k=0;k<16;k++){
      const sx=(k%2)?1:-1;                        // 한 칸 걸러 좌·우
@@ -214,7 +220,9 @@ const MAPS=[
   /* 18: 숏하이 레인 — 짧고 높은 턱(폭 0.7m·높이 18~26cm).
         천천히 넘으면 스트로크, 빠르게 넘으면 충격 — 블로우오프 특성이 드러난다. */
   {const SH=582;
-   mb.stamp(SH,sz0+80,12,(i,j)=>w.setS(i,j,S_ASP));
+   /* stamp 는 반경만큼의 '원' 하나라 레인 전체가 칠해지지 않는다 —
+      레인 축을 따라 포장한다 */
+   mb.paintPath([{x:582,y:0,z:sz0-4},{x:582,y:0,z:sz0+188}],24,S_ASP,false,true);
    mb.texRect(SH,sz0+80,20,190,0,SURF_CSS[S_ASP]);
    for(let k=0;k<7;k++)
      mb.bump(SH,sz0+18+k*24,0,11,.18+(k%3)*.04,"sharp");

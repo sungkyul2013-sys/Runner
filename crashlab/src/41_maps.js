@@ -292,6 +292,41 @@ class MapBuilder{
       kept.push(b);}
     if(removed){w.boxes.length=0;for(const b of kept)w.boxes.push(b);}
     return removed;}
+  /* 스폰·장소를 '실제 달릴 수 있는 노면' 위로 옮긴다.
+     지점이 풀밭·물·다리 아래 협곡에 찍혀 있으면 차가 떨어지거나 비스듬히 놓인다
+     (실측: 69지점 중 26곳이 비포장·급경사, 최악은 협곡 위 63.3m 낙하).
+     가장 가까운 '포장 + 평탄' 셀을 나선으로 찾아 스냅한다. 포장이 아예 없는
+     오프로드 맵은 그 맵의 주행 가능 노면(모래·자갈·흙·눈·얼음)을 받아들인다. */
+  snapToRoad(x,z,hardPaved){
+    const w=this.world,cell=w.cell,half=w.size*.5;
+    const S=SURF_IDS;
+    const isPaved=s=>{const n=S[s];return n==="asphalt"||n==="lane"||n==="curb"||n==="concrete";};
+    const isDrive=s=>{const n=S[s];
+      return isPaved(s)||n==="sand"||n==="gravel"||n==="dirt"||n==="snow"||n==="ice";};
+    const flat=(px,pz)=>{
+      const h0=w.height(px,pz),d=3.2;
+      const g=Math.max(Math.abs(w.height(px+d,pz)-h0),Math.abs(w.height(px,pz+d)-h0),
+                       Math.abs(w.height(px-d,pz)-h0),Math.abs(w.height(px,pz-d)-h0));
+      return Math.atan2(g,d)<8*Math.PI/180;};
+    const ok=(px,pz,strict)=>{
+      if(Math.abs(px)>half-12||Math.abs(pz)>half-12)return false;
+      const s=w.surf(px,pz);
+      return (strict?isPaved(s):isDrive(s))&&flat(px,pz);};
+    for(const strict of(hardPaved?[true]:[true,false])){
+      if(ok(x,z,strict))return{x,z};
+      for(let r=cell;r<=260;r+=cell*.7){   // 협곡·다리 위 지점은 멀리까지 찾아야 육지로 빠진다
+        const n=Math.max(8,Math.round(2*Math.PI*r/(cell*.8)));
+        for(let i=0;i<n;i++){
+          const a=i/n*Math.PI*2, px=x+Math.cos(a)*r, pz=z+Math.sin(a)*r;
+          if(ok(px,pz,strict))return{x:px,z:pz};}}}
+    return{x,z};}
+  snapSpawns(){
+    const w=this.world;let moved=0;
+    const mv=(o)=>{const s=this.snapToRoad(o.x,o.z);
+      if(Math.hypot(s.x-o.x,s.z-o.z)>.6){o.x=s.x;o.z=s.z;moved++;}};
+    if(w.spawn)mv(w.spawn);
+    for(const pl of (w.places||[]))mv(pl);
+    return moved;}
   finalize(mapDef){
     const w=this.world;
     this.roadObstaclesRemoved=this.clearRoadObstacles();
@@ -404,6 +439,8 @@ class MapBuilder{
         this.group.add(mm);}}
     this.mergePos=this.mergeNor=this.mergeCol=null;
     buildPropInstances(w,this.group);   // 프롭을 타입별 InstancedMesh로 합쳐 드로우콜 최소화
+    /* 지형·도색·구조물이 모두 끝난 뒤에 스폰을 노면 위로 스냅한다 */
+    this.spawnsMoved=this.snapSpawns();
     w.mapDef=mapDef;
     return{world:w,group:this.group};}
 }
