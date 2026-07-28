@@ -750,7 +750,7 @@ const MAPS=[
 
 /* ---------- 7. 그랜드 시티 (오픈월드) ---------- */
 MAPS.push(
-{id:"grand",name:"메가시티 (오픈월드)",icon:"🌆",desc:"5.8km² 체계적 오픈월드 — 도로 위계(벨트웨이·순환·8방 방사·격자)와 9개 지구: CBD·미드타운·워터프론트·모터스포츠·항만·공항·아레나·산악·교외. 📍장소 선택 스폰",
+{id:"grand",name:"메가시티 (오픈월드)",icon:"🌆",desc:"11.6km² 체계적 오픈월드 — 외곽 익스프레스웨이(요철·터널·뱅크·점프·스카이 링) 통합 — 도로 위계(벨트웨이·순환·8방 방사·격자)와 9개 지구: CBD·미드타운·워터프론트·모터스포츠·항만·공항·아레나·산악·교외. 📍장소 선택 스폰",
  modes:["free","time","race","drift"],
  build(){
   /* ==========================================================================
@@ -759,8 +759,10 @@ MAPS.push(
      ④ 도색(간선 먼저, 지역 나중) → ⑤ 지구 콘텐츠 → ⑥ 간선 재확정(연결 보장)
      ※ 도로는 '그래프'로 먼저 정의하므로 연결성이 구조적으로 보장된다.
      ========================================================================== */
-  const SZ=2400;
-  const mb=new MapBuilder(SZ,420),w=mb.world;      // cell ≈ 5.71m
+  /* 외곽 익스프레스웨이(인피니티 하이웨이)를 품기 위해 맵을 넓혔다.
+     셀 크기는 그대로 유지(2400/420=5.71 → 3400/600=5.67)해 기존 지구는 영향이 없다. */
+  const SZ=3400;
+  const mb=new MapBuilder(SZ,600),w=mb.world;      // cell ≈ 5.67m
   /* ---- 도시 상수(위계 반경) ---- */
   const R_CBD=340,          // CBD 격자 반경
         R_INNER=680,        // 내부 순환도로
@@ -1239,6 +1241,60 @@ MAPS.push(
   // 그랜드 불러바드 재확정 — 어떤 지구 콘텐츠도 관통 직선을 끊지 못하게(마지막에 한 번 더)
   paintBlvd();
 
+  /* ═══ ⑦ 외곽 익스프레스웨이 — 인피니티 하이웨이를 도시에 통합 ═══
+     벨트웨이(r=1060)에서 두 곳으로 갈라져 나가 외곽(r=1500)을 크게 돌고,
+     반대편에서 다시 벨트웨이로 합류한다. 도시에서 그대로 진입할 수 있다. */
+  {const R_EX=1500, A0=.35, A1=2*Math.PI-.35;      // 진입각 ~20°, 합류각 ~340°
+   const ex=[];
+   // 진입 램프: 벨트웨이 → 외곽
+   for(let i=0;i<=14;i++){const t=i/14;
+     const r=lerp(R_BELT,R_EX,t), a=lerp(A0-.16,A0,t);
+     ex.push({x:Math.cos(a)*r,y:0,z:Math.sin(a)*r});}
+   // 외곽 대순환 (고도 변화 포함 — 언덕 넘고 계곡 건너기)
+   const NA=260;
+   for(let i=0;i<=NA;i++){
+     const t=i/NA, a=lerp(A0,A1,t);
+     let y=0;
+     if(t>.20&&t<.32){const u=(t-.20)/.12;y=Math.sin(u*Math.PI)*34;}   // 언덕 고가
+     if(t>.55&&t<.66){const u=(t-.55)/.11;y=Math.sin(u*Math.PI)*26;}   // 두 번째 융기
+     ex.push({x:Math.cos(a)*R_EX,y,z:Math.sin(a)*R_EX});}
+   // 합류 램프: 외곽 → 벨트웨이
+   for(let i=1;i<=14;i++){const t=i/14;
+     const r=lerp(R_EX,R_BELT,t), a=lerp(A1,A1+.16,t);
+     ex.push({x:Math.cos(a)*r,y:0,z:Math.sin(a)*r});}
+   // 외곽 지형을 완만하게(도시 밖은 평원 + 낮은 구릉)
+   mb.stamp(0,0,SZ*.5,(i,j,d,x,z)=>{
+     const r=Math.hypot(x,z);
+     if(r<R_BELT+90)return;
+     const idx=w.idx(i,j);
+     const base=Math.sin(x/460)*Math.cos(z/510)*7+Math.sin(x/121+z/143)*1.8;
+     w.hMap[idx]=base;w.sMap[idx]=SURF_ID.grass;});
+   buildExpressway(mb,{route:ex,halfWidth:15,
+     sections:[["rumble",.06,.13],["wave",.13,.20],["chicane",.20,.27],
+               ["mogul",.27,.34],["tunnel",.34,.41],["banked",.41,.49],
+               ["split",.49,.56],["jump",.56,.61],["washboard",.61,.68],
+               ["wave",.68,.75],["straight",.75,.93]],
+     finale:true});
+   /* 접속부 가드레일 개방 — 벨트웨이 난간은 익스프레스웨이보다 먼저 세워져
+      진입·합류 램프를 가로막는다(실주행 감사: 합류부 2지점에서 3.2m 만 전진). */
+   {const jn=[{x:Math.cos(A0-.16)*R_BELT,z:Math.sin(A0-.16)*R_BELT},
+              {x:Math.cos(A1+.16)*R_BELT,z:Math.sin(A1+.16)*R_BELT}];
+    const keep=[];let cut=0;
+    for(const bx of w.boxes){
+      const t=bx.tag||"";
+      if(/^(rail|railpost|railbar)$/.test(t)&&
+         jn.some(j=>Math.hypot(bx.c.x-j.x,bx.c.z-j.z)<70)){cut++;continue;}
+      keep.push(bx);}
+    if(cut){w.boxes.length=0;for(const bx of keep)w.boxes.push(bx);}}
+   // 벨트웨이 접속부 안내
+   {const p0={x:Math.cos(A0-.16)*R_BELT,z:Math.sin(A0-.16)*R_BELT};
+    mb.texText(p0.x,p0.z,8,"EXPRESSWAY →","rgba(255,210,80,.75)");}
+   (w.places=w.places||[]).push(
+     {name:"🛣️ 익스프레스웨이 진입",x:Math.cos(A0-.16)*R_BELT,z:Math.sin(A0-.16)*R_BELT,yaw:A0},
+     {name:"🕳️ 익스프레스 터널",x:Math.cos(lerp(A0,A1,.37))*R_EX,z:Math.sin(lerp(A0,A1,.37))*R_EX,yaw:0},
+     {name:"🚀 익스프레스 점프대",x:Math.cos(lerp(A0,A1,.58))*R_EX,z:Math.sin(lerp(A0,A1,.58))*R_EX,yaw:0},
+     {name:"✨ 스카이 링(종착)",x:Math.cos(A1+.16)*R_BELT,z:Math.sin(A1+.16)*R_BELT,yaw:0});}
+
   // 불러바드 중앙분리 도색 + 표지
   for(const bp of[blvdH,blvdV])for(let k=6;k<bp.length-6;k+=3){const p=bp[k];
     mb.texRect(p.x,p.z,bp===blvdH?12:.5,bp===blvdH?.5:12,0,"rgba(240,214,120,.5)");}
@@ -1528,177 +1584,78 @@ MAPS.push(
   return mb.finalize(this);}});
 
 /* ═══════════════════════════════════════════════════════════════════
-   🛣️ 인피니티 하이웨이 — 한 방향으로 계속 이어지는 초장거리 고속도로.
-   요철·꿀렁임·구불구불·오르내림·직선을 순서대로 통과하고,
-   끝에는 하늘로 솟은 종착지가 기다린다.
+   🛣️ 인피니티 하이웨이 — 5.6km 단독 노선.
+   구간 12종을 순서대로 통과하고 종착 '스카이 링'에 닿는다.
+   메가시티에도 같은 생성기로 통합돼 있다(외곽 익스프레스웨이).
    ═══════════════════════════════════════════════════════════════════ */
 MAPS.push(
 {id:"infinity",name:"인피니티 하이웨이",icon:"🛣️",
- desc:"3.4km 편도 초장거리 고속도로 — 요철 직선·롱웨이브 꿀렁임·S자 와인딩·계곡 대교·산악 오르내림·초고속 직선, 그리고 종착지 '스카이 링'",
+ desc:"5.6km 단독 고속도로 — 요철·꿀렁임·시케인·모굴·터널·뱅크·편측턱·점프·빨래판·초고속 직선, 계곡 대교와 산악 고갯길을 지나 종착지 '스카이 링'",
  modes:["free","crash","time"],
  build(){
-  const SZ=3600;
-  const mb=new MapBuilder(SZ,320),w=mb.world;
+  const SZ=4000;
+  const mb=new MapBuilder(SZ,340),w=mb.world;
   const S_ASP=SURF_ID.asphalt,S_GRS=SURF_ID.grass,S_DRT=SURF_ID.dirt;
 
-  /* ── 노선 중심선 ──
-     z=-1700(출발) → z=+1700(종착). 구간마다 성격이 다르다.
-       A 요철 직선   z -1700 ~ -1150
-       B 꿀렁임      z -1150 ~ -700
-       C S자 와인딩  z  -700 ~   50
-       D 계곡 대교   z    50 ~  420
-       E 산악 오르내림 z 420 ~ 1050
-       F 초고속 직선 z 1050 ~ 1500
-       G 종착지      z 1500 ~ 1700                                   */
-  const routeX=z=>{
-    if(z<-700)return 0;
-    if(z<50){const t=(z+700)/750;                       // S자
-      return Math.sin(t*Math.PI*2.1)*170*Math.sin(t*Math.PI);}
-    if(z<420)return 0;
-    if(z<1050){const t=(z-420)/630;                     // 산악 완만한 굽이
-      return Math.sin(t*Math.PI*1.6)*95;}
-    return 0;};
-  /* 노선 고도 — 계곡은 다리로 건너므로 도로 고도와 지형 고도를 따로 둔다 */
-  const routeY=z=>{
-    if(z<50)return 0;
-    if(z<420)return 22;                                  // 계곡 대교(고가)
-    if(z<1050){const t=(z-420)/630;                      // 산 넘기: 오르막→정상→내리막
-      return 22*(1-t)+Math.sin(t*Math.PI)*44;}
-    if(z<1500)return 0;
-    return (z-1500)/200*8;};                             // 종착 진입 상승
+  /* 노선 — 뱀처럼 접어 5.6km 를 4km 맵 안에 담는다.
+     왕복 3열: 남→북(x=-1150) → 북 U턴 → 북→남(x=0) → 남 U턴 → 남→북(x=1150, 종착) */
   const route=[];
-  for(let z=-1740;z<=1700;z+=10)route.push({x:routeX(z),y:routeY(z),z});
+  const push=(x,y,z)=>route.push({x,y,z});
+  const arc=(cx,cz,r,a0,a1,y0,y1,n)=>{
+    for(let i=0;i<=n;i++){const t=i/n,a=lerp(a0,a1,t);
+      push(cx+Math.cos(a)*r,lerp(y0,y1,t),cz+Math.sin(a)*r);}};
+  /* ① 남→북 (계곡 대교 포함) */
+  /* 대교는 진입·탈출 경사로로 이어 붙인다 — 바로 24m 를 세우면 절벽이 생겨
+     차가 벽에 박는다(실주행 감사에서 확인). */
+  for(let z=-1780;z<=1380;z+=20){
+    let y=0;
+    if(z>=-460&&z<-300)y=24*(z+460)/160;        // 진입 경사
+    else if(z>=-300&&z<=160)y=24;               // 계곡 대교(수평)
+    else if(z>160&&z<=340)y=24*(1-(z-160)/180); // 탈출 경사
+    else if(z>500&&z<1180){const t=(z-500)/680;y=Math.sin(t*Math.PI)*40;}  // 산 고갯길
+    push(-1150,y,z);}
+  /* ② 북쪽 U턴 */
+  arc(-575,1380,575,Math.PI,0,0,0,54);
+  /* ③ 북→남 */
+  for(let z=1380;z>=-1380;z-=20)push(0,0,z);
+  /* ④ 남쪽 U턴 */
+  arc(575,-1380,575,Math.PI,2*Math.PI,0,0,54);
+  /* ⑤ 남→북 (종착) */
+  for(let z=-1380;z<=1500;z+=20)push(1150,0,z);
 
   /* ── 지형 ── */
+  const onRoute=(x,z)=>{
+    let best=1e9;
+    for(const p of route){const d=Math.hypot(p.x-x,p.z-z);if(d<best)best=d;}
+    return best;};
   mb.fill((x,z)=>{
-    let h=0;
-    // 계곡 (z 50~420) — 대교 아래 깊은 협곡
-    if(z>30&&z<440){
-      const t=(z-30)/410, d=Math.sin(t*Math.PI);
-      h-=d*58*Math.exp(-Math.abs(x)/900);}
-    // 산맥 (z 420~1050)
-    if(z>380&&z<1100){
-      const t=(z-380)/720;
-      h+=Math.sin(t*Math.PI)*62*Math.exp(-Math.abs(x)/1100);}
-    // 바깥 구릉
-    h+=Math.sin(x/380)*Math.cos(z/430)*9;
-    h+=Math.sin(x/97+z/121)*2.2;
-    // 종착 고원
-    if(z>1480)h=Math.max(h,10);
-    const near=Math.abs(x-routeX(z));
-    return[h,near<70?S_ASP:(h<-12?S_DRT:S_GRS)];});
+    let h=Math.sin(x/420)*Math.cos(z/470)*11+Math.sin(x/103+z/131)*2.4;
+    // 계곡 (x≈-1150, z -300~160)
+    /* 협곡은 다리 경간(-300~160) '안쪽'에만 판다 — 밖으로 삐져나오면
+       진입·탈출 경사로가 구멍 위에 놓여 차가 걸린다(실주행 감사에서 확인). */
+    if(x>-1420&&x<-880&&z>-285&&z<145){
+      const t=(z+285)/430;h-=Math.sin(t*Math.PI)*62;}
+    // 산맥 (x≈-1150, z 500~1180)
+    if(x>-1500&&x<-800&&z>460&&z<1220){
+      const t=(z-460)/760;h+=Math.sin(t*Math.PI)*58;}
+    return[h,S_GRS];});
 
-  /* ── 노선 회랑 확보 + 포장 ── */
-  /* 계곡 구간(z 50~420)은 지형을 깎지 않는다 — 그 위로 다리를 놓는다.
-     flattenCorridor 의 getY 는 (x,z) 를 받는다(점이 아니다). 인자를 생략하면
-     경로점의 y 를 보간해 쓰므로 그대로 둔다. */
-  const land=route.filter(p=>p.z<44||p.z>426);
-  flattenCorridor(mb,land,26,42);
-  mb.paintPath(land,30,S_ASP,true,true);
-  mb.paintPath(land,40,S_ASP,false,false);          // 갓길
-
-  /* ── A 구간: 요철 직선 (z -1700 ~ -1150) ── */
-  for(let z=-1680;z<-1150;z+=26)
-    mb.bump(routeX(z),z,0,30,.045+((z|0)%3)*.012,"round");
-  for(let z=-1660;z<-1160;z+=120)
-    mb.rumbleZone(routeX(z),z,0,26,.010,.5,false);
-  mb.texText(0,-1700,9,"INFINITY HIGHWAY","rgba(240,244,250,.8)");
-  mb.texText(0,-1400,6,"ROUGH","rgba(240,244,250,.6)");
-
-  /* ── B 구간: 롱웨이브 꿀렁임 (z -1150 ~ -700) ── */
-  {let z=-1140;
-   for(let k=0;z<-700;k++){
-     mb.bump(routeX(z),z,0,30,.11+(k%3)*.045,"round");
-     z+=13+(k%4)*4;}}
-  mb.texText(0,-950,6,"WAVE","rgba(240,244,250,.6)");
-
-  /* ── C 구간: S자 와인딩 (z -700 ~ 50) ── */
-  for(let z=-690;z<40;z+=34){
-    const x=routeX(z);
-    mb.rough(x,z,0,26,.03,"round");}
-  mb.texText(0,-380,6,"WINDING","rgba(240,244,250,.6)");
-
-  /* ── D 구간: 계곡 대교 (z 50 ~ 420, 고도 22m) ── */
-  {const seg=route.filter(p=>p.z>=30&&p.z<=444);
-   bridgeDeck(mb,seg,30,{deck:0x4e5560,rail:0xd7dee6,pillar:0x7b838e});
-   mb.texText(0,470,7,"CANYON BRIDGE","rgba(240,244,250,.55)");}
-
-  /* ── E 구간: 산악 오르내림 (z 420 ~ 1050) ── */
-  for(let z=440;z<1040;z+=30)
-    mb.bump(routeX(z),z,0,28,.06+((z/30|0)%3)*.03,"round");
-  mb.texText(0,700,6,"MOUNTAIN PASS","rgba(240,244,250,.55)");
-
-  /* ── F 구간: 초고속 직선 (z 1050 ~ 1500) ── */
-  for(let k=0;k<10;k++)
-    mb.texPath([{x:-13,z:1060+k*44},{x:-13,z:1092+k*44}],.5,"rgba(255,255,255,.75)");
-  for(let k=0;k<10;k++)
-    mb.texPath([{x:13,z:1060+k*44},{x:13,z:1092+k*44}],.5,"rgba(255,255,255,.75)");
-  mb.texText(0,1240,10,"FULL THROTTLE","rgba(255,210,80,.7)");
-
-  /* ═══ G 종착지: 스카이 링 ═══
-     초대형 발사 램프 → 공중 고리 통과 → 나선 타워 전망대 → 빛기둥 광장 */
-  {const CZ=1620;
-   /* 종착 구조물은 도로 중심선 위에 세운다 — 회랑 예약이 켜져 있으면 전부 거부된다
-      (계측: z>1350 충돌체 0개, 비주얼도 10개만 살아남았다). 이 블록만 예약을 끈다. */
-   const _rv=mb._resvOn;mb._resvOn=false;
-   // 종착 고원 포장
-   mb.stamp(0,CZ,240,(i,j)=>w.setS(i,j,S_ASP));
-   mb.texCircle(0,CZ,230,"rgba(26,30,38,.85)");
-   mb.texCircle(0,CZ,150,"rgba(255,210,80,.10)");
-   // ① 초대형 발사 램프 — 직선 끝에서 하늘로
-   mb.ramp(0,1520,0,26,58,30,0xd8a13a);
-   mb.texText(0,1492,6,"LAUNCH","rgba(255,210,80,.8)");
-   // ② 공중 고리(스카이 링) — 램프 끝 상공을 지나는 거대한 원환
-   {const RR=64, cy=52;
-    for(let k=0;k<40;k++){
-      const a=k/40*Math.PI*2;
-      const yy=cy+Math.sin(a)*RR, xx=Math.cos(a)*RR;
-      if(yy<2)continue;                                   // 지면 아래 조각은 생략
-      mb.visBox(xx,yy,CZ-40,7,7,9,k%2?0xffd23e:0x3ddc84,{roll:a});}
-    // 고리를 받치는 두 기둥
-    for(const sx of[-1,1])
-      mb.box(sx*RR,cy/2,CZ-40,9,cy,9,0x6f7883,{mu:.9,tag:"ringleg"});}
-   // ③ 나선 타워 — 240m, 위로 감아 올라가는 리본
-   for(let k=0;k<170;k++){
-     const t=k/170, a=t*Math.PI*8, r=54*(1-t*.62), y=6+t*234;
-     mb.visBox(Math.cos(a)*r, y, CZ+70+Math.sin(a)*r, 11,3.4,11,
-       k%3===0?0x6ee7ff:(k%3===1?0xffd23e:0xff7ab8),{yaw:a});}
-   mb.box(0,120,CZ+70,14,240,14,0x39414d,{mu:.9,tag:"towercore"});
-   // ④ 빛기둥 서클 — 광장을 둘러싼 24개 네온 기둥
-   for(let k=0;k<24;k++){
-     const a=k/24*Math.PI*2, r=205;
-     mb.visBox(Math.cos(a)*r,44,CZ+Math.sin(a)*r,5,88,5,
-       k%2?0x6ee7ff:0xff7ab8,{});
-     mb.box(Math.cos(a)*r,6,CZ+Math.sin(a)*r,6,12,6,0x2a3038,{mu:.9,tag:"pillar"});}
-   // ⑤ 공중 부유 링 3단 — 타워 주변을 감싼 고리들
-   for(let ring=0;ring<3;ring++){
-     const ry=96+ring*58, rr2=86-ring*17;
-     for(let k=0;k<28;k++){
-       const a=k/28*Math.PI*2;
-       mb.visBox(Math.cos(a)*rr2,ry,CZ+70+Math.sin(a)*rr2,6,2.4,6,
-         ring===0?0xffd23e:(ring===1?0x6ee7ff:0x3ddc84),{yaw:a});}}
-   // ⑥ 종착 표지
-   mb.texText(0,CZ+200,12,"THE END OF THE ROAD","rgba(255,255,255,.85)");
-   mb.texCircle(0,CZ+70,26,"rgba(255,210,80,.28)");
-   mb._resvOn=_rv;}
-
-  /* ── 노선 재확정 — 어떤 장식도 도로를 끊지 못하게 ── */
-  flattenCorridor(mb,land,24,36);
-  mb.paintPath(land,30,S_ASP,true,true);
-
-  /* ── 가드레일 (대교 구간은 위에서 별도로 세웠다) ── */
-  railAlong(mb,route.filter(p=>p.z<40||p.z>440),34,0xb9c2cc);
+  /* ── 고속도로 생성 ── */
+  const EX=buildExpressway(mb,{route,halfWidth:15,
+    isBridge:t=>{const p=route[Math.min(route.length-1,Math.round(t*(route.length-1)))];
+      return p.x<-900&&p.z>=-300&&p.z<=160;}});
 
   /* ── 장소·스폰 ── */
+  const P=EX.at;
   w.places=[
-    {name:"🚦 출발 게이트",x:0,z:-1700,yaw:0},
-    {name:"🌊 꿀렁임 구간",x:0,z:-1000,yaw:0},
-    {name:"🐍 S자 와인딩",x:routeX(-350),z:-350,yaw:0},
-    {name:"🌉 계곡 대교",x:0,z:200,yaw:0},
-    {name:"⛰️ 산악 고갯길",x:routeX(730),z:730,yaw:0},
-    {name:"🏁 초고속 직선",x:0,z:1200,yaw:0},
-    {name:"✨ 스카이 링(종착)",x:0,z:1560,yaw:0}];
-  w.spawn={x:0,z:-1700,yaw:0};
+    {name:"🚦 출발 게이트",x:P(0).x,z:P(0).z,yaw:0},
+    {name:"🌊 꿀렁임",x:P(.14).x,z:P(.14).z,yaw:0},
+    {name:"🕳️ 터널",x:P(.36).x,z:P(.36).z,yaw:0},
+    {name:"🏔️ 뱅크 커브",x:P(.44).x,z:P(.44).z,yaw:0},
+    {name:"🚀 점프대",x:P(.575).x,z:P(.575).z,yaw:0},
+    {name:"🏁 초고속 직선",x:P(.88).x,z:P(.88).z,yaw:0},
+    {name:"✨ 스카이 링(종착)",x:P(.98).x,z:P(.98).z,yaw:0}];
+  w.spawn={x:P(0).x,z:P(0).z,yaw:0};
   return mb.finalize(this);}});
 
 /* ---------- custom map from editor tiles ---------- */
@@ -1747,4 +1704,179 @@ function buildCustomMap(data){
   w.route=cps.length>1?"loop":null;
   return mb.finalize({id:"custom:"+data.name,name:data.name,icon:"🛠️",custom:true,
     modes:cps.length>1?["free","time"]:["free"]});
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   고속도로 생성기 — 주어진 중심선을 따라 '재미 구간'을 순서대로 깔고,
+   끝에 종착 광장을 세운다. 인피니티 하이웨이(단독 맵)와 메가시티(통합)가
+   같은 코드를 쓴다.
+     · 회랑은 항상 평탄화 + 포장 + 양측 가드레일 → 주행 불가 구역이 생기지 않는다
+     · 구간은 노선 진행률 t(0~1)로 배치한다
+   ═══════════════════════════════════════════════════════════════════════════ */
+function buildExpressway(mb,cfg){
+  const w=mb.world;
+  const S_ASP=SURF_ID.asphalt;
+  const route=cfg.route;                  // [{x,y,z}] 중심선(고도 포함)
+  /* 감사·AI 용으로 노선을 월드에 남긴다(여러 노선이면 이어 붙인다) */
+  (w.exRoutes=w.exRoutes||[]).push(route);
+  const HW=cfg.halfWidth||15;             // 반폭
+  const finale=cfg.finale!==false;
+  /* 누적 거리 → 진행률 */
+  const acc=[0];
+  for(let k=1;k<route.length;k++)
+    acc.push(acc[k-1]+Math.hypot(route[k].x-route[k-1].x,route[k].z-route[k-1].z));
+  const TOTAL=acc[acc.length-1];
+  const at=t=>{                            // 진행률 t 의 노선 점 + 진행 방향
+    const d=clamp(t,0,1)*TOTAL;
+    let k=1;while(k<acc.length-1&&acc[k]<d)k++;
+    const f=(d-acc[k-1])/Math.max(1e-6,acc[k]-acc[k-1]);
+    const a=route[k-1],b=route[k];
+    const yaw=Math.atan2(b.x-a.x,b.z-a.z);
+    return{x:lerp(a.x,b.x,f),y:lerp(a.y,b.y,f),z:lerp(a.z,b.z,f),yaw};};
+  const side=(p,off)=>({x:p.x+Math.cos(p.yaw)*off,z:p.z-Math.sin(p.yaw)*off});
+
+  /* ── 노반: 평탄화 + 포장 (다리 구간은 지형을 깎지 않는다) ── */
+  const isBridge=cfg.isBridge||(()=>false);
+  const land=[],bridge=[];
+  {let cur=null;
+   for(let k=0;k<route.length;k++){
+     const t=acc[k]/TOTAL, br=isBridge(t);
+     if(br){if(cur!=='b'){bridge.push([]);cur='b';}bridge[bridge.length-1].push(route[k]);}
+     else{if(cur!=='l'){land.push([]);cur='l';}land[land.length-1].push(route[k]);}}}
+  for(const seg of land){
+    if(seg.length<2)continue;
+    flattenCorridor(mb,seg,HW+9,26);
+    mb.paintPath(seg,HW*2,S_ASP,true,true);
+    mb.paintPath(seg,HW*2+16,S_ASP,false,false);}   // 갓길
+  for(const seg of bridge){
+    if(seg.length<2)continue;
+    bridgeDeck(mb,seg,HW*2,{deck:0x4e5560,rail:0xd7dee6,pillar:0x7b838e});}
+
+  /* ── 재미 구간 ── */
+  const SEC=cfg.sections||[
+    ["rumble",  .02,.10],["wave",  .10,.18],["chicane",.18,.26],
+    ["mogul",   .26,.33],["tunnel",.33,.40],["banked", .40,.48],
+    ["split",   .48,.55],["jump",  .55,.60],["washboard",.60,.67],
+    ["wave",    .67,.74],["rumble",.74,.80],["straight",.80,.95]];
+  for(const[kind,t0,t1]of SEC){
+    const L=(t1-t0)*TOTAL;
+    switch(kind){
+      case"rumble":{                       // 잔요철 + 럼블
+        const n=Math.max(4,L/24|0);
+        for(let i=0;i<n;i++){const p=at(t0+(t1-t0)*i/n);
+          mb.bump(p.x,p.z,p.yaw,HW*2,.04+(i%3)*.012,"round");}
+        const pm=at((t0+t1)/2);
+        mb.rumbleZone(pm.x,pm.z,pm.yaw,Math.min(70,L/3),.010,.5,false);
+        mb.texText(pm.x,pm.z,6,"ROUGH","rgba(240,244,250,.55)",pm.yaw);break;}
+      case"wave":{                         // 롱웨이브 꿀렁임
+        const n=Math.max(4,L/16|0);
+        for(let i=0;i<n;i++){const p=at(t0+(t1-t0)*i/n);
+          mb.bump(p.x,p.z,p.yaw,HW*2,.10+(i%3)*.04,"round");}
+        const pm=at((t0+t1)/2);
+        mb.texText(pm.x,pm.z,6,"WAVE","rgba(240,244,250,.55)",pm.yaw);break;}
+      case"chicane":{                       // 좌우로 흔드는 시케인 콘 게이트
+        const n=Math.max(4,L/40|0);
+        for(let i=0;i<n;i++){const p=at(t0+(t1-t0)*i/n);
+          const off=(i%2?1:-1)*HW*.55;
+          const g=side(p,off);
+          for(let c=0;c<3;c++){const q=side(at(t0+(t1-t0)*(i+c*.08)/n),off);
+            mb.prop("cone",q.x,q.z);}}
+        const pm=at((t0+t1)/2);
+        mb.texText(pm.x,pm.z,6,"CHICANE","rgba(255,210,80,.6)",pm.yaw);break;}
+      case"mogul":{                         // 좌우 엇갈린 모굴
+        const n=Math.max(6,L/18|0);
+        for(let i=0;i<n;i++){const p=at(t0+(t1-t0)*i/n);
+          const q=side(p,(i%2?1:-1)*HW*.42);
+          mb.bump(q.x,q.z,p.yaw,HW*.9,.15,"round");}
+        const pm=at((t0+t1)/2);
+        mb.texText(pm.x,pm.z,6,"MOGUL","rgba(240,244,250,.55)",pm.yaw);break;}
+      case"tunnel":{                        // 터널 — 벽 + 천장
+        const n=Math.max(6,L/14|0);
+        for(let i=0;i<=n;i++){const p=at(t0+(t1-t0)*i/n);
+          for(const s of[-1,1]){const q=side(p,s*(HW+1.6));
+            mb.box(q.x,p.y+3.4,q.z,1.6,6.8,15,0x39414d,{yaw:p.yaw,mu:.8,tag:"tunwall"});}
+          mb.visBox(p.x,p.y+7.2,p.z,HW*2+6,1.2,15,0x2b323c,{yaw:p.yaw});
+          if(i%2===0)mb.visBox(p.x,p.y+6.4,p.z,3.2,.5,3.2,0xffe9a8,{yaw:p.yaw});}
+        const pm=at(t0);
+        mb.texText(pm.x,pm.z,6,"TUNNEL","rgba(255,233,168,.7)",pm.yaw);break;}
+      case"banked":{                        // 뱅크 커브 — 바깥쪽을 들어 올린다
+        const n=Math.max(8,L/10|0);
+        for(let i=0;i<=n;i++){const p=at(t0+(t1-t0)*i/n);
+          const ph=Math.sin(i/n*Math.PI);
+          for(let s=1;s<=3;s++){const q=side(p,-(HW*s/3));
+            mb.stamp(q.x,q.z,7,(ii,jj,d)=>{
+              const idx=w.idx(ii,jj);
+              w.hMap[idx]=Math.max(w.hMap[idx],p.y+ph*1.7*(s/3));});}}
+        const pm=at((t0+t1)/2);
+        mb.texText(pm.x,pm.z,6,"BANKED","rgba(240,244,250,.55)",pm.yaw);break;}
+      case"split":{                         // 편측턱 — 한쪽 바퀴만 탄다
+        const n=Math.max(5,L/22|0);
+        for(let i=0;i<n;i++){const p=at(t0+(t1-t0)*i/n);
+          const q=side(p,(i%2?1:-1)*HW*.5);
+          mb.bump(q.x,q.z,p.yaw,HW*.8,.13,"sharp");}
+        const pm=at((t0+t1)/2);
+        mb.texText(pm.x,pm.z,6,"SPLIT","rgba(240,244,250,.55)",pm.yaw);break;}
+      case"jump":{                          // 점프대 + 착지 램프
+        const p=at((t0+t1)/2);
+        mb.ramp(p.x,p.z,p.yaw,17,26,HW*2,0xd8a13a);
+        const l=at((t0+t1)/2+.018);
+        mb.ramp(l.x,l.z,l.yaw+Math.PI,9,20,HW*2,0xd8a13a);
+        mb.texText(at(t0).x,at(t0).z,6,"JUMP","rgba(255,210,80,.75)",p.yaw);break;}
+      case"washboard":{                     // 빨래판
+        const n=Math.max(20,L/3|0);
+        for(let i=0;i<n;i++){const p=at(t0+(t1-t0)*i/n);
+          mb.box(p.x,w.height(p.x,p.z)+.03,p.z,HW*1.9,.07,.7,0x8f98a3,{yaw:p.yaw,mu:1,tag:"slat"});}
+        const pm=at((t0+t1)/2);
+        mb.texText(pm.x,pm.z,6,"WASHBOARD","rgba(240,244,250,.55)",pm.yaw);break;}
+      case"straight":{                      // 초고속 직선 — 차선 마킹
+        const n=Math.max(10,L/40|0);
+        for(let i=0;i<n;i++){
+          const a=at(t0+(t1-t0)*i/n),b=at(t0+(t1-t0)*(i+.5)/n);
+          for(const s of[-1,1]){
+            const p1=side(a,s*HW*.42),p2=side(b,s*HW*.42);
+            mb.texPath([{x:p1.x,z:p1.z},{x:p2.x,z:p2.z}],.5,"rgba(255,255,255,.75)");}}
+        const pm=at((t0+t1)/2);
+        mb.texText(pm.x,pm.z,10,"FULL THROTTLE","rgba(255,210,80,.7)",pm.yaw);break;}
+    }}
+
+  /* ── 가드레일: 노선 전체(다리 구간 제외 — 다리는 자체 난간) ── */
+  for(const seg of land)
+    if(seg.length>2)railAlong(mb,seg,HW*2+5,0xb9c2cc);
+
+  /* ── 종착 광장 '스카이 링' ── */
+  if(finale){
+    const e=at(1), CZ=e.z, CX=e.x;
+    const _rv=mb._resvOn;mb._resvOn=false;   // 도로 위 구조물이 예약에 걸리지 않게
+    mb.stamp(CX,CZ,220,(i,j)=>w.setS(i,j,S_ASP));
+    mb.texCircle(CX,CZ,210,"rgba(26,30,38,.85)");
+    mb.texCircle(CX,CZ,140,"rgba(255,210,80,.10)");
+    // 발사 램프(진입 방향)
+    const r0=at(.985);
+    mb.ramp(r0.x,r0.z,r0.yaw,24,52,HW*2,0xd8a13a);
+    // 공중 고리
+    {const RR=60,cy=50;
+     for(let k=0;k<40;k++){const a=k/40*Math.PI*2;
+       const yy=cy+Math.sin(a)*RR;if(yy<2)continue;
+       const q=side(e,Math.cos(a)*RR);
+       mb.visBox(q.x,yy,q.z,7,7,9,k%2?0xffd23e:0x3ddc84,{roll:a,yaw:e.yaw});}
+     for(const s of[-1,1]){const q=side(e,s*RR);
+       mb.box(q.x,cy/2,q.z,9,cy,9,0x6f7883,{mu:.9,tag:"ringleg"});}}
+    // 나선 타워 + 부유 링
+    for(let k=0;k<170;k++){
+      const t=k/170,a=t*Math.PI*8,r=52*(1-t*.62),y=6+t*234;
+      mb.visBox(CX+Math.cos(a)*r,y,CZ+70+Math.sin(a)*r,11,3.4,11,
+        k%3===0?0x6ee7ff:(k%3===1?0xffd23e:0xff7ab8),{yaw:a});}
+    mb.box(CX,120,CZ+70,14,240,14,0x39414d,{mu:.9,tag:"towercore"});
+    for(let ring=0;ring<3;ring++){
+      const ry=96+ring*58,rr2=84-ring*17;
+      for(let k=0;k<28;k++){const a=k/28*Math.PI*2;
+        mb.visBox(CX+Math.cos(a)*rr2,ry,CZ+70+Math.sin(a)*rr2,6,2.4,6,
+          ring===0?0xffd23e:(ring===1?0x6ee7ff:0x3ddc84),{yaw:a});}}
+    // 네온 기둥 서클
+    for(let k=0;k<24;k++){const a=k/24*Math.PI*2,r=190;
+      mb.visBox(CX+Math.cos(a)*r,44,CZ+Math.sin(a)*r,5,88,5,k%2?0x6ee7ff:0xff7ab8,{});
+      mb.box(CX+Math.cos(a)*r,6,CZ+Math.sin(a)*r,6,12,6,0x2a3038,{mu:.9,tag:"pillar"});}
+    mb.texText(CX,CZ+185,12,"THE END OF THE ROAD","rgba(255,255,255,.85)");
+    mb._resvOn=_rv;}
+  return{at,TOTAL};
 }
