@@ -59,12 +59,16 @@ const CARS=[
   /* 차고 — 계측: 차체 0.695m(포르쉐 0.557)로 14cm 높고, 그 때문에 타이어가 아치에
      1.6cm 모자라게 들어가 프레임과 안 맞아 보였다(포르쉐는 -8.8cm로 아치에 묻힌다).
      10cm 낮추면 아치여유가 포르쉐와 거의 같아진다. */
-  groundClear:.13,wheelVisFit:1,rideFix:true,rideLift:-.075,fitBumper:true,
+  /* rideLift — 서스펜션을 다시 짠 뒤(rest .30→.38, 처짐 계산 정확화) 차체가 9.3cm
+     내려앉아 로커가 노면 아래로 5.5cm 들어갔다. 그만큼 되올려 마이바흐(3.3cm)와
+     포르쉐(7.7cm) 사이에 놓는다. */
+  groundClear:.13,wheelVisFit:1,rideFix:true,rideLift:.035,fitBumper:true,
   /* 원본 휠을 쓰기 전에는 절차 휠이 아치보다 작아 보여 시각 배율 1.13을 넣었는데,
      이제 휠 지오메트리 반경(0.371)이 접지 반경과 정확히 같다. 배율을 남겨 두면
      보이는 타이어만 0.419가 돼 '휠과 타이어가 안 맞는' 상태가 된다 → 1로 되돌린다. */
   wheelVisScale:1,
-  lampInset:.105,                 // 램프를 프레임 더 깊숙이(앞·뒤 모두) — 안에서 밖으로 비춘다
+  procWheel:true,                 // 원본 림 대신 절차 재설계 휠(20 트윈스포크 + 내측 브레이크)
+  lampInset:.105,                // 램프를 프레임 더 깊숙이(앞·뒤 모두) — 안에서 밖으로 비춘다
   wheelTuck:.045,                 // 요청: 바퀴를 안쪽으로 약간 더
   tyreVisMul:.965,                // 요청: 타이어를 아주 약간 작게(시각 전용)
   chromeKit:{grilleW:.34,grilleH:.26,grilleY:.74,grilleZ:.20,slats:13,
@@ -81,17 +85,28 @@ const CARS=[
      차체 쪽은 스카이훅·헤이브·자세감쇠를 크게 올려 그대로 붙잡는다. */
   /* 요청: 찰랑거리는(웨프팅) 느낌 극대화 — 1차 스프링을 더 무르게, 스트로크는 더 길게.
      자세 제어는 피치·롤만 남기고 상하 방향은 살짝 풀어 물 위를 미끄러지는 느낌을 낸다. */
-  susp:{k:21000,c:5400,travel:.66,rest:.30,
-        prog:1.7,        // 프로그레시브 레이트(바닥칠 직전만 단단)
-        sky:34000,       // 스카이훅 — 완전히 붙잡지 않고 은은히 남긴다(찰랑거림)
-        compMul:.09,     // 압축(흡수)은 극도로 부드럽게
-        rebMul:4.2,      // 신장은 조여 방지턱 후 차체·뒷축이 솟지 않게
-        riseMul:3.4,     // 차체 상승 시 헤이브 댐퍼 강화
-        fCap:.40,        // 블로우오프 — 서스가 차체를 밀어올릴 힘 상한(중력 배수)
-        heave:30000,     // 상승 억제
-        preview:.52,     // 노면 예측 — 턱을 미리 읽고 스트로크를 준비
-        pvGain:16,
-        attq:20},        // 피치·롤 각속도 감쇠
+  /* 🔧 재설계 — '특정 지형에서 확 솟거나 땅에 딱 붙는' 원인을 계측으로 잡아 고쳤다.
+     ① travel(.66)이 기하학적 최대 압축(rest .30)보다 커서 cRel 이 0.45 이상 올라가지
+        못했다 → 프로그레시브 스프링이 끝까지 단단해지지 못하고 그대로 바닥을 쳤다.
+        (계측: 시케인 구간 바닥침 71.6%, 최대 9.8g) → travel ≤ rest 로 맞춘다.
+     ② 정하중 처짐이 스트로크의 66%나 돼 범프 여유가 10cm뿐이었다
+        → rest 를 늘리고 k 를 올려 처짐 42%·여유 21cm 로.
+     ③ rebMul 4.2(임계의 3.1배)가 연속 요철에서 바퀴를 못 펴게 해 차가 노면에
+        눌러앉았다(댐퍼 패킹) → 2.0 으로.
+     ④ fCap .40 은 지지력 상한이 정하중의 1.6배뿐이라 큰 입력을 못 받아냈다 → 1.15.
+     ⑤ sky·heave·pvGain 이 과해 차체가 조금만 떠도 강하게 끌어내렸다 → 절반 수준. */
+  suspTuned:true,        // 아래 값이 최종값 — boot 의 차종별 캐릭터 보정을 받지 않는다
+  susp:{k:24000,c:6800,travel:.36,rest:.38,
+        prog:1.2,        // 프로그레시브 레이트(바닥칠 직전만 단단)
+        sky:16000,       // 스카이훅 — 완전히 붙잡지 않고 은은히 남긴다(찰랑거림)
+        compMul:.24,     // 압축(흡수)은 부드럽게 — 0에 가까우면 요철에 그대로 처박힌다
+        rebMul:2.0,      // 신장은 조이되 임계의 2배 이내(더 조이면 노면에 눌러앉는다)
+        riseMul:2.6,     // 차체 상승 시 헤이브 댐퍼 강화
+        fCap:1.15,       // 블로우오프 — 서스가 차체를 밀어올릴 힘 상한(중력 배수)
+        heave:14000,     // 상승 억제
+        preview:.40,     // 노면 예측 — 턱을 미리 읽고 스트로크를 준비
+        pvGain:8,
+        attq:18},        // 피치·롤 각속도 감쇠
   arb:20000,
   engine:{maxT:850,redline:5600,idle:600},
   gears:[4.7,3.14,2.11,1.67,1.29,1.0,.84,.67],final:3.15,
@@ -549,6 +564,81 @@ function realTyreGeo(rimR,outR,width){
       color:i%2?0x191b1e:0x0a0b0d,
       y:Math.cos(a)*(outR*.985),z:Math.sin(a)*(outR*.985),rx:-a});}
   return _realTyreCache[k]=mergeGeoms(items);}
+/* 🛞 롤스로이스 21" 폴리시드 휠 — 절차 재설계.
+   원본 glTF 림은 스포크가 아주 얇은 판이라 멀리서 보면 통짜 흰 원반으로 뭉개지고,
+   브레이크가 스포크 '바깥쪽'(차 바깥면)에 붙어 빨간 덩어리가 튀어나와 있었다.
+   여기서는 배럴·폴리시드 립·다크 디쉬·20 트윈스포크·센터캡을 직접 만들고,
+   브레이크는 스포크 안쪽 깊숙이 넣어 스포크 사이로 들여다보이게 한다.
+   축은 로컬 x, +x 가 차 바깥쪽(거울 휠은 mirror=true 로 부호만 뒤집는다). */
+const _rrRimCache={};
+function rrRimGeo(rimR,hw,mirror){
+  const k=(rimR*1e3|0)+"_"+(hw*1e3|0)+(mirror?"M":"");
+  if(_rrRimCache[k])return _rrRimCache[k];
+  const S=mirror?-1:1, OUT=hw*.86*S, IN=-hw*.90*S;
+  const SPOKE=20, RS=rimR*.845;                       // 스포크가 닿는 반경
+  const items=[
+    // 림 배럴(안쪽 통) — 어두운 알로이. 열린 원통이라 안쪽이 비쳐 깊이가 생긴다
+    {geo:new THREE.CylinderGeometry(rimR*.925,rimR*.925,hw*1.92,30,1,true),
+     color:0x191c21,rz:Math.PI/2},
+    // 바깥 폴리시드 립(밝은 링) — 휠 윤곽을 또렷하게
+    {geo:new THREE.TorusGeometry(rimR*.925,rimR*.046,8,34),color:0x424952,ry:Math.PI/2,x:OUT},
+    {geo:new THREE.TorusGeometry(rimR*.895,rimR*.022,6,30),color:0x282d33,ry:Math.PI/2,x:OUT-hw*.20*S},
+    // 안쪽 립
+    {geo:new THREE.TorusGeometry(rimR*.91,rimR*.034,6,26),color:0x363c43,ry:Math.PI/2,x:IN},
+    // 디쉬(스포크 배경) — 어둡게 깔아 폴리시드 스포크가 도드라지게
+    {geo:new THREE.CylinderGeometry(rimR*.87,rimR*.74,hw*.30,30,1,true),
+     color:0x14171b,rz:Math.PI/2,x:OUT-hw*.42*S},
+    // 센터 캡(다크) + 폴리시드 링
+    {geo:new THREE.CylinderGeometry(rimR*.235,rimR*.215,hw*.34,20),
+     color:0x101317,rz:Math.PI/2,x:OUT-hw*.10*S},
+    {geo:new THREE.TorusGeometry(rimR*.235,rimR*.030,6,22),color:0x4a5158,ry:Math.PI/2,x:OUT-hw*.02*S},
+    // 허브 배지 — 어두운 자주(원형 RR 배지 느낌). 밝은 빨강은 눈에 튀어 절제한다
+    {geo:new THREE.CylinderGeometry(rimR*.085,rimR*.085,hw*.38,14),
+     color:0x3a1418,rz:Math.PI/2,x:OUT+hw*.03*S}];
+  /* 20 트윈스포크 — 한 쌍씩 살짝 벌려 롤스로이스 특유의 촘촘한 결을 만든다.
+     두께를 충분히 줘야 멀리서도 스포크가 하나하나 보인다(얇은 판이 문제였다).
+     ⚠ 회전은 rx:+a. rx:-a 로 두면 상자의 방향과 배치 각도가 z 부호만 어긋나
+     스포크가 서로 엇갈려 '4각 별' 모양이 된다(실측 렌더에서 확인). */
+  for(let i=0;i<SPOKE;i++){
+    const a=i*Math.PI*2/SPOKE;
+    for(const t of[-1,1]){
+      const off=t*rimR*.048;
+      items.push({geo:new THREE.BoxGeometry(hw*.34,RS*.84,rimR*.055),
+        color:i%2?0x353b43:0x434b55,
+        x:OUT-hw*.34*S,
+        y:Math.cos(a)*(RS*.52)-Math.sin(a)*off,
+        z:Math.sin(a)*(RS*.52)+Math.cos(a)*off, rx:a});}
+    // 스포크 끝단 — 림 립까지 이어 붙이는 짧은 보강
+    items.push({geo:new THREE.BoxGeometry(hw*.46,RS*.22,rimR*.15),
+      color:0x2e343b,x:OUT-hw*.26*S,
+      y:Math.cos(a)*(RS*.92),z:Math.sin(a)*(RS*.92),rx:a});}
+  return _rrRimCache[k]=mergeGeoms(items);}
+/* 비회전 브레이크 — 대구경 드릴드 디스크 + 캘리퍼. 스포크 안쪽에 놓는다. */
+const _rrBrakeCache={};
+function rrBrakeGeo(rimR,hw,mirror){
+  const k=(rimR*1e3|0)+"_"+(hw*1e3|0)+(mirror?"M":"");
+  if(_rrBrakeCache[k])return _rrBrakeCache[k];
+  const S=mirror?-1:1, X=-hw*.10*S;                  // 스포크(바깥)보다 안쪽
+  const R=rimR*.66;
+  const items=[
+    {geo:new THREE.CylinderGeometry(R,R,hw*.14,28),color:0x2c3138,rz:Math.PI/2,x:X},
+    {geo:new THREE.TorusGeometry(R*.99,rimR*.016,5,26),color:0x394047,ry:Math.PI/2,x:X+hw*.08*S},
+    // 디스크 햇(중앙 알루미늄)
+    {geo:new THREE.CylinderGeometry(R*.42,R*.42,hw*.26,18),color:0x2b3037,rz:Math.PI/2,x:X}];
+  // 드릴드 홀 — 어두운 점으로 표현(회전이 눈에 보인다)
+  for(let i=0;i<18;i++){const a=i*Math.PI*2/18;
+    items.push({geo:new THREE.CylinderGeometry(rimR*.022,rimR*.022,hw*.20,6),
+      color:0x14171b,rz:Math.PI/2,x:X+hw*.03*S,
+      y:Math.cos(a)*R*.78,z:Math.sin(a)*R*.78});}
+  // 캘리퍼(6피스톤) — 위쪽 뒤편에, 디스크를 감싸게
+  const ca=Math.PI*.30;
+  for(const dx of[-1,1])
+    items.push({geo:new THREE.BoxGeometry(hw*.24,R*.30,R*.62),color:0x5a1216,
+      x:X+dx*hw*.20*S,y:Math.cos(ca)*R*.86,z:Math.sin(ca)*R*.86,rx:ca});
+  items.push({geo:new THREE.BoxGeometry(hw*.56,R*.13,R*.58),color:0x4a0e12,
+    x:X,y:Math.cos(ca)*R*1.00,z:Math.sin(ca)*R*1.00,rx:ca});
+  return _rrBrakeCache[k]=mergeGeoms(items);}
+
 let _wheelGeoCache={};
 /* style="multi": 밝은 폴리시드 멀티스포크(마이바흐 GLS 순정 23인치 계열).
    원본 GLS 메시의 휠은 휠당 600삼각형 남짓에 림·타이어가 같은 재질(Color_M02)이라
@@ -866,11 +956,17 @@ class CarVisual{
     const linkMat=linked?new THREE.MeshPhongMaterial({color:0x2a2e35,flatShading:true,shininess:26}):null;
     const susLen=linked?spec.susp.rest*.62:0;   // 허브→차체 바닥까지만(펜더 위로 튀어나오지 않게)
     /* 원본 휠(림·타이어·브레이크까지 한 덩어리)이 있으면 절차 휠·브레이크를 대체한다 */
-    const rwR=realWheelGeo(e,spec.modelScale,false),rwL=realWheelGeo(e,spec.modelScale,true);
+    /* procWheel — 베이크 림 대신 절차 휠을 쓴다. 치수(림 반경·반폭)는 원본 베이크에서
+       그대로 가져와 타이어·아치와의 관계는 유지한다. */
+    const pw=spec.procWheel&&e&&e.wheel&&e.wheel.rimR
+      ?{r:e.wheel.rimR*spec.modelScale,hw:(e.wheel.rimHW||e.wheel.rimR*.42)*spec.modelScale}:null;
+    const rwR=pw?rrRimGeo(pw.r,pw.hw,false):realWheelGeo(e,spec.modelScale,false),
+          rwL=pw?rrRimGeo(pw.r,pw.hw,true) :realWheelGeo(e,spec.modelScale,true);
     if(rwR)this._wheelGeo=rwR;
     /* 절차 휠은 spec.wheels.radius 로 만들어지지만 원본 휠은 모델 치수 그대로다.
        wheelRadMul 등으로 물리 반경을 손봤다면 그 비율만큼 시각 반경도 맞춘다. */
-    const rwK=rwR?spec.wheels.radius/((((e.wheel.bb[4]-e.wheel.bb[1])/2)*spec.modelScale)||1):1;
+    // 절차 휠은 이미 실치수로 만들어지므로 보정하지 않는다
+    const rwK=pw?1:(rwR?spec.wheels.radius/((((e.wheel.bb[4]-e.wheel.bb[1])/2)*spec.modelScale)||1):1);
     /* 휠 아치 천장을 실측해 시각 휠의 상한을 만든다(아치 천장 - 타이어 반경*0.92). */
     {const pa=this.bodyMesh.geometry.attributes.position.array;
      const zw=spec.wheels.front, xw=spec.wheels.trackVis||spec.wheels.track;
@@ -884,7 +980,7 @@ class CarVisual{
         rwR?(rwR.groups.length>1?[MAT_TIRE_REAL,MAT_WHEEL_REAL]:MAT_WHEEL_REAL):MAT_DETAIL);
       m.castShadow=true;
       /* 원본 휠의 캘리퍼는 회전부에서 빼내 여기(비회전 형제)로 붙인다 */
-      const cg=rwR?realCaliperGeo(e,spec.modelScale,left):null;
+      const cg=pw?rrBrakeGeo(pw.r,pw.hw,left):(rwR?realCaliperGeo(e,spec.modelScale,left):null);
       const br=cg?new THREE.Mesh(cg,MAT_WHEEL_REAL):(rwR?null:new THREE.Mesh(bg,MAT_DETAIL));
       if(wvs*rwK!==1){m.scale.set(1,wvs*rwK,wvs*rwK);if(br)br.scale.set(1,wvs*rwK,wvs*rwK);}
       /* 새 타이어를 회전 메시의 자식으로 붙인다 — children[0] 이 돌면 함께 돈다 */

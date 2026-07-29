@@ -537,7 +537,11 @@ function boot(){
   const steps=[
     ["차량 모델 로드…",()=>{for(const c of CARS){
       if(!c.modelScale)applyModelSpec(c);
-      if(!c._tuned){c._tuned=true;                 // 서스펜션 튜닝(차종별 캐릭터 + 강한 롤저항)
+      /* suspTuned 인 차는 이 캐릭터 보정을 건너뛴다 — 스펙에 적힌 값이 최종값이다.
+         (롤스로이스는 아래 else 가지에서 travel×1.2 가 걸려 travel(.432) > rest(.38) 이
+          되면서 프로그레시브 스프링이 끝까지 굳지 못하고 바닥을 쳤다. 게다가
+          applyModelSpec 의 정하중 처짐 계산은 보정 '전' 값으로 돌아 차고까지 어긋났다.) */
+      if(!c._tuned&&!c.suspTuned){c._tuned=true;    // 서스펜션 튜닝(차종별 캐릭터 + 강한 롤저항)
         const sport=c.id==="gt"||c.id==="veloce";  // 스포츠카: 딱딱하게(짧은 스트로크·단단한 스프링)
         if(sport){
           c.susp.k*=1.45;                           // 스프링 강성 ↑ → 노면 그대로 전달(딱딱)

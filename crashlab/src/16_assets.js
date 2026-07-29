@@ -153,6 +153,20 @@ const Assets=(()=>{
   return{geo,geoSplit,scenery,arrays};
 })();
 
+/* 정하중 스프링 처짐(정지 시 눌리는 양). 예전에는 mass·g/(4k) 라는 선형식을 썼는데
+   프로그레시브 스프링(susp.prog)에서는 실제보다 훨씬 크게 나온다
+   (실측: 롤스로이스 선형식 29.1cm vs 실제 19.8cm → 차가 설계보다 9cm 높이 앉았다).
+   Vehicle 이 실제로 쓰는 kEff 식을 그대로 이분법으로 풀어 정확히 맞춘다. */
+function staticSag(spec){
+  const s=spec.susp,W=spec.mass*9.81/4;
+  const lin=W/s.k;
+  if(!s.prog||!s.travel)return lin;
+  const F=c=>{const cr=c/s.travel;return s.k*(1+s.prog*cr*cr*3)*c;};
+  let lo=0,hi=Math.min(s.travel,Math.max(lin,.01));
+  if(F(hi)<W)return hi;
+  for(let i=0;i<48;i++){const m=(lo+hi)/2;if(F(m)<W)lo=m;else hi=m;}
+  return(lo+hi)/2;}
+
 /* 모델 기준 물리 스펙 보정 — CARS 로드 시 1회 */
 function applyModelSpec(spec){
   const e=BAKED[spec.model];if(!e)return;
@@ -198,8 +212,7 @@ function applyModelSpec(spec){
      차체가 그만큼 더 낮게 앉아 로커·언더바디가 지면을 파고든다.
      rideFix를 켜면 그 처짐량(+rideLift)만큼 마운트를 내려 설계 차고를 맞춘다. */
   if(spec.rideFix){
-    const compEq=spec.mass*9.81/(4*spec.susp.k);
-    spec.wheels.y-=compEq+(spec.rideLift||0);}
+    spec.wheels.y-=staticSag(spec)+(spec.rideLift||0);}
   spec.engine.maxT*=wr/oldR;                                     // 휠 반경 변화 보상
   // 실측(큰) 휠은 기어가 상대적으로 길어져 RPM이 낮게 걸림 → 최종감속비를
   // 휠 반경에 맞춰 짧게 보정 (변속이 정상 작동, 가속 펀치 확보)
@@ -209,7 +222,7 @@ function applyModelSpec(spec){
   // 휠 접지 하중이 사라지고 주행 불가가 되는 문제 방지 → 휠 지지 평형에서
   // 차대(박스 바닥)가 지면 위 clr 만큼 뜨도록 hy 상한. (지상고 확보)
   if(spec.realWheels){
-    const compEq=spec.mass*9.81/(4*spec.susp.k);                 // 정하중 스프링 압축량
+    const compEq=staticSag(spec);                                // 정하중 스프링 압축량
     const maxRay=spec.susp.rest+spec.wheels.radius;
     const yEq=maxRay-compEq-spec.wheels.y;                       // 휠로 지지될 때 CoM 높이
     const clr=spec.groundClear!==undefined?spec.groundClear:.16; // 목표 지상고(m)

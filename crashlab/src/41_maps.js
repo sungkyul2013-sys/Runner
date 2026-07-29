@@ -272,24 +272,88 @@ class MapBuilder{
      맵 제작 중 실수로 도로를 가로막는 벽/난간이 생겨도 여기서 구조적으로 걸러진다.
      (설계상 노면에 있어야 하는 것들 — 콘·타이어월·주차차량·교각·터널벽 등 — 은 보존) */
   clearRoadObstacles(){
-    const w=this.world,R=w.res,N=R+1,cell=w.cell,half=w.size*.5;
+    const w=this.world,cell=w.cell,half=w.size*.5;
     const S=SURF_IDS;
-    const paved=s=>{const n=S[s];return n==="asphalt"||n==="lane"||n==="curb";};
-    // 소형 장식물 + 대형 구조물까지 — 도로 '내부'를 막고 있으면 무엇이든 제거한다.
-    // (활주로/도로를 가로막던 터미널·격납고·창고 같은 큰 벽이 남아 주행이 끊기는 문제 방지)
-    const REMOVE=/^(rail|railpost|railbar|tree|treesTall|plinth|statue|monument|planter|hedge|bench|parasol|boat|dock|barrel|beam|scaffold|lightlamp|lighthouse|boathouse|terminal|hangar|warehouse|tower|towercab|cranleg|cranbeam|stand|building|roofunit|tank|mast)$/;
+    const paved=(x,z)=>{const n=S[w.surf(x,z)];
+      return n==="asphalt"||n==="lane"||n==="curb";};
+    // 소형 장식물 + 대형 구조물 + '설계상 노면 밖에 있어야 하는' 시설물까지.
+    // (설계상 노면에 있어야 하는 것 — 램프·킥·시소·연석·빨래판·교각·터널벽·링 다리 — 은
+    //  아예 목록에 없으므로 어떤 경우에도 지워지지 않는다)
+    /* 1군 — 포장면 위에 있을 이유가 전혀 없는 것. 노면 안이면 무조건 제거 */
+    const REMOVE=/^(rail|railpost|railbar|tree|treesTall|plinth|statue|monument|planter|hedge|bench|parasol|boat|dock|barrel|beam|scaffold|lightlamp|lighthouse|boathouse|terminal|hangar|warehouse|tower|towercab|cranleg|cranbeam|stand|building|roofunit|tank|mast|wall|fence|barrier|kiosk|sign|pole)$/;
+    /* 2군 — 넓은 포장면(주차장·야적장·서킷 런오프) 위에는 정상적으로 놓이는 것.
+       '도로라는 띠' 위에 있을 때만 제거한다. */
+    const REMOVE2=/^(container|parkedcar|tirewall|marshal|cone|crate|pallet)$/;
+    /* ── '도로 한가운데' 판정 ──
+       예전에는 사방 2셀이 포장이면 도로 안이라고 봤는데, 그러면 주차장·광장·컨테이너
+       야적장처럼 넓은 포장면 위의 정상 배치물까지 전부 도로로 오인했다(실측: 그랜드
+       133건 중 대부분이 오검출). 도로는 '띠'라는 성질을 쓴다 —
+         · 어느 방향으로는 포장이 20m 이상 이어지고(주행 방향)
+         · 그와 직교하는 방향으로는 14m 안쪽에서 포장이 끝난다(도로 폭)
+         · 양옆 모두 3m 이상 포장 = 가장자리가 아니라 노면 안쪽
+       넓은 광장·주차장은 사방으로 포장이 이어지므로 이 조건에서 빠진다. */
+    const RUN=46, ST=Math.max(1.6,cell*.5);
+    const run=(x,z,dx,dz)=>{let d=ST;
+      while(d<=RUN&&paved(x+dx*d,z+dz*d))d+=ST;
+      return d-ST;};
+    const onRoad=(x,z)=>{
+      if(!paved(x,z))return false;
+      const D=[[1,0],[0,1],[.7071,.7071],[.7071,-.7071]];
+      for(let a=0;a<4;a++){
+        const[dx,dz]=D[a],[px,pz]=D[(a+2)%4];
+        const along=Math.min(run(x,z,dx,dz),run(x,z,-dx,-dz));
+        if(along<20)continue;
+        const l=run(x,z,px,pz),r=run(x,z,-px,-pz);
+        if(l<3||r<3)continue;                 // 노면 가장자리(난간 정위치)는 보존
+        if(Math.min(l,r)<=14)return true;}    // 폭이 유한한 '띠' = 도로
+      return false;};
+    // 위에 다른 구조물이 얹혀 있으면 그것을 받치는 기둥이므로 지우지 않는다
+    const supports=b=>{
+      const top=b.c.y+b.half.y;
+      for(const o of w.boxes){if(o===b)continue;
+        if(Math.abs(o.c.x-b.c.x)>o.half.x+b.half.x+2)continue;
+        if(Math.abs(o.c.z-b.c.z)>o.half.z+b.half.z+2)continue;
+        /* '바로 위에 얹혀 있다'만 인정. 여유를 1.5m 로 잡았더니 같은 높이에 나란히
+           선 가드레일끼리 서로를 받치는 것으로 판정돼 하나도 지워지지 않았다. */
+        const ob=o.c.y-o.half.y;
+        if(ob>top-.35&&ob<top+6)return true;}
+      return false;};
+    const R=w.res;
+    const at=(i,j)=>{const n=S[w.sMap[w.idx(i,j)]];
+      return n==="asphalt"||n==="lane"||n==="curb";};
     const kept=[];let removed=0;
     for(const b of w.boxes){
-      const t=b.tag||"";
-      if(!REMOVE.test(t)){kept.push(b);continue;}
+      const t=b.tag||"",t1=REMOVE.test(t),t2=!t1&&REMOVE2.test(t);
+      if(!t1&&!t2){kept.push(b);continue;}
       const gy=w.height(b.c.x,b.c.z),bot=b.c.y-b.half.y,top=b.c.y+b.half.y;
       if(bot>gy+1.6||top<gy+.12){kept.push(b);continue;}      // 공중/지하는 무관
+      if(top-gy<.35){kept.push(b);continue;}                  // 넘어갈 수 있는 낮은 것
       const gi=Math.round((b.c.x+half)/cell),gj=Math.round((b.c.z+half)/cell);
       if(gi<2||gj<2||gi>R-2||gj>R-2){kept.push(b);continue;}
-      const at=(i,j)=>paved(w.sMap[w.idx(i,j)]);
-      // 노면 '내부' 판정: 좌우·전후 2셀이 모두 포장 → 도로 한가운데(가장자리 난간은 보존)
-      if(at(gi,gj)&&at(gi-2,gj)&&at(gi+2,gj)&&at(gi,gj-2)&&at(gi,gj+2)){removed++;continue;}
-      kept.push(b);}
+      const inside=t1
+        ? (at(gi,gj)&&at(gi-2,gj)&&at(gi+2,gj)&&at(gi,gj-2)&&at(gi,gj+2))
+        : onRoad(b.c.x,b.c.z);
+      if(!inside){kept.push(b);continue;}
+      if(supports(b)){kept.push(b);continue;}
+      removed++;}
+    if(removed){w.boxes.length=0;for(const b of kept)w.boxes.push(b);}
+    return removed;}
+  /* 🛣️ 노선 회랑 청소 — 새로 깐 도로가 기존 도시 구조물을 관통할 때,
+     차로 위에 남은 것을 노선 기준으로 직접 걷어낸다(포장 모양에 의존하지 않는다). */
+  clearCorridor(route,halfW,keepAfter){
+    const w=this.world,kept=[];let removed=0;
+    const KEEP=/^(bridge|rail|pillar|slat|ramp|kick|tunwall|ringleg|towercore|pit)$/;
+    for(let n=0;n<w.boxes.length;n++){
+      const b=w.boxes[n];
+      if(n>=keepAfter||KEEP.test(b.tag||"")){kept.push(b);continue;}
+      let hit=false;
+      for(const p of route){
+        if(Math.abs(p.x-b.c.x)>halfW+b.r||Math.abs(p.z-b.c.z)>halfW+b.r)continue;
+        if(Math.hypot(p.x-b.c.x,p.z-b.c.z)>halfW+b.r)continue;
+        const ry=Math.max(p.y,w.height(p.x,p.z));
+        if(b.c.y-b.half.y>ry+2.5||b.c.y+b.half.y<ry+.15)continue;
+        hit=true;break;}
+      if(hit)removed++;else kept.push(b);}
     if(removed){w.boxes.length=0;for(const b of kept)w.boxes.push(b);}
     return removed;}
   /* 스폰·장소를 '실제 달릴 수 있는 노면' 위로 옮긴다.

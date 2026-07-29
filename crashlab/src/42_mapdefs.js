@@ -744,7 +744,13 @@ const MAPS=[
   // 그랜드스탠드 3동(계단식) + 마샬 포스트
   for(const[gx,gz,gyaw]of[[-300,-320,0],[-120,-330,0],[380,80,Math.PI/2]])
     for(let t=0;t<3;t++)mb.box(gx,4+t*3,gz-t*4*Math.cos(gyaw),(56-t*6),2.6,7,t?0x2e3640:0x39424e,{yaw:gyaw,mu:.5,tag:"stand"});
-  for(let k=0;k<8;k++){const rp=road[(k*70)%road.length];mb.box(rp.x,w.height(rp.x,rp.z)+1.1,rp.z-0,.4,2.2,.4,0xffd23e,{mu:.5,tag:"marshal",noVis:false});}
+  /* 마샬 포스트는 트랙 '옆'에 세운다 — 예전에는 중심선 좌표를 그대로 써서
+     주행선 한가운데에 기둥 8개가 박혀 있었다(실측: 레이스웨이 도로중앙 장애물 6건). */
+  for(let k=0;k<8;k++){
+    const i=(k*70)%road.length, rp=road[i], nx2=road[(i+3)%road.length];
+    const dx=nx2.x-rp.x,dz=nx2.z-rp.z,l=Math.hypot(dx,dz)||1;
+    const px=rp.x+dz/l*19, pz=rp.z-dx/l*19;
+    mb.box(px,w.height(px,pz)+1.1,pz,.4,2.2,.4,0xffd23e,{mu:.5,tag:"marshal",noVis:false});}
   // 나무(트랙 밖)
   {let sd=17;const rr=()=>{sd=(sd*48271)%2147483647;return sd/2147483647;};
    for(let k=0;k<26;k++){const a=rr()*Math.PI*2,r=140+rr()*260,tx=Math.cos(a)*r,tz=Math.sin(a)*r*.92;
@@ -1728,6 +1734,10 @@ function buildExpressway(mb,cfg){
   (w.exRoutes=w.exRoutes||[]).push(route);
   const HW=cfg.halfWidth||15;             // 반폭
   const finale=cfg.finale!==false;
+  /* 이 시점까지 세워져 있던 것(= 기존 도시 구조물)만 회랑 청소 대상. 아래에서
+     고속도로가 직접 세우는 터널벽·가드레일·점프대는 인덱스가 뒤라 건드리지 않는다.
+     (실측: 메가시티 차로 한가운데에 창고 1동이 그대로 서 있었다) */
+  const _preCount=w.boxes.length;
   /* 누적 거리 → 진행률 */
   const acc=[0];
   for(let k=1;k<route.length;k++)
@@ -1761,6 +1771,7 @@ function buildExpressway(mb,cfg){
   for(const seg of bridge){
     if(seg.length<2)continue;
     bridgeDeck(mb,seg,HW*2,{deck:0x4e5560,rail:0xd7dee6,pillar:0x7b838e});}
+  mb.clearCorridor(route,HW+4,_preCount);   // 차로를 가로막는 기존 구조물 제거
 
   /* ── 재미 구간 ── */
   const SEC=cfg.sections||[
