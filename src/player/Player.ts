@@ -9,7 +9,7 @@ import {
   SLIDE_DURATION,
 } from '../config/constants';
 import type { BoardColors } from '../data/boards';
-import { CHARACTERS, getCharacter } from '../data/characters';
+import { CHARACTERS, type CharColors } from '../data/characters';
 import { Character, type Pose } from './Character';
 
 /** Z position the player is anchored at; the world scrolls past in +Z. */
@@ -169,11 +169,11 @@ export class Player {
     (this.boardGlow.material as THREE.MeshBasicMaterial).color.setHex(c.glow);
   }
 
-  /** Swap in a different character look without touching the physics. */
-  applyCharacterId(id: string): void {
+  /** Swap in a different look (character + outfit) without touching physics. */
+  applyLook(colors: CharColors): void {
     this.group.remove(this.rig.group);
     this.rig.dispose();
-    this.rig = new Character(getCharacter(id).colors);
+    this.rig = new Character(colors);
     this.group.add(this.rig.group);
   }
 

@@ -14,8 +14,11 @@ external art, runs offline.
   tagged boundary walls and water towers.
 - **Obstacle vocabulary** — carriages (short/long, low/full height), an
   **oncoming express** that rushes the player with a telegraphed warning,
-  boarding **ramps**, jump hurdles, roll-under gantries (including ones mounted
-  on carriage roofs), signal pylons, buffer stops and crate stacks.
+  **tunnel bores** whose soffit scrapes anyone still up on a roof, boarding
+  **ramps**, jump hurdles, roll-under gantries (including ones mounted on
+  carriage roofs), signal pylons, buffer stops and crate stacks. Overhead
+  clearance is modelled physically: standing vs rolling height against a
+  per-cell ceiling, shared by collision, coin routing and the checker.
 - **Roof running**: ramps lift you to low-roof height; from a roof you can hop
   to a full-height rake. Ramp slopes are interpolated analytically so support
   height always matches the art.
@@ -44,7 +47,9 @@ external art, runs offline.
 
 ## Meta
 
-- **12 characters**, each with a hand-built look and a passive perk.
+- **12 characters**, each with a hand-built look and a passive perk, plus
+  **36 outfits** (two alternates each) that re-style the rig without touching
+  the perk — previewed live on the gallery card and carried into the run.
 - **8 hoverboards** with their own perks and liveries.
 - **Missions**: three live at a time; clearing a set banks coins and raises the
   permanent score multiplier by one, then rolls a fresh, harder set. Any single
@@ -67,8 +72,9 @@ external art, runs offline.
   word-hunt strip, hoverboard button with its ride gauge, mission toasts,
   express warnings, combo meter, resume countdown.
 - Menus: home with a live 3D runner and a compact mission strip, crew and board
-  galleries with previews, shop, and a records hub (missions / top runs / daily
-  / world tour / achievements), plus settings, help and a rich results screen.
+  galleries with live previews and an inline outfit swatch row, shop, and a
+  records hub (missions / top runs / daily / world tour / achievements), plus
+  settings, help and a rich results screen.
 - Juice: bloom, particle bursts, screen shake, hit-stop, coin combos,
   near-misses, district banners, new-record celebration; synthesised Web Audio
   SFX (including the inspector's whistle) and a looping BGM.
@@ -79,11 +85,12 @@ external art, runs offline.
 
 - `npm run build` — strict `tsc --noEmit` + Vite bundle.
 - `npm run check:templates` — walks every layout template with the real jump
-  arc, roll window, roof heights and ramp-boarding rules, proving all 32 are
-  clearable, and checks no two pieces overlap.
+  arc, roll window, roof heights, overhead clearance and ramp-boarding rules,
+  proving all 35 are clearable, and checks no two pieces overlap.
 - `npm run check:meta` — data integrity plus live save behaviour: economy,
-  buying/equipping, mission progress and set rollover, the word hunt, run
-  recording and the top-run board, milestones, achievements and the daily streak.
+  buying/equipping characters, boards and outfits, mission progress and set
+  rollover, the word hunt, run recording and the top-run board, milestones,
+  achievements and the daily streak.
 - `npm run build:standalone` — regenerates the self-contained `play.html`.
 - Browser pass (Playwright + Chromium): menus, galleries, a full run, pause and
   results verified error-free at both desktop and phone viewports.

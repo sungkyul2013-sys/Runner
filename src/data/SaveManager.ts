@@ -1,4 +1,5 @@
 import { HUNT_WORD } from '../config/powerups';
+import { outfitKey } from './outfits';
 import { getMission, MISSIONS, rollMissions, setReward, type MissionMetric } from './missions';
 
 const KEY = 'metrosurf.save';
@@ -70,6 +71,10 @@ export interface SaveData {
   selectedChar: string;
   ownedBoards: string[];
   selectedBoard: string;
+  /** Owned outfits as `charId:outfitId` keys (defaults are always owned). */
+  ownedOutfits: string[];
+  /** Equipped outfit per character id. */
+  outfits: Record<string, string>;
 
   upgrades: Record<string, number>;
   inventory: Inventory;
@@ -112,6 +117,8 @@ function defaults(): SaveData {
     selectedChar: 'jino',
     ownedBoards: ['standard'],
     selectedBoard: 'standard',
+    ownedOutfits: [],
+    outfits: {},
     upgrades: {},
     inventory: { headstart: 0, booster: 0, mystery: 0, board: 0 },
     missions: rollMissions(1),
@@ -166,6 +173,8 @@ export class SaveManager {
             ...p,
             ownedChars: p.ownedChars?.length ? p.ownedChars : base.ownedChars,
             ownedBoards: p.ownedBoards?.length ? p.ownedBoards : base.ownedBoards,
+            ownedOutfits: [...(p.ownedOutfits ?? [])],
+            outfits: { ...p.outfits },
             upgrades: { ...p.upgrades },
             inventory: { ...base.inventory, ...p.inventory },
             missions: p.missions?.length === 3 ? p.missions : base.missions,
@@ -242,6 +251,25 @@ export class SaveManager {
     this.d.selectedChar = id;
     this.save();
   }
+  /** Outfits: the default fit is free for every runner. */
+  ownsOutfit(charId: string, outfitId: string): boolean {
+    return outfitId === 'default' || this.d.ownedOutfits.includes(outfitKey(charId, outfitId));
+  }
+  buyOutfit(charId: string, outfitId: string): void {
+    const key = outfitKey(charId, outfitId);
+    if (!this.d.ownedOutfits.includes(key)) this.d.ownedOutfits.push(key);
+    this.save();
+  }
+  selectOutfit(charId: string, outfitId: string): void {
+    this.d.outfits[charId] = outfitId;
+    this.save();
+  }
+  /** The outfit currently worn by a character (falls back to the default). */
+  outfitOf(charId: string): string {
+    const id = this.d.outfits[charId];
+    return id && this.ownsOutfit(charId, id) ? id : 'default';
+  }
+
   ownsBoard(id: string): boolean {
     return this.d.ownedBoards.includes(id);
   }

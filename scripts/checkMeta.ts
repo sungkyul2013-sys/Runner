@@ -15,6 +15,7 @@ import { CONSUMABLES } from '../src/data/consumables';
 import { JOURNEY } from '../src/data/journey';
 import { getMission, goalFor, MISSIONS, rollMissions, setReward } from '../src/data/missions';
 import { MODES } from '../src/data/modes';
+import { getOutfit, OUTFITS, outfitsFor, resolveColors } from '../src/data/outfits';
 import { SaveManager } from '../src/data/SaveManager';
 import { UPGRADES } from '../src/data/upgrades';
 
@@ -34,6 +35,17 @@ check('key-priced headliners exist', CHARACTERS.filter((c) => c.key).length >= 2
 check('8 boards', BOARDS.length === 8);
 check('starter board is free', getBoard('standard').price === 0);
 check('every board id is unique', new Set(BOARDS.map((b) => b.id)).size === BOARDS.length);
+check('every character has a fit list', CHARACTERS.every((c) => outfitsFor(c.id).length >= 3));
+check('every fit list starts with the free default',
+  CHARACTERS.every((c) => outfitsFor(c.id)[0].id === 'default' && outfitsFor(c.id)[0].price === 0));
+check('outfit ids are unique per character',
+  CHARACTERS.every((c) => new Set(outfitsFor(c.id).map((o) => o.id)).size === outfitsFor(c.id).length));
+check('no stray outfit lists', Object.keys(OUTFITS).every((id) => CHARACTERS.some((c) => c.id === id)));
+check('an outfit only overrides part of the palette',
+  resolveColors('jino', 'varsity').skin === getCharacter('jino').colors.skin
+  && resolveColors('jino', 'varsity').top === getOutfit('jino', 'varsity').colors.top);
+check('an unknown outfit falls back to the default',
+  resolveColors('jino', 'nope').top === getCharacter('jino').colors.top);
 check('5 modes', MODES.length === 5);
 check('exactly one mode blocks revives', MODES.filter((m) => !m.reviveAllowed).length === 1);
 check('6 upgrades', UPGRADES.length === 6);
@@ -81,6 +93,23 @@ check('key purchase', save.spendKeys(noir.price));
 save.buyChar('noir');
 check('owns the key character', save.ownsChar('noir'));
 check('key overspend rejected', save.spendKeys(99999) === false);
+
+// ── Outfits ───────────────────────────────────────────────────────────────
+{
+  check('default fit is owned for free', save.ownsOutfit('jino', 'default'));
+  const alt = outfitsFor('jino')[1];
+  check('alternate fit starts locked', !save.ownsOutfit('jino', alt.id));
+  check('an unowned fit is never worn', save.outfitOf('jino') === 'default');
+  const coinsBefore = save.data.coins;
+  check('buying a fit charges for it', save.spend(alt.price) && save.data.coins === coinsBefore - alt.price);
+  save.buyOutfit('jino', alt.id);
+  save.selectOutfit('jino', alt.id);
+  check('the fit is owned and worn', save.ownsOutfit('jino', alt.id) && save.outfitOf('jino') === alt.id);
+  check('the worn fit changes the palette',
+    resolveColors('jino', save.outfitOf('jino')).top === alt.colors.top);
+  save.selectOutfit('jino', 'locked-id');
+  check('selecting a fit you do not own falls back', save.outfitOf('jino') === 'default');
+}
 
 // ── Upgrades ──────────────────────────────────────────────────────────────
 const beforeLvl = save.upgradeLevel('magnet');

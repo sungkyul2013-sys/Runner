@@ -5,7 +5,8 @@ import { GameState } from '../core/GameStateManager';
 import type { RunnerGame } from '../core/RunnerGame';
 import { ACHIEVEMENTS, DAILY } from '../data/achievements';
 import { BOARDS, type BoardDef } from '../data/boards';
-import { CHARACTERS, type CharacterDef } from '../data/characters';
+import { CHARACTERS, type CharColors, type CharacterDef } from '../data/characters';
+import { outfitsFor, resolveColors } from '../data/outfits';
 import { CONSUMABLES } from '../data/consumables';
 import { JOURNEY } from '../data/journey';
 import { getMission } from '../data/missions';
@@ -302,7 +303,8 @@ export class ScreenManager {
     const charPill = el('button');
     charPill.className = 'ms-chip';
     charPill.style.cssText += 'cursor:pointer;font-size:13px;pointer-events:auto;border:none';
-    charPill.innerHTML = `<span style="font-size:16px">🦸</span><b style="color:${hex(c.colors.accent)}">${c.name}</b>
+    const worn = resolveColors(c.id, this.save.outfitOf(c.id));
+    charPill.innerHTML = `<span style="font-size:16px">🦸</span><b style="color:${hex(worn.accent)}">${c.name}</b>
       <span style="opacity:.55;font-size:11px">${c.blurb}</span>`;
     charPill.addEventListener('click', () => this.go('characters'));
     const boardPill = el('button');
@@ -490,12 +492,14 @@ export class ScreenManager {
       if (selected) card.className = 'ms-card sel';
       else if (!owned) card.className = 'ms-card locked';
 
+      const worn = resolveColors(c.id, this.save.outfitOf(c.id));
       card.append(
-        this.figure(c, selected),
-        el('div', { font: `900 19px/1 'Trebuchet MS',system-ui`, color: hex(c.colors.accent) }, c.name),
+        this.figure(worn, selected),
+        el('div', { font: `900 19px/1 'Trebuchet MS',system-ui`, color: hex(worn.accent) }, c.name),
         el('div', { font: '800 11px/1.35', opacity: '0.95', minHeight: '30px' }, c.blurb),
         el('div', { font: '600 10px/1.4', opacity: '0.5', minHeight: '26px' }, c.bio),
       );
+      if (owned) card.append(this.outfitRow(c));
       if (selected) {
         card.append(el('div', { color: UI.gold, font: `900 13px/1` }, '✓ 장착 중'));
       } else if (owned) {
@@ -524,15 +528,15 @@ export class ScreenManager {
     }
   }
 
-  /** A stacked-box mini runner built from the character's palette. */
-  private figure(c: CharacterDef, popped: boolean): HTMLDivElement {
-    const skin = hex(c.colors.skin);
-    const hair = hex(c.colors.hair);
-    const top = hex(c.colors.top);
-    const bottom = hex(c.colors.bottom);
-    const shoes = hex(c.colors.shoes);
-    const cap = hex(c.colors.cap);
-    const accent = hex(c.colors.accent);
+  /** A stacked-box mini runner built from a resolved character palette. */
+  private figure(colors: CharColors, popped: boolean): HTMLDivElement {
+    const skin = hex(colors.skin);
+    const hair = hex(colors.hair);
+    const top = hex(colors.top);
+    const bottom = hex(colors.bottom);
+    const shoes = hex(colors.shoes);
+    const cap = hex(colors.cap);
+    const accent = hex(colors.accent);
 
     const stage = el('div', {
       position: 'relative', width: '100%', height: '116px', display: 'flex',
@@ -569,6 +573,62 @@ export class ScreenManager {
        '<span style="width:5px;height:5px;background:#20222c;border-radius:50%"></span>'));
     stage.append(fig);
     return stage;
+  }
+
+  /**
+   * The fit row under an owned runner: one swatch per outfit, showing the top,
+   * cap and accent colours. Tap to equip; tap a locked one to buy it.
+   */
+  private outfitRow(c: CharacterDef): HTMLDivElement {
+    const list = outfitsFor(c.id);
+    const wornId = this.save.outfitOf(c.id);
+    const row = el('div', {
+      display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center',
+      flexWrap: 'wrap', paddingTop: '7px', marginTop: '1px',
+      borderTop: '1px solid rgba(255,255,255,.1)', width: '100%',
+    });
+    for (const o of list) {
+      const owned = this.save.ownsOutfit(c.id, o.id);
+      const on = wornId === o.id;
+      const colors = resolveColors(c.id, o.id);
+      const btn = el('button', {
+        position: 'relative', width: '44px', padding: '4px 0 5px', cursor: 'pointer',
+        pointerEvents: 'auto', borderRadius: '11px',
+        border: `2px solid ${on ? UI.gold : 'rgba(255,255,255,.14)'}`,
+        background: on ? 'rgba(255,210,63,.14)' : 'rgba(255,255,255,.05)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+        filter: owned ? 'none' : 'saturate(.5) brightness(.72)',
+        transition: 'transform .13s cubic-bezier(.34,1.6,.5,1)',
+      });
+      btn.innerHTML =
+        `<span style="display:flex;gap:2px">
+           <i style="width:9px;height:14px;border-radius:3px;background:${hex(colors.cap)}"></i>
+           <i style="width:11px;height:14px;border-radius:3px;background:${hex(colors.top)}"></i>
+           <i style="width:6px;height:14px;border-radius:3px;background:${hex(colors.accent)}"></i>
+         </span>` +
+        `<span style="font:800 8px/1 system-ui;opacity:.8;white-space:nowrap">
+           ${owned ? o.name : (o.key ? `🗝️${o.price}` : `🪙${o.price}`)}</span>`;
+      btn.addEventListener('click', () => {
+        if (owned) {
+          this.save.selectOutfit(c.id, o.id);
+          if (this.save.data.selectedChar === c.id) this.game.refreshLoadout();
+          this.audio.ui();
+        } else {
+          const ok = o.key ? this.save.spendKeys(o.price) : this.save.spend(o.price);
+          if (!ok) {
+            this.audio.ui();
+            return;
+          }
+          this.save.buyOutfit(c.id, o.id);
+          this.save.selectOutfit(c.id, o.id);
+          if (this.save.data.selectedChar === c.id) this.game.refreshLoadout();
+          this.audio.power();
+        }
+        this.refresh();
+      });
+      row.append(btn);
+    }
+    return row;
   }
 
   // ── View: BOARDS ──────────────────────────────────────────────────────────

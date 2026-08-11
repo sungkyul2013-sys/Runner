@@ -19,6 +19,7 @@ import {
 import { AudioManager } from '../audio/AudioManager';
 import { BOARD_BASE_SECONDS, getBoard } from '../data/boards';
 import { getCharacter } from '../data/characters';
+import { resolveColors } from '../data/outfits';
 import { getMission, type MissionMetric } from '../data/missions';
 import { CHECKPOINT_DIST, getMode, type ModeDef } from '../data/modes';
 import { SaveManager, type GameMode } from '../data/SaveManager';
@@ -182,10 +183,11 @@ export class RunnerGame extends Game {
     this.score.scoreBonus = (a.scoreMult ?? 1) - 1;
     this.score.coinMult = a.coinMult ?? 1;
     this.headstartMetres = 200 + this.save.upgradeLevel('headstart') * 150;
-    this.trailColor = c.colors.trail;
+    const look = resolveColors(c.id, this.save.outfitOf(c.id));
+    this.trailColor = look.trail;
     this.player.setLaneSpeedMult(a.laneSpeedMult ?? 1);
     this.player.setLowGravity(this.lowGravity);
-    this.player.applyCharacterId(c.id);
+    this.player.applyLook(look);
     this.pickups.tokenMagnet = a.tokenMagnet ?? false;
 
     const b = getBoard(this.save.data.selectedBoard);
