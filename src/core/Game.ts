@@ -1,4 +1,5 @@
-import { BASE_SPEED, MAX_SPEED, SPEED_RAMP_PER_SEC } from '../config/constants';
+import { BASE_SPEED, DISTRICTS, MAX_SPEED, SPEED_RAMP_PER_SEC } from '../config/constants';
+import { Weather, weatherFor } from '../fx/Weather';
 import { Chase } from '../player/Chase';
 import { InputController, type Intent } from '../player/InputController';
 import { Player } from '../player/Player';
@@ -10,6 +11,8 @@ import { GameState, GameStateManager } from './GameStateManager';
 
 /** Attract-mode (menu background) scroll fraction of base speed. */
 const ATTRACT_SPEED = BASE_SPEED * 0.5;
+/** Seconds the menu lingers in one district before touring to the next. */
+const MENU_DISTRICT_SECONDS = 11;
 
 /**
  * Top-level gameplay orchestrator and flow controller. It owns the run state,
@@ -26,6 +29,7 @@ export class Game {
   protected readonly chase = new Chase();
   protected readonly track = new Track();
   protected readonly environment = new Environment();
+  protected readonly weather = new Weather();
   protected readonly input = new InputController(document.body);
   private readonly cameraRig: CameraRig;
 
@@ -43,7 +47,9 @@ export class Game {
     engine.add(this.track.group);
     engine.add(this.environment.group);
     engine.add(this.player.group);
+    engine.add(this.player.shadow);
     engine.add(this.chase.group);
+    engine.add(this.weather.points);
 
     this.input.onIntent(this.handleIntent);
     engine.onUpdate(this.update);
@@ -162,6 +168,7 @@ export class Game {
     this.track.update(scroll);
     this.environment.update(scroll);
     this.stepWorld(dt, scroll);
+    this.weather.update(dt, scroll);
     this.chase.update(dt, this.player.posX, cadence, this.chasePressure());
     this.cameraRig.update(
       dt,
@@ -177,16 +184,42 @@ export class Game {
     return 0;
   }
 
-  /** Menu background: the runner jogs the empty yard under a hero camera. */
+  /**
+   * Menu background: the runner jogs an empty yard under a hero camera while
+   * the world tour plays out behind them — the backdrop cycles districts on its
+   * own, sky, skyline, ballast and weather all easing across together, so the
+   * start screen is never the same picture twice.
+   */
   private menuTime = 0;
+  private menuDistrict = 0;
+  private menuDistrictTimer = 0;
+
+  /** District the menu backdrop is currently showing (read by the home UI). */
+  get menuDistrictIndex(): number {
+    return this.menuDistrict;
+  }
+
   private stepAttract(dt: number): void {
     this.menuTime += dt;
+    this.menuDistrictTimer += dt;
+    if (this.menuDistrictTimer >= MENU_DISTRICT_SECONDS) {
+      this.menuDistrictTimer = 0;
+      this.menuDistrict = (this.menuDistrict + 1) % DISTRICTS.length;
+      this.onMenuDistrict(this.menuDistrict);
+    }
     const scroll = ATTRACT_SPEED * dt;
     this.player.menuShowcase(dt, this.menuTime);
     this.track.update(scroll);
     this.environment.update(scroll);
+    this.environment.applyDistrict(this.menuDistrict, this.engine.scene.fog!.color, dt);
+    this.track.applyDistrict(DISTRICTS[this.menuDistrict].ground, dt);
+    this.weather.setMode(weatherFor(this.menuDistrict));
+    this.weather.update(dt, scroll);
     this.cameraRig.menu(dt, this.menuTime);
   }
+
+  /** Hook: the menu backdrop toured to a new district. */
+  protected onMenuDistrict(_index: number): void {}
 
   /** Per-frame world advance while PLAYING. No-op here. */
   protected stepWorld(_dt: number, _scroll: number): void {}

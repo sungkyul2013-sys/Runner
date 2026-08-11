@@ -12,9 +12,9 @@ export interface RunStats {
   time?: number;
 }
 
-const GLASS = 'linear-gradient(160deg,rgba(24,28,44,0.66),rgba(12,14,26,0.58))';
-const BORDER = '1px solid rgba(255,255,255,0.16)';
-const SHADOW = 'inset 0 1px 0 rgba(255,255,255,.16),0 8px 20px rgba(0,0,0,.42)';
+const GLASS = 'linear-gradient(180deg,#2b3550 0%,#1b2238 60%,#141a2c 100%)';
+const BORDER = '2px solid #131a2c';
+const SHADOW = '0 3.5px 0 rgba(8,12,24,.9), inset 0 1.5px 0 rgba(255,255,255,.18)';
 
 /**
  * The in-run HUD. Top-left carries the score readout with its live multiplier
@@ -60,21 +60,29 @@ export class HUD {
     `);
 
     // ── Score block (top-left) ──
-    const left = this.mk({ top: 'calc(env(safe-area-inset-top,0px) + 12px)', left: '14px', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' });
+    const left = this.mk({
+      top: 'calc(env(safe-area-inset-top,0px) + 12px)', left: '14px',
+      flexDirection: 'column', gap: '6px', alignItems: 'flex-start',
+      maxWidth: '56vw', // never let a six-figure score run under the wallet
+    });
     const scoreRow = document.createElement('div');
     Object.assign(scoreRow.style, { display: 'flex', alignItems: 'baseline', gap: '8px' } as CSSStyleDeclaration);
     this.scoreEl = document.createElement('div');
     Object.assign(this.scoreEl.style, {
-      font: `900 40px/1 'Trebuchet MS',system-ui`, color: '#ffffff',
-      textShadow: '0 3px 12px rgba(0,0,0,.7), 0 0 22px rgba(120,180,255,.35)',
-      fontVariantNumeric: 'tabular-nums',
-    } as CSSStyleDeclaration);
+      font: `900 clamp(26px,8vw,42px)/1 'Trebuchet MS',system-ui`, color: '#ffffff',
+      // A dark stroke + drop shadow keeps the readout legible over a bright
+      // district without needing a panel behind it.
+      webkitTextStroke: '2px rgba(10,14,26,.85)',
+      textShadow: '0 4px 0 rgba(10,14,26,.55), 0 8px 18px rgba(0,0,0,.6)',
+      fontVariantNumeric: 'tabular-nums', letterSpacing: '.5px',
+    } as unknown as CSSStyleDeclaration);
     this.scoreEl.textContent = '0';
     this.multEl = document.createElement('div');
     Object.assign(this.multEl.style, {
-      font: `900 19px/1 'Trebuchet MS',system-ui`, color: '#ffd23f',
-      textShadow: '0 2px 10px rgba(255,180,40,.7)',
-    } as CSSStyleDeclaration);
+      font: `900 clamp(15px,4.4vw,20px)/1 'Trebuchet MS',system-ui`, color: '#ffd23f',
+      webkitTextStroke: '1.6px rgba(10,14,26,.8)',
+      textShadow: '0 3px 0 rgba(10,14,26,.5), 0 0 14px rgba(255,180,40,.6)',
+    } as unknown as CSSStyleDeclaration);
     this.multEl.textContent = '×1';
     scoreRow.append(this.scoreEl, this.multEl);
 
@@ -148,10 +156,11 @@ export class HUD {
   private chip(text: string, color: string): HTMLDivElement {
     const el = document.createElement('div');
     Object.assign(el.style, {
-      background: GLASS, border: BORDER, borderRadius: '999px', padding: '5px 12px',
-      backdropFilter: 'blur(8px)', boxShadow: SHADOW, color,
-      font: `800 15px/1 'Trebuchet MS',system-ui`, whiteSpace: 'nowrap',
+      background: GLASS, border: BORDER, borderRadius: '999px', padding: '6px 13px',
+      boxShadow: SHADOW, color,
+      font: `900 15px/1 'Trebuchet MS',system-ui`, whiteSpace: 'nowrap',
       fontVariantNumeric: 'tabular-nums',
+      textShadow: '0 1.5px 0 rgba(8,12,22,.6)',
     } as CSSStyleDeclaration);
     el.textContent = text;
     return el;
@@ -160,9 +169,9 @@ export class HUD {
   private actionButton(emoji: string, onClick: () => void): HTMLButtonElement {
     const b = document.createElement('button');
     Object.assign(b.style, {
-      position: 'relative', width: '60px', height: '60px', borderRadius: '18px',
-      border: BORDER, background: GLASS, color: '#fff', font: '27px/1 system-ui',
-      cursor: 'pointer', backdropFilter: 'blur(8px)', boxShadow: SHADOW,
+      position: 'relative', width: '64px', height: '64px', borderRadius: '20px',
+      border: BORDER, background: GLASS, color: '#fff', font: '29px/1 system-ui',
+      cursor: 'pointer', boxShadow: SHADOW,
       transition: 'transform .12s cubic-bezier(.34,1.6,.5,1)',
     } as CSSStyleDeclaration);
     b.textContent = emoji;
@@ -195,6 +204,7 @@ export class HUD {
 
   // ── Live updates ──────────────────────────────────────────────────────────
   private lastMult = 1;
+  private lastCoins = -1;
   setRun(s: RunStats): void {
     this.scoreEl.textContent = s.score.toLocaleString();
     this.multEl.textContent = `×${s.multiplier}`;
@@ -212,6 +222,12 @@ export class HUD {
       this.timeEl.style.animation = s.time <= 10 ? 'hud-flash .8s ease-in-out infinite' : 'none';
     } else {
       this.timeEl.style.display = 'none';
+    }
+    if (s.coins !== this.lastCoins) {
+      this.lastCoins = s.coins;
+      this.coinsEl.style.animation = 'none';
+      void this.coinsEl.offsetWidth;
+      this.coinsEl.style.animation = 'hud-pulse .28s cubic-bezier(.34,1.7,.5,1)';
     }
     this.coinsEl.textContent = `🪙 ${s.coins}`;
     this.keysEl.textContent = `🗝️ ${s.keys}`;
@@ -291,9 +307,11 @@ export class HUD {
     const e = document.createElement('div');
     Object.assign(e.style, {
       position: 'fixed', top: '36%', left: '50%', color,
-      font: `900 28px/1 'Trebuchet MS',system-ui`, textShadow: `0 0 16px ${color}, 0 3px 8px rgba(0,0,0,.6)`,
+      font: `900 30px/1 'Trebuchet MS',system-ui`,
+      webkitTextStroke: '2px rgba(10,14,26,.85)',
+      textShadow: `0 3px 0 rgba(10,14,26,.6), 0 0 18px ${color}`,
       pointerEvents: 'none', zIndex: '70', animation: 'hud-popup 0.95s ease-out forwards',
-    } as CSSStyleDeclaration);
+    } as unknown as CSSStyleDeclaration);
     e.textContent = text;
     document.body.appendChild(e);
     setTimeout(() => e.remove(), 1000);
@@ -310,8 +328,9 @@ export class HUD {
       pointerEvents: 'none', zIndex: '72', animation: 'hud-banner 2.2s ease-in-out forwards',
     } as CSSStyleDeclaration);
     e.innerHTML =
-      `<div style="font:900 clamp(28px,7vw,42px)/1 'Trebuchet MS',system-ui;color:${color};
-        text-shadow:0 3px 18px rgba(0,0,0,.7)">${title}</div>` +
+      `<div style="font:900 clamp(28px,7vw,44px)/1 'Trebuchet MS',system-ui;color:${color};
+        -webkit-text-stroke:2.5px rgba(10,14,26,.9);
+        text-shadow:0 4px 0 rgba(10,14,26,.6), 0 10px 24px rgba(0,0,0,.7)">${title}</div>` +
       (subtitle ? `<div style="font:800 15px/1.5 system-ui;color:#fff;opacity:.92;margin-top:4px">${subtitle}</div>` : '');
     document.body.appendChild(e);
     setTimeout(() => e.remove(), 2250);
@@ -321,10 +340,10 @@ export class HUD {
   toast(icon: string, text: string, color = '#6bff9a'): void {
     const e = document.createElement('div');
     Object.assign(e.style, {
-      background: GLASS, border: `1px solid ${color}66`, borderRadius: '14px',
+      background: GLASS, border: `2px solid ${color}`, borderRadius: '14px',
       padding: '9px 16px', color: '#fff', font: `800 14px/1.2 system-ui`,
-      boxShadow: `0 8px 22px rgba(0,0,0,.45), 0 0 18px ${color}33`,
-      backdropFilter: 'blur(10px)', display: 'flex', gap: '9px', alignItems: 'center',
+      boxShadow: `0 4px 0 rgba(8,12,24,.9), 0 10px 22px rgba(0,0,0,.5), 0 0 18px ${color}44`,
+      display: 'flex', gap: '9px', alignItems: 'center',
       animation: 'hud-rise 2.6s ease-out forwards',
       maxWidth: 'min(340px, 88vw)', textAlign: 'left',
     } as CSSStyleDeclaration);

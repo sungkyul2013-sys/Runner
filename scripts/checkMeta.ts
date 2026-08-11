@@ -15,6 +15,7 @@ import { CONSUMABLES } from '../src/data/consumables';
 import { JOURNEY } from '../src/data/journey';
 import { getMission, goalFor, MISSIONS, rollMissions, setReward } from '../src/data/missions';
 import { MODES } from '../src/data/modes';
+import { nextRank, RANKS, rankFor, rankProgress, xpForRun } from '../src/data/ranks';
 import { getOutfit, OUTFITS, outfitsFor, resolveColors } from '../src/data/outfits';
 import { SaveManager } from '../src/data/SaveManager';
 import { UPGRADES } from '../src/data/upgrades';
@@ -93,6 +94,36 @@ check('key purchase', save.spendKeys(noir.price));
 save.buyChar('noir');
 check('owns the key character', save.ownsChar('noir'));
 check('key overspend rejected', save.spendKeys(99999) === false);
+
+// ── Ranks ─────────────────────────────────────────────────────────────────
+check('12 ranks', RANKS.length === 12);
+check('rank 1 is free to sit in', RANKS[0].need === 0);
+check('rank thresholds strictly increase',
+  RANKS.every((r, i) => i === 0 || r.need > RANKS[i - 1].need));
+check('rank levels are sequential', RANKS.every((r, i) => r.level === i + 1));
+check('a fresh profile is rank 1', rankFor(0).level === 1);
+check('rank lookup lands in the right band',
+  rankFor(RANKS[3].need).level === 4 && rankFor(RANKS[3].need - 1).level === 3);
+check('progress is 0 at a threshold and climbs', rankProgress(RANKS[2].need) === 0
+  && rankProgress(RANKS[2].need + 1) > 0);
+check('the top rank has no next', nextRank(RANKS[RANKS.length - 1].need) === null);
+check('the top rank reports full progress', rankProgress(RANKS[RANKS.length - 1].need) === 1);
+check('a run pays XP', xpForRun(12000, 250, 3400) > 0);
+check('a bigger run pays more XP',
+  xpForRun(24000, 500, 6800) > xpForRun(12000, 250, 3400));
+{
+  const coinsBefore = save.data.coins;
+  const keysBefore = save.data.keys;
+  const promos = save.addXp(RANKS[2].need);
+  check('crossing thresholds promotes once per rank', promos.length === 2);
+  check('promotions arrive in order', promos[0].level === 2 && promos[1].level === 3);
+  check('promotions pay their purse',
+    save.data.coins === coinsBefore + RANKS[1].coins + RANKS[2].coins
+    && save.data.keys === keysBefore + RANKS[1].keys + RANKS[2].keys);
+  check('staying inside a band does not promote', save.addXp(1).length === 0);
+  check('zero XP is a no-op', save.addXp(0).length === 0);
+  check('XP is banked', save.data.xp === RANKS[2].need + 1);
+}
 
 // ── Outfits ───────────────────────────────────────────────────────────────
 {

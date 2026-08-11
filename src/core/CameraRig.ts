@@ -81,15 +81,15 @@ export class CameraRig {
     const t = 1 - Math.exp(-5 * dt);
     const orbit = Math.sin(elapsed * 0.35) * 1.9; // gentle side-to-side
     const tx = orbit;
-    const tz = PLAYER_Z + 6.6; // a touch further → character a bit smaller
-    const ty = 2.1;
+    const tz = PLAYER_Z + 7.2; // framed so head and torso clear the bottom controls
+    const ty = 2.3;
     this.camera.position.x += (tx - this.camera.position.x) * t;
     this.camera.position.y += (ty - this.camera.position.y) * t;
     this.camera.position.z += (tz - this.camera.position.z) * t;
     // Look at the upper body so the character feels prominent.
-    this.lookTarget.set(0, 1.35, PLAYER_Z);
+    this.lookTarget.set(0, 1.46, PLAYER_Z);
     this.camera.lookAt(this.lookTarget);
-    const targetFov = 44;
+    const targetFov = 42;
     this.camera.fov += (targetFov - this.camera.fov) * t;
     this.camera.updateProjectionMatrix();
   }

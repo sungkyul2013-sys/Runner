@@ -3,7 +3,7 @@ import { CHASE_NEAR_Z, CHASE_REST_Z, PLAYER_HALF_STANDING } from '../config/cons
 import { Character } from './Character';
 import { PLAYER_Z } from './Player';
 
-/** Colours for the yard inspector — peaked cap, hi-vis vest, heavy boots. */
+/** Colours for the yard inspector — peaked cap, uniform blue, heavy boots. */
 const INSPECTOR = {
   skin: 0xe8b98f,
   hair: 0x4a3b30,
@@ -15,12 +15,20 @@ const INSPECTOR = {
   trail: 0xffd23f,
 };
 
+/** Z the pair drifts back to when the run is clean (behind the camera). */
+const RETREAT_Z = 15;
+/** Past this Z they are fully out of frame and can stop drawing. */
+const HIDE_Z = 11.5;
+
 /**
- * The chase: a yard inspector and his dog, pounding along behind you. They sit
- * back at {@link CHASE_REST_Z} while the run is clean and surge up to
- * {@link CHASE_NEAR_Z} the moment you stumble — so the pressure is something you
- * can actually see over your shoulder. When the run ends they close the gap and
- * the inspector reaches out for the collar.
+ * The chase: a yard inspector and his dog.
+ *
+ * They are only on screen **when it matters** — right on your heels for the
+ * opening beat of a run and any time you stumble, then falling away behind the
+ * camera once you find clean speed, exactly the rhythm the arcade original
+ * uses. Pass a negative pressure to send them off; anything ≥ 0 brings them
+ * sprinting back, reaching {@link CHASE_NEAR_Z} at full pressure. On the catch
+ * the inspector surges in and reaches for the collar.
  */
 export class Chase {
   readonly group = new THREE.Group();
@@ -32,9 +40,11 @@ export class Chase {
   private readonly arm: THREE.Group;
 
   private z = CHASE_REST_Z;
-  private x = 0;
+  private x = 0.85;
   private dogPhase = 0;
   private lungeTime = 0;
+  /** Master visibility (game state), independent of the retreat. */
+  private master = true;
 
   private readonly disposables: { dispose(): void }[] = [];
 
@@ -45,6 +55,18 @@ export class Chase {
     this.inspector.group.position.y = PLAYER_HALF_STANDING.y * 1.06;
     this.group.add(this.inspector.group);
 
+    // Soft contact shadows keep the pair planted on the ballast.
+    const shadowGeo = new THREE.CircleGeometry(1, 18);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false,
+    });
+    this.disposables.push(shadowGeo, shadowMat);
+    const inspShadow = new THREE.Mesh(shadowGeo, shadowMat);
+    inspShadow.rotation.x = -Math.PI / 2;
+    inspShadow.scale.setScalar(0.58);
+    inspShadow.position.y = 0.03;
+    this.group.add(inspShadow);
+
     // A grabbing arm that only appears during the catch.
     this.arm = new THREE.Group();
     const armMat = this.mat(INSPECTOR.top);
@@ -52,18 +74,25 @@ export class Chase {
     sleeve.rotation.x = Math.PI / 2;
     sleeve.position.z = -0.5;
     this.arm.add(sleeve);
+    this.disposables.push(sleeve.geometry);
     const hand = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), this.mat(INSPECTOR.skin));
     hand.position.z = -1.0;
     this.arm.add(hand);
+    this.disposables.push(hand.geometry);
     this.arm.position.set(0.2, 0.55, 0);
     this.arm.visible = false;
     this.inspector.group.add(this.arm);
 
     this.dog = this.buildDog();
     this.dogTail = this.dog.userData.tail as THREE.Group;
+    const dogShadow = new THREE.Mesh(shadowGeo, shadowMat);
+    dogShadow.rotation.x = -Math.PI / 2;
+    dogShadow.scale.set(0.5, 0.34, 1);
+    dogShadow.position.set(0, 0.03, 0.2);
+    this.dog.add(dogShadow);
     this.group.add(this.dog);
 
-    this.group.position.set(0, 0, CHASE_REST_Z);
+    this.group.position.set(this.x, 0, CHASE_REST_Z);
     this.reset();
   }
 
@@ -155,15 +184,22 @@ export class Chase {
 
   /**
    * Follow the runner.
-   * @param pressure 0 = clean run (hang back), 1 = stumbling (right on top).
+   * @param pressure  < 0 → clean run: drift away behind the camera and hide.
+   *                  0‥1 → engaged: 0 hangs back at rest, 1 is on your heels.
    */
   update(dt: number, playerX: number, cadence: number, pressure: number): void {
-    const targetZ = CHASE_REST_Z + (CHASE_NEAR_Z - CHASE_REST_Z) * Math.min(1, Math.max(0, pressure));
-    const t = 1 - Math.exp(-3.4 * dt);
+    const engaged = pressure >= 0;
+    const targetZ = engaged
+      ? CHASE_REST_Z + (CHASE_NEAR_Z - CHASE_REST_Z) * Math.min(1, pressure)
+      : RETREAT_Z;
+    // Charge in briskly, fall away lazily — the asymmetry is what sells it.
+    const t = 1 - Math.exp(-(engaged ? 4.2 : 1.5) * dt);
     this.z += (targetZ - this.z) * t;
     // Sit a little to the runner's right so the inspector never masks the line.
     this.x += (playerX * 0.9 + 0.85 - this.x) * (1 - Math.exp(-5 * dt));
     this.group.position.set(this.x, 0, this.z);
+    this.group.visible = this.master && this.z < HIDE_Z;
+    if (!this.group.visible) return;
 
     this.inspector.update(dt, 'run', cadence * 1.05);
     this.stepDog(dt, cadence);
@@ -190,6 +226,7 @@ export class Chase {
     const k = Math.min(1, this.lungeTime * 1.6);
     this.z += (PLAYER_Z + 1.5 - this.z) * (1 - Math.exp(-6 * dt));
     this.group.position.set(this.x, 0, this.z);
+    this.group.visible = this.master;
     this.arm.visible = true;
     this.arm.rotation.x = -0.4 - k * 0.5;
     this.inspector.update(dt, 'air', 2.2);
@@ -197,8 +234,14 @@ export class Chase {
     this.dog.position.z = -0.35 - k * 0.9;
   }
 
+  /** Snap the pair to their on-your-heels start position (run begins). */
+  chargeIn(): void {
+    this.z = CHASE_NEAR_Z;
+  }
+
   setVisible(on: boolean): void {
-    this.group.visible = on;
+    this.master = on;
+    this.group.visible = on && this.z < HIDE_Z;
   }
 
   reset(): void {

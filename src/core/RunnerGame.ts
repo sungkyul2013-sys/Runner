@@ -21,10 +21,12 @@ import { BOARD_BASE_SECONDS, getBoard } from '../data/boards';
 import { getCharacter } from '../data/characters';
 import { resolveColors } from '../data/outfits';
 import { getMission, type MissionMetric } from '../data/missions';
+import { xpForRun } from '../data/ranks';
 import { CHECKPOINT_DIST, getMode, type ModeDef } from '../data/modes';
 import { SaveManager, type GameMode } from '../data/SaveManager';
 import { UPGRADE_SECONDS } from '../data/upgrades';
 import { ParticleSystem } from '../fx/ParticleSystem';
+import { weatherFor } from '../fx/Weather';
 import { CoinSystem } from '../systems/CoinSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
 import { PickupSystem } from '../systems/PickupSystem';
@@ -46,6 +48,12 @@ const CHECKPOINT_COINS = 40;
 const CAUGHT_TIME = 1.5;
 /** One token roughly every N segments. */
 const TOKEN_CHANCE = 0.55;
+/** Seconds the inspector stays on your heels at the start of a run. */
+const CHASE_OPENING = 4.5;
+/** Seconds he lingers after you recover from a stumble. */
+const CHASE_AFTER_STUMBLE = 3.2;
+/** Air-time (seconds) that turns a jump into a trick. */
+const TRICK_AIR = 0.42;
 
 /** Result of the last finished run, surfaced to the results screen. */
 export interface RunResult {
@@ -63,6 +71,12 @@ export interface RunResult {
   missionsDone: string[];
   /** Mission sets cleared during this run. */
   setsCleared: number;
+  /** XP banked by this run. */
+  xp: number;
+  /** Ranks crossed by this run's XP, in order. */
+  promotions: { level: number; name: string; icon: string; coins: number; keys: number }[];
+  /** Best style chain reached. */
+  bestChain: number;
 }
 
 /**
@@ -115,6 +129,15 @@ export class RunnerGame extends Game {
   private readonly trailPos = new THREE.Vector3();
   private lastPathLane = 0;
   private metricTick = 0;
+  /** Seconds the inspector stays engaged before peeling off behind the camera. */
+  private chaseHold = 0;
+  /** Live trick chain: consecutive clean stylish beats without touching down. */
+  private trickChain = 0;
+  private bestChain = 0;
+  private trickTimer = 0;
+  private airTime = 0;
+  private wasAirborne = false;
+  private wasOnRoof = false;
 
   /** While true (resume countdown) the world holds still and input is ignored. */
   private frozenStart = false;
@@ -129,6 +152,7 @@ export class RunnerGame extends Game {
   private lastResult: RunResult = {
     mode: 'endless', score: 0, coins: 0, keys: 0, distance: 0, multiplier: 1,
     letters: 0, isBest: false, rank: -1, missionsDone: [], setsCleared: 0,
+    xp: 0, promotions: [], bestChain: 0,
   };
 
   constructor(engine: Engine, save?: SaveManager, audio?: AudioManager) {
@@ -426,10 +450,19 @@ export class RunnerGame extends Game {
     return !this.frozenStart && !this.caught;
   }
 
+  /**
+   * The chase is a punctuation mark, not a permanent fixture: hard on your
+   * heels for the opening sprint and whenever you stumble, then dropping away
+   * behind the camera once the run is clean again. A negative value tells the
+   * pair to retreat out of frame entirely.
+   */
   protected override chasePressure(): number {
+    if (this.caught) return 1;
     if (this.player.isStumbling) return 1;
-    if (this.stumblesLeft <= 0) return 0.45;
-    return 0;
+    if (this.chaseHold <= 0) return -1;
+    // Ease from "on your heels" back to "hanging behind" across the hold.
+    const k = Math.min(1, this.chaseHold / CHASE_OPENING);
+    return this.stumblesLeft <= 0 ? Math.max(0.35, k) : k * 0.9;
   }
 
   protected override cameraLift(): number {
@@ -453,6 +486,8 @@ export class RunnerGame extends Game {
     }
     if (this.frozenStart) return;
 
+    if (this.chaseHold > 0) this.chaseHold -= dt;
+    this.stepTricks(dt);
     if (this.headstartLeft > 0) {
       this.headstartLeft -= scroll;
       if (this.headstartLeft <= 0) this.hud.toast('⚡', '헤드스타트 종료', '#ffd23f');
@@ -484,6 +519,7 @@ export class RunnerGame extends Game {
     }
     this.environment.applyDistrict(this.district, this.engine.scene.fog!.color, dt);
     this.track.applyDistrict(DISTRICTS[this.district].ground, dt);
+    this.weather.setMode(weatherFor(this.district));
 
     // Checkpoints.
     if (this.distance >= this.nextCheckpoint) {
@@ -516,15 +552,17 @@ export class RunnerGame extends Game {
     if (result.onRoof && !this.player.isAirborne) {
       this.roofMetres += scroll;
       this.bump('roof', scroll);
+      if (!this.wasOnRoof) this.addTrick('🚃 지붕 착지', 50);
     }
+    this.wasOnRoof = result.onRoof && !this.player.isAirborne;
 
     if (result.hit) this.onHit(result.hit.kind !== undefined && result.trip);
 
     // Near-miss bonus.
     if (result.nearMiss && !this.wasNearMiss) {
-      this.hud.popup('아슬아슬!', '#6bff9a');
-      this.score.addBonus(30);
+      this.hud.popup('😮 아슬아슬!', '#6bff9a');
       this.bump('nearmiss', 1);
+      this.addTrick('😮 니어미스', 30);
       this.audio.ui();
     }
     this.wasNearMiss = result.nearMiss;
@@ -571,6 +609,44 @@ export class RunnerGame extends Game {
     this.hud.setBoard(this.pickups.charges, this.pickups.boardFraction());
   }
 
+  /**
+   * Style chain. Long hang-times, roof landings and near-misses all count as a
+   * beat; stack them without touching down flat and the chain climbs, paying a
+   * escalating score bonus. Touching the ballast for a moment lets it lapse.
+   */
+  private stepTricks(dt: number): void {
+    const air = this.player.isAirborne || this.player.isFlying;
+    if (air) {
+      this.airTime += dt;
+    } else if (this.wasAirborne) {
+      if (this.airTime >= TRICK_AIR) this.addTrick('🌀 에어', 40);
+      this.airTime = 0;
+    }
+    this.wasAirborne = air;
+    if (this.trickTimer > 0) {
+      this.trickTimer -= dt;
+      if (this.trickTimer <= 0 && this.trickChain > 0) {
+        // The chain cashes out when it lapses, so the payout lands as a beat.
+        const bonus = this.trickChain * this.trickChain * 25;
+        this.score.addBonus(bonus);
+        if (this.trickChain >= 3) {
+          this.hud.popup(`🔥 스타일 ×${this.trickChain}  +${bonus}`, '#ff8a1f');
+          this.audio.power();
+        }
+        this.trickChain = 0;
+      }
+    }
+  }
+
+  /** Register one stylish beat and refresh the chain window. */
+  private addTrick(label: string, points: number): void {
+    this.trickChain++;
+    if (this.trickChain > this.bestChain) this.bestChain = this.trickChain;
+    this.trickTimer = 1.7;
+    this.score.addBonus(points);
+    if (this.trickChain >= 2) this.hud.toast('✨', `${label} ×${this.trickChain}`, '#ff8a1f');
+  }
+
   /** Distance ramp × mission bonus × mode × booster × 2× power-up. */
   private liveMultiplier(): number {
     const ramp = Math.min(MULTIPLIER_MAX, 1 + Math.floor(this.distance / MULTIPLIER_STEP));
@@ -596,6 +672,8 @@ export class RunnerGame extends Game {
 
     if (trip && !this.player.isStumbling && this.stumblesLeft > 0) {
       this.stumblesLeft--;
+      this.chaseHold = STUMBLE_TIME + CHASE_AFTER_STUMBLE;
+      this.trickChain = 0;
       this.player.stumble(STUMBLE_TIME);
       this.engine.shake(0.4);
       this.engine.hitstop(0.07);
@@ -652,6 +730,8 @@ export class RunnerGame extends Game {
       this.mode, this.score.score, this.score.coins, this.distance,
       this.runTime, this.save.data.selectedChar,
     );
+    const xp = xpForRun(this.score.score, this.score.coins, distance);
+    const promotions = this.save.addXp(xp);
     this.save.flush();
 
     const result: RunResult = {
@@ -666,6 +746,9 @@ export class RunnerGame extends Game {
       rank,
       missionsDone: [...this.missionsDone],
       setsCleared: this.setsCleared,
+      xp,
+      promotions,
+      bestChain: this.bestChain,
     };
 
     if (isBest && result.score > 0) this.startCelebration(result);
@@ -771,6 +854,7 @@ export class RunnerGame extends Game {
     this.comboCount = 0;
     this.comboTimer = 0;
     this.wasNearMiss = false;
+    this.wasOnRoof = false;
     this.roofMetres = 0;
     this.keysThisRun = 0;
     this.lettersThisRun = 0;
@@ -795,6 +879,14 @@ export class RunnerGame extends Game {
     this.save.resetRunMissions();
     this.save.flush();
 
+    this.chaseHold = CHASE_OPENING;
+    this.trickChain = 0;
+    this.bestChain = 0;
+    this.trickTimer = 0;
+    this.airTime = 0;
+    this.wasAirborne = false;
+    this.chase.chargeIn();
+    this.weather.snap(weatherFor(0));
     this.hud.setHunt(this.save.data.huntLetters);
     this.hud.setBoard(this.pickups.charges, 0);
     this.hud.setCombo(0);

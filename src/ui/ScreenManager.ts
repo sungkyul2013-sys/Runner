@@ -5,11 +5,13 @@ import { GameState } from '../core/GameStateManager';
 import type { RunnerGame } from '../core/RunnerGame';
 import { ACHIEVEMENTS, DAILY } from '../data/achievements';
 import { BOARDS, type BoardDef } from '../data/boards';
+import { DISTRICTS } from '../config/constants';
 import { CHARACTERS, type CharColors, type CharacterDef } from '../data/characters';
 import { outfitsFor, resolveColors } from '../data/outfits';
 import { CONSUMABLES } from '../data/consumables';
 import { JOURNEY } from '../data/journey';
 import { getMission } from '../data/missions';
+import { nextRank, rankFor, rankProgress } from '../data/ranks';
 import { MODES } from '../data/modes';
 import type { GameMode, SaveManager } from '../data/SaveManager';
 import { UPGRADES } from '../data/upgrades';
@@ -44,6 +46,7 @@ export class ScreenManager {
   private content!: HTMLDivElement;
   private navbar!: HTMLDivElement;
   private grid!: HTMLDivElement;
+  private ambience!: HTMLDivElement;
   private gameoverBody!: HTMLDivElement;
 
   private mode: GameMode = 'endless';
@@ -116,8 +119,8 @@ export class ScreenManager {
     });
 
     this.content = el('div', {
-      flex: '1', overflowY: 'auto', padding: '8px 14px 20px',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '13px',
+      flex: '1', overflowY: 'auto', padding: '6px 14px 6px',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '9px',
       perspective: '1300px',
     });
     this.content.className = 'ms-scroll';
@@ -125,15 +128,47 @@ export class ScreenManager {
     this.navbar = el('div', {
       display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end',
       margin: '0 auto calc(env(safe-area-inset-bottom,0px) + 12px)',
-      width: 'min(520px,96vw)', padding: '10px 6px 12px', flexShrink: '0', zIndex: '3',
-      borderRadius: '26px', border: '1px solid rgba(255,255,255,0.16)',
-      background: 'linear-gradient(160deg,rgba(28,34,56,0.82),rgba(10,13,24,0.78))',
-      backdropFilter: 'blur(22px) saturate(1.2)',
-      boxShadow: 'inset 0 1px 0 rgba(255,255,255,.16),0 14px 34px rgba(0,0,0,.55)',
+      width: 'min(520px,96vw)', padding: '12px 6px 10px', flexShrink: '0', zIndex: '3',
+      borderRadius: '24px', border: `2px solid ${UI.line}`,
+      background: 'linear-gradient(180deg,#333e5c 0%,#1e2740 55%,#141b2e 100%)',
+      boxShadow: `0 5px 0 #0b1020, 0 5px 0 2px ${UI.line}, 0 16px 34px rgba(0,0,0,.6),`
+        + ' inset 0 2px 0 rgba(255,255,255,.16)',
     });
 
-    root.append(this.header, this.content, this.navbar);
+    // Drifting emoji ambience behind the whole shell — cheap, and it keeps the
+    // home screen alive between the 3D scene and the UI slabs.
+    this.ambience = el('div', {
+      position: 'absolute', top: '0', left: '0', right: '0', bottom: '104px',
+      overflow: 'hidden', pointerEvents: 'none', zIndex: '0',
+    });
+    root.append(this.ambience, this.header, this.content, this.navbar);
     return root;
+  }
+
+  /** Emoji that drift up behind the home screen. */
+  private static readonly AMBIENT = ['🪙', '🗝️', '🛹', '🧲', '👟', '🚀', '❓', '✖️', '🚃', '⭐'];
+
+  /** Rebuild the drifting emoji layer (home tab only — galleries stay calm). */
+  private renderAmbience(on: boolean): void {
+    this.ambience.innerHTML = '';
+    this.ambience.style.display = on ? 'block' : 'none';
+    if (!on) return;
+    for (let i = 0; i < 12; i++) {
+      const glyph = ScreenManager.AMBIENT[i % ScreenManager.AMBIENT.length];
+      // Bias toward the edges so nothing drifts across the wordmark or the
+      // character standing in the middle of the frame.
+      const side = i % 2 === 0 ? 3 + Math.random() * 24 : 73 + Math.random() * 24;
+      this.ambience.append(el('div', {
+        position: 'absolute',
+        left: `${side}%`,
+        top: '104%',
+        fontSize: `${15 + Math.random() * 17}px`,
+        opacity: '0',
+        filter: 'drop-shadow(0 4px 8px rgba(0,0,0,.5)) saturate(.85)',
+        animation: `ms-floatup ${13 + Math.random() * 10}s linear infinite`,
+        animationDelay: `${-Math.random() * 20}s`,
+      }, glyph));
+    }
   }
 
   private readonly views: Record<Nav, () => void> = {
@@ -152,6 +187,7 @@ export class ScreenManager {
       ? 'transparent'
       : 'linear-gradient(180deg,rgba(6,9,18,.86) 0%,rgba(9,13,26,.78) 45%,rgba(6,9,18,.9) 100%)';
     this.menu.style.backdropFilter = this.nav === 'play' ? 'none' : 'blur(6px) saturate(1.05)';
+    this.renderAmbience(this.nav === 'play');
     this.renderHeader();
     this.renderNavbar();
     this.content.scrollTop = 0;
@@ -195,12 +231,50 @@ export class ScreenManager {
     helpBtn.addEventListener('click', () => { show(this.help, true); this.audio.ui(); });
     left.append(cog, helpBtn);
 
-    const wallet = el('div', { display: 'flex', gap: '7px', alignItems: 'center' });
-    wallet.innerHTML =
-      `<span class="ms-chip" style="color:${UI.gold};font-size:13px">${coinStr(d.coins)}</span>` +
-      `<span class="ms-chip" style="color:${UI.magenta};font-size:13px">${keyStr(d.keys)}</span>` +
-      `<span class="ms-chip" style="color:${UI.green};font-size:13px">📋 SET ${d.missionSet}</span>`;
+    const wallet = el('div', { display: 'flex', gap: '8px', alignItems: 'center' });
+    wallet.append(
+      this.currencySlab('🪙', d.coins.toLocaleString(), UI.gold, '#96650a'),
+      this.currencySlab('🗝️', `${d.keys}`, UI.magenta, '#8f0e6e'),
+    );
     this.header.append(left, wallet);
+  }
+
+  /**
+   * A currency readout built like a Supercell counter: a dark capsule with the
+   * glyph on a coloured disc at the left and a "+" nub on the right that jumps
+   * straight to the shop.
+   */
+  private currencySlab(glyph: string, value: string, tint: string, edge: string): HTMLDivElement {
+    const wrap = el('div', {
+      position: 'relative', display: 'flex', alignItems: 'center', gap: '7px',
+      padding: '3px 30px 3px 3px', borderRadius: '999px',
+      border: `2px solid ${UI.line}`,
+      background: 'linear-gradient(180deg,#2b3550 0%,#1b2238 60%,#141a2c 100%)',
+      boxShadow: `0 3.5px 0 rgba(8,12,24,.9), inset 0 1.5px 0 rgba(255,255,255,.16)`,
+    });
+    wrap.append(el('div', {
+      width: '26px', height: '26px', borderRadius: '50%', flexShrink: '0',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px',
+      background: `linear-gradient(180deg, ${tint}, ${edge})`,
+      border: `2px solid ${UI.line}`,
+      boxShadow: 'inset 0 2px 0 rgba(255,255,255,.45)',
+    }, glyph));
+    wrap.append(el('span', {
+      font: `900 14px/1 'Trebuchet MS',system-ui`, color: '#fff',
+      fontVariantNumeric: 'tabular-nums',
+      textShadow: '0 1.5px 0 rgba(8,12,22,.6)',
+    }, value));
+    const plus = el('button', {
+      position: 'absolute', right: '-2px', top: '50%', transform: 'translateY(-50%)',
+      width: '24px', height: '24px', borderRadius: '50%', cursor: 'pointer',
+      pointerEvents: 'auto', border: `2px solid ${UI.line}`,
+      background: `linear-gradient(180deg,#8fe6a8,${UI.green} 50%,#23b45e)`,
+      color: '#062a15', font: `900 15px/1 'Trebuchet MS',system-ui`,
+      boxShadow: '0 2.5px 0 #0e7a3c, inset 0 1.5px 0 rgba(255,255,255,.5)',
+    }, '+');
+    plus.addEventListener('click', (e) => { e.stopPropagation(); this.go('shop'); });
+    wrap.append(plus);
+    return wrap;
   }
 
   private renderNavbar(): void {
@@ -278,24 +352,27 @@ export class ScreenManager {
     const b = BOARDS.find((x) => x.id === d.selectedBoard)!;
     this.content.style.justifyContent = 'space-between';
 
-    // Wordmark — deliberately compact so the live runner owns the middle.
+    // ── Hero: extruded wordmark with a shine sweep, and a ribbon naming the
+    //    district the backdrop is currently touring. ──
+    const district = DISTRICTS[this.game.menuDistrictIndex % DISTRICTS.length];
     const title = el('div', {
-      textAlign: 'center', animation: 'ms-float 4.5s ease-in-out infinite', flexShrink: '0',
+      textAlign: 'center', flexShrink: '0', display: 'flex',
+      flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '0px',
     });
-    title.innerHTML =
-      `<div style="font:900 clamp(28px,7.5vw,54px)/0.9 'Trebuchet MS',system-ui;letter-spacing:2px;
-        background:linear-gradient(115deg,${UI.gold},#ff9f43 40%,${UI.magenta} 75%,${UI.blue});
-        -webkit-background-clip:text;background-clip:text;color:transparent;
-        filter:drop-shadow(0 5px 16px rgba(255,150,60,.3))">METRO SURF</div>`;
+    const logo = el('div', {}, 'METRO <em>SURF</em><span class="ms-logoshine"></span>');
+    logo.className = 'ms-logo';
+    const ribbon = el('div', {}, `${district.night ? '🌙' : '☀️'} ${district.name} · ${district.sub}`);
+    ribbon.className = 'ms-ribbon';
+    title.append(logo, ribbon);
 
-    // Compact mission tracker (tap for the full board).
-    const missions = this.missionStrip();
+    // Compact rank + mission status (tap for the full board).
+    const status = this.statusCard();
 
     const spacer = el('div', { flex: '1', minHeight: '6px' });
 
     const bottom = el('div', {
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '9px',
-      flexShrink: '0', animation: 'ms-slideup .38s ease both', paddingBottom: '2px', width: '100%',
+      flexShrink: '0', animation: 'ms-slideup .38s ease both', width: '100%',
     });
 
     // Loadout pills — tap either to jump to its gallery.
@@ -317,92 +394,121 @@ export class ScreenManager {
     // Mode carousel.
     const carousel = el('div', {
       display: 'flex', gap: '9px', overflowX: 'auto', maxWidth: 'min(540px,96vw)',
-      padding: '5px 8px 8px', scrollSnapType: 'x mandatory', flexShrink: '0',
-    });
+      padding: '5px 10px 9px', scrollSnapType: 'x mandatory', flexShrink: '0',
+      maskImage: 'linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)',
+      WebkitMaskImage: 'linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)',
+    } as unknown as Partial<CSSStyleDeclaration>);
     carousel.className = 'ms-scroll';
     for (const m of MODES) {
       const on = this.mode === m.id;
       const cardEl = el('button', {
-        flexShrink: '0', width: '112px', border: 'none', cursor: 'pointer',
+        flexShrink: '0', width: '114px', cursor: 'pointer',
         scrollSnapAlign: 'center', pointerEvents: 'auto', textAlign: 'center',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-        padding: '9px 7px 8px', borderRadius: '16px',
-        color: on ? '#1b1405' : 'rgba(238,243,251,.86)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+        padding: '10px 7px 9px', borderRadius: '16px',
+        border: `2px solid ${UI.line}`,
+        color: '#fff',
         background: on
-          ? `linear-gradient(150deg,#ffe27a,${UI.gold})`
-          : 'linear-gradient(158deg,rgba(40,50,78,0.7),rgba(14,18,32,0.64))',
+          ? `linear-gradient(180deg,#fff0a4,${UI.gold} 40%,#eda312)`
+          : 'linear-gradient(180deg,#3d4966,#262f4a 55%,#1a2237)',
         boxShadow: on
-          ? '0 6px 0 rgba(140,84,10,.42),0 10px 22px rgba(255,200,60,.3)'
-          : '0 5px 0 rgba(0,0,0,.34),0 8px 16px rgba(0,0,0,.34)',
+          ? `0 5px 0 #96650a, 0 5px 0 2px ${UI.line}, 0 12px 22px rgba(255,190,60,.3),`
+            + ' inset 0 2px 0 rgba(255,255,255,.5)'
+          : `0 5px 0 #0c1120, 0 5px 0 2px ${UI.line}, inset 0 2px 0 rgba(255,255,255,.18)`,
         transition: 'transform .15s cubic-bezier(.34,1.6,.5,1)',
-        transform: on ? 'translateY(-4px) scale(1.05)' : 'none',
+        transform: on ? 'translateY(-5px)' : 'none',
       } as Partial<CSSStyleDeclaration>);
+      const ink = on ? 'rgba(26,16,2,.55)' : 'rgba(8,12,22,.6)';
       cardEl.innerHTML =
-        `<span style="font-size:23px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.4))">${m.icon}</span>` +
-        `<span style="font:900 13px/1 'Trebuchet MS',system-ui">${m.name}</span>` +
-        `<span style="font:700 9px/1.25 system-ui;opacity:.72;min-height:22px">${m.desc}</span>` +
-        `<span style="font:800 10px/1 ui-monospace,monospace;${on ? '' : `color:${UI.gold}`}">🏆 ${this.save.bestFor(m.id).toLocaleString()}</span>`;
+        `<span style="font-size:25px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.45))">${m.icon}</span>` +
+        `<span style="font:900 13px/1 'Trebuchet MS',system-ui;color:#fff;
+           -webkit-text-stroke:.6px ${ink};text-shadow:0 2px 0 ${ink}">${m.name}</span>` +
+        `<span style="font:700 9px/1.2 system-ui;height:11px;overflow:hidden;white-space:nowrap;
+           text-overflow:ellipsis;max-width:100%;
+           color:${on ? 'rgba(40,24,2,.8)' : 'rgba(238,243,251,.7)'}">${m.desc}</span>` +
+        `<span style="font:900 10px/1 'Trebuchet MS',monospace;
+           color:${on ? 'rgba(40,24,2,.85)' : UI.gold}">🏆 ${this.save.bestFor(m.id).toLocaleString()}</span>`;
       cardEl.addEventListener('click', () => { this.mode = m.id; this.audio.ui(); this.renderMenu(); });
       carousel.append(cardEl);
+      // Keep the chosen mode centred so the carousel never opens mid-card.
+      if (on) requestAnimationFrame(() => cardEl.scrollIntoView({ block: 'nearest', inline: 'center' }));
     }
 
-    const play = button('▶  질주 시작', () => this.startRun());
-    play.style.font = `900 20px/1 'Trebuchet MS',system-ui`;
-    play.style.padding = '15px 50px';
+    const play = button('▶  질주 시작', () => this.startRun(), 'green');
+    play.style.font = `900 22px/1 'Trebuchet MS',system-ui`;
+    play.style.padding = '17px 56px';
     play.style.animation = 'ms-breathe 2.6s ease-in-out infinite';
 
     bottom.append(pills, carousel, play);
-    this.content.append(title, missions, spacer, bottom);
+    this.content.append(title, status, spacer, bottom);
   }
 
   /**
-   * The home-screen mission strip: the set number, three one-line progress rows
-   * and the word-hunt letters, all in the height of a single card. Tapping it
-   * opens the full mission board in the records hub.
+   * The home status card — the one always-visible read on where the player
+   * stands. A rank badge and its XP bar sit on top; under them the live mission
+   * set as three filled/empty pips and the word-hunt letters. Tapping it opens
+   * the full board.
    */
-  private missionStrip(): HTMLDivElement {
+  private statusCard(): HTMLDivElement {
     const d = this.save.data;
+    const rank = rankFor(d.xp);
+    const next = nextRank(d.xp);
+    const pct = rankProgress(d.xp) * 100;
+
     const wrap = el('div');
     wrap.className = 'ms-card flat';
     wrap.style.cssText +=
-      'width:min(430px,94vw);gap:6px;flex-shrink:0;padding:10px 13px;cursor:pointer;pointer-events:auto';
+      'width:min(440px,94vw);flex-shrink:0;padding:8px 11px;cursor:pointer;pointer-events:auto;'
+      + 'flex-direction:row;align-items:center;gap:10px';
 
-    const head = el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' });
+    // Rank badge.
+    wrap.append(el('div', {
+      width: '38px', height: '38px', flexShrink: '0', borderRadius: '12px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
+      border: `2px solid ${UI.line}`,
+      background: `linear-gradient(180deg, ${rank.color}, ${rank.color}88 60%, #1b2338)`,
+      boxShadow: '0 3px 0 rgba(8,12,24,.9), inset 0 2px 0 rgba(255,255,255,.4)',
+    }, rank.icon));
+
+    // Rank name + XP bar + the mission / hunt read-out, stacked tight.
+    const info = el('div', { flex: '1', minWidth: '0', display: 'flex', flexDirection: 'column', gap: '4px' });
+    const top = el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' });
+    top.innerHTML =
+      `<span style="font:900 13px/1 'Trebuchet MS',system-ui;color:${rank.color};
+         white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Lv.${rank.level} ${rank.name}</span>` +
+      `<span style="font:800 9px/1 ui-monospace,monospace;color:rgba(238,243,251,.55);flex-shrink:0">` +
+      (next ? `${d.xp.toLocaleString()}/${next.need.toLocaleString()} XP` : 'MAX') + `</span>`;
+    const xpBar = bar(pct, 'green');
+    xpBar.style.height = '8px';
+
+    let pips = '';
+    for (const slot of d.missions) {
+      const done = slot.progress >= slot.goal;
+      const def = getMission(slot.id);
+      pips += `<span title="${def.text(slot.goal)}" style="width:19px;height:19px;border-radius:6px;
+        display:inline-flex;align-items:center;justify-content:center;font-size:10px;
+        border:1.5px solid ${UI.line};
+        background:${done ? `linear-gradient(180deg,#ccffdd,${UI.green} 55%,#23b45e)` : 'rgba(255,255,255,.07)'};
+        filter:${done ? 'none' : 'grayscale(.7) opacity(.75)'}">${done ? '✅' : def.icon}</span>`;
+    }
     let letters = '';
     for (const ch of HUNT_WORD) {
       const got = d.huntLetters.includes(ch);
-      letters += `<span style="width:17px;height:20px;border-radius:5px;display:inline-flex;align-items:center;
-        justify-content:center;font:900 11px/1 'Trebuchet MS',system-ui;
-        background:${got ? `linear-gradient(160deg,#8ff0ff,${UI.blue})` : 'rgba(255,255,255,.08)'};
-        color:${got ? '#04202e' : 'rgba(238,243,251,.32)'}">${ch}</span>`;
+      letters += `<span style="width:15px;height:18px;border-radius:4px;display:inline-flex;
+        align-items:center;justify-content:center;font:900 9px/1 'Trebuchet MS',system-ui;
+        border:1.5px solid ${UI.line};
+        background:${got ? `linear-gradient(180deg,#bfe4ff,${UI.blue} 55%,#1d7ecb)` : 'rgba(255,255,255,.07)'};
+        color:${got ? '#04202e' : 'rgba(238,243,251,.3)'}">${ch}</span>`;
     }
-    head.innerHTML =
-      `<span style="font:900 12px/1 'Trebuchet MS',system-ui;letter-spacing:.8px;color:${UI.green}">
-         📋 미션 세트 ${d.missionSet}</span>` +
-      `<span style="display:flex;gap:3px;align-items:center">${letters}</span>`;
-    wrap.append(head);
-
-    for (const slot of d.missions) {
-      const def = getMission(slot.id);
-      const done = slot.progress >= slot.goal;
-      const pct = Math.min(100, (slot.progress / slot.goal) * 100);
-      const row = el('div', { display: 'flex', alignItems: 'center', gap: '7px' });
-      const label = el('span', {
-        font: '700 11px/1.2 system-ui', flex: '1', minWidth: '0',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        opacity: done ? '0.5' : '1', textDecoration: done ? 'line-through' : 'none',
-      }, `${done ? '✅' : def.icon} ${def.text(slot.goal)}`);
-      const b = bar(pct, done ? 'green' : '');
-      b.style.width = '68px';
-      b.style.flexShrink = '0';
-      b.style.height = '7px';
-      const num = el('span', {
-        font: '800 10px/1 ui-monospace,monospace', color: done ? UI.green : UI.gold,
-        minWidth: '52px', textAlign: 'right', flexShrink: '0',
-      }, `${Math.floor(slot.progress)}/${slot.goal}`);
-      row.append(label, b, num);
-      wrap.append(row);
-    }
+    const bottom = el('div', {
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+    });
+    bottom.innerHTML =
+      `<span style="display:flex;align-items:center;gap:4px">
+         <b style="font:900 10px/1 'Trebuchet MS',system-ui;color:${UI.green}">SET ${d.missionSet}</b>${pips}</span>` +
+      `<span style="display:flex;gap:2px;align-items:center">${letters}</span>`;
+    info.append(top, xpBar, bottom);
+    wrap.append(info);
 
     wrap.addEventListener('click', () => {
       this.recordTab = 'missions';
@@ -1207,9 +1313,19 @@ export class ScreenManager {
       line('🗝️ 열쇠', '부활 · 프리미엄 캐릭터/보드 구매') +
       line('❓ 미스터리 박스', '무작위 보상') +
       `<div style="height:1px;background:rgba(255,255,255,.12);margin:6px 0"></div>` +
-      `<div style="font:700 12px/1.6 system-ui;opacity:.85">
-         ⚠️ 낮은 장애물에 부딪히면 <b style="color:${UI.red}">휘청</b>이고 검표원이 바짝 따라붙습니다.
-         회복 전에 한 번 더 부딪히면 붙잡힙니다.</div>`;
+      `<div style="font:900 13px/1 'Trebuchet MS',system-ui;color:${UI.green}">스타일 체인</div>` +
+      line('🌀 긴 체공', '오래 떠 있다가 착지하면 체인 +1') +
+      line('🚃 지붕 착지', '열차 지붕에 올라타면 체인 +1') +
+      line('😮 니어미스', '장애물을 아슬아슬하게 스치면 체인 +1') +
+      `<div style="font:700 11px/1.5 system-ui;opacity:.8">
+         체인이 끊길 때 <b style="color:#ff8a1f">체인²×25</b>의 보너스 점수를 한 번에 받습니다.</div>` +
+      `<div style="height:1px;background:rgba(255,255,255,.12);margin:6px 0"></div>` +
+      `<div style="font:700 12px/1.6 system-ui;opacity:.88">
+         🚨 검표원과 개는 출발 직후와 <b style="color:${UI.red}">휘청</b>일 때만 따라붙고,
+         깨끗하게 달리면 화면 밖으로 떨어집니다. 회복 전에 한 번 더 부딪히면 붙잡힙니다.</div>` +
+      `<div style="font:700 12px/1.6 system-ui;opacity:.88;margin-top:4px">
+         🎫 질주할 때마다 <b style="color:${UI.green}">XP</b>가 쌓여 등급이 오르고,
+         등급이 오를 때마다 코인과 열쇠를 받습니다.</div>`;
     const close = button('닫기', () => show(this.help, false), 'ghost');
     root.append(panel, close);
     root.addEventListener('click', (e) => { if (e.target === root) show(this.help, false); });
@@ -1297,6 +1413,49 @@ export class ScreenManager {
     );
     if (r.keys > 0) statsBar.append(chip('🗝️', '열쇠', `+${r.keys}`, UI.magenta));
     if (r.letters > 0) statsBar.append(chip('🔤', '글자', `+${r.letters}`, UI.blue));
+    if (r.bestChain >= 2) statsBar.append(chip('🔥', '스타일', `×${r.bestChain}`, '#ff8a1f'));
+
+    // ── XP + rank: the always-there progression read, and the promotion
+    //    celebration when this run pushed the player over a threshold. ──
+    const rank = rankFor(d.xp);
+    const next = nextRank(d.xp);
+    const xpRow = el('div');
+    xpRow.className = 'ms-card flat';
+    xpRow.style.cssText +=
+      'width:min(440px,94vw);flex-direction:row;align-items:center;gap:10px;padding:8px 12px';
+    xpRow.append(el('div', {
+      width: '34px', height: '34px', flexShrink: '0', borderRadius: '11px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px',
+      border: `2px solid ${UI.line}`,
+      background: `linear-gradient(180deg, ${rank.color}, ${rank.color}88 60%, #1b2338)`,
+      boxShadow: '0 3px 0 rgba(8,12,24,.9), inset 0 2px 0 rgba(255,255,255,.4)',
+    }, rank.icon));
+    const xpInfo = el('div', { flex: '1', minWidth: '0', display: 'flex', flexDirection: 'column', gap: '4px' });
+    const xpTop = el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' });
+    xpTop.innerHTML =
+      `<span style="font:900 13px/1 'Trebuchet MS',system-ui;color:${rank.color}">Lv.${rank.level} ${rank.name}</span>` +
+      `<span style="font:900 12px/1 'Trebuchet MS',system-ui;color:${UI.green}">+${r.xp} XP</span>`;
+    const xpBar = bar(rankProgress(d.xp) * 100, 'green');
+    xpBar.style.height = '9px';
+    xpInfo.append(xpTop, xpBar);
+    if (next) {
+      xpInfo.append(el('div', { font: '700 9px/1 ui-monospace,monospace', color: 'rgba(238,243,251,.55)' },
+        `다음 등급까지 ${(next.need - d.xp).toLocaleString()} XP`));
+    }
+    xpRow.append(xpInfo);
+    bottom.append(xpRow);
+
+    for (const p of r.promotions) {
+      const promo = el('div');
+      promo.className = 'ms-chip';
+      promo.style.cssText +=
+        `font-size:13px;color:#fff;animation:ms-bounce 1.4s ease-in-out infinite;`
+        + `background:linear-gradient(180deg,#ffe27a,${UI.gold} 45%,#eda312);border-color:${UI.line}`;
+      promo.innerHTML = `<span style="font-size:17px">${p.icon}</span>`
+        + `<b style="color:#2a1a02">등급 상승! Lv.${p.level} ${p.name}</b>`
+        + `<span style="color:#3a2604;font-weight:800">🪙+${p.coins}${p.keys ? ` 🗝️+${p.keys}` : ''}</span>`;
+      bottom.append(promo);
+    }
 
     // Mission summary for this run.
     if (r.missionsDone.length || r.setsCleared) {

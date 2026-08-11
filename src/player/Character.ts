@@ -51,38 +51,80 @@ export class Character {
     return m;
   }
 
-  private box(w: number, h: number, d: number, mat: THREE.Material, r = 0): THREE.Mesh {
-    const g = r > 0
-      ? new THREE.CapsuleGeometry(Math.min(w, d) / 2, Math.max(0.01, h - Math.min(w, d)), 4, 8)
-      : new THREE.BoxGeometry(w, h, d);
+  private box(w: number, h: number, d: number, mat: THREE.Material): THREE.Mesh {
+    const g = new THREE.BoxGeometry(w, h, d);
     this.disposables.push(g);
     return new THREE.Mesh(g, mat);
   }
 
-  /** A two-segment limb: upper pivot → lower pivot (knee/elbow) → optional foot. */
+  /** A rounded limb segment / soft volume. */
+  private capsule(radius: number, length: number, mat: THREE.Material): THREE.Mesh {
+    const g = new THREE.CapsuleGeometry(radius, Math.max(0.01, length), 5, 12);
+    this.disposables.push(g);
+    return new THREE.Mesh(g, mat);
+  }
+
+  /** A short cylinder — hat bands, discs. */
+  private cyl(radius: number, height: number, mat: THREE.Material): THREE.Mesh {
+    const g = new THREE.CylinderGeometry(radius, radius, height, 16);
+    this.disposables.push(g);
+    return new THREE.Mesh(g, mat);
+  }
+
+  private ball(radius: number, mat: THREE.Material): THREE.Mesh {
+    const g = new THREE.SphereGeometry(radius, 14, 11);
+    this.disposables.push(g);
+    return new THREE.Mesh(g, mat);
+  }
+
+  /**
+   * A two-segment limb built from capsules with a ball joint at the elbow/knee:
+   * upper pivot → joint → lower segment → hand or shoe. The rounded segments
+   * and the joint ball are what stop the rig reading as a stack of blocks when
+   * it bends.
+   */
   private limb(
     x: number, pivotY: number, w: number, upper: number, lower: number,
     upperMat: THREE.Material, lowerMat: THREE.Material, footMat?: THREE.Material,
   ): { root: THREE.Group; joint: THREE.Group } {
+    const r = w / 2;
     const root = new THREE.Group();
     root.position.set(x, pivotY, 0);
-    const up = this.box(w, upper, w, upperMat);
+    const up = this.capsule(r, upper - w, upperMat);
     up.position.y = -upper / 2;
     root.add(up);
 
     const joint = new THREE.Group();
     joint.position.y = -upper;
     root.add(joint);
-    const lo = this.box(w * 0.92, lower, w * 0.92, lowerMat);
+    // Ball joint fills the crease so a bent limb stays one continuous form.
+    const knuckle = this.ball(r * 0.98, lowerMat);
+    joint.add(knuckle);
+    const lo = this.capsule(r * 0.92, lower - w * 0.92, lowerMat);
     lo.position.y = -lower / 2;
     joint.add(lo);
+
     if (footMat) {
-      const foot = this.box(w * 1.25, 0.17, w * 1.85, footMat);
-      foot.position.set(0, -lower + 0.03, 0.07);
-      joint.add(foot);
-      const sole = this.box(w * 1.3, 0.06, w * 1.95, this.mat(0xf2f2f2, 0.02));
-      sole.position.set(0, -lower - 0.05, 0.07);
+      // Chunky sneaker: sole slab, toe cap and a lace strap.
+      const shoe = this.box(w * 1.22, 0.16, w * 1.7, footMat);
+      shoe.position.set(0, -lower + 0.02, 0.08);
+      joint.add(shoe);
+      const toe = this.capsule(w * 0.55, w * 0.5, footMat);
+      toe.rotation.x = Math.PI / 2;
+      toe.position.set(0, -lower + 0.03, w * 0.86);
+      joint.add(toe);
+      const sole = this.box(w * 1.3, 0.07, w * 1.9, this.mat(0xf4f4f4, 0.02));
+      sole.position.set(0, -lower - 0.07, 0.08);
       joint.add(sole);
+      const lace = this.box(w * 1.05, 0.05, w * 0.3, this.mat(0xf4f4f4, 0.02));
+      lace.position.set(0, -lower + 0.11, w * 0.28);
+      joint.add(lace);
+    } else {
+      // Bare hand: a ball with a thumb nub so the arm ends in something.
+      const hand = this.ball(r * 1.18, lowerMat);
+      hand.scale.set(1, 1.12, 0.85);
+      hand.position.y = -lower - r * 0.35;
+      joint.add(hand);
     }
     return { root, joint };
   }
@@ -101,69 +143,126 @@ export class Character {
     this.torso.position.y = 0.94;
     this.inner.add(this.torso);
 
-    const chest = this.box(0.56, 0.5, 0.34, top);
+    // Rounded chest: a capsule squashed into a barrel gives soft shoulders and
+    // a tapered waist without any hard corners catching the key light.
+    const chest = this.capsule(0.19, 0.2, top);
+    chest.scale.set(1.5, 1.25, 1.0);
     chest.position.y = 0.3;
     this.torso.add(chest);
-    const belly = this.box(0.5, 0.22, 0.3, topDark);
-    belly.position.y = 0.02;
+    const belly = this.capsule(0.16, 0.06, topDark);
+    belly.scale.set(1.5, 1.1, 1.0);
+    belly.position.y = 0.03;
     this.torso.add(belly);
     // Hood bunched at the neck.
-    const hood = this.box(0.44, 0.2, 0.26, topDark);
-    hood.position.set(0, 0.56, -0.14);
+    const hood = this.capsule(0.13, 0.16, topDark);
+    hood.rotation.x = Math.PI / 2;
+    hood.scale.set(1.5, 1, 0.8);
+    hood.position.set(0, 0.55, -0.15);
     this.torso.add(hood);
     // Zip / print stripe.
-    const zip = this.box(0.07, 0.46, 0.02, accent);
-    zip.position.set(0, 0.3, 0.18);
+    const zip = this.box(0.07, 0.44, 0.03, accent);
+    zip.position.set(0, 0.3, 0.165);
     this.torso.add(zip);
+    // Neck, so the head is joined to the body rather than floating above it.
+    const neck = this.capsule(0.09, 0.08, skin);
+    neck.position.y = 0.55;
+    this.torso.add(neck);
 
-    // Hips.
-    const hips = this.box(0.5, 0.2, 0.32, bottom);
-    hips.position.y = -0.08;
+    // Hips + belt.
+    const hips = this.capsule(0.16, 0.06, bottom);
+    hips.scale.set(1.5, 1, 1.0);
+    hips.position.y = -0.07;
     this.torso.add(hips);
+    const belt = this.box(0.5, 0.07, 0.33, this.mat(shade(c.bottom, -0.4)));
+    belt.position.y = 0.05;
+    this.torso.add(belt);
+    const buckle = this.box(0.1, 0.09, 0.36, accent);
+    buckle.position.y = 0.05;
+    this.torso.add(buckle);
 
     // ── Head (own pivot for the look-ahead tilt) ──
     this.head = new THREE.Group();
     this.head.position.y = 0.62;
     this.torso.add(this.head);
-    const skull = this.box(0.42, 0.42, 0.42, skin);
-    skull.position.y = 0.2;
+    // Soft-cube skull: a sphere stretched square-ish keeps the blocky charm
+    // while losing the hard corners.
+    const skull = this.ball(0.23, skin);
+    skull.scale.set(0.94, 0.98, 0.96);
+    skull.position.y = 0.21;
     this.head.add(skull);
-    const hairBack = this.box(0.44, 0.3, 0.44, hair);
-    hairBack.position.set(0, 0.3, -0.04);
+    const jaw = this.capsule(0.13, 0.12, skin);
+    jaw.rotation.z = Math.PI / 2;
+    jaw.scale.set(1, 1, 0.86);
+    jaw.position.set(0, 0.1, 0.03);
+    this.head.add(jaw);
+    const hairBack = this.ball(0.235, hair);
+    hairBack.scale.set(0.96, 0.72, 0.98);
+    hairBack.position.set(0, 0.3, -0.03);
     this.head.add(hairBack);
-    // Eyes + brows.
+    for (const sx of [-0.215, 0.215]) {
+      const ear = this.ball(0.052, skin);
+      ear.scale.set(0.6, 1.15, 1);
+      ear.position.set(sx, 0.2, 0.01);
+      this.head.add(ear);
+    }
+    // Eyes + brows. Positions hug the skull sphere so nothing floats off it.
     const eyeW = this.mat(0xffffff, 0.02);
     const pupil = this.mat(0x201826);
-    for (const sx of [-0.1, 0.1]) {
-      const e = this.box(0.11, 0.11, 0.03, eyeW);
-      e.position.set(sx, 0.22, 0.215);
+    for (const sx of [-0.095, 0.095]) {
+      const e = this.ball(0.055, eyeW);
+      e.scale.set(1, 1.05, 0.55);
+      e.position.set(sx, 0.22, 0.185);
       this.head.add(e);
-      const p = this.box(0.055, 0.07, 0.03, pupil);
-      p.position.set(sx + (sx > 0 ? 0.01 : -0.01), 0.21, 0.23);
+      const p = this.ball(0.03, pupil);
+      p.scale.set(1, 1.15, 0.7);
+      p.position.set(sx + (sx > 0 ? 0.006 : -0.006), 0.215, 0.212);
       this.head.add(p);
-      const b = this.box(0.12, 0.03, 0.03, hair);
-      b.position.set(sx, 0.31, 0.22);
+      // A catchlight is what makes the face feel alive rather than painted on.
+      const glint = this.ball(0.012, eyeW);
+      glint.position.set(sx + (sx > 0 ? 0.016 : 0.004), 0.238, 0.229);
+      this.head.add(glint);
+      const b = this.capsule(0.016, 0.08, hair);
+      b.rotation.set(0, 0, Math.PI / 2 + (sx > 0 ? -0.12 : 0.12));
+      b.position.set(sx, 0.298, 0.183);
       this.head.add(b);
     }
-    // Cap: crown + peak, worn slightly back.
-    const crown = this.box(0.46, 0.18, 0.46, cap);
-    crown.position.y = 0.44;
+    // Cap: domed crown + curved peak, worn slightly back.
+    const crown = this.ball(0.245, cap);
+    crown.scale.set(1, 0.66, 1);
+    crown.position.y = 0.36;
     this.head.add(crown);
-    const peak = this.box(0.44, 0.05, 0.3, cap);
-    peak.position.set(0, 0.37, 0.3);
+    const band = this.cyl(0.248, 0.05, this.mat(shade(c.cap, -0.35), 0.06));
+    band.position.y = 0.345;
+    this.head.add(band);
+    // Peak: a thin plate, tipped down at the front like a worn-in brim.
+    const peak = this.box(0.4, 0.045, 0.26, cap);
+    peak.rotation.x = -0.2;
+    peak.position.set(0, 0.335, 0.27);
     this.head.add(peak);
-    const button = this.box(0.08, 0.06, 0.08, accent);
-    button.position.y = 0.54;
+    const peakTip = this.capsule(0.022, 0.36, cap);
+    peakTip.rotation.z = Math.PI / 2;
+    peakTip.position.set(0, 0.31, 0.39);
+    this.head.add(peakTip);
+    const button = this.ball(0.045, accent);
+    button.position.y = 0.53;
     this.head.add(button);
 
     // ── Backpack + spray cans ──
-    const pack = this.box(0.42, 0.5, 0.2, this.mat(shade(c.accent, -0.15), 0.06));
+    const packMat = this.mat(shade(c.accent, -0.15), 0.06);
+    const pack = this.capsule(0.15, 0.24, packMat);
+    pack.scale.set(1.35, 1.1, 0.7);
     pack.position.set(0, 0.3, -0.29);
     this.torso.add(pack);
+    const flap = this.box(0.36, 0.1, 0.2, this.mat(shade(c.accent, -0.4), 0.04));
+    flap.position.set(0, 0.42, -0.3);
+    this.torso.add(flap);
     for (const sx of [-0.11, 0.11]) {
-      const can = this.box(0.11, 0.26, 0.11, accent);
+      const can = this.capsule(0.05, 0.16, accent);
       can.position.set(sx, 0.56, -0.3);
       this.torso.add(can);
+      const nozzle = this.ball(0.032, this.mat(0xf4f4f4, 0.02));
+      nozzle.position.set(sx, 0.67, -0.3);
+      this.torso.add(nozzle);
     }
     for (const sx of [-0.17, 0.17]) {
       const strap = this.box(0.07, 0.5, 0.36, topDark);
@@ -176,20 +275,22 @@ export class Character {
     this.scarf.position.set(0, 0.56, -0.16);
     this.torso.add(this.scarf);
     for (let i = 0; i < 3; i++) {
-      const seg = this.box(0.2 - i * 0.03, 0.1, 0.34, accent);
-      seg.position.set(0, -i * 0.06, -0.2 - i * 0.32);
+      const seg = this.capsule(0.05, 0.26, accent);
+      seg.rotation.x = Math.PI / 2;
+      seg.scale.set(2 - i * 0.3, 1, 0.55);
+      seg.position.set(0, -i * 0.06, -0.24 - i * 0.3);
       this.scarf.add(seg);
     }
 
     // ── Limbs ──
-    // Shoulder caps hide the pivot seam and round the silhouette off.
+    // Deltoid balls hide the pivot seam and round the silhouette off.
     for (const sx of [-0.34, 0.34]) {
-      const cap = this.box(0.2, 0.18, 0.24, top);
-      cap.position.set(sx, 0.48, 0);
-      this.torso.add(cap);
+      const delt = this.ball(0.115, top);
+      delt.position.set(sx, 0.45, 0);
+      this.torso.add(delt);
     }
-    const armL = this.limb(-0.34, 0.44, 0.13, 0.32, 0.3, top, skin);
-    const armR = this.limb(0.34, 0.44, 0.13, 0.32, 0.3, top, skin);
+    const armL = this.limb(-0.34, 0.44, 0.13, 0.3, 0.26, top, skin);
+    const armR = this.limb(0.34, 0.44, 0.13, 0.3, 0.26, top, skin);
     this.shoulderL = armL.root;
     this.shoulderR = armR.root;
     this.elbowL = armL.joint;

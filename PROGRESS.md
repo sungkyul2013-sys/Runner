@@ -22,9 +22,10 @@ external art, runs offline.
 - **Roof running**: ramps lift you to low-roof height; from a roof you can hop
   to a full-height rake. Ramp slopes are interpolated analytically so support
   height always matches the art.
-- **The chase**: a yard inspector and his dog run behind you, hang back on a
-  clean run and surge onto your heels the moment you stumble. Crash while
-  stumbling and the inspector lunges for the collar.
+- **The chase**: a yard inspector and his dog are punctuation, not scenery —
+  hard on your heels for the opening sprint and every stumble, then falling
+  away behind the camera once the run is clean. Crash while stumbling and the
+  inspector lunges for the collar.
 - **Stumble system**: clipping a hurdle, crate or gantry trips you instead of
   ending the run — a second mistake inside the recovery window is fatal.
   Hardcore mode grants none; 솔 grants an extra.
@@ -36,6 +37,10 @@ external art, runs offline.
 - **Word hunt**: collect M‑E‑T‑R‑O across runs for a key and 500 coins.
 - **Score**: distance × a multiplier that ramps every 500 m (cap ×30), stacked
   with mission bonuses, mode rules, the 2× power-up and the score booster.
+- **Style chain**: long hang-times, roof landings and near-misses stack a live
+  chain that cashes out for chain²×25 when it lapses.
+- **Weather**: each district carries its own — neon drizzle, aurora snowfall,
+  desert embers — cross-fading as the tour moves on.
 - **Coin routing**: every spawned segment publishes its occupancy grid, and the
   coin trail is traced along a *survivable* line through it — the coins arc over
   hurdles, dip under gantries and climb ramps onto roofs, so they teach the line.
@@ -47,6 +52,9 @@ external art, runs offline.
 
 ## Meta
 
+- **12 ranks**: every run pays XP from its score, coins and distance, and each
+  promotion pays a coin/key purse. The rank badge and its bar sit on the home
+  screen and the results screen.
 - **12 characters**, each with a hand-built look and a passive perk, plus
   **36 outfits** (two alternates each) that re-style the rig without touching
   the perk — previewed live on the gallery card and carried into the run.
@@ -65,16 +73,26 @@ external art, runs offline.
 
 ## Presentation
 
-- Chunky articulated character rig — shoulders, elbows, hips, knees, neck and
-  torso pivots drive a real sprint with counter-rotation, an airborne tuck, a
-  baseball-slide roll, a pitched-forward stumble and a hoverboard carve.
+- Character rig built from capsules and ball joints — rounded limbs, real
+  hands, chunky sneakers, a domed cap with a curved peak, a soft-cube skull with
+  catchlit eyes, and a world-space blob shadow that shrinks with altitude.
+  Shoulders, elbows, hips, knees, neck and torso pivots drive a sprint with
+  counter-rotation, an airborne tuck, a baseball-slide roll, a pitched-forward
+  stumble and a hoverboard carve.
 - HUD: score with a live multiplier, distance, wallet, power-up countdown rings,
   word-hunt strip, hoverboard button with its ride gauge, mission toasts,
   express warnings, combo meter, resume countdown.
-- Menus: home with a live 3D runner and a compact mission strip, crew and board
-  galleries with live previews and an inline outfit swatch row, shop, and a
-  records hub (missions / top runs / daily / world tour / achievements), plus
-  settings, help and a rich results screen.
+- **Supercell-style UI kit**: every control is a chunky 3D slab — dark comic
+  outline, saturated vertical gradient face, glossy top light and a solid colour
+  edge underneath that compresses on press. Extruded wobbling wordmark with a
+  shine sweep, a district ribbon, currency counters with "+" nubs, beveled icon
+  navigation and drifting emoji ambience.
+- Menus: home with a live 3D runner, the rank/mission status row and a mode
+  carousel; crew and board galleries with live previews and an inline outfit
+  swatch row; shop; and a records hub (missions / top runs / daily / world tour
+  / achievements), plus settings, help and a rich results screen.
+- The **start screen tours the world on its own** — the backdrop cycles
+  districts every 11 s, easing sky, skyline, ballast and weather together.
 - Juice: bloom, particle bursts, screen shake, hit-stop, coin combos,
   near-misses, district banners, new-record celebration; synthesised Web Audio
   SFX (including the inspector's whistle) and a looping BGM.

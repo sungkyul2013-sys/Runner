@@ -49,6 +49,8 @@ export class Player {
   private stumbleTimer = 0;
   private caughtTime = 0;
 
+  /** World-space blob shadow — parented to the scene, not to the runner. */
+  readonly shadow: THREE.Mesh;
   private readonly magnetField: THREE.Mesh;
   private readonly board: THREE.Group;
   private readonly boardDeck: THREE.Mesh;
@@ -68,6 +70,17 @@ export class Player {
   constructor() {
     this.rig = new Character(CHARACTERS[0].colors);
     this.group.add(this.rig.group);
+
+    // ── Contact shadow: lives in world space under the runner, shrinking and
+    //    fading with altitude so a jump reads as height, not just a rise. ──
+    this.shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.62, 22),
+      new THREE.MeshBasicMaterial({
+        color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false,
+      }),
+    );
+    this.shadow.rotation.x = -Math.PI / 2;
+    this.shadow.renderOrder = 1;
 
     // ── Coin-magnet field: a soft additive shell that spins while active ──
     this.magnetField = new THREE.Mesh(
@@ -202,6 +215,10 @@ export class Player {
       this.group.position.set(0, PLAYER_HALF_STANDING.y, PLAYER_Z);
       this.rig.showcase(dt, elapsed - E);
     }
+    this.shadow.visible = true;
+    this.shadow.position.set(this.group.position.x, 0.035, this.group.position.z);
+    this.shadow.scale.setScalar(1);
+    (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.34;
   }
 
   /** Restore the player to the start-of-run state. */
@@ -235,6 +252,7 @@ export class Player {
   /** Hide the rig (the crash debris carries the moment). */
   hide(): void {
     this.rig.group.visible = false;
+    this.shadow.visible = false;
     this.magnetField.visible = false;
     this.board.visible = false;
     this.jetpack.visible = false;
@@ -376,6 +394,7 @@ export class Player {
     const half = this.sliding ? PLAYER_HALF_SLIDING : PLAYER_HALF_STANDING;
     this.group.position.set(this.x, this.feetY + half.y, PLAYER_Z);
     this.updateAABB();
+    this.updateShadow();
 
     // Landing squash + lean into lane changes (visual only).
     if (!this.sliding) {
@@ -425,6 +444,20 @@ export class Player {
               : this.boarding ? 'surf'
                 : 'run';
     this.rig.update(dt, pose, this.animSpeed);
+  }
+
+  /**
+   * Park the blob shadow on whatever surface is under the runner and shrink /
+   * fade it with altitude. Capped so a jetpack high above the yard still leaves
+   * a faint mark rather than vanishing outright.
+   */
+  private updateShadow(): void {
+    const air = Math.max(0, this.feetY - this.groundY);
+    const k = Math.max(0.28, 1 - air / 5);
+    this.shadow.position.set(this.x, this.groundY + 0.035, PLAYER_Z);
+    this.shadow.scale.setScalar(k);
+    (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.34 * k;
+    this.shadow.visible = this.rig.group.visible;
   }
 
   /** Directly set the player's feet height (jetpack flight control). */

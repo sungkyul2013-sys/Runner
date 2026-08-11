@@ -1,6 +1,10 @@
 import { HUNT_WORD } from '../config/powerups';
 import { outfitKey } from './outfits';
+import { RANKS, rankFor } from './ranks';
 import { getMission, MISSIONS, rollMissions, setReward, type MissionMetric } from './missions';
+
+/** Rank lookup by level, built once. */
+const RANKS_BY_LEVEL = new Map(RANKS.map((r) => [r.level, r]));
 
 const KEY = 'metrosurf.save';
 const VERSION = 3;
@@ -96,6 +100,8 @@ export interface SaveData {
   totalDistance: number;
   totalTime: number;
   totalScore: number;
+  /** Lifetime XP — drives the rank ladder. */
+  xp: number;
   /** Lifetime counters keyed by mission metric. */
   stats: Partial<Record<MissionMetric, number>>;
 
@@ -133,6 +139,7 @@ function defaults(): SaveData {
     totalDistance: 0,
     totalTime: 0,
     totalScore: 0,
+    xp: 0,
     stats: {},
     claimedAchievements: [],
     claimedMilestones: [],
@@ -434,6 +441,29 @@ export class SaveManager {
 
     this.save();
     return { isBest, rank: rank < 0 ? -1 : rank };
+  }
+
+  /**
+   * Bank a run's XP. Returns every rank crossed (usually zero or one) after
+   * paying each promotion purse, so the caller can celebrate them in order.
+   */
+  addXp(amount: number): { level: number; name: string; icon: string; coins: number; keys: number }[] {
+    if (amount <= 0) return [];
+    const before = rankFor(this.d.xp).level;
+    this.d.xp += amount;
+    const after = rankFor(this.d.xp);
+    const gained: { level: number; name: string; icon: string; coins: number; keys: number }[] = [];
+    if (after.level > before) {
+      for (let lv = before + 1; lv <= after.level; lv++) {
+        const r = RANKS_BY_LEVEL.get(lv);
+        if (!r) continue;
+        this.d.coins += r.coins;
+        this.d.keys += r.keys;
+        gained.push({ level: r.level, name: r.name, icon: r.icon, coins: r.coins, keys: r.keys });
+      }
+    }
+    this.save();
+    return gained;
   }
 
   /** Lifetime counter used by achievements and the stats panel. */
