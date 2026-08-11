@@ -17,12 +17,14 @@
  * Exits non-zero if any template is unclearable or has overlapping pieces.
  */
 import {
+  BASE_SPEED,
   GRAVITY,
   JUMP_VELOCITY,
   LOW_ROOF,
-  SLOT_LEN,
-  BASE_SPEED,
+  PLAYER_HALF_SLIDING,
+  PLAYER_HALF_STANDING,
   SLIDE_DURATION,
+  SLOT_LEN,
 } from '../src/config/constants';
 import { SPECS } from '../src/world/Obstacle';
 import { buildGrid, type Cell } from '../src/world/SegmentManager';
@@ -32,6 +34,9 @@ const LANES = [-1, 0, 1] as const;
 
 /** Peak of a standing jump. */
 const APEX = (JUMP_VELOCITY * JUMP_VELOCITY) / (2 * GRAVITY);
+/** Standing and rolling heights, for overhead clearance. */
+const STAND_H = PLAYER_HALF_STANDING.y * 2;
+const ROLL_H = PLAYER_HALF_SLIDING.y * 2;
 /** Slots covered by a jump / roll at the run's *base* speed (worst case). */
 const AIR_SLOTS = Math.max(1, Math.floor(((2 * JUMP_VELOCITY) / GRAVITY) * BASE_SPEED / SLOT_LEN));
 const ROLL_SLOTS = Math.max(1, Math.floor((SLIDE_DURATION * BASE_SPEED) / SLOT_LEN));
@@ -50,37 +55,46 @@ interface Step {
 function step(cell: Cell, h: number, vert: Carry): Step {
   const onRoof = h > 0.01;
 
+  // Whatever surface you end this slot on, your head has to fit under the
+  // lowest thing overhead — that is what makes a bore or a roof gantry lethal.
+  const fits = (surface: number): boolean =>
+    surface + (vert === 'ROLL' ? ROLL_H : STAND_H) <= cell.ceiling + 0.01;
+
   if (onRoof) {
     if (Math.abs(cell.surface - h) < 0.01) {
-      // Still on the same deck — only a roof gantry can catch you up here.
-      if (cell.roofRoll && vert !== 'ROLL') return { height: null };
+      if (!fits(h)) return { height: null };
       return { height: h };
     }
     if (cell.surface > h + 0.01) {
       // A taller carriage alongside: only boardable mid-jump and within reach.
-      if (vert === 'AIR' && cell.surface <= h + APEX) return { height: cell.surface };
+      if (vert === 'AIR' && cell.surface <= h + APEX && fits(cell.surface)) {
+        return { height: cell.surface };
+      }
       return { height: null };
     }
     // Dropping off the end of a deck.
-    if (cell.surface > 0.01) return { height: cell.surface };
+    if (cell.surface > 0.01) return fits(cell.surface) ? { height: cell.surface } : { height: null };
     if (cell.blocked) return { height: null };
     if (cell.action !== 'none') return { height: null }; // no time to react on the way down
-    return { height: 0 };
+    return fits(0) ? { height: 0 } : { height: null };
   }
 
   // ── On the ballast ──
   if (cell.blocked) {
     if (cell.surface > 0.01) {
       // A rideable carriage: board it if a jump can actually reach the roof.
-      if (vert === 'AIR' && cell.surface <= APEX) return { height: cell.surface };
+      if (vert === 'AIR' && cell.surface <= APEX && fits(cell.surface)) {
+        return { height: cell.surface };
+      }
       return { height: null };
     }
     return { height: null }; // pylon / buffer / express
   }
+  if (!fits(0)) return { height: null }; // the ballast itself is too tight
   if (cell.action === 'jump') return vert === 'AIR' ? { height: 0 } : { height: null };
   if (cell.action === 'roll') return vert === 'ROLL' ? { height: 0 } : { height: null };
   // A ramp lifts you to its top by the time you leave the slot.
-  if (cell.surface > 0.01) return { height: cell.surface };
+  if (cell.surface > 0.01) return fits(cell.surface) ? { height: cell.surface } : { height: null };
   return { height: 0 };
 }
 
@@ -133,8 +147,8 @@ function overlaps(index: number): string[] {
   for (const p of t.placements) {
     const spec = SPECS[p.kind];
     for (let s = p.slot; s < p.slot + spec.slots; s++) {
-      // A roof gantry deliberately shares its cell with the carriage below it.
-      const tag = p.kind === 'ROOF_GATE' ? 'roof' : 'ground';
+      // Overhead pieces deliberately share their cells with what runs beneath.
+      const tag = p.kind === 'ROOF_GATE' || p.kind === 'TUNNEL' ? 'roof' : 'ground';
       const key = `${s}:${p.lane}:${tag}`;
       const prev = used.get(key);
       if (prev) bad.push(`slot ${s} lane ${p.lane}: ${prev} ↔ ${p.kind}`);

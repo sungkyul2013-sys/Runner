@@ -301,6 +301,41 @@ export const TEMPLATES: SegmentTemplate[] = [
       { slot: 14, lane: 1, kind: K.GATE },
     ],
   },
+  // ── Tunnel bores — the signature "get off the roof" moment ─────────────
+  {
+    difficulty: 2, slots: 14, safePath: 'the bore is clear on the ballast; roll if you took the roof',
+    tag: 'tunnel',
+    placements: [
+      { slot: 1, lane: 0, kind: K.RAMP },
+      { slot: 2, lane: 0, kind: K.TRAIN_LOW_LONG },
+      { slot: 6, lane: 0, kind: K.TUNNEL },
+    ],
+  },
+  {
+    difficulty: 3, slots: 18, safePath: 'ride the left rake into the bore and roll, or run the open right lane',
+    tag: 'tunnel',
+    placements: [
+      { slot: 1, lane: -1, kind: K.RAMP },
+      { slot: 2, lane: -1, kind: K.TRAIN_LOW_LONG },
+      { slot: 5, lane: 0, kind: K.TUNNEL },
+      { slot: 12, lane: 0, kind: K.BARRIER },
+      { slot: 12, lane: -1, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 4, slots: 20, safePath: 'two bores back to back — stay low through both',
+    tag: 'tunnel',
+    placements: [
+      { slot: 1, lane: 1, kind: K.RAMP },
+      { slot: 2, lane: 1, kind: K.TRAIN_LOW_LONG },
+      { slot: 4, lane: 0, kind: K.TUNNEL },
+      { slot: 11, lane: 0, kind: K.TUNNEL },
+      { slot: 2, lane: -1, kind: K.TRAIN_TALL },
+      { slot: 16, lane: 0, kind: K.GATE },
+      { slot: 16, lane: 1, kind: K.GATE },
+    ],
+  },
+
   {
     difficulty: 4, slots: 16, safePath: 'crate field — hop or weave, gantry finish',
     placements: [

@@ -4,6 +4,7 @@ import {
   JUMP_VELOCITY,
   laneToX,
   LOW_ROOF,
+  PLAYER_HALF_STANDING,
   SLOT_LEN,
 } from '../config/constants';
 import type { Cell, SegmentLayout } from './SegmentManager';
@@ -23,6 +24,8 @@ export const PATH_SPACING = 1.7;
 
 /** Peak of a standing jump — the arch height coins are drawn at. */
 const APEX = (JUMP_VELOCITY * JUMP_VELOCITY) / (2 * GRAVITY);
+/** Height of the runner while upright (used for overhead clearance). */
+const STAND_HEIGHT = PLAYER_HALF_STANDING.y * 2;
 
 function passable(c: Cell): boolean {
   if (!c.blocked) return true;
@@ -37,7 +40,7 @@ function cost(c: Cell): number {
   if (c.blocked) k += 3; // has to be boarded
   if (c.action === 'jump') k += 1;
   if (c.action === 'roll') k += 1;
-  if (c.roofRoll) k += 1;
+  if (c.surface + STAND_HEIGHT > c.ceiling) k += 1; // has to be taken rolling
   return k;
 }
 
@@ -97,7 +100,9 @@ export function tracePath(layout: SegmentLayout, startLane = 0): {
     } else if (cell.action === 'roll') {
       y = 0.55;
     }
-    if (cell.roofRoll) y = Math.min(y, cell.surface + 0.5);
+    // Under a bore or a roof gantry the trail hugs the deck so it reads as
+    // "get down here" rather than leading the player into the soffit.
+    if (cell.surface + STAND_HEIGHT > cell.ceiling) y = cell.surface + 0.5;
     points.push({ x, y, dz, airborne });
   }
 

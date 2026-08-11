@@ -14,10 +14,10 @@ import { TEMPLATES, type SegmentTemplate } from './segments/templates';
 /** Empty warm-up segments at run start so the player gets a clear runway. */
 const WARMUP_SEGMENTS = 2;
 /** Distance travelled before each successive difficulty tier unlocks. */
-const DIFFICULTY_STEP = 300;
+const DIFFICULTY_STEP = 170;
 const MAX_DIFFICULTY = 4;
 /** Past this distance denser, higher-difficulty layouts are favoured. */
-const DENSE_DISTANCE = 700;
+const DENSE_DISTANCE = 450;
 
 /** What the player can do in one authoring cell. */
 export type CellAction = 'none' | 'jump' | 'roll';
@@ -29,8 +29,8 @@ export interface Cell {
   blocked: boolean;
   /** Action needed to survive this cell at ballast level. */
   action: CellAction;
-  /** A roll is required while up on the roof (roof gantry). */
-  roofRoll: boolean;
+  /** Height of the lowest obstruction overhead (Infinity = open sky). */
+  ceiling: number;
 }
 
 /** One spawned segment's grid, handed to the coin layer to trace a line. */
@@ -43,7 +43,7 @@ export interface SegmentLayout {
 }
 
 function emptyCell(): Cell {
-  return { surface: 0, blocked: false, action: 'none', roofRoll: false };
+  return { surface: 0, blocked: false, action: 'none', ceiling: Infinity };
 }
 
 /** Build the occupancy grid for a template (pure — also used by the checker). */
@@ -53,28 +53,32 @@ export function buildGrid(t: SegmentTemplate): Cell[][] {
 
   for (const p of t.placements) {
     const spec = SPECS[p.kind];
-    const li = p.lane + 1;
+    // A tunnel bore spans the whole yard; everything else sits in one lane.
+    const lanes = p.kind === ObstacleKind.TUNNEL ? [0, 1, 2] : [p.lane + 1];
     for (let s = p.slot; s < Math.min(t.slots, p.slot + spec.slots); s++) {
-      const cell = grid[s][li];
-      switch (p.kind) {
-        case ObstacleKind.RAMP:
-          cell.surface = spec.top;
-          break;
-        case ObstacleKind.ROOF_GATE:
-          cell.roofRoll = true;
-          break;
-        case ObstacleKind.BARRIER:
-        case ObstacleKind.CRATE:
-          cell.action = 'jump';
-          break;
-        case ObstacleKind.GATE:
-          cell.action = 'roll';
-          break;
-        default:
-          // Carriages, pylons, buffer stops: solid at ballast level.
-          cell.blocked = true;
-          if (spec.rideable) cell.surface = spec.top;
-          break;
+      for (const li of lanes) {
+        const cell = grid[s][li];
+        switch (p.kind) {
+          case ObstacleKind.RAMP:
+            cell.surface = spec.top;
+            break;
+          case ObstacleKind.ROOF_GATE:
+          case ObstacleKind.TUNNEL:
+            cell.ceiling = Math.min(cell.ceiling, spec.bottom);
+            break;
+          case ObstacleKind.BARRIER:
+          case ObstacleKind.CRATE:
+            cell.action = 'jump';
+            break;
+          case ObstacleKind.GATE:
+            cell.action = 'roll';
+            break;
+          default:
+            // Carriages, pylons, buffer stops: solid at ballast level.
+            cell.blocked = true;
+            if (spec.rideable) cell.surface = spec.top;
+            break;
+        }
       }
     }
   }

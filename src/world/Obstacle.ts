@@ -44,6 +44,8 @@ export enum ObstacleKind {
   CRATE = 'CRATE',
   /** Buffer stop / concrete block — solid, waist-to-head. Change lane. */
   BUFFER = 'BUFFER',
+  /** Tunnel bore spanning every lane — roll if you are up on a low roof. */
+  TUNNEL = 'TUNNEL',
 }
 
 export interface KindSpec {
@@ -110,6 +112,10 @@ export const SPECS: Record<ObstacleKind, KindSpec> = {
   },
   [ObstacleKind.BUFFER]: {
     slots: 1, halfX: 1.15, bottom: 0, top: 1.9, unbreakable: true,
+  },
+  [ObstacleKind.TUNNEL]: {
+    slots: 4, halfX: 4.6, bottom: ROOF_GATE_BOTTOM, top: ROOF_GATE_BOTTOM + 3.2,
+    elevated: true, unbreakable: true,
   },
 };
 
@@ -222,14 +228,20 @@ function doorTexture(): THREE.CanvasTexture {
 
 /** Up-chevron plate: "jump this". */
 function upArrowTexture(): THREE.CanvasTexture {
-  return tex('arrow-up', 128, 128, (ctx) => arrow(ctx, -1, '#ffe9a8'));
+  return tex('arrow-up', 128, 128, (ctx) => arrow(ctx, 'up', '#ffe9a8'));
 }
 /** Down-chevron plate: "roll under this". */
 function downArrowTexture(): THREE.CanvasTexture {
-  return tex('arrow-down', 128, 128, (ctx) => arrow(ctx, 1, '#ffffff'));
+  return tex('arrow-down', 128, 128, (ctx) => arrow(ctx, 'down', '#ffffff'));
 }
 
-function arrow(ctx: CanvasRenderingContext2D, dir: 1 | -1, color: string): void {
+/**
+ * Draw a stacked pair of chevrons. Canvas Y grows downward while the texture is
+ * applied with three.js' default flipY, so canvas-up is world-up: an "up"
+ * chevron needs its apex at the *smaller* canvas Y.
+ */
+function arrow(ctx: CanvasRenderingContext2D, way: 'up' | 'down', color: string): void {
+  const dir = way === 'up' ? 1 : -1;
   ctx.clearRect(0, 0, 128, 128);
   ctx.strokeStyle = color;
   ctx.lineWidth = 14;
@@ -460,6 +472,9 @@ export class Obstacle {
       case ObstacleKind.BUFFER:
         this.buildBuffer();
         break;
+      case ObstacleKind.TUNNEL:
+        this.buildTunnel(len);
+        break;
     }
   }
 
@@ -661,6 +676,55 @@ export class Obstacle {
     this.add(capG, capM, 0, 0.06, 0);
     const bandG = geo('crate:band', () => new THREE.BoxGeometry(1.56, 0.1, 0.12));
     for (const sz of [-0.62, 0.62]) this.add(bandG, capM, 0, 0.62, sz);
+  }
+
+  /**
+   * A tunnel bore across the whole yard: brick haunches, a barrel-vault soffit
+   * low enough to scrape anyone standing on a carriage roof, a portal ring with
+   * hazard nosing, and sodium lamps receding into the dark.
+   */
+  private buildTunnel(len: number): void {
+    const soffit = ROOF_GATE_BOTTOM;          // underside of the vault
+    const halfW = 5.6;
+    const brick = mat('tun:brick', () => std(0x6f6259, { rough: 0.96 }));
+    const dark = mat('tun:dark', () => std(0x1a1c22, { rough: 1 }));
+
+    // Barrel vault: an open-ended half cylinder laid along Z.
+    const vaultG = geo(`tun:vault:${len}`, () => {
+      const g = new THREE.CylinderGeometry(halfW, halfW, len, 22, 1, true, 0, Math.PI);
+      g.rotateZ(Math.PI / 2); // axis along X → then swing it to lie along Z
+      g.rotateY(Math.PI / 2);
+      return g;
+    });
+    const vault = new THREE.Mesh(vaultG, brick);
+    vault.material = brick;
+    (vault.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+    vault.position.y = soffit;
+    this.group.add(vault);
+
+    // Side haunches down to the ballast so the bore reads as solid.
+    const haunchG = geo(`tun:haunch:${len}`, () => new THREE.BoxGeometry(0.9, soffit + 0.4, len));
+    for (const sx of [-1, 1]) this.add(haunchG, brick, sx * (halfW - 0.2), (soffit + 0.4) / 2, 0);
+
+    // Portal ring on the near (+Z) face + hazard nosing.
+    const ringG = geo('tun:ring', () => new THREE.TorusGeometry(halfW - 0.1, 0.34, 8, 26, Math.PI));
+    const ring = this.add(ringG, mat('tun:ring', () => std(0x3d444e, { rough: 0.7, metal: 0.4 })),
+      0, soffit, len / 2);
+    ring.rotation.z = 0;
+    const noseG = geo('tun:nose', () => new THREE.BoxGeometry(halfW * 2, 0.42, 0.3));
+    this.add(noseG, mat('tun:nose', () => new THREE.MeshStandardMaterial({
+      map: stripeTexture(), roughness: 0.65,
+    })), 0, soffit - 0.2, len / 2 + 0.2);
+
+    // The dark throat behind the portal, plus receding sodium lamps.
+    const backG = geo(`tun:back:${len}`, () => new THREE.PlaneGeometry(halfW * 2, soffit + halfW));
+    this.add(backG, dark, 0, (soffit + halfW) / 2 - 0.4, -len / 2 + 0.05);
+    const lampG = geo('tun:lamp', () => new THREE.PlaneGeometry(0.7, 0.22));
+    const lampM = mat('tun:lampmat', () => new THREE.MeshBasicMaterial({ color: 0xffca6a }));
+    for (let i = 0; i < 3; i++) {
+      const l = this.add(lampG, lampM, 0, soffit + halfW * 0.55, len / 2 - 2.6 - i * 4.2);
+      l.rotation.x = Math.PI / 2;
+    }
   }
 
   /** Buffer stop: concrete block with a striped impact face. */
