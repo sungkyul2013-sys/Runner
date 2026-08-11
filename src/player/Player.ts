@@ -43,6 +43,8 @@ export class Player {
   private jumpMult = 1;
   private laneSpeedMult = 1;
   private lowGravity = false;
+  /** Gravity multiplier while *rising* — a floatier arc (히로's perk). */
+  private glide = 1;
   private flying = false;
 
   private squashTimer = 0;
@@ -356,6 +358,10 @@ export class Player {
   setLowGravity(on: boolean): void {
     this.lowGravity = on;
   }
+  /** <1 lightens gravity on the way up only, stretching the hang time. */
+  setGlide(k: number): void {
+    this.glide = k;
+  }
   setFlying(on: boolean): void {
     this.flying = on;
     if (on) {
@@ -374,7 +380,10 @@ export class Player {
 
     const wasAirborne = !this.grounded;
     if (!this.flying) {
-      this.vy -= GRAVITY * (this.lowGravity ? 0.74 : 1) * dt;
+      // Gliding only eases the rise, so landings stay crisp and predictable.
+      const rising = this.vy > 0;
+      const g = GRAVITY * (this.lowGravity ? 0.74 : 1) * (rising ? this.glide : 1);
+      this.vy -= g * dt;
       this.feetY += this.vy * dt;
       if (this.feetY <= this.groundY) {
         this.feetY = this.groundY;

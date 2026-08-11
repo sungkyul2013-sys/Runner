@@ -1,4 +1,5 @@
 import { HUNT_WORD } from '../config/powerups';
+import { charUpgradeCost, MAX_CHAR_LEVEL } from './characters';
 import { outfitKey } from './outfits';
 import { RANKS, rankFor } from './ranks';
 import { getMission, MISSIONS, rollMissions, setReward, type MissionMetric } from './missions';
@@ -79,6 +80,8 @@ export interface SaveData {
   ownedOutfits: string[];
   /** Equipped outfit per character id. */
   outfits: Record<string, string>;
+  /** Upgrade level per character id (absent = level 1). */
+  charLevels: Record<string, number>;
 
   upgrades: Record<string, number>;
   inventory: Inventory;
@@ -125,6 +128,7 @@ function defaults(): SaveData {
     selectedBoard: 'standard',
     ownedOutfits: [],
     outfits: {},
+    charLevels: {},
     upgrades: {},
     inventory: { headstart: 0, booster: 0, mystery: 0, board: 0 },
     missions: rollMissions(1),
@@ -182,6 +186,7 @@ export class SaveManager {
             ownedBoards: p.ownedBoards?.length ? p.ownedBoards : base.ownedBoards,
             ownedOutfits: [...(p.ownedOutfits ?? [])],
             outfits: { ...p.outfits },
+            charLevels: { ...p.charLevels },
             upgrades: { ...p.upgrades },
             inventory: { ...base.inventory, ...p.inventory },
             missions: p.missions?.length === 3 ? p.missions : base.missions,
@@ -275,6 +280,20 @@ export class SaveManager {
   outfitOf(charId: string): string {
     const id = this.d.outfits[charId];
     return id && this.ownsOutfit(charId, id) ? id : 'default';
+  }
+
+  /** A character's upgrade level (1 until it is raised). */
+  charLevel(id: string): number {
+    return Math.max(1, Math.min(MAX_CHAR_LEVEL, this.d.charLevels[id] ?? 1));
+  }
+  /** Raise a character a level. Returns false at the cap or if unaffordable. */
+  upgradeChar(id: string): boolean {
+    const lv = this.charLevel(id);
+    if (lv >= MAX_CHAR_LEVEL || !this.ownsChar(id)) return false;
+    if (!this.spend(charUpgradeCost(lv))) return false;
+    this.d.charLevels[id] = lv + 1;
+    this.save();
+    return true;
   }
 
   ownsBoard(id: string): boolean {

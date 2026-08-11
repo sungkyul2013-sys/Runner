@@ -49,10 +49,10 @@ export class Chase {
   private readonly disposables: { dispose(): void }[] = [];
 
   constructor() {
-    this.inspector = new Character(INSPECTOR, 1.06);
+    this.inspector = new Character(INSPECTOR, 0.94);
     // The rig is centred on its own origin, so lift it by the same hip height
     // the Player uses or the inspector walks around knee-deep in the ballast.
-    this.inspector.group.position.y = PLAYER_HALF_STANDING.y * 1.06;
+    this.inspector.group.position.y = PLAYER_HALF_STANDING.y * 0.94;
     this.group.add(this.inspector.group);
 
     // Soft contact shadows keep the pair planted on the ballast.
@@ -63,7 +63,7 @@ export class Chase {
     this.disposables.push(shadowGeo, shadowMat);
     const inspShadow = new THREE.Mesh(shadowGeo, shadowMat);
     inspShadow.rotation.x = -Math.PI / 2;
-    inspShadow.scale.setScalar(0.58);
+    inspShadow.scale.setScalar(0.52);
     inspShadow.position.y = 0.03;
     this.group.add(inspShadow);
 
@@ -178,7 +178,7 @@ export class Chase {
     g.add(collar);
     this.disposables.push(collar.geometry);
 
-    g.position.set(-1.75, 0, -0.35);
+    g.position.set(-2.5, 0, -0.35);
     return g;
   }
 
@@ -196,7 +196,7 @@ export class Chase {
     const t = 1 - Math.exp(-(engaged ? 4.2 : 1.5) * dt);
     this.z += (targetZ - this.z) * t;
     // Sit a little to the runner's right so the inspector never masks the line.
-    this.x += (playerX * 0.9 + 0.85 - this.x) * (1 - Math.exp(-5 * dt));
+    this.x += (playerX * 0.85 + 1.45 - this.x) * (1 - Math.exp(-5 * dt));
     this.group.position.set(this.x, 0, this.z);
     this.group.visible = this.master && this.z < HIDE_Z;
     if (!this.group.visible) return;
@@ -246,11 +246,11 @@ export class Chase {
 
   reset(): void {
     this.z = CHASE_REST_Z;
-    this.x = 0.85;
+    this.x = 1.15;
     this.lungeTime = 0;
     this.arm.visible = false;
     this.arm.rotation.x = 0;
-    this.dog.position.set(-1.75, 0, -0.35);
+    this.dog.position.set(-2.5, 0, -0.35);
     this.group.position.set(this.x, 0, CHASE_REST_Z);
   }
 

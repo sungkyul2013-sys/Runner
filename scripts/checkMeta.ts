@@ -10,7 +10,9 @@
 import { CORE_POWERUPS, HUNT_WORD, POWERUPS, PowerupType, SPAWNABLE } from '../src/config/powerups';
 import { ACHIEVEMENTS, DAILY } from '../src/data/achievements';
 import { BOARDS, getBoard } from '../src/data/boards';
-import { CHARACTERS, getCharacter } from '../src/data/characters';
+import {
+  CHARACTERS, charUpgradeCost, getCharacter, levelBlurb, MAX_CHAR_LEVEL, scaledAbility,
+} from '../src/data/characters';
 import { CONSUMABLES } from '../src/data/consumables';
 import { JOURNEY } from '../src/data/journey';
 import { getMission, goalFor, MISSIONS, rollMissions, setReward } from '../src/data/missions';
@@ -29,7 +31,7 @@ function check(name: string, cond: boolean): void {
 }
 
 // ── Data integrity ────────────────────────────────────────────────────────
-check('12 characters', CHARACTERS.length === 12);
+check('16 characters', CHARACTERS.length === 16);
 check('starter character is free', getCharacter('jino').price === 0);
 check('every character id is unique', new Set(CHARACTERS.map((c) => c.id)).size === CHARACTERS.length);
 check('key-priced headliners exist', CHARACTERS.filter((c) => c.key).length >= 2);
@@ -53,7 +55,7 @@ check('6 upgrades', UPGRADES.length === 6);
 check('every core power-up has an upgrade', CORE_POWERUPS.every(
   (t) => UPGRADES.some((u) => u.name === POWERUPS[t].label)));
 check('4 consumables', CONSUMABLES.length === 4);
-check('14 achievements', ACHIEVEMENTS.length === 14);
+check('16 achievements', ACHIEVEMENTS.length === 16);
 check('7-day daily cycle', DAILY.length === 7);
 check('9 world-tour milestones', JOURNEY.length === 9);
 check('world tour is strictly increasing', JOURNEY.every((m, i) => i === 0 || m.need > JOURNEY[i - 1].need));
@@ -94,6 +96,48 @@ check('key purchase', save.spendKeys(noir.price));
 save.buyChar('noir');
 check('owns the key character', save.ownsChar('noir'));
 check('key overspend rejected', save.spendKeys(99999) === false);
+
+// ── Character levels ──────────────────────────────────────────────────────
+check('upgrade cost climbs with level', charUpgradeCost(4) > charUpgradeCost(1));
+check('every character renders a level blurb at every level',
+  CHARACTERS.every((c) => {
+    for (let lv = 1; lv <= MAX_CHAR_LEVEL; lv++) {
+      if (typeof levelBlurb(c, lv) !== 'string' || !levelBlurb(c, lv)) return false;
+    }
+    return true;
+  }));
+{
+  const mina = getCharacter('mina');
+  const l1 = scaledAbility(mina, 1);
+  const l5 = scaledAbility(mina, MAX_CHAR_LEVEL);
+  check('level 1 matches the base perk', l1.magnetMult === mina.ability.magnetMult);
+  check('levelling grows the perk', (l5.magnetMult ?? 0) > (l1.magnetMult ?? 0));
+  check('level 5 doubles the bonus',
+    Math.abs((l5.magnetMult! - 1) - (mina.ability.magnetMult! - 1) * 2) < 1e-9);
+  check('levels are clamped', scaledAbility(mina, 99).magnetMult === l5.magnetMult);
+  const hiro = getCharacter('hiro');
+  check('glide tightens toward 1 as it levels',
+    scaledAbility(hiro, 5).glide! < scaledAbility(hiro, 1).glide!);
+  const nari = getCharacter('nari');
+  check('free boards resolve to a number',
+    scaledAbility(nari, 1).freeBoards === 1 && scaledAbility(nari, 3).freeBoards === 2);
+  const sol = getCharacter('sol');
+  check('extra stumbles resolve to a number',
+    scaledAbility(sol, 1).extraStumbles === 1 && scaledAbility(sol, 4).extraStumbles === 2);
+  check('a perkless runner stays perkless', !scaledAbility(getCharacter('jino'), 5).scoreMult);
+}
+{
+  const before = save.data.coins;
+  save.addCoins(200000);
+  check('a fresh character is level 1', save.charLevel('mina') === 1);
+  check('upgrading needs ownership', save.upgradeChar('aurora') === false);
+  save.buyChar('mina');
+  check('upgrade succeeds', save.upgradeChar('mina') && save.charLevel('mina') === 2);
+  check('upgrade charges coins', save.data.coins < before + 200000);
+  for (let i = 0; i < 10; i++) save.upgradeChar('mina');
+  check('level is capped', save.charLevel('mina') === MAX_CHAR_LEVEL);
+  check('upgrading at the cap is rejected', save.upgradeChar('mina') === false);
+}
 
 // ── Ranks ─────────────────────────────────────────────────────────────────
 check('12 ranks', RANKS.length === 12);

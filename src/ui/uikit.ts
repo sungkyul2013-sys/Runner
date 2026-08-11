@@ -34,6 +34,33 @@ function ensureStyles(): void {
   injected = true;
   const s = document.createElement('style');
   s.textContent = `
+    /* ── Responsive scale ───────────────────────────────────────────────────
+       One set of tokens drives every control's size, so shrinking the UI for a
+       small phone is a single breakpoint rather than dozens of clamps. */
+    :root{
+      --ms-card-min: 150px;   /* gallery column width */
+      --ms-r: 18px;           /* slab corner radius */
+      --ms-btn-fs: 17px;      /* button label */
+      --ms-btn-py: 15px;      /* button padding */
+      --ms-btn-px: 30px;
+      --ms-tab-fs: 13px;
+      --ms-gap: 12px;
+    }
+    @media (max-width: 430px){
+      :root{ --ms-card-min: 132px; --ms-r: 15px; --ms-btn-fs: 15px;
+             --ms-btn-py: 13px; --ms-btn-px: 22px; --ms-tab-fs: 12px; --ms-gap: 9px; }
+    }
+    @media (max-width: 360px){
+      :root{ --ms-card-min: 118px; --ms-btn-fs: 14px; --ms-btn-py: 12px; --ms-gap: 8px; }
+    }
+
+    /* Gallery grid: columns fill the width instead of wrapping to one per row
+       on a narrow phone, which was the single worst mobile problem. */
+    .ms-grid{display:grid;width:100%;
+      grid-template-columns:repeat(auto-fill,minmax(var(--ms-card-min),1fr));
+      gap:var(--ms-gap);align-content:start;justify-items:stretch}
+    .ms-grid.wide{grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))}
+
     @keyframes ms-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
     @keyframes ms-breathe { 0%,100%{filter:brightness(1) drop-shadow(0 0 0 ${UI.gold}00)}
       55%{filter:brightness(1.07) drop-shadow(0 0 18px ${UI.gold}66)} }
@@ -55,9 +82,9 @@ function ensureStyles(): void {
     .ms-btn{
       --edge:#96650a; --lo:#e0940c;
       position:relative;overflow:hidden;cursor:pointer;
-      border:2.5px solid ${UI.line};border-radius:16px;
-      font:900 18px/1 'Trebuchet MS',system-ui,sans-serif;color:#fff;
-      letter-spacing:.5px;padding:16px 34px;
+      border:2.5px solid ${UI.line};border-radius:var(--ms-r);
+      font:900 var(--ms-btn-fs)/1 'Trebuchet MS',system-ui,sans-serif;color:#fff;
+      letter-spacing:.5px;padding:var(--ms-btn-py) var(--ms-btn-px);
       background:linear-gradient(180deg,#fff0a4 0%,${UI.gold} 32%,#f5a71b 68%,var(--lo) 100%);
       -webkit-text-stroke:.8px rgba(26,16,2,.55);
       text-shadow:0 2.5px 0 rgba(26,16,2,.5);
@@ -65,7 +92,8 @@ function ensureStyles(): void {
         inset 0 2.5px 1px rgba(255,255,255,.6),inset 0 -4px 8px rgba(80,40,0,.22);
       transition:transform .12s cubic-bezier(.34,1.7,.5,1),box-shadow .12s,filter .2s;
       pointer-events:auto}
-    .ms-btn::before{content:'';position:absolute;inset:2px 2px 52% 2px;border-radius:12px 12px 40% 40%;
+    .ms-btn::before{content:'';position:absolute;inset:2px 2px 52% 2px;
+      border-radius:calc(var(--ms-r) - 4px) calc(var(--ms-r) - 4px) 40% 40%;
       background:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,0));pointer-events:none}
     .ms-btn::after{content:'';position:absolute;inset:0;background:linear-gradient(110deg,
       transparent 38%,rgba(255,255,255,.45) 50%,transparent 62%);background-size:230% 100%;
@@ -85,25 +113,32 @@ function ensureStyles(): void {
       -webkit-text-stroke:.8px rgba(4,34,16,.6);text-shadow:0 2.5px 0 rgba(4,34,16,.55)}
     .ms-btn.ghost{--edge:#10162a;
       background:linear-gradient(180deg,#46536f 0%,#333e58 45%,#242e45 100%);
-      font-size:14px;padding:12px 22px;
+      font-size:calc(var(--ms-btn-fs) - 3px);padding:calc(var(--ms-btn-py) - 3px) calc(var(--ms-btn-px) - 8px);
       -webkit-text-stroke:.5px rgba(8,12,22,.5);text-shadow:0 2px 0 rgba(8,12,22,.5);
       box-shadow:0 5px 0 var(--edge),0 5px 0 2.5px ${UI.line},0 10px 16px rgba(0,0,0,.4),
         inset 0 2px 1px rgba(255,255,255,.22),inset 0 -3px 6px rgba(0,0,0,.25)}
     .ms-btn.ghost::after{display:none}
+    /* Small variant for buttons that live inside a gallery card. */
+    .ms-btn.sm{font-size:calc(var(--ms-btn-fs) - 3px);padding:9px 14px;border-radius:12px;
+      box-shadow:0 4px 0 var(--edge),0 4px 0 2.5px ${UI.line},0 7px 14px rgba(0,0,0,.4),
+        inset 0 2px 1px rgba(255,255,255,.5)}
+    .ms-btn.sm:active{transform:translateY(3px);
+      box-shadow:0 1px 0 var(--edge),0 1px 0 2.5px ${UI.line}}
     .ms-btn:disabled{filter:grayscale(.8) brightness(.6);cursor:not-allowed;transform:none}
     .ms-btn:disabled::after{display:none}
 
     /* ── Cards ─────────────────────────────────────────────────────────── */
-    .ms-card{position:relative;
+    .ms-card{position:relative;word-break:keep-all;overflow-wrap:anywhere;
       background:linear-gradient(178deg,#2c3654 0%,#1d2540 46%,#141b30 100%);
-      border:2px solid ${UI.line};border-radius:20px;padding:15px;display:flex;
-      flex-direction:column;gap:8px;
+      border:2px solid ${UI.line};border-radius:var(--ms-r);padding:12px 10px;display:flex;
+      flex-direction:column;gap:7px;
       box-shadow:0 5px 0 rgba(8,12,24,.9),0 12px 26px rgba(0,0,0,.5),
         inset 0 2px 0 rgba(255,255,255,.14),inset 0 -4px 8px rgba(0,0,0,.28);
       transition:transform .16s cubic-bezier(.34,1.5,.5,1),box-shadow .25s,border-color .2s;
       transform-style:preserve-3d}
     .ms-card::before{content:'';position:absolute;inset:2px 2px 55% 2px;
-      border-radius:16px 16px 50% 50%/16px 16px 26% 26%;
+      border-radius:calc(var(--ms-r) - 4px) calc(var(--ms-r) - 4px) 50% 50%/
+        calc(var(--ms-r) - 4px) calc(var(--ms-r) - 4px) 26% 26%;
       background:linear-gradient(180deg,rgba(255,255,255,.1),transparent);pointer-events:none}
     .ms-card:hover{transform:translateY(-4px)}
     .ms-card.sel{border-color:${UI.gold};
@@ -114,8 +149,8 @@ function ensureStyles(): void {
 
     /* ── Tabs, chips ───────────────────────────────────────────────────── */
     .ms-tab{position:relative;cursor:pointer;border-radius:13px;
-      font:900 13px/1 'Trebuchet MS',system-ui;color:#fff;
-      padding:10px 16px;border:2px solid ${UI.line};pointer-events:auto;white-space:nowrap;
+      font:900 var(--ms-tab-fs)/1 'Trebuchet MS',system-ui;color:#fff;
+      padding:9px 14px;border:2px solid ${UI.line};pointer-events:auto;white-space:nowrap;
       background:linear-gradient(180deg,#46536f,#2b3550 55%,#202942);
       -webkit-text-stroke:.4px rgba(8,12,22,.45);text-shadow:0 1.5px 0 rgba(8,12,22,.45);
       box-shadow:0 4px 0 #10162a,0 4px 0 2px ${UI.line},inset 0 1.5px 0 rgba(255,255,255,.2);
@@ -136,7 +171,8 @@ function ensureStyles(): void {
     .ms-nav{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;
       background:none;border:none;cursor:pointer;pointer-events:auto;padding:4px 8px;
       transition:transform .18s cubic-bezier(.34,1.8,.5,1)}
-    .ms-nav .ms-navicon{font-size:22px;line-height:1;width:50px;height:44px;border-radius:13px;
+    .ms-nav{padding:4px 6px}
+    .ms-nav .ms-navicon{font-size:21px;line-height:1;width:46px;height:40px;border-radius:12px;
       display:flex;align-items:center;justify-content:center;
       background:linear-gradient(180deg,#3d4966,#27304b 55%,#1b2338);
       border:2px solid ${UI.line};
@@ -150,8 +186,9 @@ function ensureStyles(): void {
       background:linear-gradient(180deg,#fff0a4,${UI.gold} 42%,#eda312);
       box-shadow:0 4px 0 #96650a,0 8px 16px rgba(255,190,60,.4),inset 0 2px 0 rgba(255,255,255,.55)}
     .ms-nav.on .ms-navlbl{color:${UI.gold}}
-    .ms-nav.home{margin-top:-20px}
-    .ms-nav.home .ms-navicon{font-size:26px;width:62px;height:58px;border-radius:50%;
+    .ms-nav.home{margin-top:-16px}
+    .ms-nav.home .ms-navlbl{margin-top:5px}
+    .ms-nav.home .ms-navicon{font-size:25px;width:56px;height:52px;border-radius:50%;
       background:linear-gradient(180deg,#fff0a4,${UI.gold} 42%,#eda312);
       border:3px solid ${UI.line};
       box-shadow:0 5px 0 #96650a,0 5px 0 3px ${UI.line},0 12px 22px rgba(0,0,0,.5),

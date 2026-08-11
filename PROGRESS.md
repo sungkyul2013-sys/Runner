@@ -55,15 +55,21 @@ external art, runs offline.
 - **12 ranks**: every run pays XP from its score, coins and distance, and each
   promotion pays a coin/key purse. The rank badge and its bar sit on the home
   screen and the results screen.
-- **12 characters**, each with a hand-built look and a passive perk, plus
-  **36 outfits** (two alternates each) that re-style the rig without touching
+- **16 characters**, each with a hand-built look and a passive perk, plus
+  **48 outfits** (two alternates each) that re-style the rig without touching
   the perk — previewed live on the gallery card and carried into the run.
+- **Character levels**: every owned runner upgrades to Lv.5 with coins, and the
+  perk is read *at that level* — bonuses grow 25 % of their base per level, so a
+  maxed runner is twice the character, and the flag perks (free board, free
+  stumble) turn into real counts along the way.
+- Perks now cover power-up duration, style-chain payout, headstart distance and
+  a glide that only eases the *rise*, so landings stay crisp.
 - **8 hoverboards** with their own perks and liveries.
 - **Missions**: three live at a time; clearing a set banks coins and raises the
   permanent score multiplier by one, then rolls a fresh, harder set. Any single
   mission can be re-rolled for a key.
 - **6 upgrades**, **4 consumables** (headstart, score booster, spare board,
-  mystery box), **14 achievements**, a 7-day daily streak, a 9-stop world-tour
+  mystery box), **16 achievements**, a 7-day daily streak, a 9-stop world-tour
   reward track and a top-8 run board with per-mode bests.
 - **Keys** are the premium currency: revives (escalating cost), headline
   characters and boards, mission re-rolls.
@@ -87,6 +93,16 @@ external art, runs offline.
   edge underneath that compresses on press. Extruded wobbling wordmark with a
   shine sweep, a district ribbon, currency counters with "+" nubs, beveled icon
   navigation and drifting emoji ambience.
+- **Mobile first**: one set of size tokens drives every control and shrinks at
+  two breakpoints, galleries are an auto-filling grid (two columns on a 360 px
+  phone rather than one card per screen), Korean text breaks on word boundaries,
+  and the camera widens its lens as the viewport narrows — portrait no longer
+  crops the yard into a corridor and blows up the runner.
+- **One notification slot**: every in-run message — mission, power-up, letter,
+  reward, hint — funnels through a single line pinned under the HUD, with a
+  short queue behind it, duplicate suppression and priority cut-in. Nothing
+  stacks over the rails any more, and big announcements replace rather than
+  pile up.
 - Menus: home with a live 3D runner, the rank/mission status row and a mode
   carousel; crew and board galleries with live previews and an inline outfit
   swatch row; shop; and a records hub (missions / top runs / daily / world tour

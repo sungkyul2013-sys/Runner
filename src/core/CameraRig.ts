@@ -11,6 +11,25 @@ import {
 } from '../config/constants';
 import { PLAYER_Z } from '../player/Player';
 
+/** Aspect the field of view was tuned against (a 16:9 landscape window). */
+const DESIGN_ASPECT = 16 / 9;
+/** How far a narrow screen is allowed to widen the lens. */
+const MAX_PORTRAIT_WIDEN = 1.3;
+
+/**
+ * Three.js measures field of view **vertically**, so a portrait phone shows
+ * strictly less of the yard's width than a landscape window — which is why the
+ * runner, the inspector and the carriages all ballooned on a phone. Widen the
+ * lens as the viewport narrows (capped, since matching horizontal FOV outright
+ * would give an unusable ~120° vertical) so the three rails and the traffic
+ * ahead read at the same scale everywhere.
+ */
+function adaptFov(designVFov: number, aspect: number): number {
+  const narrow = DESIGN_ASPECT / Math.max(0.35, aspect);
+  const widen = Math.min(MAX_PORTRAIT_WIDEN, 1 + Math.max(0, narrow - 1) * 0.22);
+  return designVFov * widen;
+}
+
 /**
  * Drives the engine camera as a chase cam: parked behind and above the player,
  * easing laterally to follow lane changes, and gently widening its FOV as the
@@ -65,7 +84,10 @@ export class CameraRig {
       0,
       1,
     );
-    const targetFov = THREE.MathUtils.lerp(CAMERA_FOV_BASE, CAMERA_FOV_MAX, speedT) + this.lift * 6;
+    const targetFov = adaptFov(
+      THREE.MathUtils.lerp(CAMERA_FOV_BASE, CAMERA_FOV_MAX, speedT) + this.lift * 6,
+      this.camera.aspect,
+    );
     if (Math.abs(this.camera.fov - targetFov) > 0.01) {
       this.camera.fov += (targetFov - this.camera.fov) * t;
       this.camera.updateProjectionMatrix();
@@ -81,7 +103,8 @@ export class CameraRig {
     const t = 1 - Math.exp(-5 * dt);
     const orbit = Math.sin(elapsed * 0.35) * 1.9; // gentle side-to-side
     const tx = orbit;
-    const tz = PLAYER_Z + 7.2; // framed so head and torso clear the bottom controls
+    // Framed so head and torso clear the bottom controls at any aspect.
+    const tz = PLAYER_Z + 7.2;
     const ty = 2.3;
     this.camera.position.x += (tx - this.camera.position.x) * t;
     this.camera.position.y += (ty - this.camera.position.y) * t;
@@ -89,7 +112,7 @@ export class CameraRig {
     // Look at the upper body so the character feels prominent.
     this.lookTarget.set(0, 1.46, PLAYER_Z);
     this.camera.lookAt(this.lookTarget);
-    const targetFov = 42;
+    const targetFov = adaptFov(42, this.camera.aspect);
     this.camera.fov += (targetFov - this.camera.fov) * t;
     this.camera.updateProjectionMatrix();
   }

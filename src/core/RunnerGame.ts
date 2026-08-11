@@ -18,7 +18,7 @@ import {
 } from '../config/powerups';
 import { AudioManager } from '../audio/AudioManager';
 import { BOARD_BASE_SECONDS, getBoard } from '../data/boards';
-import { getCharacter } from '../data/characters';
+import { getCharacter, scaledAbility } from '../data/characters';
 import { resolveColors } from '../data/outfits';
 import { getMission, type MissionMetric } from '../data/missions';
 import { xpForRun } from '../data/ranks';
@@ -103,6 +103,10 @@ export class RunnerGame extends Game {
   // ── Loadout (character + board + upgrades) ──
   private magnetMult = 1;
   private jetpackMult = 1;
+  private powerMult = 1;
+  private trickMult = 1;
+  /** The equipped runner's perk resolved at its current upgrade level. */
+  private ability: ReturnType<typeof scaledAbility> = {};
   private lowGravity = false;
   private baseStumbles = 1;
   private headstartMetres = 0;
@@ -173,7 +177,10 @@ export class RunnerGame extends Game {
     engine.add(this.coins.group);
     engine.add(this.pickups.group);
     engine.add(this.particles.group);
-    engine.onUpdate((dt) => this.particles.update(dt)); // animate even when frozen
+    engine.onUpdate((dt) => {
+      this.particles.update(dt);
+      this.hud.tick(dt); // the notification slot keeps draining while frozen
+    });
 
     this.hud.bindControls(() => this.pause(), () => this.deployBoard());
 
@@ -190,7 +197,7 @@ export class RunnerGame extends Game {
     const id = { [PowerupType.MAGNET]: 'magnet', [PowerupType.DOUBLE]: 'double',
       [PowerupType.SNEAKERS]: 'sneakers', [PowerupType.JETPACK]: 'jetpack' } as Partial<Record<PowerupType, string>>;
     const key = id[t];
-    let d = base + (key ? this.save.upgradeLevel(key) * UPGRADE_SECONDS : 0);
+    let d = (base + (key ? this.save.upgradeLevel(key) * UPGRADE_SECONDS : 0)) * this.powerMult;
     if (t === PowerupType.MAGNET) d *= this.magnetMult;
     if (t === PowerupType.JETPACK) d *= this.jetpackMult;
     return d;
@@ -199,14 +206,20 @@ export class RunnerGame extends Game {
   /** Apply the equipped character and board plus permanent upgrades. */
   refreshLoadout(): void {
     const c = getCharacter(this.save.data.selectedChar);
-    const a = c.ability;
+    // The perk is read at the character's *upgrade level*, so levelling a
+    // runner genuinely changes how the run plays rather than just a number.
+    const a = scaledAbility(c, this.save.charLevel(c.id));
+    this.ability = a;
     this.magnetMult = a.magnetMult ?? 1;
     this.jetpackMult = a.jetpackMult ?? 1;
+    this.powerMult = a.powerMult ?? 1;
+    this.trickMult = a.trickMult ?? 1;
     this.lowGravity = a.lowGravity ?? false;
-    this.baseStumbles = 1 + (a.extraStumble ? 1 : 0);
+    this.baseStumbles = 1 + (a.extraStumbles ?? 0);
     this.score.scoreBonus = (a.scoreMult ?? 1) - 1;
     this.score.coinMult = a.coinMult ?? 1;
-    this.headstartMetres = 200 + this.save.upgradeLevel('headstart') * 150;
+    this.headstartMetres = (200 + this.save.upgradeLevel('headstart') * 150) * (a.headstartMult ?? 1);
+    this.player.setGlide(a.glide ?? 1);
     const look = resolveColors(c.id, this.save.outfitOf(c.id));
     this.trailColor = look.trail;
     this.player.setLaneSpeedMult(a.laneSpeedMult ?? 1);
@@ -309,14 +322,14 @@ export class RunnerGame extends Game {
           this.hud.banner(`🔤 ${HUNT_WORD} 완성!`, '🗝️ +1 · 🪙 +500', '#00e0ff');
           this.keysThisRun++;
         } else {
-          this.hud.toast('🔤', `글자 <b>${letter}</b> 획득`, '#00e0ff');
+          this.hud.notify('🔤', `글자 <b>${letter}</b> 획득`, '#00e0ff', 1);
         }
         break;
       }
       case PowerupType.KEY:
         this.save.addKeys(1);
         this.keysThisRun++;
-        this.hud.toast('🗝️', '열쇠 +1', '#ffe066');
+        this.hud.notify('🗝️', '열쇠 +1', '#ffe066', 1);
         break;
       case PowerupType.COINBAG: {
         const got = this.score.addCoins(COINBAG_AMOUNT);
@@ -330,7 +343,7 @@ export class RunnerGame extends Game {
         this.openMystery();
         break;
       case PowerupType.BOARD:
-        this.hud.toast('🛹', '호버보드 +1', '#8a7bff');
+        this.hud.notify('🛹', '호버보드 +1', '#8a7bff', 1);
         break;
       case PowerupType.JETPACK:
         this.engine.shake(0.4);
@@ -340,7 +353,8 @@ export class RunnerGame extends Game {
         this.bump('powerup', 1);
         break;
       default:
-        this.hud.toast(POWERUPS[type].icon, POWERUPS[type].label, `#${POWERUPS[type].color.toString(16).padStart(6, '0')}`);
+        this.hud.notify(POWERUPS[type].icon, POWERUPS[type].label,
+          `#${POWERUPS[type].color.toString(16).padStart(6, '0')}`, 1);
         this.bump('powerup', 1);
         if (type === PowerupType.MAGNET) this.bump('magnet', 1);
         if (type === PowerupType.SNEAKERS) this.bump('sneakers', 1);
@@ -383,7 +397,7 @@ export class RunnerGame extends Game {
       this.missionsDone.push(id);
       const def = getMission(id);
       const slot = this.save.data.missions.find((m) => m.id === id);
-      this.hud.toast(def.icon, `미션 완료! <b>${def.text(slot?.goal ?? 0)}</b>`, '#6bff9a');
+      this.hud.notify(def.icon, `미션 완료 — ${def.text(slot?.goal ?? 0)}`, '#6bff9a', 2);
       this.audio.power();
     }
     if (done.length && this.save.missionsComplete) {
@@ -419,7 +433,7 @@ export class RunnerGame extends Game {
     this.audio.power();
     this.bump('board', 1);
     this.particles.burst(this.player.group.position, 0x8a7bff, { count: 20, speed: 5, life: 0.7 });
-    this.hud.toast('🛹', '호버보드 출발!', '#8a7bff');
+    this.hud.notify('🛹', '호버보드 출발!', '#8a7bff', 1);
   }
 
   // ── Flow ──────────────────────────────────────────────────────────────────
@@ -490,7 +504,7 @@ export class RunnerGame extends Game {
     this.stepTricks(dt);
     if (this.headstartLeft > 0) {
       this.headstartLeft -= scroll;
-      if (this.headstartLeft <= 0) this.hud.toast('⚡', '헤드스타트 종료', '#ffd23f');
+      if (this.headstartLeft <= 0) this.hud.notify('⚡', '헤드스타트 종료', '#ffd23f');
     }
     if (this.comboTimer > 0) {
       this.comboTimer -= dt;
@@ -569,8 +583,7 @@ export class RunnerGame extends Game {
 
     const magnet = this.pickups.magnetRadius();
     this.coins.update(scroll, dt, this.player, magnet);
-    this.score.coinMult = (getCharacter(this.save.data.selectedChar).ability.coinMult ?? 1)
-      * this.pickups.coinMultiplier();
+    this.score.coinMult = (this.ability.coinMult ?? 1) * this.pickups.coinMultiplier();
     this.score.multiplier = this.liveMultiplier();
     this.score.addDistance(scroll);
 
@@ -627,7 +640,7 @@ export class RunnerGame extends Game {
       this.trickTimer -= dt;
       if (this.trickTimer <= 0 && this.trickChain > 0) {
         // The chain cashes out when it lapses, so the payout lands as a beat.
-        const bonus = this.trickChain * this.trickChain * 25;
+        const bonus = Math.round(this.trickChain * this.trickChain * 25 * this.trickMult);
         this.score.addBonus(bonus);
         if (this.trickChain >= 3) {
           this.hud.popup(`🔥 스타일 ×${this.trickChain}  +${bonus}`, '#ff8a1f');
@@ -643,8 +656,8 @@ export class RunnerGame extends Game {
     this.trickChain++;
     if (this.trickChain > this.bestChain) this.bestChain = this.trickChain;
     this.trickTimer = 1.7;
-    this.score.addBonus(points);
-    if (this.trickChain >= 2) this.hud.toast('✨', `${label} ×${this.trickChain}`, '#ff8a1f');
+    this.score.addBonus(points * this.trickMult);
+    if (this.trickChain >= 3) this.hud.notify('🔥', `${label} 체인 ×${this.trickChain}`, '#ff8a1f');
   }
 
   /** Distance ramp × mission bonus × mode × booster × 2× power-up. */
@@ -682,7 +695,7 @@ export class RunnerGame extends Game {
       this.hud.setCombo(0);
       this.hud.popup('휘청!', '#ff8a4d');
       this.audio.whistle();
-      this.hud.toast('🏃', '검표원이 따라붙었다 — 한 번 더 부딪히면 끝!', '#ff8a4d');
+      this.hud.notify('🚨', '검표원이 따라붙었다! 한 번 더는 끝', '#ff8a4d', 3);
       if (this.save.data.settings.vibrate && navigator.vibrate) navigator.vibrate(40);
       return;
     }
@@ -875,7 +888,7 @@ export class RunnerGame extends Game {
       this.save.data.inventory.board = 0;
       this.pickups.addBoards(spare);
     }
-    if (getCharacter(this.save.data.selectedChar).ability.freeBoard) this.pickups.addBoards(1);
+    if (this.ability.freeBoards) this.pickups.addBoards(this.ability.freeBoards);
     this.save.resetRunMissions();
     this.save.flush();
 
@@ -891,7 +904,7 @@ export class RunnerGame extends Game {
     this.hud.setBoard(this.pickups.charges, 0);
     this.hud.setCombo(0);
     this.hud.setEffects([]);
-    if (this.boosterActive) this.hud.toast('✖️', '스코어 부스터 발동 — 점수 2배!', '#ff8a1f');
+    if (this.boosterActive) this.hud.notify('✖️', '스코어 부스터 — 점수 2배!', '#ff8a1f', 1);
     this.showHints();
     super.resetRun();
   }
@@ -910,7 +923,7 @@ export class RunnerGame extends Game {
     ];
     for (const [delay, icon, text] of lines) {
       window.setTimeout(() => {
-        if (this.state.is(GameState.PLAYING)) this.hud.toast(icon, text, '#3fa9f5');
+        if (this.state.is(GameState.PLAYING)) this.hud.notify(icon, text, '#3fa9f5');
       }, delay * 1000);
     }
   }

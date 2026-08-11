@@ -6,7 +6,10 @@ import type { RunnerGame } from '../core/RunnerGame';
 import { ACHIEVEMENTS, DAILY } from '../data/achievements';
 import { BOARDS, type BoardDef } from '../data/boards';
 import { DISTRICTS } from '../config/constants';
-import { CHARACTERS, type CharColors, type CharacterDef } from '../data/characters';
+import {
+  CHARACTERS, charUpgradeCost, levelBlurb, MAX_CHAR_LEVEL,
+  type CharColors, type CharacterDef,
+} from '../data/characters';
 import { outfitsFor, resolveColors } from '../data/outfits';
 import { CONSUMABLES } from '../data/consumables';
 import { JOURNEY } from '../data/journey';
@@ -316,19 +319,25 @@ export class ScreenManager {
     return t;
   }
 
-  private gridBody(gap = '13px'): HTMLDivElement {
-    const g = el('div', {
-      width: '100%', display: 'flex', flexWrap: 'wrap', gap, justifyContent: 'center', padding: '4px 0 6px',
-    });
+  private gridBody(wide = false): HTMLDivElement {
+    const g = el('div', { width: '100%', padding: '2px 0 6px' });
+    g.className = `ms-grid${wide ? ' wide' : ''}`;
     return g;
   }
 
-  private card(width = '190px'): HTMLDivElement {
+  /** A card action button — the compact variant that fits a grid column. */
+  private cardBtn(label: string, onClick: () => void, variant: Parameters<typeof button>[2] = 'gold'): HTMLButtonElement {
+    const b = button(label, onClick, variant);
+    b.className += ' sm';
+    b.style.width = '100%';
+    return b;
+  }
+
+  private card(): HTMLDivElement {
     const c = el('div');
     c.className = 'ms-card';
-    c.style.width = width;
-    c.style.animation = 'ms-popin .38s cubic-bezier(.34,1.5,.5,1) both';
-    c.style.animationDelay = `${(this.cardIndex++ % 10) * 0.04}s`;
+    c.style.animation = 'ms-popin .34s cubic-bezier(.34,1.5,.5,1) both';
+    c.style.animationDelay = `${(this.cardIndex++ % 8) * 0.035}s`;
     return c;
   }
 
@@ -402,10 +411,10 @@ export class ScreenManager {
     for (const m of MODES) {
       const on = this.mode === m.id;
       const cardEl = el('button', {
-        flexShrink: '0', width: '114px', cursor: 'pointer',
+        flexShrink: '0', cursor: 'pointer',
         scrollSnapAlign: 'center', pointerEvents: 'auto', textAlign: 'center',
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
-        padding: '10px 7px 9px', borderRadius: '16px',
+        padding: '9px 8px 8px', borderRadius: '15px', minWidth: '94px',
         border: `2px solid ${UI.line}`,
         color: '#fff',
         background: on
@@ -420,12 +429,9 @@ export class ScreenManager {
       } as Partial<CSSStyleDeclaration>);
       const ink = on ? 'rgba(26,16,2,.55)' : 'rgba(8,12,22,.6)';
       cardEl.innerHTML =
-        `<span style="font-size:25px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.45))">${m.icon}</span>` +
-        `<span style="font:900 13px/1 'Trebuchet MS',system-ui;color:#fff;
+        `<span style="font-size:26px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.45))">${m.icon}</span>` +
+        `<span style="font:900 13px/1 'Trebuchet MS',system-ui;color:#fff;white-space:nowrap;
            -webkit-text-stroke:.6px ${ink};text-shadow:0 2px 0 ${ink}">${m.name}</span>` +
-        `<span style="font:700 9px/1.2 system-ui;height:11px;overflow:hidden;white-space:nowrap;
-           text-overflow:ellipsis;max-width:100%;
-           color:${on ? 'rgba(40,24,2,.8)' : 'rgba(238,243,251,.7)'}">${m.desc}</span>` +
         `<span style="font:900 10px/1 'Trebuchet MS',monospace;
            color:${on ? 'rgba(40,24,2,.85)' : UI.gold}">🏆 ${this.save.bestFor(m.id).toLocaleString()}</span>`;
       cardEl.addEventListener('click', () => { this.mode = m.id; this.audio.ui(); this.renderMenu(); });
@@ -434,12 +440,19 @@ export class ScreenManager {
       if (on) requestAnimationFrame(() => cardEl.scrollIntoView({ block: 'nearest', inline: 'center' }));
     }
 
+    // One readable line describing whatever mode is selected.
+    const modeDesc = el('div', {
+      font: '700 11px/1.35 system-ui', color: 'rgba(238,243,251,.72)',
+      textAlign: 'center', maxWidth: 'min(400px,92vw)', minHeight: '15px',
+      textShadow: '0 1.5px 3px rgba(0,0,0,.8)',
+    }, MODES.find((m) => m.id === this.mode)?.desc ?? '');
+
     const play = button('▶  질주 시작', () => this.startRun(), 'green');
     play.style.font = `900 22px/1 'Trebuchet MS',system-ui`;
     play.style.padding = '17px 56px';
     play.style.animation = 'ms-breathe 2.6s ease-in-out infinite';
 
-    bottom.append(pills, carousel, play);
+    bottom.append(pills, carousel, modeDesc, play);
     this.content.append(title, status, spacer, bottom);
   }
 
@@ -458,13 +471,13 @@ export class ScreenManager {
     const wrap = el('div');
     wrap.className = 'ms-card flat';
     wrap.style.cssText +=
-      'width:min(440px,94vw);flex-shrink:0;padding:8px 11px;cursor:pointer;pointer-events:auto;'
-      + 'flex-direction:row;align-items:center;gap:10px';
+      'width:min(440px,94vw);flex-shrink:0;padding:7px 10px;cursor:pointer;pointer-events:auto;'
+      + 'flex-direction:row;align-items:center;gap:9px';
 
     // Rank badge.
     wrap.append(el('div', {
-      width: '38px', height: '38px', flexShrink: '0', borderRadius: '12px',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
+      width: '34px', height: '34px', flexShrink: '0', borderRadius: '11px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px',
       border: `2px solid ${UI.line}`,
       background: `linear-gradient(180deg, ${rank.color}, ${rank.color}88 60%, #1b2338)`,
       boxShadow: '0 3px 0 rgba(8,12,24,.9), inset 0 2px 0 rgba(255,255,255,.4)',
@@ -592,24 +605,53 @@ export class ScreenManager {
     for (const c of CHARACTERS) {
       const owned = this.save.ownsChar(c.id);
       const selected = d.selectedChar === c.id;
-      const card = this.card('202px');
+      const card = this.card();
       card.style.alignItems = 'center';
       card.style.textAlign = 'center';
       if (selected) card.className = 'ms-card sel';
       else if (!owned) card.className = 'ms-card locked';
 
       const worn = resolveColors(c.id, this.save.outfitOf(c.id));
+      const lv = this.save.charLevel(c.id);
+      const stage = this.figure(worn, selected);
+      if (owned) {
+        // Level badge rides the corner of the portrait, Supercell-style.
+        stage.append(el('div', {
+          position: 'absolute', top: '2px', left: '2px', padding: '2px 7px',
+          borderRadius: '8px', border: `2px solid ${UI.line}`,
+          background: `linear-gradient(180deg,#fff0a4,${UI.gold} 45%,#eda312)`,
+          font: `900 10px/1 'Trebuchet MS',system-ui`, color: '#2a1a02',
+          boxShadow: '0 2px 0 rgba(8,12,24,.85)',
+        }, `Lv.${lv}`));
+      }
       card.append(
-        this.figure(worn, selected),
-        el('div', { font: `900 19px/1 'Trebuchet MS',system-ui`, color: hex(worn.accent) }, c.name),
-        el('div', { font: '800 11px/1.35', opacity: '0.95', minHeight: '30px' }, c.blurb),
-        el('div', { font: '600 10px/1.4', opacity: '0.5', minHeight: '26px' }, c.bio),
+        stage,
+        el('div', { font: `900 16px/1 'Trebuchet MS',system-ui`, color: hex(worn.accent) }, c.name),
+        el('div', {
+          font: '800 10px/1.35', opacity: '0.95', minHeight: '27px', overflow: 'hidden',
+          display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical',
+        } as unknown as Partial<CSSStyleDeclaration>, c.blurb),
       );
-      if (owned) card.append(this.outfitRow(c));
+      if (owned) {
+        card.append(this.starRow(c.id, lv), this.outfitRow(c));
+      }
+      if (owned && lv < MAX_CHAR_LEVEL) {
+        const cost = charUpgradeCost(lv);
+        const up = this.cardBtn(`⬆ ${coinStr(cost)}`, () => {
+          if (this.save.upgradeChar(c.id)) {
+            if (this.save.data.selectedChar === c.id) this.game.refreshLoadout();
+            this.audio.power();
+          } else this.audio.ui();
+          this.refresh();
+        }, 'green');
+        up.disabled = d.coins < cost;
+        up.title = levelBlurb(c, lv);
+        card.append(up);
+      }
       if (selected) {
         card.append(el('div', { color: UI.gold, font: `900 13px/1` }, '✓ 장착 중'));
       } else if (owned) {
-        card.append(button('장착', () => {
+        card.append(this.cardBtn('장착', () => {
           this.save.selectChar(c.id);
           this.game.refreshLoadout();
           this.audio.power();
@@ -617,7 +659,7 @@ export class ScreenManager {
         }, 'blue'));
       } else {
         const price = c.key ? keyStr(c.price) : coinStr(c.price);
-        const b = button(price, () => {
+        const b = this.cardBtn(price, () => {
           const ok = c.key ? this.save.spendKeys(c.price) : this.save.spend(c.price);
           if (ok) {
             this.save.buyChar(c.id);
@@ -645,7 +687,7 @@ export class ScreenManager {
     const accent = hex(colors.accent);
 
     const stage = el('div', {
-      position: 'relative', width: '100%', height: '116px', display: 'flex',
+      position: 'relative', width: '100%', height: '88px', display: 'flex',
       alignItems: 'flex-end', justifyContent: 'center', perspective: '520px',
     });
     stage.append(el('div', {
@@ -653,7 +695,8 @@ export class ScreenManager {
       background: `radial-gradient(ellipse at 50% 50%, ${accent}55, transparent 70%)`, filter: 'blur(3px)',
     }));
     const fig = el('div', {
-      position: 'relative', width: '62px', height: '100px',
+      position: 'relative', width: '62px', height: '100px', transformOrigin: 'bottom center',
+      scale: '0.84',
       animation: `ms-bounce ${popped ? 1.7 : 2.5}s ease-in-out infinite`,
       transformStyle: 'preserve-3d', transform: 'rotateX(6deg)',
     });
@@ -681,6 +724,26 @@ export class ScreenManager {
     return stage;
   }
 
+  /** Upgrade stars: filled to the runner's current level, hollow beyond it. */
+  private starRow(id: string, level: number): HTMLDivElement {
+    const row = el('div', {
+      display: 'flex', gap: '3px', justifyContent: 'center', alignItems: 'center',
+    });
+    for (let i = 1; i <= MAX_CHAR_LEVEL; i++) {
+      row.append(el('div', {
+        width: '11px', height: '11px', borderRadius: '3px',
+        border: `1.5px solid ${UI.line}`,
+        background: i <= level
+          ? `linear-gradient(180deg,#fff0a4,${UI.gold} 55%,#eda312)`
+          : 'rgba(255,255,255,.08)',
+        boxShadow: i <= level ? '0 1.5px 0 rgba(8,12,24,.8)' : 'none',
+      }));
+    }
+    row.title = `Lv.${level} / ${MAX_CHAR_LEVEL}`;
+    void id;
+    return row;
+  }
+
   /**
    * The fit row under an owned runner: one swatch per outfit, showing the top,
    * cap and accent colours. Tap to equip; tap a locked one to buy it.
@@ -689,16 +752,15 @@ export class ScreenManager {
     const list = outfitsFor(c.id);
     const wornId = this.save.outfitOf(c.id);
     const row = el('div', {
-      display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center',
-      flexWrap: 'wrap', paddingTop: '7px', marginTop: '1px',
-      borderTop: '1px solid rgba(255,255,255,.1)', width: '100%',
+      display: 'flex', gap: '4px', justifyContent: 'center', alignItems: 'center',
+      paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,.1)', width: '100%',
     });
     for (const o of list) {
       const owned = this.save.ownsOutfit(c.id, o.id);
       const on = wornId === o.id;
       const colors = resolveColors(c.id, o.id);
       const btn = el('button', {
-        position: 'relative', width: '44px', padding: '4px 0 5px', cursor: 'pointer',
+        position: 'relative', flex: '1', minWidth: '0', padding: '4px 0 5px', cursor: 'pointer',
         pointerEvents: 'auto', borderRadius: '11px',
         border: `2px solid ${on ? UI.gold : 'rgba(255,255,255,.14)'}`,
         background: on ? 'rgba(255,210,63,.14)' : 'rgba(255,255,255,.05)',
@@ -708,11 +770,12 @@ export class ScreenManager {
       });
       btn.innerHTML =
         `<span style="display:flex;gap:2px">
-           <i style="width:9px;height:14px;border-radius:3px;background:${hex(colors.cap)}"></i>
-           <i style="width:11px;height:14px;border-radius:3px;background:${hex(colors.top)}"></i>
-           <i style="width:6px;height:14px;border-radius:3px;background:${hex(colors.accent)}"></i>
+           <i style="width:7px;height:12px;border-radius:2px;background:${hex(colors.cap)}"></i>
+           <i style="width:9px;height:12px;border-radius:2px;background:${hex(colors.top)}"></i>
+           <i style="width:5px;height:12px;border-radius:2px;background:${hex(colors.accent)}"></i>
          </span>` +
-        `<span style="font:800 8px/1 system-ui;opacity:.8;white-space:nowrap">
+        `<span style="font:800 7.5px/1 system-ui;opacity:.8;white-space:nowrap;overflow:hidden;
+           text-overflow:ellipsis;max-width:100%">
            ${owned ? o.name : (o.key ? `🗝️${o.price}` : `🪙${o.price}`)}</span>`;
       btn.addEventListener('click', () => {
         if (owned) {
@@ -748,19 +811,22 @@ export class ScreenManager {
     for (const b of BOARDS) {
       const owned = this.save.ownsBoard(b.id);
       const selected = d.selectedBoard === b.id;
-      const card = this.card('196px');
+      const card = this.card();
       card.style.alignItems = 'center';
       card.style.textAlign = 'center';
       if (selected) card.className = 'ms-card sel';
       else if (!owned) card.className = 'ms-card locked';
       card.append(
         this.boardArt(b),
-        el('div', { font: `900 18px/1 'Trebuchet MS',system-ui`, color: hex(b.colors.deck) }, b.name),
-        el('div', { font: '800 11px/1.35', opacity: '0.9', minHeight: '30px' }, b.blurb),
+        el('div', { font: `900 15px/1.15 'Trebuchet MS',system-ui`, color: hex(b.colors.deck) }, b.name),
+        el('div', {
+          font: '800 10px/1.35', opacity: '0.9', minHeight: '27px', overflow: 'hidden',
+          display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical',
+        } as unknown as Partial<CSSStyleDeclaration>, b.blurb),
       );
       if (selected) card.append(el('div', { color: UI.gold, font: '900 13px/1' }, '✓ 장착 중'));
       else if (owned) {
-        card.append(button('장착', () => {
+        card.append(this.cardBtn('장착', () => {
           this.save.selectBoard(b.id);
           this.game.refreshLoadout();
           this.audio.power();
@@ -768,7 +834,7 @@ export class ScreenManager {
         }, 'blue'));
       } else {
         const price = b.key ? keyStr(b.price) : coinStr(b.price);
-        const btn = button(price, () => {
+        const btn = this.cardBtn(price, () => {
           const ok = b.key ? this.save.spendKeys(b.price) : this.save.spend(b.price);
           if (ok) {
             this.save.buyBoard(b.id);
@@ -791,7 +857,7 @@ export class ScreenManager {
     const glow = hex(b.colors.glow);
     const trim = hex(b.colors.trim);
     const stage = el('div', {
-      position: 'relative', width: '100%', height: '94px', display: 'flex',
+      position: 'relative', width: '100%', height: '84px', display: 'flex',
       alignItems: 'center', justifyContent: 'center', perspective: '460px',
     });
     stage.append(el('div', {
@@ -835,7 +901,7 @@ export class ScreenManager {
     else this.renderUpgrades();
   }
 
-  private emojiStage(emoji: string, glow: string, height = 78): HTMLDivElement {
+  private emojiStage(emoji: string, glow: string, height = 68): HTMLDivElement {
     const stage = el('div', {
       position: 'relative', width: '100%', height: `${height}px`, display: 'flex',
       alignItems: 'flex-end', justifyContent: 'center',
@@ -845,7 +911,7 @@ export class ScreenManager {
       background: `radial-gradient(ellipse at 50% 50%, ${glow}, transparent 70%)`, filter: 'blur(3px)',
     }));
     stage.append(el('div', {
-      position: 'absolute', bottom: '17px', fontSize: '50px', lineHeight: '1',
+      position: 'absolute', bottom: '15px', fontSize: '44px', lineHeight: '1',
       animation: 'ms-bounce 2.4s ease-in-out infinite',
       filter: 'drop-shadow(0 8px 12px rgba(0,0,0,.55))',
     }, emoji));
@@ -856,20 +922,23 @@ export class ScreenManager {
     const d = this.save.data;
     for (const item of CONSUMABLES) {
       const have = d.inventory[item.id];
-      const card = this.card('198px');
+      const card = this.card();
       card.style.alignItems = 'center';
       card.style.textAlign = 'center';
-      const chip = el('div', { font: '800 12px/1', color: UI.gold });
+      const chip = el('div', { font: '800 11px/1', color: UI.gold, padding: '5px 11px' });
       chip.className = 'ms-chip';
       chip.textContent = `보유 ${have}`;
       card.append(
         this.emojiStage(item.emoji, item.glow),
-        el('div', { font: `900 17px/1 'Trebuchet MS',system-ui` }, item.name),
-        el('div', { font: '600 11px/1.4', opacity: '0.85', minHeight: '32px' }, item.desc),
+        el('div', { font: `900 15px/1.15 'Trebuchet MS',system-ui` }, item.name),
+        el('div', {
+          font: '600 10px/1.35', opacity: '0.85', minHeight: '27px', overflow: 'hidden',
+          display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical',
+        } as unknown as Partial<CSSStyleDeclaration>, item.desc),
         chip,
       );
       const price = item.key ? keyStr(item.price) : coinStr(item.price);
-      const b = button(price, () => {
+      const b = this.cardBtn(price, () => {
         const ok = item.key ? this.save.spendKeys(item.price) : this.save.spend(item.price);
         if (ok) {
           this.save.addItem(item.id);
@@ -886,7 +955,7 @@ export class ScreenManager {
   private renderUpgrades(): void {
     for (const u of UPGRADES) {
       const lvl = this.save.upgradeLevel(u.id);
-      const card = this.card('192px');
+      const card = this.card();
       card.style.alignItems = 'center';
       card.style.textAlign = 'center';
       const icon = this.emojiStage(u.emoji, '#ffd23f55', 62);
@@ -900,8 +969,8 @@ export class ScreenManager {
       }
       card.append(
         icon,
-        el('div', { font: `900 16px/1 'Trebuchet MS',system-ui` }, u.name),
-        el('div', { font: '600 11px/1.35', opacity: '0.75', minHeight: '26px' }, u.desc),
+        el('div', { font: `900 14px/1.15 'Trebuchet MS',system-ui` }, u.name),
+        el('div', { font: '600 10px/1.3', opacity: '0.75', minHeight: '24px' }, u.desc),
         el('div', { font: '800 12px/1', color: UI.blue },
           lvl >= u.max ? u.valueAt(lvl) : `${u.valueAt(lvl)} → ${u.valueAt(lvl + 1)}`),
         pips,
@@ -909,7 +978,7 @@ export class ScreenManager {
       if (lvl >= u.max) card.append(el('div', { color: UI.gold, font: '900 14px/1', marginTop: '2px' }, '⭐ MAX'));
       else {
         const cost = u.cost(lvl);
-        const b = button(coinStr(cost), () => {
+        const b = this.cardBtn(coinStr(cost), () => {
           if (this.save.spend(cost)) {
             this.save.raiseUpgrade(u.id);
             this.game.refreshLoadout();
@@ -934,7 +1003,7 @@ export class ScreenManager {
       ['journey', '🗺️ 월드 투어', () => { this.recordTab = 'journey'; this.refresh(); }],
       ['achievements', '⭐ 업적', () => { this.recordTab = 'achievements'; this.refresh(); }],
     ], this.recordTab));
-    this.grid = this.gridBody();
+    this.grid = this.gridBody(this.recordTab === 'achievements');
     this.content.append(this.grid);
     ({
       missions: () => this.grid.append(this.missionCard()),
@@ -1159,7 +1228,7 @@ export class ScreenManager {
       const done = cur >= a.goal;
       const claimed = d.claimedAchievements.includes(a.id);
       const pct = Math.min(100, (cur / a.goal) * 100);
-      const card = this.card('240px');
+      const card = this.card();
       card.append(
         el('div', { display: 'flex', gap: '9px', alignItems: 'center' },
           `<span style="font-size:24px">${a.icon}</span>` +
@@ -1171,7 +1240,7 @@ export class ScreenManager {
       const reward = `${coinStr(a.coins)}${a.keys ? ` · ${keyStr(a.keys)}` : ''}`;
       if (claimed) card.append(el('div', { color: UI.green, font: '800 13px/1' }, '✓ 수령 완료'));
       else if (done) {
-        card.append(button(`보상 ${reward}`, () => {
+        card.append(this.cardBtn(`보상 ${reward}`, () => {
           this.save.claimAchievement(a.id, a.coins, a.keys ?? 0);
           this.audio.power();
           this.refresh();
@@ -1325,7 +1394,10 @@ export class ScreenManager {
          깨끗하게 달리면 화면 밖으로 떨어집니다. 회복 전에 한 번 더 부딪히면 붙잡힙니다.</div>` +
       `<div style="font:700 12px/1.6 system-ui;opacity:.88;margin-top:4px">
          🎫 질주할 때마다 <b style="color:${UI.green}">XP</b>가 쌓여 등급이 오르고,
-         등급이 오를 때마다 코인과 열쇠를 받습니다.</div>`;
+         등급이 오를 때마다 코인과 열쇠를 받습니다.</div>` +
+      `<div style="font:700 12px/1.6 system-ui;opacity:.88;margin-top:4px">
+         ⬆️ 크루는 <b style="color:${UI.gold}">Lv.5</b>까지 강화할 수 있고,
+         레벨이 오를수록 그 캐릭터의 고유 능력이 강해집니다.</div>`;
     const close = button('닫기', () => show(this.help, false), 'ghost');
     root.append(panel, close);
     root.addEventListener('click', (e) => { if (e.target === root) show(this.help, false); });

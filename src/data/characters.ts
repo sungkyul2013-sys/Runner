@@ -26,6 +26,74 @@ export interface CharAbility {
   tokenMagnet?: boolean;
   /** Jetpack duration multiplier. */
   jetpackMult?: number;
+  /** Duration multiplier applied to *every* timed power-up. */
+  powerMult?: number;
+  /** Style-chain payout multiplier. */
+  trickMult?: number;
+  /** Headstart distance multiplier. */
+  headstartMult?: number;
+  /** Gravity multiplier while rising — a floatier arc without a full moon-jump. */
+  glide?: number;
+  /** Free hoverboards carried into every run (resolved from freeBoard + level). */
+  freeBoards?: number;
+  /** Free stumbles per run beyond the base one. */
+  extraStumbles?: number;
+}
+
+/** Levels a character can be upgraded to. */
+export const MAX_CHAR_LEVEL = 5;
+
+/** Coin cost of taking a character from `level` to `level + 1`. */
+export function charUpgradeCost(level: number): number {
+  return Math.round(700 * Math.pow(level, 1.7) / 50) * 50;
+}
+
+/**
+ * A character's perk at a given level. Every numeric bonus grows by 25 % of its
+ * base value per level, so a level-5 runner is twice the character a level-1 one
+ * is, and the two flag perks turn into real numbers along the way.
+ */
+export function scaledAbility(def: CharacterDef, level: number): CharAbility {
+  const lv = Math.max(1, Math.min(MAX_CHAR_LEVEL, level));
+  const k = 1 + (lv - 1) * 0.25;
+  const a = def.ability;
+  const grow = (v: number | undefined): number | undefined =>
+    v === undefined ? undefined : 1 + (v - 1) * k;
+  const shrink = (v: number | undefined): number | undefined =>
+    v === undefined ? undefined : 1 - (1 - v) * k;
+  return {
+    ...a,
+    magnetMult: grow(a.magnetMult),
+    scoreMult: grow(a.scoreMult),
+    coinMult: grow(a.coinMult),
+    laneSpeedMult: grow(a.laneSpeedMult),
+    jetpackMult: grow(a.jetpackMult),
+    powerMult: grow(a.powerMult),
+    trickMult: grow(a.trickMult),
+    headstartMult: grow(a.headstartMult),
+    glide: shrink(a.glide),
+    hitInvulnBonus: a.hitInvulnBonus === undefined ? undefined : a.hitInvulnBonus * k,
+    freeBoards: a.freeBoard ? (lv >= 3 ? 2 : 1) : 0,
+    extraStumbles: a.extraStumble ? (lv >= 4 ? 2 : 1) : 0,
+  };
+}
+
+/** A one-line summary of what the next level buys. */
+export function levelBlurb(def: CharacterDef, level: number): string {
+  const a = def.ability;
+  const pct = (v: number) => `${Math.round((v - 1) * (1 + level * 0.25) * 100)}%`;
+  if (a.magnetMult) return `자석 지속 +${pct(a.magnetMult)}`;
+  if (a.scoreMult) return `점수 +${pct(a.scoreMult)}`;
+  if (a.coinMult) return `코인 +${pct(a.coinMult)}`;
+  if (a.powerMult) return `파워업 지속 +${pct(a.powerMult)}`;
+  if (a.trickMult) return `스타일 보너스 +${pct(a.trickMult)}`;
+  if (a.jetpackMult) return `제트팩 지속 +${pct(a.jetpackMult)}`;
+  if (a.headstartMult) return `헤드스타트 +${pct(a.headstartMult)}`;
+  if (a.laneSpeedMult) return `레인 전환 +${pct(a.laneSpeedMult)}`;
+  if (a.glide) return '체공 시간 증가';
+  if (a.freeBoard) return level >= 2 ? '시작 보드 2개' : '시작 보드 1개';
+  if (a.extraStumble) return level >= 3 ? '무료 회복 2회' : '무료 회복 1회';
+  return '기본 능력 강화';
 }
 
 export interface CharColors {
@@ -143,6 +211,42 @@ export const CHARACTERS: CharacterDef[] = [
     bio: '개찰구를 해킹하던 아이. 이제는 선로를 해킹한다.',
     colors: { skin: 0xc8d4e0, hair: 0x00ffd0, top: 0x14324a, bottom: 0x0a1c2c, shoes: 0x00ffd0, cap: 0x14324a, accent: 0x00ffd0, trail: 0x00ffd0 },
     ability: { tokenMagnet: true },
+  },
+  {
+    id: 'hiro',
+    name: '히로',
+    price: 15000,
+    blurb: '🪁 체공 시간 증가 — 더 길게 난다',
+    bio: '옥상에서 옥상으로 뛰던 파쿠르 키드. 착지는 나중 문제.',
+    colors: { skin: 0xf1c49c, hair: 0x1f2430, top: 0x2ee0b0, bottom: 0x14323a, shoes: 0xf4f4f4, cap: 0x2ee0b0, accent: 0xffd23f, trail: 0x2ee0b0 },
+    ability: { glide: 0.82 },
+  },
+  {
+    id: 'luna',
+    name: '루나',
+    price: 18000,
+    blurb: '🔥 스타일 체인 보너스 2배',
+    bio: '심야 스케이트 크루의 리더. 점수보다 폼이 먼저다.',
+    colors: { skin: 0xe9c7b0, hair: 0xc8a2ff, top: 0x2a1a4a, bottom: 0x140b26, shoes: 0xc8a2ff, cap: 0x2a1a4a, accent: 0xc8a2ff, trail: 0xb08bff },
+    ability: { trickMult: 2 },
+  },
+  {
+    id: 'dos',
+    name: '도스',
+    price: 22000,
+    blurb: '⏳ 모든 파워업 지속 +35%',
+    bio: '폐역 자판기를 고치던 손. 뭐든 조금 더 오래 가게 만든다.',
+    colors: { skin: 0xa8724c, hair: 0x241a14, top: 0xf6c944, bottom: 0x3a2a18, shoes: 0x2b2f38, cap: 0xf6c944, accent: 0xe0603c, trail: 0xffd23f },
+    ability: { powerMult: 1.35 },
+  },
+  {
+    id: 'sage',
+    name: '세이지',
+    price: 8, key: true,
+    blurb: '🗝️ 헤드스타트 2배 + 무료 회복',
+    bio: '노선도를 전부 외운 은퇴 기관사. 첫 구간은 눈 감고도 간다.',
+    colors: { skin: 0xf3d9c0, hair: 0xdcdce4, top: 0x2f4f5c, bottom: 0x1a2c34, shoes: 0xdcdce4, cap: 0x2f4f5c, accent: 0x8ff0ff, trail: 0x8ff0ff },
+    ability: { headstartMult: 2, extraStumble: true },
   },
   {
     id: 'noir',

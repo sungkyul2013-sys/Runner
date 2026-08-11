@@ -87,9 +87,9 @@ export const COIN_GROUND_Y = 1.05;
 // ── The chase (inspector + dog) ───────────────────────────────────────────
 /** Resting distance the inspector keeps behind the player (inside the frame,
  *  low and slightly off to one side so he never masks the track ahead). */
-export const CHASE_REST_Z = 3.0;
+export const CHASE_REST_Z = 3.6;
 /** Distance the inspector closes to while the player is stumbling. */
-export const CHASE_NEAR_Z = 1.6;
+export const CHASE_NEAR_Z = 2.0;
 /** Seconds a stumble lasts before you recover (if you survive it). */
 export const STUMBLE_TIME = 1.15;
 

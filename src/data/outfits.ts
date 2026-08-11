@@ -135,6 +135,34 @@ export const OUTFITS: Record<string, OutfitDef[]> = {
       colors: { top: 0x1a1408, cap: 0x1a1408, accent: 0xffd23f, hair: 0xffd23f, shoes: 0xffd23f },
     },
   ],
+  hiro: [
+    DEFAULT,
+    { id: 'dusk', name: '더스크', price: 4200,
+      colors: { top: 0x2a1a4a, cap: 0x2a1a4a, accent: 0xff9f43, hair: 0xff9f43 } },
+    { id: 'jade', name: '제이드', price: 6800,
+      colors: { top: 0x0f4a3a, cap: 0x0f4a3a, accent: 0xcaff3a, shoes: 0xcaff3a } },
+  ],
+  luna: [
+    DEFAULT,
+    { id: 'ember', name: '엠버', price: 4600,
+      colors: { top: 0x3a1208, cap: 0x3a1208, accent: 0xff8a1f, hair: 0xff8a1f } },
+    { id: 'frost', name: '프로스트', price: 7200,
+      colors: { top: 0x12384a, cap: 0x12384a, accent: 0x8ff0ff, hair: 0x8ff0ff } },
+  ],
+  dos: [
+    DEFAULT,
+    { id: 'oil', name: '오일', price: 5000,
+      colors: { top: 0x1c1c22, cap: 0x1c1c22, accent: 0xf6c944, bottom: 0x14141a } },
+    { id: 'signal', name: '시그널', price: 7600,
+      colors: { top: 0x1d6b3a, cap: 0x1d6b3a, accent: 0xff3b30, shoes: 0xff3b30 } },
+  ],
+  sage: [
+    DEFAULT,
+    { id: 'lastrun', name: '라스트 런', price: 5, key: true,
+      colors: { top: 0x3a2a12, cap: 0x3a2a12, accent: 0xffd23f, hair: 0xffe9a8 } },
+    { id: 'nightline', name: '나이트라인', price: 9, key: true,
+      colors: { top: 0x101828, cap: 0x101828, accent: 0x3fa9f5, hair: 0x8fd4ff } },
+  ],
   noir: [
     DEFAULT,
     {
