@@ -1,6 +1,6 @@
 import type { GameMode } from './SaveManager';
 
-/** Per-mode rules + presentation for the mode-select carousel. */
+/** Per-mode rules + presentation for the mode carousel. */
 export interface ModeDef {
   id: GameMode;
   icon: string;
@@ -12,41 +12,43 @@ export interface ModeDef {
   speedMult: number;
   /** Score multiplier for the whole run. */
   scoreMult: number;
-  /** Coin pattern density multiplier. */
+  /** Coin trail density multiplier. */
   coinDensity: number;
-  /** Cap on obstacle template difficulty (3 = none). */
+  /** Cap on layout difficulty (4 = no cap). */
   difficultyCap: number;
-  /** Paid revive allowed on the game-over screen. */
+  /** Paid revive allowed on the results screen. */
   reviveAllowed: boolean;
-  /** Floor periodically turns to lava — touching it then is fatal. */
-  lava: boolean;
+  /** Extra oncoming expresses. */
+  expressRush: boolean;
+  /** Seconds added at each checkpoint in timed modes. */
+  timeBonus: number;
 }
 
 export const MODES: ModeDef[] = [
   {
-    id: 'endless', icon: '♾️', name: '무한 모드', desc: '클래식 — 최대한 멀리!',
-    timer: 0, speedMult: 1, scoreMult: 1, coinDensity: 1, difficultyCap: 3,
-    reviveAllowed: true, lava: false,
+    id: 'endless', icon: '♾️', name: '엔들리스', desc: '클래식 — 잡히지 말고 최대한 멀리',
+    timer: 0, speedMult: 1, scoreMult: 1, coinDensity: 1, difficultyCap: 4,
+    reviveAllowed: true, expressRush: false, timeBonus: 0,
   },
   {
-    id: 'challenge', icon: '⏱️', name: '챌린지', desc: '60초 타임어택, 체크포인트 +6초',
-    timer: 60, speedMult: 1, scoreMult: 1, coinDensity: 1, difficultyCap: 3,
-    reviveAllowed: true, lava: false,
+    id: 'timeattack', icon: '⏱️', name: '타임 어택', desc: '90초 — 체크포인트마다 +8초',
+    timer: 90, speedMult: 1.05, scoreMult: 1.2, coinDensity: 1, difficultyCap: 4,
+    reviveAllowed: true, expressRush: false, timeBonus: 8,
   },
   {
-    id: 'lava', icon: '🌋', name: '용암 바닥', desc: '바닥이 주기적으로 용암으로! 공중·지붕으로 피하세요',
-    timer: 0, speedMult: 0.95, scoreMult: 1.5, coinDensity: 1, difficultyCap: 2,
-    reviveAllowed: true, lava: true,
+    id: 'coinrush', icon: '🪙', name: '코인 러시', desc: '60초 코인 파티 — 장애물은 순한 맛',
+    timer: 60, speedMult: 1, scoreMult: 1, coinDensity: 2.2, difficultyCap: 2,
+    reviveAllowed: true, expressRush: false, timeBonus: 6,
   },
   {
-    id: 'rush', icon: '🪙', name: '코인 러시', desc: '45초 동안 코인 파티 — 장애물은 쉬움',
-    timer: 45, speedMult: 1.05, scoreMult: 1, coinDensity: 2, difficultyCap: 1,
-    reviveAllowed: true, lava: false,
+    id: 'express', icon: '🚄', name: '특급 러시', desc: '특급 열차가 끊임없이 달려온다',
+    timer: 0, speedMult: 1.1, scoreMult: 1.6, coinDensity: 1, difficultyCap: 4,
+    reviveAllowed: true, expressRush: true, timeBonus: 0,
   },
   {
-    id: 'hardcore', icon: '💀', name: '하드코어', desc: '빠르고 무자비 — 부활 불가, 점수 2배',
-    timer: 0, speedMult: 1.25, scoreMult: 2, coinDensity: 1, difficultyCap: 3,
-    reviveAllowed: false, lava: false,
+    id: 'hardcore', icon: '💀', name: '하드코어', desc: '초고속 · 부활 없음 · 점수 2배',
+    timer: 0, speedMult: 1.3, scoreMult: 2, coinDensity: 0.85, difficultyCap: 4,
+    reviveAllowed: false, expressRush: false, timeBonus: 0,
   },
 ];
 
@@ -54,10 +56,5 @@ export function getMode(id: GameMode): ModeDef {
   return MODES.find((m) => m.id === id) ?? MODES[0];
 }
 
-// ── Lava cycle tuning ───────────────────────────────────────────────────────
-/** Seconds of safe floor between lava phases. */
-export const LAVA_SAFE = 6;
-/** Seconds of warning glow before the floor becomes deadly. */
-export const LAVA_WARN = 1.6;
-/** Seconds the floor stays molten (deadly to stand on). */
-export const LAVA_HOT = 2.4;
+/** Distance between checkpoints (coin / time bonus). */
+export const CHECKPOINT_DIST = 1000;

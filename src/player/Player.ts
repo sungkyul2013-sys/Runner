@@ -8,6 +8,7 @@ import {
   PLAYER_HALF_STANDING,
   SLIDE_DURATION,
 } from '../config/constants';
+import type { BoardColors } from '../data/boards';
 import { CHARACTERS, getCharacter } from '../data/characters';
 import { Character, type Pose } from './Character';
 
@@ -15,14 +16,15 @@ import { Character, type Pose } from './Character';
 export const PLAYER_Z = 0;
 
 /**
- * The runner. Three motion channels: lateral lane lerp, vertical motion
- * (gravity parabola resolving to a settable {@link groundY} so the player can
- * stand on top of rideable obstacles), and a timed slide that shrinks the
- * collision box. Exposes a live AABB plus `feetY`/`vy` so the collision system
- * can tell "landed on a roof" from "slammed into a wall".
+ * The runner. Three motion channels: a lateral lane lerp, vertical motion under
+ * gravity that resolves onto a settable {@link setGroundY support height} (so
+ * carriage roofs and ramp slopes just work), and a timed roll that shrinks the
+ * collision box. Exposes a live AABB plus feet height and vertical velocity so
+ * the collision pass can tell "landed on a roof" from "slammed into a cab".
  *
- * The visual is a capsule placeholder; Phase 6 swaps in the animated Character
- * rig via {@link setVisual} without touching this physics.
+ * On top of the physics it owns the visual state machine: the character rig,
+ * the hoverboard deck with its thruster glow, the jetpack with twin flames, the
+ * magnet field, and the stumble / caught animations.
  */
 export class Player {
   readonly group = new THREE.Group();
@@ -37,27 +39,25 @@ export class Player {
   private feetY = 0; // absolute height of the player's feet
   private vy = 0; // vertical velocity
   private grounded = true;
-  /** Current support height under the player (0 = track, >0 = on an obstacle). */
   private groundY = 0;
-  /** Jump strength multiplier (Super Sneakers raises this). */
   private jumpMult = 1;
-  /** Lane-change speed multiplier (섀도우 닌자 ability). */
   private laneSpeedMult = 1;
-  /** Reduced-gravity flag (우주인 ability): higher, floatier jumps. */
   private lowGravity = false;
-  /** When flying (jetpack/rocket) gravity is suspended and Y is driven outside. */
   private flying = false;
 
   private squashTimer = 0;
-  private shieldOn = false;
-  private readonly magnetAura: THREE.Mesh;
-  private readonly shieldBubble: THREE.Mesh;
-  private readonly starAura: THREE.Mesh;
-  private starOn = false;
-  private surfOn = false;
-  private surfPhase = 0;
-  private readonly hoverboard: THREE.Group;
-  private surfboard!: THREE.Group;
+  private stumbleTimer = 0;
+  private caughtTime = 0;
+
+  private readonly magnetField: THREE.Mesh;
+  private readonly board: THREE.Group;
+  private readonly boardDeck: THREE.Mesh;
+  private readonly boardGlow: THREE.Mesh;
+  private readonly jetpack: THREE.Group;
+  private readonly flames: THREE.Mesh[] = [];
+  private boarding = false;
+  private jetOn = false;
+  private boardPhase = 0;
 
   private sliding = false;
   private slideTimer = 0;
@@ -69,92 +69,104 @@ export class Player {
     this.rig = new Character(CHARACTERS[0].colors);
     this.group.add(this.rig.group);
 
-    // Magnet aura — translucent blue field, spins while active.
-    this.magnetAura = new THREE.Mesh(
-      new THREE.SphereGeometry(1.25, 18, 12),
+    // ── Coin-magnet field: a soft additive shell that spins while active ──
+    this.magnetField = new THREE.Mesh(
+      new THREE.SphereGeometry(1.5, 20, 14),
       new THREE.MeshBasicMaterial({
-        color: 0x55aaff, transparent: true, opacity: 0.16,
+        color: 0x3fa9f5, transparent: true, opacity: 0.14,
         blending: THREE.AdditiveBlending, depthWrite: false,
       }),
     );
-    this.magnetAura.visible = false;
-    this.group.add(this.magnetAura);
+    this.magnetField.visible = false;
+    this.group.add(this.magnetField);
 
-    // Shield bubble — green protective sphere (hoverboard active).
-    this.shieldBubble = new THREE.Mesh(
-      new THREE.SphereGeometry(1.15, 18, 12),
-      new THREE.MeshBasicMaterial({
-        color: 0x6bffb0, transparent: true, opacity: 0.18,
-        blending: THREE.AdditiveBlending, depthWrite: false,
-      }),
-    );
-    this.shieldBubble.visible = false;
-    this.group.add(this.shieldBubble);
-
-    // Star aura — golden invincibility glow.
-    this.starAura = new THREE.Mesh(
-      new THREE.SphereGeometry(1.3, 18, 12),
-      new THREE.MeshBasicMaterial({
-        color: 0xffe06b, transparent: true, opacity: 0.22,
-        blending: THREE.AdditiveBlending, depthWrite: false,
-      }),
-    );
-    this.starAura.visible = false;
-    this.group.add(this.starAura);
-
-    // Hoverboard under the feet while the shield is deployed.
-    this.hoverboard = new THREE.Group();
-    const deck = new THREE.Mesh(
-      new THREE.BoxGeometry(0.95, 0.08, 1.9),
+    // ── Hoverboard: deck, kicked nose/tail, underglow, four thruster pods ──
+    this.board = new THREE.Group();
+    this.boardDeck = new THREE.Mesh(
+      new THREE.BoxGeometry(0.86, 0.11, 2.2),
       new THREE.MeshStandardMaterial({
-        color: 0x55c8ff, emissive: 0x2a88cc, emissiveIntensity: 0.5, roughness: 0.3, metalness: 0.4,
+        color: 0x3fa9f5, emissive: 0x1c6fa8, emissiveIntensity: 0.5,
+        roughness: 0.28, metalness: 0.5,
       }),
     );
-    this.hoverboard.add(deck);
-    const glow = new THREE.Mesh(
-      new THREE.BoxGeometry(0.7, 0.04, 1.5),
+    this.board.add(this.boardDeck);
+    const trimMat = new THREE.MeshStandardMaterial({
+      color: 0xf0f3f7, emissive: 0xf0f3f7, emissiveIntensity: 0.3, roughness: 0.3, metalness: 0.4,
+    });
+    for (const sz of [-1.06, 1.06]) {
+      const kick = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.34), trimMat);
+      kick.position.set(0, 0.06, sz);
+      kick.rotation.x = sz > 0 ? -0.5 : 0.5;
+      this.board.add(kick);
+    }
+    this.boardGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.9, 2.3),
       new THREE.MeshBasicMaterial({
-        color: 0x9adfff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false,
+        color: 0x9adfff, transparent: true, opacity: 0.55,
+        blending: THREE.AdditiveBlending, depthWrite: false,
       }),
     );
-    glow.position.y = -0.08;
-    this.hoverboard.add(glow);
-    this.hoverboard.position.y = -PLAYER_HALF_STANDING.y + 0.06;
-    this.hoverboard.visible = false;
-    this.group.add(this.hoverboard);
+    this.boardGlow.rotation.x = -Math.PI / 2;
+    this.boardGlow.position.y = -0.16;
+    this.board.add(this.boardGlow);
+    const podMat = new THREE.MeshBasicMaterial({ color: 0x9adfff });
+    for (const sx of [-0.34, 0.34]) {
+      for (const sz of [-0.78, 0.78]) {
+        const pod = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), podMat);
+        pod.position.set(sx, -0.08, sz);
+        this.board.add(pod);
+      }
+    }
+    this.board.position.y = -PLAYER_HALF_STANDING.y + 0.1;
+    this.board.visible = false;
+    this.group.add(this.board);
 
-    // Surfboard — a curvy deck the player rides while gently hovering & swaying.
-    this.surfboard = new THREE.Group();
-    const board = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.34, 1.5, 4, 10),
-      new THREE.MeshStandardMaterial({
-        color: 0x3ad1ff, emissive: 0x1a7fb0, emissiveIntensity: 0.35, roughness: 0.35, metalness: 0.2,
-      }),
-    );
-    board.rotation.x = Math.PI / 2;
-    board.scale.set(1, 1, 0.45); // flatten into a board
-    this.surfboard.add(board);
-    const fin = new THREE.Mesh(
-      new THREE.ConeGeometry(0.12, 0.3, 4),
-      new THREE.MeshStandardMaterial({ color: 0xffd0a0, roughness: 0.5 }),
-    );
-    fin.position.set(0, -0.16, -0.7);
-    this.surfboard.add(fin);
-    this.surfboard.position.y = -PLAYER_HALF_STANDING.y + 0.12;
-    this.surfboard.visible = false;
-    this.group.add(this.surfboard);
+    // ── Jetpack: twin tanks on the back with animated flames ──
+    this.jetpack = new THREE.Group();
+    const tankMat = new THREE.MeshStandardMaterial({
+      color: 0xd8dde4, roughness: 0.35, metalness: 0.7,
+    });
+    for (const sx of [-0.24, 0.24]) {
+      const tank = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.5, 4, 10), tankMat);
+      tank.position.set(sx, 0.35, -0.36);
+      this.jetpack.add(tank);
+      const flame = new THREE.Mesh(
+        new THREE.ConeGeometry(0.14, 0.7, 10),
+        new THREE.MeshBasicMaterial({
+          color: 0xffb03a, transparent: true, opacity: 0.92,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        }),
+      );
+      flame.rotation.x = Math.PI;
+      flame.position.set(sx, -0.2, -0.36);
+      this.jetpack.add(flame);
+      this.flames.push(flame);
+    }
+    this.jetpack.visible = false;
+    this.group.add(this.jetpack);
 
     this.reset();
   }
 
-  /** Toggle power-up visuals (called each frame from the game). */
-  setEffects(magnet: boolean, shield: boolean, star = false, surf = false): void {
-    this.magnetAura.visible = magnet;
-    this.shieldOn = shield;
-    this.starOn = star;
-    this.starAura.visible = star;
-    this.surfOn = surf;
-    this.surfboard.visible = surf;
+  // ── Visual state pushed in by systems ────────────────────────────────────
+  /** Toggle the magnet field and jetpack visuals (called each frame). */
+  setEffects(magnet: boolean, jetpack: boolean): void {
+    this.magnetField.visible = magnet;
+    this.jetOn = jetpack;
+    this.jetpack.visible = jetpack;
+  }
+
+  setBoarding(on: boolean): void {
+    this.boarding = on;
+    this.board.visible = on;
+  }
+
+  /** Re-skin the hoverboard to the equipped deck. */
+  setBoardColors(c: BoardColors): void {
+    const deck = this.boardDeck.material as THREE.MeshStandardMaterial;
+    deck.color.setHex(c.deck);
+    deck.emissive.setHex(c.deck);
+    (this.boardGlow.material as THREE.MeshBasicMaterial).color.setHex(c.glow);
   }
 
   /** Swap in a different character look without touching the physics. */
@@ -170,21 +182,22 @@ export class Player {
   }
 
   /** Seconds of the menu walk-out entrance before the pose cycle begins. */
-  private static readonly ENTRANCE = 2.2;
+  private static readonly ENTRANCE = 2.0;
 
-  /** Drive the menu hero: first the character **walks out** from down the
-   *  track toward the camera, then performs the lively pose cycle in place. */
+  /** Menu hero: the runner jogs in from down the yard, then poses. */
   menuShowcase(dt: number, elapsed: number): void {
-    this.rig.group.visible = true; // restore after a death explosion
+    this.rig.group.visible = true;
     this.rig.group.scale.set(1, 1, 1);
     this.rig.group.rotation.z = 0;
+    this.board.visible = false;
+    this.jetpack.visible = false;
+    this.magnetField.visible = false;
     const E = Player.ENTRANCE;
     if (elapsed < E) {
-      // Walk-out: ease from far down the track (−16) to the showcase mark.
       const k = elapsed / E;
-      const z = -16 * (1 - k) * (1 - k); // ease-out approach
+      const z = -18 * (1 - k) * (1 - k);
       this.group.position.set(0, PLAYER_HALF_STANDING.y, z);
-      this.rig.update(dt, 'run', 1.3);
+      this.rig.update(dt, 'run', 1.4);
     } else {
       this.group.position.set(0, PLAYER_HALF_STANDING.y, PLAYER_Z);
       this.rig.showcase(dt, elapsed - E);
@@ -204,30 +217,37 @@ export class Player {
     this.sliding = false;
     this.slideTimer = 0;
     this.squashTimer = 0;
-    this.shieldOn = false;
-    this.starOn = false;
-    this.surfOn = false;
-    this.magnetAura.visible = false;
-    this.shieldBubble.visible = false;
-    this.starAura.visible = false;
-    this.hoverboard.visible = false;
-    this.surfboard.visible = false;
+    this.stumbleTimer = 0;
+    this.caughtTime = 0;
+    this.boarding = false;
+    this.jetOn = false;
+    this.magnetField.visible = false;
+    this.board.visible = false;
+    this.jetpack.visible = false;
     this.rig.group.scale.set(1, 1, 1);
     this.rig.group.rotation.set(0, 0, 0);
     this.rig.group.position.y = 0;
-    this.rig.group.visible = true; // un-hide after a death explosion
+    this.rig.group.visible = true;
     this.group.position.set(0, PLAYER_HALF_STANDING.y, PLAYER_Z);
     this.updateAABB();
   }
 
-  /** Hide the rig for the death explosion (debris carries the moment). */
-  explode(): void {
+  /** Hide the rig (the crash debris carries the moment). */
+  hide(): void {
     this.rig.group.visible = false;
-    this.magnetAura.visible = false;
-    this.shieldBubble.visible = false;
-    this.starAura.visible = false;
-    this.hoverboard.visible = false;
-    this.surfboard.visible = false;
+    this.magnetField.visible = false;
+    this.board.visible = false;
+    this.jetpack.visible = false;
+  }
+
+  /** Caught by the inspector — flail while being lifted off the ballast. */
+  caughtStep(dt: number): void {
+    this.caughtTime += dt;
+    this.rig.group.visible = true;
+    this.rig.caught(dt, this.caughtTime);
+    const lift = Math.min(0.55, this.caughtTime * 1.1);
+    this.group.position.set(this.x, PLAYER_HALF_STANDING.y + lift, PLAYER_Z + this.caughtTime * 1.4);
+    this.rig.group.rotation.z = Math.sin(this.caughtTime * 9) * 0.08;
   }
 
   /** Begin the new-record celebration: stand the rig up, centred and visible. */
@@ -244,59 +264,68 @@ export class Player {
     this.celebratePhase = 0;
   }
 
-  /** Per-frame victory dash: jog with little hops and sprint toward the camera
-   *  exit (−Z), then keep going so the runner exits the frame. */
+  /** Per-frame victory dash toward the camera exit. */
   celebrateStep(dt: number): void {
     this.celebratePhase += dt;
-    this.celebrateZ -= dt * 9; // run forward, off-screen
-    // Cheerful hop.
-    const hop = Math.abs(Math.sin(this.celebratePhase * 6)) * 0.35;
+    this.celebrateZ -= dt * 10;
+    const hop = Math.abs(Math.sin(this.celebratePhase * 6)) * 0.38;
     this.group.position.set(0, PLAYER_HALF_STANDING.y + hop, this.celebrateZ);
-    this.rig.update(dt, 'run', 2.2);
-    // Arms raised triumphantly as it goes.
+    this.rig.update(dt, 'run', 2.4);
     this.rig.cheerArms(dt);
   }
 
   private celebrateZ = 0;
   private celebratePhase = 0;
 
-  moveLeft(): void {
-    this.currentLane = Math.max(-1, this.currentLane - 1);
+  // ── Input ────────────────────────────────────────────────────────────────
+  moveLeft(): boolean {
+    if (this.currentLane <= -1) return false;
+    this.currentLane--;
+    return true;
   }
 
-  moveRight(): void {
-    this.currentLane = Math.min(1, this.currentLane + 1);
+  moveRight(): boolean {
+    if (this.currentLane >= 1) return false;
+    this.currentLane++;
+    return true;
   }
 
-  jump(): void {
-    if (this.flying || !this.grounded) return; // single jump only
-    const low = this.lowGravity ? 1.18 : 1;
+  jump(): boolean {
+    if (this.flying || !this.grounded) return false;
+    const low = this.lowGravity ? 1.16 : 1;
     this.vy = JUMP_VELOCITY * this.jumpMult * low;
     this.grounded = false;
-    this.endSlide(); // jumping cancels a slide
+    this.endSlide();
+    return true;
   }
 
-  slide(): void {
-    if (this.flying || this.sliding) return;
-    // Sliding from mid-air slams down for a fast duck.
-    if (!this.grounded) {
-      this.vy = -JUMP_VELOCITY; // accelerate the descent
-    }
+  slide(): boolean {
+    if (this.flying || this.sliding) return false;
+    // Rolling from mid-air slams you down for a fast duck.
+    if (!this.grounded) this.vy = -JUMP_VELOCITY * 1.1;
     this.sliding = true;
     this.slideTimer = SLIDE_DURATION;
-    // Light vertical squash; the Character's baseball-slide lean does the rest.
-    this.rig.group.scale.set(1.05, 0.78, 1.05);
+    return true;
   }
 
   private endSlide(): void {
     if (!this.sliding) return;
     this.sliding = false;
     this.slideTimer = 0;
-    this.rig.group.scale.set(1, 1, 1);
   }
 
-  // ── State pushed in by systems (collision / power-ups) ───────────────────
-  /** Support height under the player this frame (set by the collision pass). */
+  /** Trip over something: pitch forward and lose composure for a moment. */
+  stumble(seconds: number): void {
+    this.stumbleTimer = seconds;
+    this.endSlide();
+    this.squashTimer = 0;
+  }
+
+  get isStumbling(): boolean {
+    return this.stumbleTimer > 0;
+  }
+
+  // ── State pushed in by systems ───────────────────────────────────────────
   setGroundY(y: number): void {
     this.groundY = y;
   }
@@ -318,6 +347,8 @@ export class Player {
   }
 
   update(dt: number): void {
+    if (this.stumbleTimer > 0) this.stumbleTimer -= dt;
+
     // Lateral lerp toward the active lane (frame-rate independent).
     const targetX = laneToX(this.currentLane);
     const t = 1 - Math.exp(-LANE_LERP * this.laneSpeedMult * dt);
@@ -325,8 +356,7 @@ export class Player {
 
     const wasAirborne = !this.grounded;
     if (!this.flying) {
-      // Vertical gravity integration resolving to the current support height.
-      this.vy -= GRAVITY * (this.lowGravity ? 0.72 : 1) * dt;
+      this.vy -= GRAVITY * (this.lowGravity ? 0.74 : 1) * dt;
       this.feetY += this.vy * dt;
       if (this.feetY <= this.groundY) {
         this.feetY = this.groundY;
@@ -336,10 +366,8 @@ export class Player {
         this.grounded = false;
       }
     }
-    // Landing → brief squash for impact feel.
     if (wasAirborne && this.grounded && !this.sliding) this.squashTimer = 0.18;
 
-    // Slide timeout.
     if (this.sliding) {
       this.slideTimer -= dt;
       if (this.slideTimer <= 0) this.endSlide();
@@ -349,48 +377,57 @@ export class Player {
     this.group.position.set(this.x, this.feetY + half.y, PLAYER_Z);
     this.updateAABB();
 
-    // Juice: landing squash & lean into lane changes (visual only).
+    // Landing squash + lean into lane changes (visual only).
     if (!this.sliding) {
       if (this.squashTimer > 0) {
         this.squashTimer -= dt;
         const k = Math.max(0, this.squashTimer / 0.18);
-        this.rig.group.scale.set(1 + 0.18 * k, 1 - 0.24 * k, 1 + 0.18 * k);
+        this.rig.group.scale.set(1 + 0.16 * k, 1 - 0.22 * k, 1 + 0.16 * k);
       } else {
         this.rig.group.scale.set(1, 1, 1);
       }
+    } else {
+      this.rig.group.scale.set(1, 1, 1);
     }
-    this.rig.group.rotation.z = (this.x - targetX) * 0.14;
+    const bank = (this.x - targetX) * 0.16;
+    this.rig.group.rotation.z = bank;
 
-    // Power-up visuals follow their states.
-    if (this.magnetAura.visible) this.magnetAura.rotation.y += dt * 2.2;
-    this.hoverboard.visible = this.shieldOn;
-    this.shieldBubble.visible = this.shieldOn;
-    if (this.starOn) {
-      this.starAura.rotation.y += dt * 4;
-      const pulse = 1 + Math.sin(this.starAura.rotation.y * 3) * 0.08;
-      this.starAura.scale.setScalar(pulse);
+    // Effect visuals.
+    if (this.magnetField.visible) {
+      this.magnetField.rotation.y += dt * 2.4;
+      this.magnetField.scale.setScalar(1 + Math.sin(performance.now() * 0.004) * 0.05);
     }
-
-    // Surfboard: float the rig up a touch and sway it side-to-side gently.
-    if (this.surfOn) {
-      this.surfPhase += dt * 2.2;
-      const lift = 0.18 + Math.sin(this.surfPhase) * 0.07;
-      const sway = Math.sin(this.surfPhase * 0.8) * 0.12;
+    if (this.jetOn) {
+      for (let i = 0; i < this.flames.length; i++) {
+        const f = this.flames[i];
+        const k = 0.7 + Math.random() * 0.7;
+        f.scale.set(1, k, 1);
+        (f.material as THREE.MeshBasicMaterial).opacity = 0.75 + Math.random() * 0.25;
+      }
+    }
+    if (this.boarding) {
+      this.boardPhase += dt * 2.6;
+      const lift = 0.16 + Math.sin(this.boardPhase) * 0.05;
       this.rig.group.position.y = lift;
-      this.rig.group.rotation.z = (this.x - targetX) * 0.14 + sway;
-      this.surfboard.position.y = -PLAYER_HALF_STANDING.y + 0.12 + Math.sin(this.surfPhase) * 0.05;
-      this.surfboard.rotation.z = sway;
+      this.board.position.y = -PLAYER_HALF_STANDING.y + 0.1 + Math.sin(this.boardPhase) * 0.04;
+      this.board.rotation.z = bank * 1.6;
+      this.board.rotation.x = Math.sin(this.boardPhase * 0.6) * 0.05;
     } else if (this.rig.group.position.y !== 0) {
       this.rig.group.position.y = 0;
     }
 
     // Drive the character animation from the current motion state.
     const pose: Pose =
-      this.flying || !this.grounded ? 'air' : this.sliding ? 'slide' : 'run';
+      this.stumbleTimer > 0 ? 'stumble'
+        : this.flying ? 'fly'
+          : !this.grounded ? 'air'
+            : this.sliding ? 'slide'
+              : this.boarding ? 'surf'
+                : 'run';
     this.rig.update(dt, pose, this.animSpeed);
   }
 
-  /** Directly set the player's feet height (jetpack/rocket flight control). */
+  /** Directly set the player's feet height (jetpack flight control). */
   setFeetY(y: number): void {
     this.feetY = y;
     this.vy = 0;

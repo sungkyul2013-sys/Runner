@@ -1,28 +1,27 @@
 /**
- * The mileage "journey" — a Clash-Royale-style reward track. Each milestone
- * unlocks once the player's *lifetime* mileage (totalMileage) reaches `need`,
- * and can then be claimed for coins and/or consumable items. Designed to be
- * generous so progress feels constant.
+ * The world tour — a reward track that advances with **lifetime distance**.
+ * Each stop is a real district on the route; reaching it unlocks a claimable
+ * crate of coins, keys and spare boards, so long-haul play always pays out.
  */
 export interface Milestone {
-  need: number; // lifetime mileage required
+  /** Lifetime metres required. */
+  need: number;
   coins: number;
-  bomb: number;
-  rocket: number;
-  /** Big chest emoji shown on the node. */
+  keys: number;
+  boards: number;
   icon: string;
-  /** Optional label for a special node. */
-  label?: string;
+  /** District this stop corresponds to. */
+  label: string;
 }
 
 export const JOURNEY: Milestone[] = [
-  { need: 20, coins: 150, bomb: 1, rocket: 0, icon: '📦' },
-  { need: 50, coins: 300, bomb: 0, rocket: 1, icon: '📦' },
-  { need: 100, coins: 500, bomb: 2, rocket: 0, icon: '🎁' },
-  { need: 180, coins: 800, bomb: 0, rocket: 2, icon: '🎁' },
-  { need: 300, coins: 1200, bomb: 2, rocket: 1, icon: '💎', label: '보석 상자' },
-  { need: 450, coins: 1800, bomb: 0, rocket: 3, icon: '🎁' },
-  { need: 650, coins: 2500, bomb: 3, rocket: 2, icon: '👑', label: '왕관 상자' },
-  { need: 900, coins: 3500, bomb: 3, rocket: 3, icon: '💎', label: '보석 상자' },
-  { need: 1300, coins: 5000, bomb: 4, rocket: 4, icon: '👑', label: '전설 상자' },
+  { need: 1500, coins: 300, keys: 0, boards: 1, icon: '📦', label: '서울' },
+  { need: 4000, coins: 600, keys: 1, boards: 0, icon: '📦', label: '도쿄 야경' },
+  { need: 8000, coins: 1000, keys: 0, boards: 2, icon: '🎁', label: '뉴욕' },
+  { need: 14000, coins: 1600, keys: 2, boards: 0, icon: '🎁', label: '리우' },
+  { need: 22000, coins: 2400, keys: 1, boards: 2, icon: '🧊', label: '아이슬란드' },
+  { need: 34000, coins: 3400, keys: 3, boards: 0, icon: '🏜️', label: '사막 협곡' },
+  { need: 50000, coins: 5000, keys: 3, boards: 3, icon: '🌆', label: '네온 지하' },
+  { need: 70000, coins: 7000, keys: 5, boards: 3, icon: '❄️', label: '설원' },
+  { need: 100000, coins: 12000, keys: 8, boards: 5, icon: '👑', label: '월드 투어 완주' },
 ];

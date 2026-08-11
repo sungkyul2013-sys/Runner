@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { BIOMES, CAMERA_FOV_BASE, DEV } from '../config/constants';
+import { CAMERA_FOV_BASE, DEV, DISTRICTS } from '../config/constants';
 import { Stats } from './Stats';
 
 /** Per-frame update callback. `dt` is delta seconds, `elapsed` total seconds. */
@@ -44,7 +44,7 @@ export class Engine {
 
     this.scene = new THREE.Scene();
     // Background is the Environment sky dome; fog colour is biome-driven.
-    this.scene.fog = new THREE.Fog(BIOMES[0].fog, 45, 240);
+    this.scene.fog = new THREE.Fog(DISTRICTS[0].fog, 60, 300);
 
     this.camera = new THREE.PerspectiveCamera(
       CAMERA_FOV_BASE,
@@ -62,9 +62,9 @@ export class Engine {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.55, // strength — warm sunset glow on the sun + highlights
-      0.6, // radius
-      0.55, // threshold — only the brightest (sun, coins) bloom
+      0.42, // strength — a restrained glow on lamps, coins and the sky
+      0.7, // radius
+      0.72, // threshold — only the brightest highlights bloom
     );
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -76,14 +76,19 @@ export class Engine {
   }
 
   private setupLights(): void {
-    // Warm sky fill + a low golden key from the sun direction + cool back-rim.
-    this.scene.add(new THREE.HemisphereLight(0xffd9b0, 0x3a2350, 0.9));
-    const key = new THREE.DirectionalLight(0xffcaa0, 1.15);
-    key.position.set(-12, 10, -16); // from the sun (left, low, far)
+    // Daylight-neutral rig: sky/ground hemisphere fill, a key from the sun's
+    // side of the yard, and a cool rim that separates carriages from the sky.
+    this.scene.add(new THREE.HemisphereLight(0xdce8ff, 0x4a4640, 1.0));
+    const key = new THREE.DirectionalLight(0xfff2d8, 1.25);
+    key.position.set(-16, 18, -12);
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0xff7eb3, 0.35);
-    rim.position.set(8, 6, 10);
+    const rim = new THREE.DirectionalLight(0x9ec4ff, 0.5);
+    rim.position.set(10, 8, 12);
     this.scene.add(rim);
+    // A soft bounce off the ballast keeps undersides from going pure black.
+    const bounce = new THREE.DirectionalLight(0xffd9b0, 0.28);
+    bounce.position.set(0, -6, 4);
+    this.scene.add(bounce);
   }
 
   private clampedDpr(): number {

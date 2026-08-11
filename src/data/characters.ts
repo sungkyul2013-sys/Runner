@@ -1,113 +1,168 @@
 /**
- * The 8 Sunset Runner characters. Each has a fixed humanoid look (skin / shirt /
- * pants / shoes / hat colours + trail colour) assembled from primitives, and a
- * fixed passive **ability** expressed as flat run modifiers. Faithful to the
- * reference roster (러너 / 아쿠아 / 섀도우 닌자 / 네온 라이더 / 우주인 / 피닉스 /
- * 골든 스타 / 코스모스). Prices are coins unless `gem` is true (premium).
+ * The METRO SURF crew. Each runner has a hand-built look (skin / hair / top /
+ * bottom / shoes / cap / accent) assembled from primitives by
+ * {@link Character}, a short bio, and a passive perk expressed as flat run
+ * modifiers. The starter is free; the rest cost coins, and the two headliners
+ * cost keys.
  */
 export interface CharAbility {
-  /** Magnet power-up duration multiplier (아쿠아). */
+  /** Coin Magnet duration multiplier. */
   magnetMult?: number;
-  /** Permanent score multiplier (네온 라이더, 코스모스). */
+  /** Permanent score multiplier (1.2 = +20 %). */
   scoreMult?: number;
-  /** Coin value multiplier (골든 스타, 코스모스). */
+  /** Coin pickup multiplier. */
   coinMult?: number;
-  /** Lane-change speed multiplier (섀도우 닌자). */
+  /** Lane-change speed multiplier. */
   laneSpeedMult?: number;
-  /** Extra seconds of invulnerability after a hit absorb (섀도우 닌자). */
+  /** Extra seconds of invulnerability after absorbing a hit. */
   hitInvulnBonus?: number;
-  /** Reduced gravity / higher jumps (우주인). */
+  /** Reduced gravity — higher, floatier jumps. */
   lowGravity?: boolean;
-  /** One free revive per run (피닉스). */
-  revive?: boolean;
+  /** Survive one stumble per run for free. */
+  extraStumble?: boolean;
+  /** Start every run with a hoverboard already charged. */
+  freeBoard?: boolean;
+  /** Letters and mystery boxes are drawn to you like a weak magnet. */
+  tokenMagnet?: boolean;
+  /** Jetpack duration multiplier. */
+  jetpackMult?: number;
 }
 
 export interface CharColors {
   skin: number;
-  shirt: number;
-  pants: number;
+  hair: number;
+  top: number;
+  bottom: number;
   shoes: number;
-  hat: number;
+  cap: number;
+  accent: number;
   trail: number;
 }
 
 export interface CharacterDef {
   id: string;
   name: string;
-  /** Price in coins, or in gems when `gem` is true. 0 = owned by default. */
+  /** Price in coins, or in keys when `key` is true. 0 = owned by default. */
   price: number;
-  gem?: boolean;
-  /** Short ability blurb shown in the UI. */
+  key?: boolean;
+  /** One-line perk summary shown on the card. */
   blurb: string;
+  /** Flavour bio shown on the detail panel. */
+  bio: string;
   colors: CharColors;
   ability: CharAbility;
 }
 
 export const CHARACTERS: CharacterDef[] = [
   {
-    id: 'runner',
-    name: '러너',
+    id: 'jino',
+    name: '지노',
     price: 0,
     blurb: '균형 잡힌 올라운더',
-    colors: { skin: 0xffd0a8, shirt: 0xff5e8a, pants: 0x3a4a8a, shoes: 0xfff2d0, hat: 0xff5e8a, trail: 0xff7eb3 },
+    bio: '역 앞 벽화를 그리다 순찰에 걸린 뒤로, 매일 밤 선로를 달린다.',
+    colors: { skin: 0xf6c9a0, hair: 0x2b2028, top: 0xe23c3c, bottom: 0x2f3a52, shoes: 0xf4f4f4, cap: 0xe23c3c, accent: 0xffd23f, trail: 0xff6a4d },
     ability: {},
   },
   {
-    id: 'aqua',
-    name: '아쿠아',
-    price: 300,
-    blurb: '🧲 자석 지속 +50%',
-    colors: { skin: 0xffe0c0, shirt: 0x3ad1ff, pants: 0x1c6fb0, shoes: 0xd0f6ff, hat: 0x3ad1ff, trail: 0x55c8ff },
-    ability: { magnetMult: 1.5 },
+    id: 'mina',
+    name: '미나',
+    price: 500,
+    blurb: '🧲 자석 지속 +60%',
+    bio: '고물상집 딸. 자석이라면 눈 감고도 만든다.',
+    colors: { skin: 0xffdcb8, hair: 0x8a4bd0, top: 0x3ad1ff, bottom: 0x1c4f78, shoes: 0xfff0a0, cap: 0x3ad1ff, accent: 0xff4fd8, trail: 0x55c8ff },
+    ability: { magnetMult: 1.6 },
   },
   {
-    id: 'ninja',
-    name: '섀도우 닌자',
-    price: 700,
-    blurb: '⚡ 초고속 레인 이동 + 피격 무적 +1초',
-    colors: { skin: 0xe8c9a8, shirt: 0x2a2540, pants: 0x15121f, shoes: 0x403a5a, hat: 0x2a2540, trail: 0x8a7bff },
-    ability: { laneSpeedMult: 1.6, hitInvulnBonus: 1 },
+    id: 'tex',
+    name: '텍스',
+    price: 900,
+    blurb: '⚡ 레인 전환 초고속 + 무적 +1초',
+    bio: '스케이트 파크 출신. 몸이 먼저 움직인다.',
+    colors: { skin: 0x8d5a3b, hair: 0x1b1418, top: 0x2b2f38, bottom: 0x14171d, shoes: 0x3ad17a, cap: 0x2b2f38, accent: 0x3ad17a, trail: 0x6bff9a },
+    ability: { laneSpeedMult: 1.7, hitInvulnBonus: 1 },
   },
   {
-    id: 'neon',
-    name: '네온 라이더',
+    id: 'nari',
+    name: '나리',
     price: 1400,
+    blurb: '🎒 시작부터 호버보드 1개',
+    bio: '보드 정비공. 남는 보드는 늘 가방 안에 있다.',
+    colors: { skin: 0xf3c49a, hair: 0xd8a13a, top: 0xf6c944, bottom: 0x4a3a2a, shoes: 0x2b3038, cap: 0xf6c944, accent: 0xe0603c, trail: 0xffd23f },
+    ability: { freeBoard: true },
+  },
+  {
+    id: 'kaito',
+    name: '카이토',
+    price: 2200,
+    blurb: '🪂 제트팩 지속 +50%',
+    bio: '공항 정비반 막내. 하늘에 미련이 많다.',
+    colors: { skin: 0xffd7ae, hair: 0x232a3a, top: 0xe8ecf2, bottom: 0x37507a, shoes: 0xe23c3c, cap: 0xe8ecf2, accent: 0x3fa9f5, trail: 0x9ad8ff },
+    ability: { jetpackMult: 1.5 },
+  },
+  {
+    id: 'zoe',
+    name: '조이',
+    price: 3200,
     blurb: '✨ 점수 상시 +25%',
-    colors: { skin: 0xffd0a8, shirt: 0xff3bd0, pants: 0x2a0f4a, shoes: 0x00ffd0, hat: 0xff3bd0, trail: 0xff7eff },
+    bio: '네온 간판 디자이너. 어두울수록 빛난다.',
+    colors: { skin: 0xf0c2a0, hair: 0xff4fd8, top: 0x2a1040, bottom: 0x140828, shoes: 0xff4fd8, cap: 0x2a1040, accent: 0x00ffd0, trail: 0xff7eff },
     ability: { scoreMult: 1.25 },
   },
   {
-    id: 'astro',
-    name: '우주인',
-    price: 2400,
+    id: 'oleg',
+    name: '올레그',
+    price: 4800,
     blurb: '🌙 저중력 — 더 높고 길게 점프',
-    colors: { skin: 0xffe6cc, shirt: 0xeef2ff, pants: 0xc9d2e6, shoes: 0xaab4cc, hat: 0xeef2ff, trail: 0xcfe0ff },
+    bio: '전직 고공 작업자. 떨어지는 법을 모른다.',
+    colors: { skin: 0xf7ddc4, hair: 0xd8d8dc, top: 0xeef2ff, bottom: 0xb9c3d6, shoes: 0x9aa4b8, cap: 0xeef2ff, accent: 0x7fb8e0, trail: 0xcfe0ff },
     ability: { lowGravity: true },
   },
   {
-    id: 'phoenix',
-    name: '피닉스',
-    price: 4500,
-    blurb: '💖 1회 부활 — 충돌해도 한 번 살아남음',
-    colors: { skin: 0xffd0a8, shirt: 0xff5a2a, pants: 0xb02810, shoes: 0xffd23f, hat: 0xff8a2a, trail: 0xff6a2a },
-    ability: { revive: true },
+    id: 'sol',
+    name: '솔',
+    price: 6500,
+    blurb: '💖 한 번의 비틀거림을 무료로 회복',
+    bio: '불꽃놀이 기술자. 넘어져도 다시 타오른다.',
+    colors: { skin: 0xd89a6a, hair: 0xff6a2a, top: 0xff5a2a, bottom: 0x8c2a12, shoes: 0xffd23f, cap: 0xff8a2a, accent: 0xffd23f, trail: 0xff6a2a },
+    ability: { extraStumble: true },
   },
   {
-    id: 'golden',
-    name: '골든 스타',
-    price: 8000,
+    id: 'rina',
+    name: '리나',
+    price: 9000,
     blurb: '💰 모든 코인 2배',
-    colors: { skin: 0xffe0b0, shirt: 0xffd23f, pants: 0xb88a10, shoes: 0xfff0a0, hat: 0xffd23f, trail: 0xffe06b },
+    bio: '분실물 센터 직원. 동전은 절대 놓치지 않는다.',
+    colors: { skin: 0xffe0b0, hair: 0xffd23f, top: 0xffd23f, bottom: 0x9a7410, shoes: 0xfff6c8, cap: 0xffd23f, accent: 0xf0f3f7, trail: 0xffe06b },
     ability: { coinMult: 2 },
   },
   {
-    id: 'celestial',
-    name: '코스모스',
-    price: 100,
-    gem: true,
-    blurb: '💎 코인 2배 + 점수 +25%',
-    colors: { skin: 0xf0e0ff, shirt: 0x6a4bd0, pants: 0x2a1a5a, shoes: 0x9affe0, hat: 0x6a4bd0, trail: 0x9affe0 },
+    id: 'byte',
+    name: '바이트',
+    price: 12000,
+    blurb: '🔤 글자·상자가 끌려옴',
+    bio: '개찰구를 해킹하던 아이. 이제는 선로를 해킹한다.',
+    colors: { skin: 0xc8d4e0, hair: 0x00ffd0, top: 0x14324a, bottom: 0x0a1c2c, shoes: 0x00ffd0, cap: 0x14324a, accent: 0x00ffd0, trail: 0x00ffd0 },
+    ability: { tokenMagnet: true },
+  },
+  {
+    id: 'noir',
+    name: '느와르',
+    price: 12,
+    key: true,
+    blurb: '🗝️ 코인 2배 + 점수 +25%',
+    bio: '아무도 얼굴을 본 적 없는 전설의 태거.',
+    colors: { skin: 0xe8e0f0, hair: 0x1a1024, top: 0x2a1a4a, bottom: 0x120a20, shoes: 0x8a7bff, cap: 0x2a1a4a, accent: 0x8a7bff, trail: 0x9a8bff },
     ability: { coinMult: 2, scoreMult: 1.25 },
+  },
+  {
+    id: 'aurora',
+    name: '오로라',
+    price: 20,
+    key: true,
+    blurb: '🗝️ 저중력 + 자석 +60% + 무료 보드',
+    bio: '오로라가 뜨는 밤에만 나타난다는 소문의 러너.',
+    colors: { skin: 0xfbe7d6, hair: 0x2ee0b0, top: 0x0f7a72, bottom: 0x123a52, shoes: 0x9affe0, cap: 0x0f7a72, accent: 0x9affe0, trail: 0x2ee0b0 },
+    ability: { lowGravity: true, magnetMult: 1.6, freeBoard: true },
   },
 ];
 

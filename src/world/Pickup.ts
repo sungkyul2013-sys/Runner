@@ -1,66 +1,94 @@
 import * as THREE from 'three';
 import { POWERUPS, PowerupType } from '../config/powerups';
 
-// One shared emoji sprite material per power-up type (canvas-drawn glyph).
-const matCache = new Map<PowerupType, THREE.SpriteMaterial>();
-
-function emojiTexture(emoji: string, color: number): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 192;
-  const ctx = c.getContext('2d')!;
-  const hex = `#${color.toString(16).padStart(6, '0')}`;
-  // Coloured glow halo so each power-up reads by colour at a glance.
-  const halo = ctx.createRadialGradient(96, 96, 10, 96, 96, 94);
-  halo.addColorStop(0, hexA(color, 0.55));
-  halo.addColorStop(0.7, hexA(color, 0.18));
-  halo.addColorStop(1, hexA(color, 0));
-  ctx.fillStyle = halo;
-  ctx.fillRect(0, 0, 192, 192);
-  // Solid colour badge disc with a glossy rim.
-  ctx.beginPath();
-  ctx.arc(96, 96, 62, 0, Math.PI * 2);
-  const disc = ctx.createLinearGradient(40, 40, 150, 150);
-  disc.addColorStop(0, lighten(hex, 40));
-  disc.addColorStop(1, hex);
-  ctx.fillStyle = disc;
-  ctx.fill();
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-  ctx.stroke();
-  // Big bright glyph on top.
-  ctx.font = '96px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(0,0,0,0.4)';
-  ctx.shadowBlur = 6;
-  ctx.fillText(emoji, 96, 104);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
+/** One shared sprite material per token face (canvas-drawn badge). */
+const matCache = new Map<string, THREE.SpriteMaterial>();
 
 function hexA(color: number, a: number): string {
   const r = (color >> 16) & 255, g = (color >> 8) & 255, b = color & 255;
   return `rgba(${r},${g},${b},${a})`;
 }
-function lighten(hex: string, amt: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.min(255, ((n >> 16) & 255) + amt);
-  const g = Math.min(255, ((n >> 8) & 255) + amt);
-  const b = Math.min(255, (n & 255) + amt);
+function lighten(color: number, amt: number): string {
+  const r = Math.min(255, ((color >> 16) & 255) + amt);
+  const g = Math.min(255, ((color >> 8) & 255) + amt);
+  const b = Math.min(255, (color & 255) + amt);
   return `rgb(${r},${g},${b})`;
 }
 
-function materialFor(type: PowerupType): THREE.SpriteMaterial {
-  let m = matCache.get(type);
+/**
+ * Draws a token face: a coloured glow, a glossy disc with a bright rim, then
+ * either the power-up glyph or — for word-hunt tokens — a big bold letter.
+ */
+function tokenTexture(color: number, glyph: string, isLetter: boolean): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 224;
+  const ctx = c.getContext('2d')!;
+  const cx = 112;
+
+  const halo = ctx.createRadialGradient(cx, cx, 12, cx, cx, 110);
+  halo.addColorStop(0, hexA(color, 0.6));
+  halo.addColorStop(0.65, hexA(color, 0.18));
+  halo.addColorStop(1, hexA(color, 0));
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, 224, 224);
+
+  ctx.beginPath();
+  ctx.arc(cx, cx, 74, 0, Math.PI * 2);
+  const disc = ctx.createLinearGradient(40, 40, 184, 184);
+  disc.addColorStop(0, lighten(color, 60));
+  disc.addColorStop(1, `#${color.toString(16).padStart(6, '0')}`);
+  ctx.fillStyle = disc;
+  ctx.fill();
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+  ctx.stroke();
+
+  // Glossy highlight across the top of the disc.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cx, 70, 0, Math.PI * 2);
+  ctx.clip();
+  const gloss = ctx.createLinearGradient(0, 40, 0, 130);
+  gloss.addColorStop(0, 'rgba(255,255,255,0.42)');
+  gloss.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gloss;
+  ctx.fillRect(0, 34, 224, 100);
+  ctx.restore();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = 8;
+  if (isLetter) {
+    ctx.font = `900 108px 'Trebuchet MS', system-ui, sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(glyph, cx, cx + 6);
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(20,24,34,0.55)';
+    ctx.strokeText(glyph, cx, cx + 6);
+  } else {
+    ctx.font = '104px sans-serif';
+    ctx.fillText(glyph, cx, cx + 8);
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function materialFor(type: PowerupType, letter?: string): THREE.SpriteMaterial {
+  const key = `${type}:${letter ?? ''}`;
+  let m = matCache.get(key);
   if (!m) {
+    const def = POWERUPS[type];
     m = new THREE.SpriteMaterial({
-      map: emojiTexture(POWERUPS[type].icon, POWERUPS[type].color),
+      map: tokenTexture(def.color, letter ?? def.icon, !!letter),
       transparent: true,
       depthWrite: false,
       fog: false,
     });
-    matCache.set(type, m);
+    matCache.set(key, m);
   }
   return m;
 }
@@ -74,26 +102,28 @@ export function disposePickupResources(): void {
 }
 
 /**
- * A floating power-up token rendered as the item's **emoji** (a camera-facing
- * billboard sprite, not a box) so players instantly recognise what it grants.
- * Pooled per the PowerupSystem. Bobs and gently scales to feel alive.
+ * A floating token — power-up, key, mystery box or word-hunt letter — drawn as
+ * a camera-facing billboard so it reads instantly at any speed. Pooled by the
+ * pickup system; bobs, breathes and (for letters) shimmers.
  */
 export class Pickup {
   readonly mesh = new THREE.Sprite();
   type: PowerupType = PowerupType.MAGNET;
+  letter?: string;
   collected = false;
 
-  private baseY = 1.3;
+  private baseY = 1.4;
   private bob = 0;
 
   constructor() {
     this.mesh.visible = false;
-    this.mesh.scale.set(1.7, 1.7, 1);
+    this.mesh.scale.set(1.8, 1.8, 1);
   }
 
-  configure(type: PowerupType, x: number, y: number, z: number): void {
+  configure(type: PowerupType, x: number, y: number, z: number, letter?: string): void {
     this.type = type;
-    this.mesh.material = materialFor(type);
+    this.letter = letter;
+    this.mesh.material = materialFor(type, letter);
     this.baseY = y;
     this.bob = Math.random() * Math.PI * 2;
     this.mesh.position.set(x, y, z);
@@ -104,9 +134,16 @@ export class Pickup {
   update(scroll: number, dt: number): void {
     this.mesh.position.z += scroll;
     this.bob += dt * 3;
-    this.mesh.position.y = this.baseY + Math.sin(this.bob) * 0.18;
-    const s = 1.7 + Math.sin(this.bob * 1.5) * 0.1;
+    this.mesh.position.y = this.baseY + Math.sin(this.bob) * 0.2;
+    const s = 1.8 + Math.sin(this.bob * 1.6) * 0.11;
     this.mesh.scale.set(s, s, 1);
+  }
+
+  /** Drag the token toward a point (token magnet perk). */
+  pull(x: number, y: number, z: number, k: number): void {
+    this.mesh.position.x += (x - this.mesh.position.x) * k;
+    this.baseY += (y - this.baseY) * k;
+    this.mesh.position.z += (z - this.mesh.position.z) * k;
   }
 
   get position(): THREE.Vector3 {
@@ -119,5 +156,6 @@ export class Pickup {
   reset(): void {
     this.mesh.visible = false;
     this.collected = false;
+    this.letter = undefined;
   }
 }

@@ -1,9 +1,9 @@
 {
-  "name": "sunset-runner",
+  "name": "metro-surf",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "NeonDash — a 3D endless runner built with Vite, TypeScript and Three.js.",
+  "description": "METRO SURF — a full 3D subway endless runner built with Vite, TypeScript and Three.js.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

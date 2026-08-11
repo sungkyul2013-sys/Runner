@@ -1,288 +1,315 @@
-import { ObstacleKind } from '../Obstacle';
+import { kindLength, ObstacleKind } from '../Obstacle';
+import { SLOT_LEN } from '../../config/constants';
 
-/** A single obstacle placement within a segment. */
+/**
+ * A single obstacle placement inside a segment.
+ *
+ * `slot` is the **nearest** authoring slot the piece occupies (0 = the segment's
+ * near edge, i.e. the first thing the player meets). A piece automatically
+ * occupies `SPECS[kind].slots` consecutive slots from there, so a seven-slot
+ * rake laid at slot 2 fills slots 2‥8 and no other piece may share them.
+ */
 export interface Placement {
-  /** Slot row index 0..SLOTS_PER_SEGMENT-1 (0 = nearest the near edge). */
   slot: number;
-  /** Lane index -1 | 0 | 1. */
   lane: -1 | 0 | 1;
   kind: ObstacleKind;
 }
 
 export interface SegmentTemplate {
-  /** Lower = appears earlier / easier. Gated by distance travelled. */
+  /** Lower = unlocked earlier. Gated by distance travelled. */
   difficulty: number;
-  /** Human note describing the intended survivable path (design intent). */
+  /** Total length of the template in slots. */
+  slots: number;
+  /** Human note describing the intended survivable line (design intent). */
   safePath: string;
   placements: Placement[];
+  /** Optional tag used by the spawner to avoid repeating set-pieces. */
+  tag?: string;
 }
 
 const K = ObstacleKind;
 
+/** Centre-of-piece offset (world units) from the segment's near edge. */
+export function placementOffset(p: Placement): number {
+  return p.slot * SLOT_LEN + kindLength(p.kind) / 2;
+}
+
 /**
- * Curated template set. **Invariant:** every template leaves at least one
- * survivable path — either a fully-empty lane, or a lane whose only hazards are
- * jump/slide types on non-adjacent slots (so a single action clears each). This
- * is what guarantees "always clearable" no matter the spawn sequence.
+ * The curated layout book. **Invariant:** every template leaves at least one
+ * survivable line under the real physics — verified by `npm run check:templates`,
+ * which walks the grid with the actual jump arc, roll window, roof heights and
+ * ramp boarding rules.
  */
 export const TEMPLATES: SegmentTemplate[] = [
-  // ── Difficulty 0 — warmup ──────────────────────────────────────────────
-  { difficulty: 0, safePath: 'any lane (empty)', placements: [] },
+  // ── 0 · Warm-up ─────────────────────────────────────────────────────────
+  { difficulty: 0, slots: 8, safePath: 'open yard', placements: [] },
   {
-    difficulty: 0,
-    safePath: 'lanes ±1 empty, or jump centre',
-    placements: [{ slot: 2, lane: 0, kind: K.BARRIER }],
+    difficulty: 0, slots: 10, safePath: 'sides clear, or hurdle the middle',
+    placements: [{ slot: 5, lane: 0, kind: K.BARRIER }],
   },
   {
-    difficulty: 0,
-    safePath: 'lanes ±1 empty, or slide centre',
-    placements: [{ slot: 2, lane: 0, kind: K.TUNNEL }],
+    difficulty: 0, slots: 10, safePath: 'sides clear, or roll the middle gate',
+    placements: [{ slot: 5, lane: 0, kind: K.GATE }],
   },
   {
-    difficulty: 0,
-    safePath: 'lanes 0/1 empty',
-    placements: [{ slot: 2, lane: -1, kind: K.TRAIN }],
+    difficulty: 0, slots: 10, safePath: 'lanes 0/+1 clear',
+    placements: [{ slot: 3, lane: -1, kind: K.TRAIN_LOW }],
   },
   {
-    difficulty: 0,
-    safePath: 'lanes -1/0 empty',
-    placements: [{ slot: 2, lane: 1, kind: K.TRAIN }],
+    difficulty: 0, slots: 10, safePath: 'lanes −1/0 clear',
+    placements: [{ slot: 3, lane: 1, kind: K.TRAIN_TALL }],
+  },
+  {
+    difficulty: 0, slots: 10, safePath: 'hop the crate or take a side lane',
+    placements: [{ slot: 5, lane: 0, kind: K.CRATE }],
   },
 
-  // ── Difficulty 1 ───────────────────────────────────────────────────────
+  // ── 1 · Basics ──────────────────────────────────────────────────────────
   {
-    difficulty: 1,
-    safePath: 'jump any lane',
+    difficulty: 1, slots: 10, safePath: 'jump — every lane hurdled',
+    placements: [
+      { slot: 5, lane: -1, kind: K.BARRIER },
+      { slot: 5, lane: 0, kind: K.BARRIER },
+      { slot: 5, lane: 1, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 1, slots: 10, safePath: 'roll — every lane gated',
+    placements: [
+      { slot: 5, lane: -1, kind: K.GATE },
+      { slot: 5, lane: 0, kind: K.GATE },
+      { slot: 5, lane: 1, kind: K.GATE },
+    ],
+  },
+  {
+    difficulty: 1, slots: 10, safePath: 'centre lane runs clear between two rakes',
+    placements: [
+      { slot: 3, lane: -1, kind: K.TRAIN_TALL },
+      { slot: 3, lane: 1, kind: K.TRAIN_TALL },
+    ],
+  },
+  {
+    difficulty: 1, slots: 12, safePath: 'sides clear — or ramp onto the centre carriage',
+    tag: 'ramp-ride',
+    placements: [
+      { slot: 3, lane: 0, kind: K.RAMP },
+      { slot: 4, lane: 0, kind: K.TRAIN_LOW },
+    ],
+  },
+  {
+    difficulty: 1, slots: 12, safePath: 'sides clear, or double-hurdle the middle',
+    placements: [
+      { slot: 3, lane: 0, kind: K.BARRIER },
+      { slot: 8, lane: 0, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 1, slots: 12, safePath: 'jump the hurdle, then roll the gate — any lane',
+    placements: [
+      { slot: 3, lane: -1, kind: K.BARRIER },
+      { slot: 3, lane: 0, kind: K.BARRIER },
+      { slot: 3, lane: 1, kind: K.BARRIER },
+      { slot: 8, lane: -1, kind: K.GATE },
+      { slot: 8, lane: 0, kind: K.GATE },
+      { slot: 8, lane: 1, kind: K.GATE },
+    ],
+  },
+
+  // ── 2 · Yard weaving ────────────────────────────────────────────────────
+  {
+    difficulty: 2, slots: 12, safePath: 'centre blocked — roll a side gate',
+    placements: [
+      { slot: 4, lane: 0, kind: K.TRAIN_TALL },
+      { slot: 8, lane: -1, kind: K.GATE },
+      { slot: 8, lane: 1, kind: K.GATE },
+    ],
+  },
+  {
+    difficulty: 2, slots: 12, safePath: 'staggered hurdles: hold a lane and hop, or weave',
+    placements: [
+      { slot: 2, lane: -1, kind: K.BARRIER },
+      { slot: 5, lane: 0, kind: K.BARRIER },
+      { slot: 8, lane: 1, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 2, slots: 14, safePath: 'weave: left rake first, then right rake',
+    placements: [
+      { slot: 2, lane: -1, kind: K.TRAIN_TALL },
+      { slot: 8, lane: 1, kind: K.TRAIN_TALL },
+    ],
+  },
+  {
+    difficulty: 2, slots: 12, safePath: 'dodge the pylon, hop the crate',
+    placements: [
+      { slot: 4, lane: 0, kind: K.PYLON },
+      { slot: 8, lane: -1, kind: K.CRATE },
+      { slot: 8, lane: 1, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 2, slots: 14, safePath: 'ramp onto the long rake and sprint its roof — or hold lane +1',
+    tag: 'roof-run',
+    placements: [
+      { slot: 2, lane: 0, kind: K.RAMP },
+      { slot: 3, lane: 0, kind: K.TRAIN_LOW_LONG },
+      { slot: 4, lane: -1, kind: K.TRAIN_TALL },
+    ],
+  },
+  {
+    difficulty: 2, slots: 12, safePath: 'buffer stop centre — sides open',
+    placements: [
+      { slot: 5, lane: 0, kind: K.BUFFER },
+      { slot: 9, lane: 1, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 2, slots: 14, safePath: 'two low rakes to hop between, or run the free right lane',
+    placements: [
+      { slot: 2, lane: -1, kind: K.TRAIN_LOW },
+      { slot: 8, lane: 0, kind: K.TRAIN_LOW },
+    ],
+  },
+
+  // ── 3 · Pressure ────────────────────────────────────────────────────────
+  {
+    difficulty: 3, slots: 14, safePath: 'corridor: centre stays open the whole way',
+    placements: [
+      { slot: 1, lane: -1, kind: K.TRAIN_TALL_LONG },
+      { slot: 4, lane: 1, kind: K.TRAIN_TALL_LONG },
+    ],
+  },
+  {
+    difficulty: 3, slots: 14, safePath: 'left rake, then cut right past the pylon',
+    placements: [
+      { slot: 2, lane: 0, kind: K.TRAIN_TALL },
+      { slot: 2, lane: 1, kind: K.TRAIN_TALL },
+      { slot: 8, lane: -1, kind: K.TRAIN_TALL },
+      { slot: 8, lane: 0, kind: K.PYLON },
+    ],
+  },
+  {
+    difficulty: 3, slots: 16, safePath: 'ride the centre rake, rolling under the roof gantry',
+    tag: 'roof-gate',
+    placements: [
+      { slot: 2, lane: 0, kind: K.RAMP },
+      { slot: 3, lane: 0, kind: K.TRAIN_LOW_LONG },
+      { slot: 6, lane: 0, kind: K.ROOF_GATE },
+      { slot: 3, lane: -1, kind: K.TRAIN_TALL },
+      { slot: 8, lane: 1, kind: K.TRAIN_TALL },
+    ],
+  },
+  {
+    difficulty: 3, slots: 14, safePath: 'hurdle, gate, hurdle — hold any lane and act three times',
     placements: [
       { slot: 2, lane: -1, kind: K.BARRIER },
       { slot: 2, lane: 0, kind: K.BARRIER },
       { slot: 2, lane: 1, kind: K.BARRIER },
+      { slot: 6, lane: -1, kind: K.GATE },
+      { slot: 6, lane: 0, kind: K.GATE },
+      { slot: 6, lane: 1, kind: K.GATE },
+      { slot: 10, lane: -1, kind: K.BARRIER },
+      { slot: 10, lane: 0, kind: K.BARRIER },
+      { slot: 10, lane: 1, kind: K.BARRIER },
     ],
   },
   {
-    difficulty: 1,
-    safePath: 'slide any lane',
+    difficulty: 3, slots: 16, safePath: 'express roars down lane −1 — stay right',
+    tag: 'express',
     placements: [
-      { slot: 2, lane: -1, kind: K.TUNNEL },
-      { slot: 2, lane: 0, kind: K.TUNNEL },
-      { slot: 2, lane: 1, kind: K.TUNNEL },
-    ],
-  },
-  {
-    difficulty: 1,
-    safePath: 'centre lane empty',
-    placements: [
-      { slot: 2, lane: -1, kind: K.TRAIN },
-      { slot: 2, lane: 1, kind: K.TRAIN },
-    ],
-  },
-  {
-    difficulty: 1,
-    safePath: 'centre lane empty (weave past side trains)',
-    placements: [
-      { slot: 1, lane: -1, kind: K.TRAIN_MOVING },
-      { slot: 3, lane: 1, kind: K.TRAIN },
-    ],
-  },
-  {
-    difficulty: 1,
-    safePath: 'lanes ±1 empty, or jump centre twice (slots 1 & 3)',
-    placements: [
-      { slot: 1, lane: 0, kind: K.BARRIER },
-      { slot: 3, lane: 0, kind: K.BARRIER },
-    ],
-  },
-
-  // ── Difficulty 2 ───────────────────────────────────────────────────────
-  {
-    difficulty: 2,
-    safePath: 'centre empty (train left, jump-barrier right)',
-    placements: [
-      { slot: 2, lane: -1, kind: K.TRAIN },
-      { slot: 2, lane: 1, kind: K.BARRIER },
-    ],
-  },
-  {
-    difficulty: 2,
-    safePath: 'slide on a side lane (centre train blocks)',
-    placements: [
-      { slot: 2, lane: 0, kind: K.TRAIN },
-      { slot: 2, lane: -1, kind: K.TUNNEL },
-      { slot: 2, lane: 1, kind: K.TUNNEL },
-    ],
-  },
-  {
-    difficulty: 2,
-    safePath: 'lane +1 empty throughout',
-    placements: [
-      { slot: 1, lane: -1, kind: K.TRAIN_MOVING },
-      { slot: 2, lane: 0, kind: K.BARRIER },
-      { slot: 3, lane: -1, kind: K.WALL },
-    ],
-  },
-
-  // ── Difficulty 3 — corridor shifts (force lane changes) ────────────────
-  {
-    difficulty: 3,
-    safePath: 'start lane -1 (slot1), cross to lane +1 (slot3); slot2 clear',
-    placements: [
-      { slot: 1, lane: 0, kind: K.TRAIN },
-      { slot: 1, lane: 1, kind: K.TRAIN },
-      { slot: 3, lane: -1, kind: K.TRAIN },
-      { slot: 3, lane: 0, kind: K.TRAIN },
-    ],
-  },
-  {
-    difficulty: 3,
-    safePath: 'lane -1: slide slot1, then empty; sides blocked by walls/trains',
-    placements: [
-      { slot: 1, lane: -1, kind: K.TUNNEL },
-      { slot: 1, lane: 0, kind: K.WALL },
-      { slot: 2, lane: 1, kind: K.TRAIN_MOVING },
-      { slot: 3, lane: 0, kind: K.BARRIER },
-    ],
-  },
-
-  // ── Rideable & duck variety (jump onto roofs, slide under signs) ────────
-  {
-    difficulty: 1,
-    safePath: 'jump onto the low train, or pass on a side lane',
-    placements: [{ slot: 2, lane: 0, kind: K.LOW_TRAIN }],
-  },
-  {
-    difficulty: 1,
-    safePath: 'lanes 0/1 empty, or hop onto the crate',
-    placements: [{ slot: 2, lane: -1, kind: K.CRATE }],
-  },
-  {
-    difficulty: 2,
-    safePath: 'centre empty, or jump onto either side crate',
-    placements: [
-      { slot: 2, lane: -1, kind: K.CRATE },
-      { slot: 2, lane: 1, kind: K.CRATE },
-    ],
-  },
-  {
-    difficulty: 2,
-    safePath: 'slide under any sign',
-    placements: [
-      { slot: 2, lane: -1, kind: K.SIGN },
-      { slot: 2, lane: 0, kind: K.SIGN },
-      { slot: 2, lane: 1, kind: K.SIGN },
-    ],
-  },
-  {
-    difficulty: 3,
-    safePath: 'centre: jump onto the low train (sides blocked by trains)',
-    placements: [
-      { slot: 2, lane: -1, kind: K.TRAIN },
-      { slot: 2, lane: 0, kind: K.LOW_TRAIN },
-      { slot: 2, lane: 1, kind: K.TRAIN },
-    ],
-  },
-  {
-    difficulty: 3,
-    safePath: 'lane 0: slide sign (slot1), then ride low train (slot3); sides walled',
-    placements: [
-      { slot: 1, lane: 0, kind: K.SIGN },
-      { slot: 2, lane: -1, kind: K.WALL },
-      { slot: 2, lane: 1, kind: K.WALL },
-      { slot: 3, lane: 0, kind: K.LOW_TRAIN },
-    ],
-  },
-
-  // ── Signature set-pieces (commercial-feel variety) ──────────────────────
-  {
-    difficulty: 2,
-    safePath: 'low-train alley: hop roofs on lane 0, or weave the sides',
-    placements: [
-      { slot: 1, lane: 0, kind: K.LOW_TRAIN },
-      { slot: 3, lane: 0, kind: K.LOW_TRAIN },
-    ],
-  },
-  {
-    difficulty: 2,
-    safePath: 'staggered barriers: jump twice or zig-zag',
-    placements: [
-      { slot: 1, lane: -1, kind: K.BARRIER },
-      { slot: 2, lane: 0, kind: K.BARRIER },
+      { slot: 6, lane: -1, kind: K.TRAIN_EXPRESS },
       { slot: 3, lane: 1, kind: K.BARRIER },
     ],
   },
   {
-    difficulty: 3,
-    safePath: 'train yard: only the right lane runs clear (ride or weave)',
+    difficulty: 3, slots: 16, safePath: 'express down the centre — pick a flank and hurdle',
+    tag: 'express',
     placements: [
-      { slot: 1, lane: -1, kind: K.TRAIN },
-      { slot: 2, lane: 0, kind: K.TRAIN_MOVING },
-      { slot: 3, lane: -1, kind: K.LOW_TRAIN },
-      { slot: 4, lane: 0, kind: K.BARRIER },
+      { slot: 7, lane: 0, kind: K.TRAIN_EXPRESS },
+      { slot: 3, lane: -1, kind: K.BARRIER },
+      { slot: 3, lane: 1, kind: K.GATE },
     ],
   },
   {
-    difficulty: 3,
-    safePath: 'gauntlet: slide the gate then jump the crate lane or switch',
+    difficulty: 3, slots: 16, safePath: 'lane +1 free; left pair forces an early commit',
     placements: [
-      { slot: 0, lane: 0, kind: K.SIGN },
+      { slot: 1, lane: -1, kind: K.TRAIN_TALL_LONG },
+      { slot: 2, lane: 0, kind: K.TRAIN_LOW_LONG },
+      { slot: 1, lane: 1, kind: K.RAMP },
+      { slot: 11, lane: 1, kind: K.BARRIER },
+    ],
+  },
+
+  // ── 4 · Set-pieces ──────────────────────────────────────────────────────
+  {
+    difficulty: 4, slots: 18, safePath: 'roof highway: ramp up, sprint two rakes, roll the gantry',
+    tag: 'roof-run',
+    placements: [
+      { slot: 1, lane: 0, kind: K.RAMP },
+      { slot: 2, lane: 0, kind: K.TRAIN_LOW_LONG },
+      { slot: 5, lane: 0, kind: K.ROOF_GATE },
+      { slot: 9, lane: 0, kind: K.TRAIN_LOW_LONG },
+      { slot: 2, lane: -1, kind: K.TRAIN_TALL_LONG },
+      { slot: 9, lane: -1, kind: K.TRAIN_TALL },
+      { slot: 13, lane: 1, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 4, slots: 16, safePath: 'slalom: three rakes staggered across the yard',
+    placements: [
+      { slot: 1, lane: -1, kind: K.TRAIN_TALL },
+      { slot: 1, lane: 0, kind: K.TRAIN_TALL },
+      { slot: 6, lane: 0, kind: K.TRAIN_TALL },
+      { slot: 6, lane: 1, kind: K.TRAIN_TALL },
+      { slot: 11, lane: -1, kind: K.TRAIN_TALL },
+      { slot: 11, lane: 0, kind: K.TRAIN_TALL },
+    ],
+  },
+  {
+    difficulty: 4, slots: 18, safePath: 'gauntlet: hurdle, weave the rake, roll the gantry',
+    placements: [
+      { slot: 1, lane: -1, kind: K.BARRIER },
+      { slot: 1, lane: 0, kind: K.BARRIER },
+      { slot: 1, lane: 1, kind: K.BARRIER },
+      { slot: 5, lane: -1, kind: K.TRAIN_TALL },
+      { slot: 5, lane: 1, kind: K.TRAIN_TALL },
+      { slot: 11, lane: -1, kind: K.GATE },
+      { slot: 11, lane: 0, kind: K.GATE },
+      { slot: 11, lane: 1, kind: K.GATE },
+      { slot: 15, lane: 0, kind: K.PYLON },
+    ],
+  },
+  {
+    difficulty: 4, slots: 18, safePath: 'express left + rake right — thread the middle, hurdle late',
+    tag: 'express',
+    placements: [
+      { slot: 8, lane: -1, kind: K.TRAIN_EXPRESS },
+      { slot: 2, lane: 1, kind: K.TRAIN_TALL_LONG },
+      { slot: 13, lane: 0, kind: K.BARRIER },
+      { slot: 13, lane: 1, kind: K.BARRIER },
+    ],
+  },
+  {
+    difficulty: 4, slots: 18, safePath: 'double ramp: board left, hop the gap to the centre roof',
+    tag: 'roof-hop',
+    placements: [
+      { slot: 1, lane: -1, kind: K.RAMP },
+      { slot: 2, lane: -1, kind: K.TRAIN_LOW_LONG },
+      { slot: 2, lane: 0, kind: K.TRAIN_TALL_LONG },
+      { slot: 10, lane: -1, kind: K.TRAIN_LOW },
+      { slot: 10, lane: 0, kind: K.CRATE },
+      { slot: 14, lane: 1, kind: K.GATE },
+    ],
+  },
+  {
+    difficulty: 4, slots: 16, safePath: 'crate field — hop or weave, gantry finish',
+    placements: [
       { slot: 2, lane: -1, kind: K.CRATE },
-      { slot: 2, lane: 1, kind: K.TUNNEL },
-      { slot: 4, lane: 0, kind: K.WALL },
-    ],
-  },
-  {
-    difficulty: 2,
-    safePath: 'ride the low train roof down the centre (sides have patrol trains)',
-    placements: [
-      { slot: 1, lane: 0, kind: K.LOW_TRAIN },
-      { slot: 3, lane: 0, kind: K.LOW_TRAIN },
-      { slot: 2, lane: -1, kind: K.TRAIN_MOVING },
-      { slot: 2, lane: 1, kind: K.TRAIN_MOVING },
-    ],
-  },
-  {
-    difficulty: 3,
-    safePath: 'patrol yard: weave the moving trains, clear lane shifts each slot',
-    placements: [
-      { slot: 1, lane: 0, kind: K.TRAIN_MOVING },
-      { slot: 2, lane: 1, kind: K.TRAIN_MOVING },
-      { slot: 3, lane: -1, kind: K.TRAIN_MOVING },
-    ],
-  },
-  {
-    difficulty: 2,
-    safePath: 'hop crate to crate up the left while a patrol train roams centre',
-    placements: [
-      { slot: 1, lane: -1, kind: K.CRATE },
-      { slot: 3, lane: -1, kind: K.CRATE },
-      { slot: 2, lane: 0, kind: K.TRAIN_MOVING },
-    ],
-  },
-  {
-    difficulty: 2,
-    safePath: 'board the centre ramp-train and ride straight through',
-    placements: [
-      { slot: 1, lane: 0, kind: K.LOW_TRAIN },
-      { slot: 2, lane: -1, kind: K.WALL },
-      { slot: 2, lane: 1, kind: K.WALL },
-    ],
-  },
-  {
-    difficulty: 3,
-    safePath: 'ramp up centre, then the roof leads over a barrier — or take a side lane',
-    placements: [
-      { slot: 1, lane: 0, kind: K.LOW_TRAIN },
-      { slot: 2, lane: 0, kind: K.BARRIER },
-      { slot: 3, lane: -1, kind: K.TRAIN_MOVING },
-    ],
-  },
-  {
-    difficulty: 3,
-    safePath: 'unbreakable wall gauntlet — only the open lane each slot is safe',
-    placements: [
-      { slot: 1, lane: -1, kind: K.WALL },
-      { slot: 1, lane: 0, kind: K.WALL },
-      { slot: 3, lane: 0, kind: K.WALL },
-      { slot: 3, lane: 1, kind: K.WALL },
+      { slot: 2, lane: 1, kind: K.CRATE },
+      { slot: 6, lane: 0, kind: K.CRATE },
+      { slot: 10, lane: -1, kind: K.CRATE },
+      { slot: 10, lane: 0, kind: K.CRATE },
+      { slot: 14, lane: 1, kind: K.BARRIER },
     ],
   },
 ];

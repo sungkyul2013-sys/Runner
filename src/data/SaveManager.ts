@@ -1,8 +1,11 @@
-const KEY = 'sunsetrunner.save';
-const VERSION = 2;
+import { HUNT_WORD } from '../config/powerups';
+import { getMission, MISSIONS, rollMissions, setReward, type MissionMetric } from './missions';
 
-/** All playable game modes (endless + challenge + the special-rule arcade set). */
-export type GameMode = 'endless' | 'challenge' | 'lava' | 'rush' | 'hardcore';
+const KEY = 'metrosurf.save';
+const VERSION = 3;
+
+/** All playable game modes. */
+export type GameMode = 'endless' | 'timeattack' | 'coinrush' | 'express' | 'hardcore';
 
 export interface Settings {
   muted: boolean;
@@ -15,9 +18,40 @@ export interface Settings {
   showCombo: boolean;
   /** Show the FPS counter. */
   showFps: boolean;
+  /** Draw on-screen swipe hints for the first few runs. */
+  showHints: boolean;
+  /** Left-handed layout puts the item buttons on the right. */
+  leftHanded: boolean;
 }
 
-/** Day-key for the daily reward (YYYY-MM-DD in local time). */
+export interface MissionSlot {
+  id: string;
+  goal: number;
+  progress: number;
+}
+
+export interface TopRun {
+  score: number;
+  distance: number;
+  coins: number;
+  mode: GameMode;
+  /** Local day-key of the run. */
+  day: string;
+  character: string;
+}
+
+export interface Inventory {
+  /** Skip the first stretch of the yard at speed. */
+  headstart: number;
+  /** Double score for the whole run. */
+  booster: number;
+  /** Opens for a random reward at the results screen. */
+  mystery: number;
+  /** Spare hoverboards carried into the run. */
+  board: number;
+}
+
+/** Day-key for daily rewards (YYYY-M-D in local time). */
 function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -26,25 +60,43 @@ function todayKey(): string {
 export interface SaveData {
   version: number;
   coins: number;
-  /** Premium currency (gems / mileage). */
-  mileage: number;
-  best: number; // endless best
-  bestChallenge: number;
-  owned: string[]; // owned character ids
-  selected: string;
+  /** Premium currency — buys headline characters, boards and revives. */
+  keys: number;
+  best: number;
+  bests: Partial<Record<GameMode, number>>;
+  topRuns: TopRun[];
+
+  ownedChars: string[];
+  selectedChar: string;
+  ownedBoards: string[];
+  selectedBoard: string;
+
   upgrades: Record<string, number>;
-  inventory: { bomb: number; rocket: number };
-  claimedAchievements: string[];
-  dailyStreak: number; // index 0..6 next to claim
-  lastDaily: string; // day-key of last claim
+  inventory: Inventory;
+
+  missions: MissionSlot[];
+  missionSet: number;
+  /** Extra score multiplier earned by clearing mission sets. */
+  multiplierBonus: number;
+
+  /** Letters of {@link HUNT_WORD} collected so far this cycle. */
+  huntLetters: string[];
+  huntCompleted: number;
+
+  dailyStreak: number;
+  lastDaily: string;
+
   runs: number;
   totalCoins: number;
   totalDistance: number;
-  totalTime: number; // cumulative seconds played (drives play-time mileage)
-  totalMileage: number; // lifetime mileage earned (drives the journey track)
-  claimedMilestones: number[]; // indices of claimed journey milestones
-  /** Best score per game mode (lava / rush / hardcore live here). */
-  bests: Partial<Record<GameMode, number>>;
+  totalTime: number;
+  totalScore: number;
+  /** Lifetime counters keyed by mission metric. */
+  stats: Partial<Record<MissionMetric, number>>;
+
+  claimedAchievements: string[];
+  /** Indices of claimed world-tour milestones. */
+  claimedMilestones: number[];
   settings: Settings;
 }
 
@@ -52,39 +104,51 @@ function defaults(): SaveData {
   return {
     version: VERSION,
     coins: 0,
-    mileage: 0,
+    keys: 0,
     best: 0,
-    bestChallenge: 0,
-    owned: ['runner'],
-    selected: 'runner',
+    bests: {},
+    topRuns: [],
+    ownedChars: ['jino'],
+    selectedChar: 'jino',
+    ownedBoards: ['standard'],
+    selectedBoard: 'standard',
     upgrades: {},
-    inventory: { bomb: 0, rocket: 0 },
-    claimedAchievements: [],
+    inventory: { headstart: 0, booster: 0, mystery: 0, board: 0 },
+    missions: rollMissions(1),
+    missionSet: 1,
+    multiplierBonus: 0,
+    huntLetters: [],
+    huntCompleted: 0,
     dailyStreak: 0,
     lastDaily: '',
     runs: 0,
     totalCoins: 0,
     totalDistance: 0,
     totalTime: 0,
-    totalMileage: 0,
+    totalScore: 0,
+    stats: {},
+    claimedAchievements: [],
     claimedMilestones: [],
-    bests: {},
     settings: {
-      muted: false, quality: 'high', vibrate: true,
-      shake: 'high', showCombo: true, showFps: false,
+      muted: false, quality: 'high', vibrate: true, shake: 'high',
+      showCombo: true, showFps: false, showHints: true, leftHanded: false,
     },
   };
 }
 
 /**
- * Persistent Sunset Runner profile (localStorage). Holds the wallet (coins +
- * gems/mileage), best scores per mode, owned/selected character, permanent
- * upgrades, consumable inventory, achievement claims, the daily-reward streak,
- * lifetime stats and settings. All access is guarded so the module is safe
- * where localStorage is unavailable (e.g. Node verification scripts).
+ * The persistent METRO SURF profile (localStorage). Holds the wallet (coins +
+ * keys), per-mode bests and the top-run board, the owned/equipped character and
+ * hoverboard, permanent power-up upgrades, the consumable inventory, the live
+ * mission set and the multiplier bonus it feeds, the word-hunt letters, the
+ * daily streak, lifetime stats and settings.
+ *
+ * Every access is guarded so the module is safe where localStorage is missing
+ * (the Node verification scripts run against it directly).
  */
 export class SaveManager {
   private d: SaveData;
+  private dirty = false;
 
   constructor() {
     this.d = this.load();
@@ -100,11 +164,17 @@ export class SaveManager {
           return {
             ...base,
             ...p,
-            owned: p.owned && p.owned.length ? p.owned : base.owned,
+            ownedChars: p.ownedChars?.length ? p.ownedChars : base.ownedChars,
+            ownedBoards: p.ownedBoards?.length ? p.ownedBoards : base.ownedBoards,
             upgrades: { ...p.upgrades },
             inventory: { ...base.inventory, ...p.inventory },
-            claimedAchievements: [...(p.claimedAchievements ?? [])],
+            missions: p.missions?.length === 3 ? p.missions : base.missions,
             bests: { ...p.bests },
+            topRuns: [...(p.topRuns ?? [])],
+            huntLetters: [...(p.huntLetters ?? [])],
+            stats: { ...p.stats },
+            claimedAchievements: [...(p.claimedAchievements ?? [])],
+            claimedMilestones: [...(p.claimedMilestones ?? [])],
             settings: { ...base.settings, ...p.settings },
           };
         }
@@ -116,11 +186,22 @@ export class SaveManager {
   }
 
   save(): void {
+    this.dirty = false;
     try {
       localStorage.setItem(KEY, JSON.stringify(this.d));
     } catch {
-      /* storage unavailable — run still playable, just not persisted */
+      /* storage unavailable — the run stays playable, just not persisted */
     }
+  }
+
+  /** Mark dirty without touching storage (called from hot paths). */
+  private touch(): void {
+    this.dirty = true;
+  }
+
+  /** Flush a pending write (called at safe points such as run end). */
+  flush(): void {
+    if (this.dirty) this.save();
   }
 
   get data(): SaveData {
@@ -138,106 +219,42 @@ export class SaveManager {
     this.save();
     return true;
   }
-  addMileage(n: number): void {
-    this.d.mileage += n;
+  addKeys(n: number): void {
+    this.d.keys += n;
     this.save();
   }
-  spendMileage(n: number): boolean {
-    if (this.d.mileage < n) return false;
-    this.d.mileage -= n;
-    this.save();
-    return true;
-  }
-
-  // ── Run results ─────────────────────────────────────────────────────────────
-  /** Best score for a mode (legacy fields are folded in). */
-  bestFor(mode: GameMode): number {
-    const b = this.d.bests[mode] ?? 0;
-    if (mode === 'endless') return Math.max(b, this.d.best);
-    if (mode === 'challenge') return Math.max(b, this.d.bestChallenge);
-    return b;
-  }
-
-  /**
-   * Apply a finished run. Mileage (💎) is awarded generously: a base from this
-   * run's distance + coins, a **distance milestone** bonus when you beat your
-   * best, a **bonus** carried in (treasure chests), plus a **play-time** trickle
-   * that rewards how long you've played overall. Returns the total mileage +
-   * whether a record was set.
-   */
-  recordRun(
-    mode: GameMode,
-    score: number,
-    coins: number,
-    distance: number,
-    bonusMileage = 0,
-    runSeconds = 0,
-  ): { mileage: number; isBest: boolean } {
-    this.d.runs++;
-    this.d.coins += coins;
-    this.d.totalCoins += coins;
-    this.d.totalDistance += distance;
-    this.d.totalTime += runSeconds;
-
-    // Base mileage — distance + coins (more generous than before).
-    let mileage = Math.floor(distance / 60) + Math.floor(coins / 6) + bonusMileage;
-
-    // Per-mode best (covers all modes incl. the arcade set). The legacy
-    // best/bestChallenge fields stay in sync for old UI paths.
-    let isBest = false;
-    const prevBest = this.bestFor(mode);
-    if (score > prevBest) {
-      mileage += 10 + Math.floor(Math.max(distance, score) / 200);
-      this.d.bests[mode] = score;
-      if (mode === 'endless') this.d.best = score;
-      if (mode === 'challenge') this.d.bestChallenge = score;
-      isBest = true;
-    }
-
-    // Play-time reward: +1💎 per full 2 minutes of cumulative play crossed.
-    const before = Math.floor((this.d.totalTime - runSeconds) / 120);
-    const after = Math.floor(this.d.totalTime / 120);
-    mileage += Math.max(0, after - before) * 3;
-
-    this.d.mileage += mileage;
-    this.d.totalMileage += mileage;
-    this.save();
-    return { mileage, isBest };
-  }
-
-  // ── Journey milestones ──────────────────────────────────────────────────────
-  /** Lifetime mileage earned — the progress along the journey track. */
-  get journeyProgress(): number {
-    return this.d.totalMileage;
-  }
-  milestoneClaimed(index: number): boolean {
-    return this.d.claimedMilestones.includes(index);
-  }
-  /** Claim a milestone reward (coins + items). Returns true on success. */
-  claimMilestone(index: number, coins: number, bomb: number, rocket: number): boolean {
-    if (this.milestoneClaimed(index)) return false;
-    this.d.claimedMilestones.push(index);
-    this.d.coins += coins;
-    this.d.inventory.bomb += bomb;
-    this.d.inventory.rocket += rocket;
+  spendKeys(n: number): boolean {
+    if (this.d.keys < n) return false;
+    this.d.keys -= n;
     this.save();
     return true;
   }
 
-  // ── Characters ────────────────────────────────────────────────────────────
-  owns(id: string): boolean {
-    return this.d.owned.includes(id);
+  // ── Characters & boards ───────────────────────────────────────────────────
+  ownsChar(id: string): boolean {
+    return this.d.ownedChars.includes(id);
   }
-  buy(id: string): void {
-    if (!this.owns(id)) this.d.owned.push(id);
+  buyChar(id: string): void {
+    if (!this.ownsChar(id)) this.d.ownedChars.push(id);
     this.save();
   }
-  select(id: string): void {
-    this.d.selected = id;
+  selectChar(id: string): void {
+    this.d.selectedChar = id;
+    this.save();
+  }
+  ownsBoard(id: string): boolean {
+    return this.d.ownedBoards.includes(id);
+  }
+  buyBoard(id: string): void {
+    if (!this.ownsBoard(id)) this.d.ownedBoards.push(id);
+    this.save();
+  }
+  selectBoard(id: string): void {
+    this.d.selectedBoard = id;
     this.save();
   }
 
-  // ── Upgrades ────────────────────────────────────────────────────────────────
+  // ── Upgrades ──────────────────────────────────────────────────────────────
   upgradeLevel(id: string): number {
     return this.d.upgrades[id] ?? 0;
   }
@@ -246,23 +263,185 @@ export class SaveManager {
     this.save();
   }
 
-  // ── Consumables ─────────────────────────────────────────────────────────────
-  addItem(id: 'bomb' | 'rocket', n = 1): void {
+  // ── Consumables ───────────────────────────────────────────────────────────
+  addItem(id: keyof Inventory, n = 1): void {
     this.d.inventory[id] += n;
     this.save();
   }
-  useItem(id: 'bomb' | 'rocket'): boolean {
+  useItem(id: keyof Inventory): boolean {
     if (this.d.inventory[id] <= 0) return false;
     this.d.inventory[id]--;
     this.save();
     return true;
   }
 
-  // ── Achievements ────────────────────────────────────────────────────────────
-  claimAchievement(id: string, reward: number): void {
+  // ── Missions ──────────────────────────────────────────────────────────────
+  /** Add to every *cumulative* mission tracking `metric`. Returns completions. */
+  bumpMission(metric: MissionMetric, delta: number): string[] {
+    if (delta <= 0) return [];
+    const done: string[] = [];
+    for (const slot of this.d.missions) {
+      const def = getMission(slot.id);
+      if (def.perRun || def.metric !== metric) continue;
+      if (slot.progress >= slot.goal) continue;
+      slot.progress = Math.min(slot.goal, slot.progress + delta);
+      if (slot.progress >= slot.goal) done.push(slot.id);
+    }
+    if (done.length) this.save();
+    else this.touch();
+    return done;
+  }
+
+  /** Raise every *per-run* mission tracking `metric` to `value`. */
+  setRunMission(metric: MissionMetric, value: number): string[] {
+    const done: string[] = [];
+    for (const slot of this.d.missions) {
+      const def = getMission(slot.id);
+      if (!def.perRun || def.metric !== metric) continue;
+      if (slot.progress >= slot.goal) continue;
+      if (value > slot.progress) slot.progress = Math.min(slot.goal, value);
+      if (slot.progress >= slot.goal) done.push(slot.id);
+    }
+    if (done.length) this.save();
+    else this.touch();
+    return done;
+  }
+
+  /** Clear per-run mission progress that was not completed (new run starts). */
+  resetRunMissions(): void {
+    for (const slot of this.d.missions) {
+      const def = getMission(slot.id);
+      if (def.perRun && slot.progress < slot.goal) slot.progress = 0;
+    }
+    this.touch();
+  }
+
+  get missionsComplete(): boolean {
+    return this.d.missions.every((m) => m.progress >= m.goal);
+  }
+
+  /**
+   * If all three missions are done, bank the set reward, bump the permanent
+   * multiplier and roll a fresh set. Returns the reward, or null.
+   */
+  completeMissionSet(): { coins: number; set: number; multiplier: number } | null {
+    if (!this.missionsComplete) return null;
+    const set = this.d.missionSet;
+    const coins = setReward(set);
+    this.d.coins += coins;
+    this.d.multiplierBonus += 1;
+    this.d.missionSet = set + 1;
+    this.d.missions = rollMissions(this.d.missionSet, this.d.missions.map((m) => m.id));
+    this.save();
+    return { coins, set, multiplier: this.d.multiplierBonus };
+  }
+
+  /** Swap one mission for a fresh one (costs keys in the UI). */
+  rerollMission(index: number): void {
+    const avoid = this.d.missions.map((m) => m.id);
+    const pool = MISSIONS.filter((m) => !avoid.includes(m.id));
+    const pick = pool.length ? pool[(Math.random() * pool.length) | 0] : MISSIONS[0];
+    this.d.missions[index] = rollMissions(this.d.missionSet, avoid.filter((id) => id !== pick.id))[0];
+    this.save();
+  }
+
+  // ── Word hunt ─────────────────────────────────────────────────────────────
+  /** The next letter the player still needs, or null when the word is done. */
+  nextHuntLetter(): string | null {
+    for (const ch of HUNT_WORD) if (!this.d.huntLetters.includes(ch)) return ch;
+    return null;
+  }
+  /** Collect a letter. Returns true when that completes the word. */
+  collectLetter(ch: string): boolean {
+    if (this.d.huntLetters.includes(ch)) return false;
+    this.d.huntLetters.push(ch);
+    const complete = this.d.huntLetters.length >= HUNT_WORD.length;
+    if (complete) {
+      this.d.huntCompleted++;
+      this.d.huntLetters = [];
+      this.d.keys += 1;
+      this.d.coins += 500;
+    }
+    this.save();
+    return complete;
+  }
+
+  // ── Run results ───────────────────────────────────────────────────────────
+  bestFor(mode: GameMode): number {
+    const b = this.d.bests[mode] ?? 0;
+    return mode === 'endless' ? Math.max(b, this.d.best) : b;
+  }
+
+  /** Record a finished run: wallet, bests, top-run board and lifetime stats. */
+  recordRun(
+    mode: GameMode,
+    score: number,
+    coins: number,
+    distance: number,
+    runSeconds: number,
+    character: string,
+  ): { isBest: boolean; rank: number } {
+    this.d.runs++;
+    this.d.coins += coins;
+    this.d.totalCoins += coins;
+    this.d.totalDistance += distance;
+    this.d.totalTime += runSeconds;
+    this.d.totalScore += score;
+    this.d.stats.runs = (this.d.stats.runs ?? 0) + 1;
+
+    let isBest = false;
+    if (score > this.bestFor(mode)) {
+      this.d.bests[mode] = score;
+      if (mode === 'endless') this.d.best = score;
+      isBest = true;
+    }
+
+    const entry: TopRun = {
+      score, distance: Math.floor(distance), coins, mode, day: todayKey(), character,
+    };
+    this.d.topRuns.push(entry);
+    this.d.topRuns.sort((a, b) => b.score - a.score);
+    this.d.topRuns = this.d.topRuns.slice(0, 8);
+    const rank = this.d.topRuns.indexOf(entry);
+
+    this.save();
+    return { isBest, rank: rank < 0 ? -1 : rank };
+  }
+
+  /** Lifetime counter used by achievements and the stats panel. */
+  addStat(metric: MissionMetric, n: number): void {
+    if (n <= 0) return;
+    this.d.stats[metric] = (this.d.stats[metric] ?? 0) + n;
+    this.touch();
+  }
+  stat(metric: MissionMetric): number {
+    return this.d.stats[metric] ?? 0;
+  }
+
+  // ── World tour ────────────────────────────────────────────────────────────
+  /** Lifetime distance drives the world-tour reward track. */
+  get journeyProgress(): number {
+    return Math.floor(this.d.totalDistance);
+  }
+  milestoneClaimed(index: number): boolean {
+    return this.d.claimedMilestones.includes(index);
+  }
+  claimMilestone(index: number, coins: number, keys: number, boards: number): boolean {
+    if (this.milestoneClaimed(index)) return false;
+    this.d.claimedMilestones.push(index);
+    this.d.coins += coins;
+    this.d.keys += keys;
+    this.d.inventory.board += boards;
+    this.save();
+    return true;
+  }
+
+  // ── Achievements ──────────────────────────────────────────────────────────
+  claimAchievement(id: string, coins: number, keys = 0): void {
     if (this.d.claimedAchievements.includes(id)) return;
     this.d.claimedAchievements.push(id);
-    this.d.coins += reward;
+    this.d.coins += coins;
+    this.d.keys += keys;
     this.save();
   }
 
@@ -270,11 +449,10 @@ export class SaveManager {
   canClaimDaily(): boolean {
     return this.d.lastDaily !== todayKey();
   }
-  /** Claim today's reward, advancing the 7-day streak. Returns the day index. */
-  claimDaily(coins: number, mileage: number): number {
+  claimDaily(coins: number, keys: number): number {
     const idx = this.d.dailyStreak % 7;
     this.d.coins += coins;
-    this.d.mileage += mileage;
+    this.d.keys += keys;
     this.d.lastDaily = todayKey();
     this.d.dailyStreak = (this.d.dailyStreak + 1) % 7;
     this.save();
@@ -290,11 +468,11 @@ export class SaveManager {
     this.d.settings.quality = q;
     this.save();
   }
-  /** Patch any subset of settings (vibrate / shake / showCombo / showFps…). */
   patchSettings(p: Partial<Settings>): void {
     Object.assign(this.d.settings, p);
     this.save();
   }
+
   /** Wipe the whole profile (settings menu "reset data"). */
   wipe(): void {
     try {
@@ -302,5 +480,6 @@ export class SaveManager {
     } catch {
       /* unavailable */
     }
+    this.d = defaults();
   }
 }

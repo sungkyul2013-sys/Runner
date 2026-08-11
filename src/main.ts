@@ -7,9 +7,9 @@ import { ScreenManager } from './ui/ScreenManager';
 import { vignette } from './ui/uikit';
 
 /**
- * Entry point. Wires the engine, persistent profile, synthesised audio, the
- * gameplay game and the screen/flow layer, then starts the render loop. Boots
- * into the MENU (attract mode); the ScreenManager drives all transitions.
+ * Entry point. Wires the engine, the persistent profile, the synthesised audio,
+ * the gameplay layer and the screen/flow layer, then starts the render loop.
+ * Boots into the MENU (attract mode); the ScreenManager drives every transition.
  */
 const loading = new Loading();
 

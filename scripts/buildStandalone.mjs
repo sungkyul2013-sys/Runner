@@ -1,7 +1,7 @@
 /**
  * Builds a single self-contained, zero-dependency play.html from the current
  * source: bundles src/main.ts (Three.js included) into one inline <script> so
- * the file runs straight from a static host / githack raw link with no extra
+ * METRO SURF runs straight from a static host or a raw file link with no extra
  * requests. Run: `npm run build:standalone`.
  */
 import { build } from 'esbuild';
@@ -25,12 +25,12 @@ const html = `<!doctype html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Sunset Runner — 석양 러너</title>
+    <title>METRO SURF — 메트로 서프</title>
     <style>
       :root { color-scheme: dark; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body {
-        width: 100%; height: 100%; overflow: hidden; background: #120a22;
+        width: 100%; height: 100%; overflow: hidden; background: #0a0d16;
         font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
         touch-action: none; -webkit-user-select: none; user-select: none;
         overscroll-behavior: none;
