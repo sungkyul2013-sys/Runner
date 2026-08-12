@@ -1,4 +1,17 @@
-# Sunset Runner (석양 러너) — Progress
+# Progress
+
+This repo now holds two entry points, both built by one `npm run build`:
+
+- **`index.html` → 수 국어논술 학원** — a scroll-driven 3D site for a Korean
+  language & essay academy. Source in `site/`, documented in
+  [`site/README.md`](site/README.md).
+- **`game.html` → Sunset Runner** — the original endless runner (was
+  `index.html`). Source in `src/`, unchanged. `play.html` remains the
+  self-contained standalone build.
+
+---
+
+## Sunset Runner (석양 러너)
 
 A warm, sunset-themed 3-lane endless runner built with Vite + TypeScript +
 Three.js. Reimplemented (original code) from the reference **Sunset Runner**

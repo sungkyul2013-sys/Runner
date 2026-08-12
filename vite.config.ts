@@ -10,5 +10,12 @@ export default defineConfig({
   build: {
     target: 'esnext',
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        // index.html — 수 국어논술 학원 site; game.html — the Sunset Runner game.
+        main: 'index.html',
+        game: 'game.html',
+      },
+    },
   },
 });
