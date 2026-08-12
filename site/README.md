@@ -15,7 +15,14 @@ npm install
 npm run dev            # http://localhost:5173  (게임은 /game.html)
 npm run build          # tsc --noEmit + vite build → dist/
 npm run preview        # 빌드 결과 확인
+npm run build:site     # → su-academy.html (단일 파일, 의존성 0)
 ```
+
+`build:site`는 `index.html` + `site/`를 Three.js와 스타일까지 통째로 인라인해
+**su-academy.html 한 파일**로 만듭니다. 정적 호스팅에 그대로 올리거나 파일을
+더블클릭해서 열어도 외부 요청 없이 동작합니다. `--artifact <path>`를 주면
+`<html>/<head>/<body>`를 자기가 감싸는 호스트용으로 래퍼 없는 사본도
+함께 씁니다(`--title`로 제목 교체 가능).
 
 ## 화면 구성
 
