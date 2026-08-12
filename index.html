@@ -33,6 +33,18 @@
     <!-- ══════════════ 진행 표시 ══════════════ -->
     <div class="progress" aria-hidden="true"><i id="progressFill"></i></div>
 
+    <!-- ══════════════ 챕터 인덱스 (와이드 화면) ══════════════ -->
+    <nav class="chapters" id="chapters" aria-label="챕터 바로가기">
+      <a href="#about">01<span class="chapters__label">소개</span></a>
+      <a href="#courses">02<span class="chapters__label">과정</span></a>
+      <a href="#method">03<span class="chapters__label">수업 방식</span></a>
+      <a href="#redline">04<span class="chapters__label">첨삭</span></a>
+      <a href="#results">05<span class="chapters__label">성과</span></a>
+      <a href="#teachers">06<span class="chapters__label">선생님</span></a>
+      <a href="#voices">07<span class="chapters__label">후기</span></a>
+      <a href="#visit">08<span class="chapters__label">오시는 길</span></a>
+    </nav>
+
     <!-- ══════════════ 네비게이션 ══════════════ -->
     <header class="nav" id="nav">
       <div class="nav__inner">
@@ -45,6 +57,7 @@
           <a href="#about" data-nav>소개</a>
           <a href="#courses" data-nav>과정</a>
           <a href="#method" data-nav>수업 방식</a>
+          <a href="#redline" data-nav>첨삭</a>
           <a href="#results" data-nav>성과</a>
           <a href="#teachers" data-nav>선생님</a>
           <a href="#visit" data-nav>오시는 길</a>
@@ -67,11 +80,12 @@
         <a href="#about" data-nav><span>01</span>소개</a>
         <a href="#courses" data-nav><span>02</span>과정</a>
         <a href="#method" data-nav><span>03</span>수업 방식</a>
-        <a href="#results" data-nav><span>04</span>성과</a>
-        <a href="#teachers" data-nav><span>05</span>선생님</a>
-        <a href="#voices" data-nav><span>06</span>후기</a>
-        <a href="#faq" data-nav><span>07</span>자주 묻는 질문</a>
-        <a href="#visit" data-nav><span>08</span>오시는 길</a>
+        <a href="#redline" data-nav><span>04</span>첨삭</a>
+        <a href="#results" data-nav><span>05</span>성과</a>
+        <a href="#teachers" data-nav><span>06</span>선생님</a>
+        <a href="#voices" data-nav><span>07</span>후기</a>
+        <a href="#faq" data-nav><span>08</span>자주 묻는 질문</a>
+        <a href="#visit" data-nav><span>09</span>오시는 길</a>
       </nav>
       <a class="btn btn--primary btn--block" href="#apply" data-nav>무료 진단 상담 신청</a>
     </div>
@@ -79,12 +93,13 @@
     <main id="top">
       <!-- ══════════════ HERO ══════════════ -->
       <section class="hero" data-scene="glyph" data-void>
+        <div class="grid-paper" aria-hidden="true"></div>
         <div class="hero__inner">
           <p class="eyebrow reveal">since 2009 · 소수정예 국어·논술</p>
 
           <h1 class="hero__title">
             <span class="line" data-split>생각을 쓰다,</span>
-            <span class="line line--accent" data-split="grad">세상을 읽다.</span>
+            <span class="line" data-split data-underline="읽다">세상을 읽다.</span>
           </h1>
 
           <p class="hero__sub reveal">
@@ -113,6 +128,7 @@
 
       <!-- ══════════════ 매니페스토 ══════════════ -->
       <section class="manifesto" id="about" data-scene="sphere" data-void>
+        <div class="grid-paper" aria-hidden="true"></div>
         <div class="manifesto__sticky">
           <p class="manifesto__text" data-words>
             국어는 암기 과목이 아닙니다. 글을 읽고, 스스로 질문을 만들고, 그 질문에 자기 문장으로
@@ -124,6 +140,7 @@
 
       <!-- ══════════════ 철학 / 특징 ══════════════ -->
       <section class="section section--light" id="why">
+        <div class="grid-paper" aria-hidden="true"></div>
         <div class="wrap">
           <header class="shead reveal">
             <p class="eyebrow">Why 수</p>
@@ -250,6 +267,7 @@
 
       <!-- ══════════════ 수업 방식 ══════════════ -->
       <section class="section section--light" id="method">
+        <div class="grid-paper" aria-hidden="true"></div>
         <div class="wrap">
           <header class="shead reveal">
             <p class="eyebrow">How it works</p>
@@ -284,6 +302,95 @@
               <p>매달 성장 그래프와 다음 달 목표를 학부모님께 보내드립니다.</p>
             </li>
           </ol>
+        </div>
+      </section>
+
+      <!-- ══════════════ 첨삭 ══════════════ -->
+      <section class="section redline" id="redline" data-scene="grid" data-void>
+        <div class="wrap redline__grid">
+          <div class="reveal">
+            <p class="eyebrow">첨삭 · Redline</p>
+            <h2 class="shead__title">고치는 과정이<br />곧 <em>수업</em>입니다.</h2>
+            <p class="redline__note">
+              한 편을 제출하면 문장마다 이유가 붙어 돌아옵니다. 학생은 그 이유를 읽고 같은 글을 다시
+              씁니다. 아래는 실제 첨삭 형식을 그대로 옮긴 예시입니다.
+            </p>
+
+            <div class="seg" id="seg" role="tablist" aria-label="원문과 고친 글 비교">
+              <span class="seg__thumb" aria-hidden="true"></span>
+              <button type="button" role="tab" aria-selected="true" aria-controls="paneBefore">
+                학생 원문
+              </button>
+              <button type="button" role="tab" aria-selected="false" aria-controls="paneAfter">
+                다시 쓴 글
+              </button>
+            </div>
+
+            <div class="redline__meta">
+              <span>지적 <b>3</b>곳</span>
+              <span>다시 쓴 횟수 <b>2</b>회</span>
+              <span>첨삭 소요 <b>18</b>분</span>
+            </div>
+          </div>
+
+          <div class="sheetpaper reveal" id="sheet-paper">
+            <div class="grid-paper" aria-hidden="true"></div>
+
+            <div class="sheetpaper__head">
+              <span>중2 · 독서기록문 · 3주차</span>
+              <span class="sheetpaper__marks">RED 03</span>
+            </div>
+
+            <div class="panes">
+              <div class="pane" id="paneBefore" role="tabpanel">
+                <p>
+                  나는 이 책이
+                  <span class="mkw" style="--d: 200ms"
+                    ><span class="mk mk--cut">정말 재미있었다고 생각한다</span
+                    ><i class="mk__no">1</i></span
+                  >. 왜냐하면
+                  <span class="mkw" style="--d: 620ms"
+                    ><span class="mk mk--fix">주인공이 열심히 노력해서 결국 성공했기 때문이다</span
+                    ><i class="mk__no">2</i></span
+                  >. 그래서
+                  <span class="mkw" style="--d: 1040ms"
+                    ><span class="mk mk--fix">나도 열심히 살아야겠다고 느꼈다</span
+                    ><i class="mk__no">3</i></span
+                  >.
+                </p>
+
+                <div class="notes">
+                  <div class="note" style="--d: 1300ms">
+                    <b>1</b>
+                    <p>감상어로 문장을 열면 판단의 근거가 사라집니다. 첫 문장은 <em>책이 던지는 질문</em>부터.</p>
+                  </div>
+                  <div class="note" style="--d: 1440ms">
+                    <b>2</b>
+                    <p>줄거리 요약에 그쳤습니다. 인물의 <em>선택</em>을 근거로 바꿔 보세요.</p>
+                  </div>
+                  <div class="note" style="--d: 1580ms">
+                    <b>3</b>
+                    <p>교훈으로 닫지 말고, 본인의 <em>주장</em>으로 이어 가세요.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pane" id="paneAfter" role="tabpanel" hidden>
+                <p>
+                  주인공은 실패할 것을 알면서도 같은 선택을 반복한다. 나는 이 반복을 성공담이 아니라
+                  <span class="mk mk--add">책임에 대한 이야기</span>로 읽었다. 노력이 결과를 보장하지
+                  않는데도 계속하는 이유 — 그것이 이 책이 끝까지 붙잡고 있는 질문이다.
+                </p>
+
+                <div class="notes">
+                  <div class="note" style="--d: 120ms">
+                    <b>✓</b>
+                    <p>질문으로 열고 <em>자기 주장</em>으로 닫았습니다. 같은 분량, 다른 글입니다.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -322,6 +429,7 @@
 
       <!-- ══════════════ 선생님 ══════════════ -->
       <section class="section section--light" id="teachers">
+        <div class="grid-paper" aria-hidden="true"></div>
         <div class="wrap">
           <header class="shead reveal">
             <p class="eyebrow">Teachers</p>
@@ -418,6 +526,7 @@
 
       <!-- ══════════════ FAQ ══════════════ -->
       <section class="section section--light" id="faq">
+        <div class="grid-paper" aria-hidden="true"></div>
         <div class="wrap wrap--narrow">
           <header class="shead reveal">
             <p class="eyebrow">FAQ</p>

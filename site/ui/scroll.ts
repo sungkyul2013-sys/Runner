@@ -17,6 +17,8 @@ export interface ScrollState {
   dt: number;
   /** elapsed seconds since start */
   t: number;
+  /** smoothed scroll velocity in px/s, signed */
+  v: number;
 }
 
 type Sub = (s: ScrollState) => void;
@@ -27,7 +29,7 @@ export class Scroller {
   private last = performance.now();
   private started = 0;
 
-  readonly state: ScrollState = { y: 0, vh: 0, progress: 0, dt: 0, t: 0 };
+  readonly state: ScrollState = { y: 0, vh: 0, progress: 0, dt: 0, t: 0, v: 0 };
 
   on(fn: Sub): void {
     this.subs.push(fn);
@@ -52,8 +54,13 @@ export class Scroller {
     s.t = (now - this.started) / 1000;
     this.last = now;
 
+    const prevY = s.y;
     s.y = window.scrollY;
     s.vh = window.innerHeight;
+
+    // Smoothed so a single jumpy frame can't spike anything downstream.
+    const raw = s.dt > 0 ? (s.y - prevY) / s.dt : 0;
+    s.v += (raw - s.v) * 0.18;
     const max = document.documentElement.scrollHeight - s.vh;
     s.progress = max > 0 ? Math.min(1, Math.max(0, s.y / max)) : 0;
 

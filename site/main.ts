@@ -3,8 +3,17 @@ import './styles.css';
 import { Scene } from './three/Scene';
 import type { ShapeName } from './three/shapes';
 import { initForm, initFaq } from './ui/form';
-import { initCounters, initReveals, initSplitText, initTilt, initWordWash } from './ui/motion';
+import {
+  initCounters,
+  initMagnetic,
+  initReveals,
+  initSpotlight,
+  initSplitText,
+  initTilt,
+  initWordWash,
+} from './ui/motion';
 import { initNav } from './ui/nav';
+import { initRedline } from './ui/redline';
 import { initMarquee, initRail } from './ui/rail';
 import { Scroller, type ScrollState } from './ui/scroll';
 
@@ -46,7 +55,7 @@ function initSceneDirector(scene: Scene): (s: ScrollState) => void {
   let current = scenes[0]?.name;
   let awake = true;
 
-  return ({ vh, progress }: ScrollState) => {
+  return ({ vh, progress, v }: ScrollState) => {
     // Pause rendering when no transparent section is on screen.
     const onScreen = voids.some((el) => {
       const r = el.getBoundingClientRect();
@@ -61,6 +70,7 @@ function initSceneDirector(scene: Scene): (s: ScrollState) => void {
     if (!awake) return;
 
     scene.setScroll(progress);
+    scene.setVelocity(v);
 
     // Whichever scene section covers the most of the viewport wins.
     let best = '';
@@ -100,6 +110,9 @@ initSplitText();
 initReveals();
 initCounters();
 initTilt();
+initMagnetic();
+initSpotlight();
+initRedline();
 initForm();
 initFaq();
 
@@ -110,6 +123,7 @@ let scene: Scene | null = null;
 if (canvas) {
   try {
     scene = new Scene(canvas, 'glyph');
+    scene.intro();
     scene.start();
     scroller.on(initSceneDirector(scene));
   } catch (err) {

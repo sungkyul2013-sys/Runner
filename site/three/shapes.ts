@@ -6,7 +6,14 @@
  * between any two of them without the silhouette jumping in scale.
  */
 
-export type ShapeName = 'glyph' | 'sphere' | 'book' | 'wave' | 'plane' | 'helix';
+export type ShapeName =
+  | 'glyph'
+  | 'sphere'
+  | 'book'
+  | 'wave'
+  | 'plane'
+  | 'helix'
+  | 'grid';
 
 const TAU = Math.PI * 2;
 
@@ -223,6 +230,64 @@ export function planePoints(count: number, seed = 43): Float32Array {
   return out;
 }
 
+/* ────────────────────────────── 원고지 ────────────────────────────────── */
+
+/**
+ * The manuscript grid, in three dimensions: ruled cells with a scatter of
+ * filled ones, as though someone had started writing in the corner.
+ */
+export function gridPoints(count: number, seed = 71): Float32Array {
+  const rng = makeRng(seed);
+  const out = new Float32Array(count * 3);
+
+  const cols = 11;
+  const rows = 8;
+  const cell = 0.66;
+  const w = cols * cell;
+  const h = rows * cell;
+
+  // A handful of cells hold "characters" — small dense blocks of points.
+  const written = new Set<number>();
+  for (let r = 0; r < 5; r += 1) {
+    const row = (rng() * rows) | 0;
+    const start = (rng() * (cols - 5)) | 0;
+    const len = 3 + ((rng() * 4) | 0);
+    for (let c = start; c < Math.min(cols, start + len); c += 1) written.add(row * cols + c);
+  }
+  const writtenCells = [...written];
+
+  for (let i = 0; i < count; i += 1) {
+    const roll = rng();
+    let x: number;
+    let y: number;
+
+    if (roll < 0.3 && writtenCells.length > 0) {
+      // Ink inside a written cell.
+      const idx = writtenCells[(rng() * writtenCells.length) | 0];
+      const c = idx % cols;
+      const r = (idx / cols) | 0;
+      x = (c + 0.18 + rng() * 0.64) * cell - w / 2;
+      y = h / 2 - (r + 0.18 + rng() * 0.64) * cell;
+    } else if (rng() < 0.5) {
+      // A horizontal rule.
+      const r = (rng() * (rows + 1)) | 0;
+      x = rng() * w - w / 2;
+      y = h / 2 - r * cell;
+    } else {
+      // A vertical rule.
+      const c = (rng() * (cols + 1)) | 0;
+      x = c * cell - w / 2;
+      y = rng() * h - h / 2;
+    }
+
+    out[i * 3] = x;
+    out[i * 3 + 1] = y;
+    out[i * 3 + 2] = (rng() - 0.5) * 0.16;
+  }
+
+  return out;
+}
+
 /* ─────────────────────────────── 나선 ─────────────────────────────────── */
 
 /** Double helix — used as the transitional "in between chapters" form. */
@@ -261,7 +326,27 @@ export function buildShape(name: ShapeName, count: number): Float32Array {
       return planePoints(count);
     case 'helix':
       return helixPoints(count);
+    case 'grid':
+      return gridPoints(count);
   }
+}
+
+/** A far shell the field flies in from on first paint. */
+export function scatterPoints(count: number, seed = 97): Float32Array {
+  const rng = makeRng(seed);
+  const out = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i += 1) {
+    const a = rng() * TAU;
+    const z = rng() * 2 - 1;
+    const r = Math.sqrt(Math.max(0, 1 - z * z)) * (10 + rng() * 9);
+
+    out[i * 3] = Math.cos(a) * r;
+    out[i * 3 + 1] = Math.sin(a) * r * 0.8;
+    out[i * 3 + 2] = z * (10 + rng() * 9);
+  }
+
+  return out;
 }
 
 /** Per-shape presentation tweaks: base scale + resting tilt of the field. */
@@ -272,4 +357,5 @@ export const SHAPE_POSE: Record<ShapeName, { scale: number; rx: number; ry: numb
   wave: { scale: 0.98, rx: 0.82, ry: 0.2 },
   plane: { scale: 0.92, rx: 0.16, ry: -0.5 },
   helix: { scale: 0.96, rx: 0.05, ry: 0 },
+  grid: { scale: 0.92, rx: 0.26, ry: -0.34 },
 };

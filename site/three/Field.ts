@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SHAPE_POSE, buildShape, type ShapeName } from './shapes';
+import { SHAPE_POSE, buildShape, scatterPoints, type ShapeName } from './shapes';
 
 /**
  * The hero object: a cloud of glowing points that morphs between shapes.
@@ -26,6 +26,7 @@ const VERT = /* glsl */ `
   uniform float uDpr;
   uniform float uStagger;
   uniform float uBulge;
+  uniform float uTurb;
 
   varying vec3 vColor;
   varying float vFade;
@@ -50,6 +51,14 @@ const VERT = /* glsl */ `
     pos.y += cos(uTime * 0.37 + aRnd.z * 6.2831) * 0.055;
     pos.z += sin(uTime * 0.31 + aRnd.x * 6.2831) * 0.055;
 
+    // Scroll shakes the ink loose: the faster the page moves, the more the
+    // cloud unsettles, then it re-forms as soon as you stop.
+    pos += vec3(
+      sin(uTime * 2.3 + aRnd.x * 24.0),
+      cos(uTime * 1.9 + aRnd.y * 24.0),
+      sin(uTime * 1.5 + aRnd.z * 24.0)
+    ) * uTurb * (0.35 + aRnd.z);
+
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mv;
 
@@ -64,7 +73,7 @@ const VERT = /* glsl */ `
     // Fade the far side out, and twinkle gently.
     float depthFade = smoothstep(24.0, 6.0, dist);
     float twinkle = 0.72 + 0.28 * sin(uTime * 1.7 + aSeed * 42.0);
-    vFade = depthFade * twinkle * (0.55 + arc * 0.45);
+    vFade = depthFade * twinkle * (0.55 + arc * 0.45) * (1.0 + uTurb * 1.4);
   }
 `;
 
@@ -98,6 +107,10 @@ export class Field {
   private morphing = false;
   private current: ShapeName;
   private queued: ShapeName | null = null;
+
+  /** Scroll position when the current shape took over, and the latest seen. */
+  private anchor = 0;
+  private scroll = 0;
 
   /** Pose the field lerps toward (set per shape, nudged by scroll/pointer). */
   private targetPose = { scale: 1, rx: 0, ry: 0 };
@@ -138,10 +151,13 @@ export class Field {
         uDpr: { value: 1 },
         uStagger: { value: STAGGER },
         uBulge: { value: BULGE },
+        uTurb: { value: 0 },
         uOpacity: { value: 1 },
-        uColorA: { value: new THREE.Color('#7d8cff') },
-        uColorB: { value: new THREE.Color('#5fe3ff') },
-        uColorC: { value: new THREE.Color('#ffc48a') },
+        // Ink on paper, with the correction pen showing through in a small
+        // minority of points — the same three colours the page uses.
+        uColorA: { value: new THREE.Color('#e6e3da') },
+        uColorB: { value: new THREE.Color('#5aa9ff') },
+        uColorC: { value: new THREE.Color('#ff4d3d') },
       },
     });
 
@@ -211,16 +227,23 @@ export class Field {
     this.progress = 0;
     this.morphing = true;
     this.queued = null;
+    // Each shape starts from its intended pose and only turns as you scroll
+    // through its own chapter — otherwise the flat forms (the glyph, the
+    // manuscript grid) end up edge-on and read as a smear.
+    this.anchor = this.scroll;
 
     const pose = SHAPE_POSE[name];
     this.targetPose = { ...pose };
   }
 
-  /** Scroll-driven spin + pointer parallax, both in normalised units. */
+  /** Scroll-driven turn + pointer parallax, both in normalised units. */
   setDrive(scroll: number, px: number, py: number): void {
+    this.scroll = scroll;
     const pose = SHAPE_POSE[this.current];
-    this.targetPose.rx = pose.rx + py * 0.22;
-    this.targetPose.ry = pose.ry + scroll * Math.PI * 1.15 + px * 0.34;
+    const local = scroll - this.anchor;
+
+    this.targetPose.rx = pose.rx + py * 0.22 + local * 0.6;
+    this.targetPose.ry = pose.ry + local * 4.2 + px * 0.34;
     this.targetPose.scale = pose.scale;
   }
 
@@ -231,6 +254,29 @@ export class Field {
 
   setOpacity(v: number): void {
     this.mat.uniforms.uOpacity.value = v;
+  }
+
+  /** 0 = settled, ~1 = shaken loose. Driven by scroll speed. */
+  setTurbulence(v: number): void {
+    const u = this.mat.uniforms.uTurb;
+    u.value += (v - u.value) * 0.12;
+  }
+
+  /**
+   * First paint: drop the current silhouette far out into a shell and let it
+   * fly in, so the page assembles itself instead of appearing finished.
+   */
+  intro(): void {
+    const posAttr = this.geo.getAttribute('position') as THREE.BufferAttribute;
+    const toAttr = this.geo.getAttribute('aTo') as THREE.BufferAttribute;
+
+    (posAttr.array as Float32Array).set(scatterPoints(this.count));
+    toAttr.array.set(this.shape(this.current));
+    posAttr.needsUpdate = true;
+    toAttr.needsUpdate = true;
+
+    this.progress = 0;
+    this.morphing = true;
   }
 
   setDpr(dpr: number): void {

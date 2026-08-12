@@ -31,9 +31,17 @@ export function initRail(): ((s: ScrollState) => void) | null {
   window.addEventListener('resize', measure, { passive: true });
   if ('ResizeObserver' in window) new ResizeObserver(measure).observe(track);
 
-  return ({ y, vh }: ScrollState) => {
+  let skew = 0;
+
+  return ({ y, vh, v, dt }: ScrollState) => {
     const p = pinProgress(section, y, vh);
-    track.style.transform = `translate3d(${-p * travel}px,0,0)`;
+
+    // Fast scrolling leans the cards very slightly, the way a physical shelf
+    // would lag behind a shove. Capped so it never reads as a glitch.
+    const want = Math.max(-3, Math.min(3, v * 0.0022));
+    skew += (want - skew) * Math.min(1, dt * 7);
+
+    track.style.transform = `translate3d(${-p * travel}px,0,0) skewX(${skew}deg)`;
     bar.style.width = `${12 + p * 88}%`;
   };
 }
@@ -60,13 +68,50 @@ export function initMarquee(): ((s: ScrollState) => void) | null {
     }
     row.appendChild(set.cloneNode(true));
 
-    return {
+    const item = {
       row,
       span: () => (row.firstElementChild as HTMLElement).scrollWidth,
       speed: Number(row.dataset.speed ?? 1) * 34,
       reverse: row.classList.contains('marquee__row--rev'),
       offset: 0,
+      hover: false,
+      drag: 0,
+      rate: 1,
     };
+
+    // Slow to a stop under the pointer so a quote can actually be read.
+    row.addEventListener('pointerenter', () => {
+      item.hover = true;
+    });
+    row.addEventListener('pointerleave', () => {
+      item.hover = false;
+    });
+
+    // And let it be dragged, like a shelf of cards.
+    let dragging = false;
+    let lastX = 0;
+
+    row.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      lastX = e.clientX;
+      row.classList.add('is-dragging');
+      row.setPointerCapture(e.pointerId);
+    });
+    row.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      item.drag -= e.clientX - lastX;
+      lastX = e.clientX;
+    });
+    const end = (e: PointerEvent): void => {
+      if (!dragging) return;
+      dragging = false;
+      row.classList.remove('is-dragging');
+      row.releasePointerCapture(e.pointerId);
+    };
+    row.addEventListener('pointerup', end);
+    row.addEventListener('pointercancel', end);
+
+    return item;
   });
 
   return ({ dt }: ScrollState) => {
@@ -75,7 +120,13 @@ export function initMarquee(): ((s: ScrollState) => void) | null {
       const span = it.span();
       if (span <= 0) continue;
 
-      it.offset = (it.offset + it.speed * dt) % span;
+      // Ease between running and held rather than snapping.
+      it.rate += ((it.hover ? 0.06 : 1) - it.rate) * Math.min(1, dt * 6);
+
+      const step = it.speed * it.rate * dt + (it.reverse ? -it.drag : it.drag);
+      it.drag = 0;
+      it.offset = (((it.offset + step) % span) + span) % span;
+
       const x = it.reverse ? it.offset - span : -it.offset;
       it.row.style.transform = `translate3d(${x}px,0,0)`;
     }

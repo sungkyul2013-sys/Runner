@@ -54,6 +54,7 @@ export class Scene {
   private pointerTarget = { x: 0, y: 0 };
   private scroll = 0;
   private scrollEased = 0;
+  private turbulence = 0;
   private readonly reduced: boolean;
 
   constructor(canvas: HTMLCanvasElement, initial: ShapeName) {
@@ -132,6 +133,17 @@ export class Scene {
     this.scroll = p;
   }
 
+  /** Scroll speed in px/s — shakes the field loose while the page moves. */
+  setVelocity(v: number): void {
+    this.turbulence = Math.min(0.34, Math.abs(v) * 0.00016);
+  }
+
+  /** Fly the field in from a far shell on first paint. */
+  intro(): void {
+    if (this.reduced) return;
+    this.field.intro();
+  }
+
   morphTo(name: ShapeName): void {
     this.field.morphTo(name);
   }
@@ -161,6 +173,7 @@ export class Scene {
     this.scrollEased += (this.scroll - this.scrollEased) * (1 - Math.pow(0.004, dt));
 
     this.field.setDrive(this.scrollEased, this.pointer.x, this.pointer.y);
+    this.field.setTurbulence(this.reduced ? 0 : this.turbulence);
     this.field.update(dt, t);
     this.sheets.update(dt, t, this.scrollEased);
 
