@@ -1,3 +1,8 @@
+> **Note** — this repository now hosts two apps.
+> `index.html` is **수 국어논술**, the Korean language-arts study app (see
+> `README.md`). The runner documented below moved to `runner.html` and its
+> source still lives in `src/` (outside `src/app/`).
+
 # Sunset Runner (석양 러너) — Progress
 
 A warm, sunset-themed 3-lane endless runner built with Vite + TypeScript +
