@@ -419,7 +419,7 @@ export function writingView(): ViewHandle {
     body.appendChild(
       h(
         'div.grid',
-        { style: { gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)', gap: '18px', alignItems: 'start' } },
+        { style: { gridTemplateColumns: '1fr', gap: '16px', alignItems: 'start' } },
         h(
           'div',
           h(

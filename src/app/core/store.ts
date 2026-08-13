@@ -68,6 +68,7 @@ function defaultProfile(): Profile {
     routine: null,
     essays: [],
     badges: [],
+    stages: {},
     settings: {
       theme: 'system',
       motion: 'full',
@@ -101,6 +102,7 @@ function hydrate(raw: unknown): Profile {
     mocks: Array.isArray(src.mocks) ? src.mocks : [],
     essays: Array.isArray(src.essays) ? src.essays : [],
     badges: Array.isArray(src.badges) ? src.badges : [],
+    stages: { ...base.stages, ...(src.stages ?? {}) },
     studyDates: Array.isArray(src.studyDates) ? src.studyDates : [],
     version: PROFILE_VERSION,
   };
@@ -134,7 +136,10 @@ class Store {
 
   /** Mutate the profile and notify listeners. Saves are debounced. */
   update(fn: (p: Profile) => void): void {
+    const before = levelFromXp(this.profile.xp).level;
     fn(this.profile);
+    const after = levelFromXp(this.profile.xp).level;
+    if (after > before) pendingLevelUps.push(after);
     this.syncBadges();
     for (const l of this.listeners) l(this.profile);
     this.save();
@@ -183,6 +188,9 @@ class Store {
 
 /** Badges unlocked since the last drain — the shell turns these into toasts. */
 export const newBadges: string[] = [];
+
+/** Levels reached since the last drain — the shell turns these into a celebration. */
+export const pendingLevelUps: number[] = [];
 
 export const store = new Store();
 
@@ -366,4 +374,30 @@ export function isDark(): boolean {
   if (t === 'dark') return true;
   if (t === 'light') return false;
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+/* ------------------------------------------------------------------ */
+/* Journey map                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Save a stage result, keeping the learner's best stars and accuracy. */
+export function recordStage(stageId: string, acc: number, stars: number): { improved: boolean } {
+  let improved = false;
+  store.update((p) => {
+    const prev = p.stages[stageId];
+    if (!prev) {
+      p.stages[stageId] = { stars, best: acc, plays: 1 };
+      improved = stars > 0;
+    } else {
+      improved = stars > prev.stars;
+      p.stages[stageId] = {
+        stars: Math.max(prev.stars, stars),
+        best: Math.max(prev.best, acc),
+        plays: prev.plays + 1,
+      };
+    }
+    // Clearing a stage pays out in coins; repeats pay a token amount.
+    p.coins += improved ? 15 + stars * 5 : 3;
+  });
+  return { improved };
 }

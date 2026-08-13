@@ -19,6 +19,8 @@ export interface QuizResult {
   answers: { q: Question; chosen: number; correct: boolean; ms: number }[];
   seconds: number;
   aborted: boolean;
+  /** Longest run of consecutive correct answers in this session. */
+  bestCombo: number;
 }
 
 export interface QuizOptions {
@@ -45,6 +47,8 @@ export function createQuiz(opts: QuizOptions): QuizHandle {
 
   let index = 0;
   let locked = false;
+  let combo = 0;
+  let bestCombo = 0;
   let qStart = performance.now();
   let clock: Ticker | null = null;
   let finished = false;
@@ -54,8 +58,34 @@ export function createQuiz(opts: QuizOptions): QuizHandle {
   const progressBar = h('div.quiz__bar', barFill);
   const head = h('div.spread', { style: { marginBottom: '10px' } });
   const stage = h('div');
+  const comboBadge = h('div.combo', { style: { display: 'none' } });
 
-  root.append(head, progressBar, stage);
+  root.append(comboBadge, head, progressBar, stage);
+
+  /** A "+12 XP" that floats up from wherever the learner tapped. */
+  function floatXp(amount: number, from: Element): void {
+    const layer = document.getElementById('fx-layer');
+    if (!layer) return;
+    const r = from.getBoundingClientRect();
+    const el = h('span.xp-float', `+${amount} XP`);
+    el.style.left = `${r.left + r.width / 2}px`;
+    el.style.top = `${r.top}px`;
+    layer.appendChild(el);
+    window.setTimeout(() => el.remove(), 1100);
+  }
+
+  function renderCombo(): void {
+    if (combo < 2) {
+      comboBadge.style.display = 'none';
+      return;
+    }
+    comboBadge.style.display = '';
+    comboBadge.replaceChildren(h('span', '\u26a1'), h('span', `${combo} 연속`));
+    // Re-trigger the pop animation on every increment.
+    comboBadge.style.animation = 'none';
+    void comboBadge.offsetWidth;
+    comboBadge.style.animation = '';
+  }
 
   /* ------------------------------- header ------------------------------- */
   const counter = h('span.small.muted');
@@ -180,6 +210,7 @@ export function createQuiz(opts: QuizOptions): QuizHandle {
             {
               onclick: () => {
                 if (locked) return;
+                combo = 0;
                 commit(-1, 0);
                 next();
               },
@@ -201,6 +232,8 @@ export function createQuiz(opts: QuizOptions): QuizHandle {
       if (deferFeedback) {
         btn.classList.add('is-picked');
         sfx.tap();
+        combo = correct ? combo + 1 : 0;
+        bestCombo = Math.max(bestCombo, combo);
         commit(i, ms);
         window.setTimeout(next, 260);
         return;
@@ -210,12 +243,21 @@ export function createQuiz(opts: QuizOptions): QuizHandle {
       if (!correct) {
         (choiceWrap.children[q.answer] as HTMLElement).classList.add('is-right');
         sfx.wrong();
+        combo = 0;
+        renderCombo();
+        card.classList.remove('shake');
+        void card.offsetWidth;
+        card.classList.add('shake');
       } else {
         sfx.correct();
         burstFrom(btn, DOMAIN_HUE[q.domain]);
+        combo += 1;
+        bestCombo = Math.max(bestCombo, combo);
+        renderCombo();
       }
 
-      commit(i, ms);
+      const gained = commit(i, ms);
+      floatXp(gained, btn);
       showExplain(correct);
     }
 
@@ -254,12 +296,14 @@ export function createQuiz(opts: QuizOptions): QuizHandle {
       footer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    function commit(chosen: number, ms: number): void {
+    function commit(chosen: number, ms: number): number {
       const correct = chosen === q.answer;
       answers.push({ q, chosen, correct, ms });
       // Diagnostics and mocks report separately; practice/review award XP now.
-      const xpScale = mode === 'practice' ? 1 : mode === 'review' ? 1.2 : 0.5;
-      recordAttempt({
+      // A running combo multiplies the reward, up to 2x.
+      const comboBonus = correct ? Math.min(1 + combo * 0.15, 2) : 1;
+      const xpScale = (mode === 'practice' ? 1 : mode === 'review' ? 1.2 : 0.5) * comboBonus;
+      return recordAttempt({
         qid: q.id,
         domain: q.domain,
         skill: q.skill,
@@ -293,7 +337,7 @@ export function createQuiz(opts: QuizOptions): QuizHandle {
       return;
     }
     barFill.style.width = '100%';
-    opts.onFinish({ answers, seconds, aborted });
+    opts.onFinish({ answers, seconds, aborted, bestCombo });
   }
 
   /* ------------------------------ shortcuts ----------------------------- */
@@ -383,6 +427,7 @@ export function quizSummary(result: QuizResult, actions: HTMLElement[]): HTMLEle
         h('div.stat', h('b', `${Math.round(rate * 100)}%`), h('span', '정답률')),
         h('div.stat', h('b', mmss(result.seconds)), h('span', '소요 시간')),
         h('div.stat', h('b', `${avg.toFixed(1)}초`), h('span', '문항 평균')),
+        h('div.stat', h('b', `⚡ ${result.bestCombo}`), h('span', '최고 연속')),
       ),
       h('div.row', { style: { justifyContent: 'center', marginTop: '26px' } }, ...actions),
     ),

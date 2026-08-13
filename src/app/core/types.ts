@@ -216,6 +216,14 @@ export interface EssayDraft {
   rubric: Record<string, number>;
 }
 
+export interface StageProgress {
+  /** 0–3. 3 = 만점 클리어. */
+  stars: number;
+  /** Best accuracy on this stage, 0..1. */
+  best: number;
+  plays: number;
+}
+
 export interface Settings {
   theme: 'system' | 'light' | 'dark';
   motion: 'full' | 'reduced';
@@ -253,6 +261,8 @@ export interface Profile {
   routine: Routine | null;
   essays: EssayDraft[];
   badges: string[];
+  /** Stage id → progress on the 3D journey map. */
+  stages: Record<string, StageProgress>;
 
   settings: Settings;
 }

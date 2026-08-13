@@ -41,8 +41,9 @@ const GLYPHS = [
   '읽', '쓰', '말', '뜻', '결', '構', '意', '文',
 ];
 
-const PALETTE_LIGHT = ['#5b6cff', '#9b6cff', '#ff6f9c', '#17c3a2', '#f6a723'];
-const PALETTE_DARK = ['#7b8bff', '#b489ff', '#ff85ad', '#2ee0ba', '#ffbe4d'];
+/* 단청 — matched to the stylesheet's accent tokens. */
+const PALETTE_LIGHT = ['#b8860f', '#c8402c', '#1f7f66', '#2c6ea8', '#a63f74'];
+const PALETTE_DARK = ['#f0b429', '#e8503a', '#3fa88a', '#4a9be0', '#c2528f'];
 
 interface Tile {
   mesh: Mesh;
@@ -69,12 +70,12 @@ function glyphTexture(ch: string, color: string, dark: boolean): CanvasTexture {
     g.arcTo(0, 0, size, 0, r);
     g.closePath();
     const grad = g.createLinearGradient(0, 0, size, size);
-    grad.addColorStop(0, dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.92)');
-    grad.addColorStop(1, dark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.68)');
+    grad.addColorStop(0, dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.96)');
+    grad.addColorStop(1, dark ? 'rgba(255,255,255,0.03)' : `${color}22`);
     g.fillStyle = grad;
     g.fill();
-    g.lineWidth = 2;
-    g.strokeStyle = dark ? 'rgba(255,255,255,0.16)' : 'rgba(20,24,40,0.10)';
+    g.lineWidth = dark ? 2 : 3;
+    g.strokeStyle = dark ? 'rgba(255,255,255,0.16)' : `${color}55`;
     g.stroke();
 
     g.fillStyle = color;
@@ -124,7 +125,7 @@ export function createHeroScene(canvas: HTMLCanvasElement): HeroSceneHandle | nu
   const small = window.innerWidth < 760;
   const dark = isDark();
   const palette = dark ? PALETTE_DARK : PALETTE_LIGHT;
-  const tileCount = lite ? 26 : small ? 40 : 76;
+  const tileCount = lite ? 24 : small ? 34 : 54;
   const starCount = lite ? 220 : small ? 420 : 900;
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, lite ? 1.25 : 2));
@@ -132,7 +133,7 @@ export function createHeroScene(canvas: HTMLCanvasElement): HeroSceneHandle | nu
 
   const scene = new Scene();
   const camera = new PerspectiveCamera(56, 1, 0.1, 220);
-  camera.position.set(0, 0, 34);
+  camera.position.set(0, 0, 30);
 
   const world = new Group();
   scene.add(world);
@@ -151,7 +152,7 @@ export function createHeroScene(canvas: HTMLCanvasElement): HeroSceneHandle | nu
       map: tex,
       transparent: true,
       depthWrite: false,
-      opacity: dark ? 0.82 : 0.7,
+      opacity: dark ? 0.82 : 0.95,
     });
     const mesh = new Mesh(geo, mat);
 
@@ -159,7 +160,7 @@ export function createHeroScene(canvas: HTMLCanvasElement): HeroSceneHandle | nu
     // The inner radius is kept clear so the headline never sits on a tile.
     const t = i / tileCount;
     const angle = i * 2.39996;
-    const radius = 13 + Math.pow(t, 0.6) * 17 + (i % 3) * 1.4;
+    const radius = 8 + Math.pow(t, 0.6) * 13 + (i % 3) * 1.2;
     const base = new Vector3(
       Math.cos(angle) * radius,
       (t - 0.5) * 46 + Math.sin(i * 1.7) * 2.4,
@@ -191,10 +192,10 @@ export function createHeroScene(canvas: HTMLCanvasElement): HeroSceneHandle | nu
   const stars = new Points(
     starGeo,
     new PointsMaterial({
-      size: dark ? 0.34 : 0.26,
-      color: new Color(dark ? 0xa9b4ff : 0x8f9bd8),
+      size: dark ? 0.34 : 0.22,
+      color: new Color(dark ? 0xc9b27a : 0x8a8f83),
       transparent: true,
-      opacity: dark ? 0.7 : 0.4,
+      opacity: dark ? 0.7 : 0.55,
       depthWrite: false,
       sizeAttenuation: true,
     }),
@@ -204,7 +205,7 @@ export function createHeroScene(canvas: HTMLCanvasElement): HeroSceneHandle | nu
   /* ------------------------------ glow ------------------------------- */
   const glowTex = glowTexture();
   const glows: Sprite[] = [];
-  const glowColors = [palette[0], palette[1], palette[2]];
+  const glowColors = dark ? [palette[0], palette[1], palette[2]] : [];
   glowColors.forEach((c, i) => {
     const sprite = new Sprite(
       new SpriteMaterial({
@@ -286,7 +287,7 @@ export function createHeroScene(canvas: HTMLCanvasElement): HeroSceneHandle | nu
 
     camera.position.x = cx * 4.2;
     camera.position.y = -cy * 3.0;
-    camera.position.z = 34 - smoothProgress * 30;
+    camera.position.z = 30 - smoothProgress * 24;
     camera.lookAt(0, smoothProgress * -3, -8);
 
     renderer.render(scene, camera);
