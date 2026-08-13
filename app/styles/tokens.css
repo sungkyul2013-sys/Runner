@@ -1,0 +1,158 @@
+/* ═══════════════════════════════════════════════════════════════════
+   수 국어논술 — design tokens
+
+   Same material world as before (먹 ink, 한지 paper, 원고지 grid, 첨삭
+   red), but now expressed semantically so the whole app can flip between
+   an ink theme and a paper theme.
+
+   Three viewer states are handled: no stamp (system preference decides),
+   data-theme="light", data-theme="dark". Every colour is defined on the
+   bare :root first, so nothing is ever left undefined in the un-stamped
+   state.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── raw palette ─────────────────────────────────────────────────── */
+  --ink-900: #05060b;
+  --ink-800: #090b12;
+  --ink-700: #10131c;
+  --ink-600: #181c27;
+
+  --paper-50: #fffefa;
+  --paper-100: #f4f2ec;
+  --paper-200: #e8e5db;
+  --paper-900: #14161d;
+
+  --jeomsak: #ff4d3d; /* 첨삭 — correction red, the one bold accent */
+  --jeomsak-soft: rgba(255, 77, 61, 0.14);
+  --cheong: #3f97ff; /* 청 — cool ink blue                          */
+  --geumbak: #c98a1f; /* 금박 — gold, used only for "mastered"       */
+  --ok: #12a06a;
+
+  /* ── semantic: paper (light) is the un-stamped default ───────────── */
+  --bg: var(--paper-100);
+  --bg-elev: var(--paper-50);
+  --surface: var(--paper-50);
+  --surface-2: #faf8f2;
+  --text: var(--paper-900);
+  --text-2: #55524b;
+  --text-3: #8b877e;
+  --line: rgba(20, 22, 29, 0.12);
+  --line-soft: rgba(20, 22, 29, 0.07);
+  --rule: rgba(20, 22, 29, 0.06);
+  --chrome: rgba(244, 242, 236, 0.82);
+  --invert-bg: var(--ink-900);
+  --invert-text: var(--paper-50);
+  --shadow-1: 0 1px 2px rgba(20, 22, 29, 0.06), 0 8px 24px -18px rgba(20, 22, 29, 0.5);
+  --shadow-2: 0 2px 6px rgba(20, 22, 29, 0.07), 0 30px 60px -34px rgba(20, 22, 29, 0.65);
+  --backdrop: 0.26; /* how strongly the 3D layer shows through */
+
+  color-scheme: light;
+}
+
+/* System preference is dark, and the viewer has not overridden it. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: var(--ink-900);
+    --bg-elev: var(--ink-800);
+    --surface: rgba(17, 20, 30, 0.78);
+    --surface-2: rgba(255, 255, 255, 0.045);
+    --text: #f4f3ef;
+    --text-2: #a7a9af;
+    --text-3: #6d6f79;
+    --line: rgba(255, 255, 255, 0.12);
+    --line-soft: rgba(255, 255, 255, 0.07);
+    --rule: rgba(255, 255, 255, 0.05);
+    --chrome: rgba(9, 11, 18, 0.72);
+    --invert-bg: var(--paper-50);
+    --invert-text: var(--ink-900);
+    --jeomsak: #ff5f50;
+    --cheong: #6fc8ff;
+    --geumbak: #e8b96a;
+    --ok: #2fd39a;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px -20px rgba(0, 0, 0, 1);
+    --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.55), 0 40px 80px -40px rgba(0, 0, 0, 1);
+    --backdrop: 0.7;
+
+    color-scheme: dark;
+  }
+}
+
+/* Explicit dark choice wins over a light OS. */
+:root[data-theme='dark'] {
+  --bg: var(--ink-900);
+  --bg-elev: var(--ink-800);
+  --surface: rgba(17, 20, 30, 0.78);
+  --surface-2: rgba(255, 255, 255, 0.045);
+  --text: #f4f3ef;
+  --text-2: #a7a9af;
+  --text-3: #6d6f79;
+  --line: rgba(255, 255, 255, 0.12);
+  --line-soft: rgba(255, 255, 255, 0.07);
+  --rule: rgba(255, 255, 255, 0.05);
+  --chrome: rgba(9, 11, 18, 0.72);
+  --invert-bg: var(--paper-50);
+  --invert-text: var(--ink-900);
+  --jeomsak: #ff5f50;
+  --cheong: #6fc8ff;
+  --geumbak: #e8b96a;
+  --ok: #2fd39a;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px -20px rgba(0, 0, 0, 1);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.55), 0 40px 80px -40px rgba(0, 0, 0, 1);
+  --backdrop: 0.7;
+
+  color-scheme: dark;
+}
+
+:root {
+  /* ── type ─────────────────────────────────────────────────────────── */
+  --font: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
+    'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Roboto Mono', Menlo, monospace;
+
+  /* Fluid scale — every size is a clamp so nothing needs a breakpoint. */
+  --t-display: clamp(30px, 8.4vw, 54px);
+  --t-h1: clamp(24px, 6.2vw, 38px);
+  --t-h2: clamp(19px, 4.6vw, 26px);
+  --t-h3: clamp(16px, 3.9vw, 19px);
+  --t-body: clamp(14.5px, 3.7vw, 16.5px);
+  --t-sm: clamp(13px, 3.2vw, 14px);
+  --t-xs: clamp(11px, 2.9vw, 12px);
+
+  /* ── space & shape ───────────────────────────────────────────────── */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+
+  --r-1: 8px;
+  --r-2: 14px;
+  --r-3: 20px;
+  --r-4: 28px;
+  --r-pill: 999px;
+
+  --cell: 30px; /* 원고지 cell */
+
+  /* ── chrome metrics (safe-area aware) ────────────────────────────── */
+  --topbar: 54px;
+  --tabbar: calc(58px + env(safe-area-inset-bottom));
+  --gutter: clamp(16px, 4.6vw, 28px);
+  --page: 1120px;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Desktop swaps the bottom tab bar for a side rail, so the metrics change. */
+@media (min-width: 900px) {
+  :root {
+    --topbar: 62px;
+    --tabbar: 0px;
+    --rail: 232px;
+  }
+}

@@ -1,10 +1,11 @@
 /**
- * Builds a single self-contained su-academy.html from index.html + site/:
- * bundles site/main.ts (Three.js and the stylesheet included) into one inline
- * <script> plus one inline <style>, so the page runs from any static host —
- * or straight off the filesystem — with zero extra requests.
+ * Builds a single self-contained HTML file from one of the site entries:
+ * bundles its TypeScript (Three.js and the stylesheets included) into one
+ * inline <script> plus one inline <style>, so the page runs from any static
+ * host — or straight off the filesystem — with zero extra requests.
  *
- *   node scripts/buildSite.mjs                     → su-academy.html
+ *   node scripts/buildSite.mjs                     → su-academy.html (the app)
+ *   node scripts/buildSite.mjs --entry story       → su-story.html
  *   node scripts/buildSite.mjs --artifact <path> [--title <name>]
  *       → also writes a wrapper-free copy (title + style + markup + script
  *         only) for hosts that supply their own <html>/<head>/<body>, with an
@@ -13,8 +14,21 @@
 import { build } from 'esbuild';
 import { readFileSync, writeFileSync } from 'node:fs';
 
+const arg = (name) => {
+  const i = process.argv.indexOf(name);
+  return i !== -1 ? process.argv[i + 1] : undefined;
+};
+
+const ENTRIES = {
+  app: { source: 'index.html', script: 'app/main.ts', out: 'su-academy.html' },
+  story: { source: 'story.html', script: 'story/main.ts', out: 'su-story.html' },
+};
+
+const entry = ENTRIES[arg('--entry') ?? 'app'];
+if (!entry) throw new Error(`unknown --entry; expected one of ${Object.keys(ENTRIES).join(', ')}`);
+
 const result = await build({
-  entryPoints: ['site/main.ts'],
+  entryPoints: [entry.script],
   bundle: true,
   format: 'iife',
   minify: true,
@@ -36,7 +50,7 @@ const pick = (ext) => {
 const js = pick('.js').replace(/<\/script/gi, '<\\/script');
 const css = pick('.css');
 
-const source = readFileSync('index.html', 'utf8');
+const source = readFileSync(entry.source, 'utf8');
 
 const title = source.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? '수 국어논술 학원';
 const bodyInner = source
@@ -49,7 +63,7 @@ if (!bodyInner) throw new Error('could not read <body> out of index.html');
 const head = `<title>${title}</title>\n<style>\n${css}</style>`;
 
 writeFileSync(
-  'su-academy.html',
+  entry.out,
   `<!doctype html>
 <html lang="ko">
   <head>
@@ -64,12 +78,7 @@ ${bodyInner}
 </html>
 `,
 );
-console.log('su-academy.html written');
-
-const arg = (name) => {
-  const i = process.argv.indexOf(name);
-  return i !== -1 ? process.argv[i + 1] : undefined;
-};
+console.log(`${entry.out} written`);
 
 const artifactPath = arg('--artifact');
 if (artifactPath) {

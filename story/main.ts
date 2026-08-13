@@ -1,7 +1,7 @@
 import './styles.css';
 
-import { Scene } from './three/Scene';
-import type { ShapeName } from './three/shapes';
+import { Scene } from '../shared/three/Scene';
+import type { ShapeName } from '../shared/three/shapes';
 import { initForm, initFaq } from './ui/form';
 import {
   initCounters,

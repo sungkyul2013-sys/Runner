@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>수 국어논술 학원 — 생각을 쓰다, 세상을 읽다</title>
+    <meta
+      name="description"
+      content="읽기에서 시작해 사유로 이어지고, 마침내 자기 문장으로 완성되는 국어. 초등 독서논술부터 대입 논술·면접까지, 소수정예 1:1 첨삭 수 국어논술 학원."
+    />
+    <meta name="theme-color" content="#05060a" />
+    <meta name="color-scheme" content="dark" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="수 국어논술 학원" />
+    <meta property="og:description" content="생각을 쓰다, 세상을 읽다." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23070812'/%3E%3Ctext x='32' y='45' font-size='38' font-family='sans-serif' font-weight='700' fill='%23fff' text-anchor='middle'%3E%EC%88%98%3C/text%3E%3C/svg%3E" />
+  </head>
+
+  <body>
+    <!-- ══════════════ 로딩 ══════════════ -->
+    <div class="loader" id="loader" aria-hidden="true">
+      <div class="loader__mark">수</div>
+      <div class="loader__bar"><i id="loaderFill"></i></div>
+      <div class="loader__label">수 국어논술 학원</div>
+    </div>
+
+    <!-- ══════════════ 3D 캔버스 ══════════════ -->
+    <div class="stage" id="stage">
+      <canvas id="scene"></canvas>
+      <div class="stage__vignette"></div>
+    </div>
+
+    <!-- ══════════════ 진행 표시 ══════════════ -->
+    <div class="progress" aria-hidden="true"><i id="progressFill"></i></div>
+
+    <!-- ══════════════ 챕터 인덱스 (와이드 화면) ══════════════ -->
+    <nav class="chapters" id="chapters" aria-label="챕터 바로가기">
+      <a href="#about">01<span class="chapters__label">소개</span></a>
+      <a href="#courses">02<span class="chapters__label">과정</span></a>
+      <a href="#method">03<span class="chapters__label">수업 방식</span></a>
+      <a href="#redline">04<span class="chapters__label">첨삭</span></a>
+      <a href="#results">05<span class="chapters__label">성과</span></a>
+      <a href="#teachers">06<span class="chapters__label">선생님</span></a>
+      <a href="#voices">07<span class="chapters__label">후기</span></a>
+      <a href="#visit">08<span class="chapters__label">오시는 길</span></a>
+    </nav>
+
+    <!-- ══════════════ 네비게이션 ══════════════ -->
+    <header class="nav" id="nav">
+      <div class="nav__inner">
+        <a class="brand" href="#top" aria-label="수 국어논술 학원 홈">
+          <span class="brand__mark">수</span>
+          <span class="brand__text">국어논술 학원</span>
+        </a>
+
+        <nav class="nav__links" aria-label="주요 메뉴">
+          <a href="#about" data-nav>소개</a>
+          <a href="#courses" data-nav>과정</a>
+          <a href="#method" data-nav>수업 방식</a>
+          <a href="#redline" data-nav>첨삭</a>
+          <a href="#results" data-nav>성과</a>
+          <a href="#teachers" data-nav>선생님</a>
+          <a href="#visit" data-nav>오시는 길</a>
+        </nav>
+
+        <div class="nav__cta">
+          <a class="btn btn--ghost btn--sm" href="tel:0200000000">전화 상담</a>
+          <a class="btn btn--primary btn--sm" href="#apply">상담 신청</a>
+        </div>
+
+        <button class="burger" id="burger" aria-label="메뉴 열기" aria-expanded="false">
+          <span></span><span></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 모바일 전체 메뉴 -->
+    <div class="sheet" id="sheet" aria-hidden="true">
+      <nav class="sheet__nav" aria-label="모바일 메뉴">
+        <a href="#about" data-nav><span>01</span>소개</a>
+        <a href="#courses" data-nav><span>02</span>과정</a>
+        <a href="#method" data-nav><span>03</span>수업 방식</a>
+        <a href="#redline" data-nav><span>04</span>첨삭</a>
+        <a href="#results" data-nav><span>05</span>성과</a>
+        <a href="#teachers" data-nav><span>06</span>선생님</a>
+        <a href="#voices" data-nav><span>07</span>후기</a>
+        <a href="#faq" data-nav><span>08</span>자주 묻는 질문</a>
+        <a href="#visit" data-nav><span>09</span>오시는 길</a>
+      </nav>
+      <a class="btn btn--primary btn--block" href="#apply" data-nav>무료 진단 상담 신청</a>
+    </div>
+
+    <main id="top">
+      <!-- ══════════════ HERO ══════════════ -->
+      <section class="hero" data-scene="glyph" data-void>
+        <div class="grid-paper" aria-hidden="true"></div>
+        <div class="hero__inner">
+          <p class="eyebrow reveal">since 2009 · 소수정예 국어·논술</p>
+
+          <h1 class="hero__title">
+            <span class="line" data-split>생각을 쓰다,</span>
+            <span class="line" data-split data-underline="읽다">세상을 읽다.</span>
+          </h1>
+
+          <p class="hero__sub reveal">
+            읽기에서 시작해 사유로 이어지고,<br />
+            마침내 <b>자기 문장</b>으로 완성되는 국어.
+          </p>
+
+          <div class="hero__actions reveal">
+            <a class="btn btn--primary btn--lg" href="#apply">무료 진단 상담</a>
+            <a class="btn btn--glass btn--lg" href="#courses">과정 살펴보기</a>
+          </div>
+
+          <ul class="hero__chips reveal" aria-label="핵심 특징">
+            <li>정원 8명</li>
+            <li>매주 1편 글쓰기</li>
+            <li>문장 단위 1:1 첨삭</li>
+            <li>월간 성장 리포트</li>
+          </ul>
+        </div>
+
+        <a class="scrollhint" href="#about" aria-label="아래로 스크롤">
+          <span class="scrollhint__mouse"><i></i></span>
+          <span class="scrollhint__text">SCROLL</span>
+        </a>
+      </section>
+
+      <!-- ══════════════ 매니페스토 ══════════════ -->
+      <section class="manifesto" id="about" data-scene="sphere" data-void>
+        <div class="grid-paper" aria-hidden="true"></div>
+        <div class="manifesto__sticky">
+          <p class="manifesto__text" data-words>
+            국어는 암기 과목이 아닙니다. 글을 읽고, 스스로 질문을 만들고, 그 질문에 자기 문장으로
+            답하는 힘입니다. 수 국어논술은 정답을 알려주지 않습니다. 답을 찾는 방법을 끝까지 함께
+            연습합니다.
+          </p>
+        </div>
+      </section>
+
+      <!-- ══════════════ 철학 / 특징 ══════════════ -->
+      <section class="section section--light" id="why">
+        <div class="grid-paper" aria-hidden="true"></div>
+        <div class="wrap">
+          <header class="shead reveal">
+            <p class="eyebrow">Why 수</p>
+            <h2 class="shead__title">읽는 아이가 아니라,<br />쓰는 아이로.</h2>
+            <p class="shead__desc">
+              모든 수업은 세 가지 원칙 위에서 설계됩니다. 유행이 아니라 원칙입니다.
+            </p>
+          </header>
+
+          <div class="cards">
+            <article class="card tilt reveal">
+              <div class="card__icon" data-icon="book"></div>
+              <h3>끝까지 읽는 경험</h3>
+              <p>
+                발췌문이 아니라 한 권을 끝까지. 완독의 경험이 쌓여야 긴 지문 앞에서 흔들리지 않습니다.
+              </p>
+              <span class="card__no">01</span>
+            </article>
+
+            <article class="card tilt reveal">
+              <div class="card__icon" data-icon="pen"></div>
+              <h3>문장 단위 첨삭</h3>
+              <p>
+                “잘 썼어요”로 끝내지 않습니다. 문장마다 이유를 적고, 학생이 다시 씁니다. 리라이팅까지가
+                한 편입니다.
+              </p>
+              <span class="card__no">02</span>
+            </article>
+
+            <article class="card tilt reveal">
+              <div class="card__icon" data-icon="chart"></div>
+              <h3>기록되는 성장</h3>
+              <p>
+                어휘·문장·논리·분량을 매달 기록합니다. 감이 아니라 데이터로 다음 달 커리큘럼을
+                조정합니다.
+              </p>
+              <span class="card__no">03</span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════ 과정 (가로 스크롤) ══════════════ -->
+      <section class="rail" id="courses" data-scene="book" data-void>
+        <div class="rail__sticky">
+          <header class="rail__head">
+            <p class="eyebrow">Curriculum</p>
+            <h2 class="rail__title">학년이 아니라 <em>단계</em>로 나눕니다.</h2>
+          </header>
+
+          <div class="rail__track" id="railTrack">
+            <article class="course">
+              <p class="course__tag">STEP 01 · 초 3–6</p>
+              <h3 class="course__name">초등 독서논술</h3>
+              <p class="course__desc">
+                한 권을 끝까지 읽고, 한 편을 끝까지 씁니다. 읽기 습관과 요약·근거 쓰기를 만듭니다.
+              </p>
+              <ul class="course__list">
+                <li>주 1회 · 90분</li>
+                <li>완독 도서 연 24권</li>
+                <li>요약 · 감상 · 주장문</li>
+                <li>어휘 노트 &amp; 낭독</li>
+              </ul>
+              <div class="course__foot"><span>정원 8명</span><i class="course__arrow"></i></div>
+            </article>
+
+            <article class="course">
+              <p class="course__tag">STEP 02 · 중 1–3</p>
+              <h3 class="course__name">중등 국어 내신</h3>
+              <p class="course__desc">
+                교과서 지문 분석부터 서술형·수행평가까지. 학교별 기출을 기준으로 설계합니다.
+              </p>
+              <ul class="course__list">
+                <li>주 2회 · 100분</li>
+                <li>학교별 기출 분석</li>
+                <li>서술형 답안 훈련</li>
+                <li>수행평가 글쓰기 클리닉</li>
+              </ul>
+              <div class="course__foot"><span>정원 8명</span><i class="course__arrow"></i></div>
+            </article>
+
+            <article class="course course--hot">
+              <p class="course__tag">STEP 03 · 고 1–3</p>
+              <h3 class="course__name">고등 국어 · 수능</h3>
+              <p class="course__desc">
+                독서·문학·화작·언매 전 영역. 지문을 “푸는 법”이 아니라 “읽는 법”부터 다시 세웁니다.
+              </p>
+              <ul class="course__list">
+                <li>주 2회 · 120분</li>
+                <li>평가원 기출 전 회차</li>
+                <li>시간 관리 · 오답 리포트</li>
+                <li>주간 모의 &amp; 해설</li>
+              </ul>
+              <div class="course__foot"><span>정원 10명</span><i class="course__arrow"></i></div>
+            </article>
+
+            <article class="course">
+              <p class="course__tag">STEP 04 · 고3 · N수</p>
+              <h3 class="course__name">대입 논술 · 면접</h3>
+              <p class="course__desc">
+                대학별 출제 경향을 해부하고, 실전 답안을 반복해서 다시 씁니다. 면접 실전 촬영까지.
+              </p>
+              <ul class="course__list">
+                <li>주 1회 · 150분 + 1:1</li>
+                <li>대학별 기출 &amp; 예시답안</li>
+                <li>주 2편 실전 첨삭</li>
+                <li>모의 면접 &amp; 피드백</li>
+              </ul>
+              <div class="course__foot"><span>정원 6명</span><i class="course__arrow"></i></div>
+            </article>
+
+            <article class="course course--cta">
+              <h3 class="course__name">어디서<br />시작해야 할지<br />모르겠다면.</h3>
+              <p class="course__desc">
+                30분 진단 검사로 현재 읽기 속도·어휘·문장력을 확인하고, 맞는 단계를 알려드립니다.
+              </p>
+              <a class="btn btn--primary btn--block" href="#apply">무료 진단 신청</a>
+            </article>
+          </div>
+
+          <div class="rail__bar"><i id="railBar"></i></div>
+        </div>
+      </section>
+
+      <!-- ══════════════ 수업 방식 ══════════════ -->
+      <section class="section section--light" id="method">
+        <div class="grid-paper" aria-hidden="true"></div>
+        <div class="wrap">
+          <header class="shead reveal">
+            <p class="eyebrow">How it works</p>
+            <h2 class="shead__title">한 달이 하나의 사이클입니다.</h2>
+            <p class="shead__desc">진단에서 리포트까지, 다섯 단계가 매달 반복되며 쌓입니다.</p>
+          </header>
+
+          <ol class="steps">
+            <li class="step reveal">
+              <span class="step__no">01</span>
+              <h3>진단</h3>
+              <p>읽기 속도, 어휘 수준, 문장력, 논리 구조를 30분 검사로 측정합니다.</p>
+            </li>
+            <li class="step reveal">
+              <span class="step__no">02</span>
+              <h3>설계</h3>
+              <p>학년과 목표에 맞춰 도서 목록과 글쓰기 과제를 개인별로 배치합니다.</p>
+            </li>
+            <li class="step reveal">
+              <span class="step__no">03</span>
+              <h3>수업</h3>
+              <p>소수정예 토론으로 생각을 꺼내고, 그 자리에서 한 편을 씁니다.</p>
+            </li>
+            <li class="step reveal">
+              <span class="step__no">04</span>
+              <h3>첨삭</h3>
+              <p>문장마다 이유를 남깁니다. 학생은 같은 글을 다시 써서 완성합니다.</p>
+            </li>
+            <li class="step reveal">
+              <span class="step__no">05</span>
+              <h3>리포트</h3>
+              <p>매달 성장 그래프와 다음 달 목표를 학부모님께 보내드립니다.</p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ══════════════ 첨삭 ══════════════ -->
+      <section class="section redline" id="redline" data-scene="grid" data-void>
+        <div class="wrap redline__grid">
+          <div class="reveal">
+            <p class="eyebrow">첨삭 · Redline</p>
+            <h2 class="shead__title">고치는 과정이<br />곧 <em>수업</em>입니다.</h2>
+            <p class="redline__note">
+              한 편을 제출하면 문장마다 이유가 붙어 돌아옵니다. 학생은 그 이유를 읽고 같은 글을 다시
+              씁니다. 아래는 실제 첨삭 형식을 그대로 옮긴 예시입니다.
+            </p>
+
+            <div class="seg" id="seg" role="tablist" aria-label="원문과 고친 글 비교">
+              <span class="seg__thumb" aria-hidden="true"></span>
+              <button type="button" role="tab" aria-selected="true" aria-controls="paneBefore">
+                학생 원문
+              </button>
+              <button type="button" role="tab" aria-selected="false" aria-controls="paneAfter">
+                다시 쓴 글
+              </button>
+            </div>
+
+            <div class="redline__meta">
+              <span>지적 <b>3</b>곳</span>
+              <span>다시 쓴 횟수 <b>2</b>회</span>
+              <span>첨삭 소요 <b>18</b>분</span>
+            </div>
+          </div>
+
+          <div class="sheetpaper reveal" id="sheet-paper">
+            <div class="grid-paper" aria-hidden="true"></div>
+
+            <div class="sheetpaper__head">
+              <span>중2 · 독서기록문 · 3주차</span>
+              <span class="sheetpaper__marks">RED 03</span>
+            </div>
+
+            <div class="panes">
+              <div class="pane" id="paneBefore" role="tabpanel">
+                <p>
+                  나는 이 책이
+                  <span class="mkw" style="--d: 200ms"
+                    ><span class="mk mk--cut">정말 재미있었다고 생각한다</span
+                    ><i class="mk__no">1</i></span
+                  >. 왜냐하면
+                  <span class="mkw" style="--d: 620ms"
+                    ><span class="mk mk--fix">주인공이 열심히 노력해서 결국 성공했기 때문이다</span
+                    ><i class="mk__no">2</i></span
+                  >. 그래서
+                  <span class="mkw" style="--d: 1040ms"
+                    ><span class="mk mk--fix">나도 열심히 살아야겠다고 느꼈다</span
+                    ><i class="mk__no">3</i></span
+                  >.
+                </p>
+
+                <div class="notes">
+                  <div class="note" style="--d: 1300ms">
+                    <b>1</b>
+                    <p>감상어로 문장을 열면 판단의 근거가 사라집니다. 첫 문장은 <em>책이 던지는 질문</em>부터.</p>
+                  </div>
+                  <div class="note" style="--d: 1440ms">
+                    <b>2</b>
+                    <p>줄거리 요약에 그쳤습니다. 인물의 <em>선택</em>을 근거로 바꿔 보세요.</p>
+                  </div>
+                  <div class="note" style="--d: 1580ms">
+                    <b>3</b>
+                    <p>교훈으로 닫지 말고, 본인의 <em>주장</em>으로 이어 가세요.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pane" id="paneAfter" role="tabpanel" hidden>
+                <p>
+                  주인공은 실패할 것을 알면서도 같은 선택을 반복한다. 나는 이 반복을 성공담이 아니라
+                  <span class="mk mk--add">책임에 대한 이야기</span>로 읽었다. 노력이 결과를 보장하지
+                  않는데도 계속하는 이유 — 그것이 이 책이 끝까지 붙잡고 있는 질문이다.
+                </p>
+
+                <div class="notes">
+                  <div class="note" style="--d: 120ms">
+                    <b>✓</b>
+                    <p>질문으로 열고 <em>자기 주장</em>으로 닫았습니다. 같은 분량, 다른 글입니다.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════ 성과 ══════════════ -->
+      <section class="section results" id="results" data-scene="wave" data-void>
+        <div class="wrap">
+          <header class="shead shead--center reveal">
+            <p class="eyebrow">Numbers</p>
+            <h2 class="shead__title">숫자는 결과가 아니라<br />누적된 시간입니다.</h2>
+          </header>
+
+          <div class="stats">
+            <div class="stat reveal">
+              <strong data-count="1200" data-suffix="+">0</strong>
+              <span>누적 수강생</span>
+            </div>
+            <div class="stat reveal">
+              <strong data-count="26" data-suffix="개월">0</strong>
+              <span>평균 재원 기간</span>
+            </div>
+            <div class="stat reveal">
+              <strong data-count="48000" data-suffix="편">0</strong>
+              <span>누적 1:1 첨삭</span>
+            </div>
+            <div class="stat reveal">
+              <strong data-count="94" data-suffix="%">0</strong>
+              <span>학부모 재등록률</span>
+            </div>
+          </div>
+
+          <p class="results__note reveal">
+            * 2009년 개원 이후 누적 기준. 상세 산출 방식은 상담 시 안내드립니다.
+          </p>
+        </div>
+      </section>
+
+      <!-- ══════════════ 선생님 ══════════════ -->
+      <section class="section section--light" id="teachers">
+        <div class="grid-paper" aria-hidden="true"></div>
+        <div class="wrap">
+          <header class="shead reveal">
+            <p class="eyebrow">Teachers</p>
+            <h2 class="shead__title">가르치는 사람이<br />커리큘럼입니다.</h2>
+            <p class="shead__desc">전임 강사만 수업합니다. 강사 교체 없이 한 반을 끝까지 맡습니다.</p>
+          </header>
+
+          <div class="people">
+            <article class="person tilt reveal">
+              <div class="person__avatar" data-initial="수"></div>
+              <h3>김수영 <small>원장</small></h3>
+              <p class="person__role">국어교육 전공 · 20년차</p>
+              <p class="person__bio">
+                독서논술 커리큘럼 총괄. “읽기의 즐거움이 먼저, 성적은 그 뒤에 온다”는 원칙으로 초·중등
+                과정을 설계합니다.
+              </p>
+            </article>
+
+            <article class="person tilt reveal">
+              <div class="person__avatar" data-initial="논"></div>
+              <h3>박지훈 <small>부원장</small></h3>
+              <p class="person__role">고등 국어 · 수능 · 14년차</p>
+              <p class="person__bio">
+                평가원 기출 전 회차 분석 자료를 직접 제작합니다. 지문을 읽는 순서와 시간 배분을 학생별로
+                다시 잡아줍니다.
+              </p>
+            </article>
+
+            <article class="person tilt reveal">
+              <div class="person__avatar" data-initial="술"></div>
+              <h3>이서연 <small>논술 팀장</small></h3>
+              <p class="person__role">대입 논술 · 면접 · 11년차</p>
+              <p class="person__bio">
+                대학별 출제 경향과 채점 기준을 기준으로 첨삭합니다. 모의 면접은 촬영 후 함께 돌려봅니다.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════ 후기 ══════════════ -->
+      <section class="section section--ink" id="voices">
+        <div class="wrap">
+          <header class="shead shead--center reveal">
+            <p class="eyebrow">Voices</p>
+            <h2 class="shead__title">학생과 학부모의 문장</h2>
+          </header>
+        </div>
+
+        <div class="marquee" aria-label="후기 모음">
+          <div class="marquee__row" data-speed="1">
+            <div class="marquee__set">
+              <blockquote class="quote">
+                <p>“책을 끝까지 읽어본 게 처음이었대요. 그 뒤로 스스로 다음 책을 골라옵니다.”</p>
+                <cite>초5 학부모</cite>
+              </blockquote>
+              <blockquote class="quote">
+                <p>“서술형에서 늘 감점됐는데, 무엇을 빼고 무엇을 남길지 배우고 나서 만점이 나왔어요.”</p>
+                <cite>중2 학생</cite>
+              </blockquote>
+              <blockquote class="quote">
+                <p>“첨삭지를 보고 놀랐습니다. 문장마다 왜 고쳐야 하는지 다 적혀 있더군요.”</p>
+                <cite>고1 학부모</cite>
+              </blockquote>
+              <blockquote class="quote">
+                <p>“지문이 길어도 이제 안 무섭습니다. 읽는 순서가 생겼거든요.”</p>
+                <cite>고3 학생</cite>
+              </blockquote>
+            </div>
+          </div>
+
+          <div class="marquee__row marquee__row--rev" data-speed="0.8">
+            <div class="marquee__set">
+              <blockquote class="quote">
+                <p>“월간 리포트가 제일 좋습니다. 아이가 어디서 막히는지 처음으로 알게 됐어요.”</p>
+                <cite>초6 학부모</cite>
+              </blockquote>
+              <blockquote class="quote">
+                <p>“논술 답안을 세 번 다시 썼어요. 세 번째 글은 제가 봐도 달랐습니다.”</p>
+                <cite>고3 학생</cite>
+              </blockquote>
+              <blockquote class="quote">
+                <p>“선생님이 바뀌지 않는다는 점이 가장 큰 차이였습니다.”</p>
+                <cite>중3 학부모</cite>
+              </blockquote>
+              <blockquote class="quote">
+                <p>“글쓰기가 숙제가 아니라 습관이 됐어요.”</p>
+                <cite>중1 학생</cite>
+              </blockquote>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════ FAQ ══════════════ -->
+      <section class="section section--light" id="faq">
+        <div class="grid-paper" aria-hidden="true"></div>
+        <div class="wrap wrap--narrow">
+          <header class="shead reveal">
+            <p class="eyebrow">FAQ</p>
+            <h2 class="shead__title">자주 묻는 질문</h2>
+          </header>
+
+          <div class="faq">
+            <details class="faq__item reveal">
+              <summary>중간에 들어가도 따라갈 수 있나요?</summary>
+              <div class="faq__body">
+                <p>
+                  가능합니다. 모든 반은 개인별 과제로 운영되기 때문에, 진단 검사 결과에 맞춰 시작 지점을
+                  다르게 잡습니다. 첫 4주는 보충 자료가 함께 나갑니다.
+                </p>
+              </div>
+            </details>
+            <details class="faq__item reveal">
+              <summary>글쓰기를 정말 싫어하는 아이도 괜찮을까요?</summary>
+              <div class="faq__body">
+                <p>
+                  처음 4주는 “쓰기”가 아니라 “말하기”로 시작합니다. 토론에서 나온 자기 말을 그대로 옮겨
+                  적는 것부터 하기 때문에, 백지 앞에서 멈추는 일이 줄어듭니다.
+                </p>
+              </div>
+            </details>
+            <details class="faq__item reveal">
+              <summary>첨삭은 누가 하나요?</summary>
+              <div class="faq__body">
+                <p>
+                  수업을 담당한 전임 선생님이 직접 합니다. 조교 첨삭은 하지 않습니다. 첨삭본은 원본과 함께
+                  보관되어 학기말에 성장 비교 자료로 쓰입니다.
+                </p>
+              </div>
+            </details>
+            <details class="faq__item reveal">
+              <summary>수업을 빠지면 보강이 되나요?</summary>
+              <div class="faq__body">
+                <p>
+                  같은 주 내 동일 단계 반으로 보강이 가능하고, 어려우면 담당 선생님과의 30분 개별 보강으로
+                  대체합니다.
+                </p>
+              </div>
+            </details>
+            <details class="faq__item reveal">
+              <summary>상담은 어떻게 진행되나요?</summary>
+              <div class="faq__body">
+                <p>
+                  진단 검사 30분, 결과 상담 30분으로 총 1시간입니다. 검사와 상담은 무료이며, 결과지는
+                  등록 여부와 관계없이 드립니다.
+                </p>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════ 오시는 길 / 상담 신청 ══════════════ -->
+      <section class="section visit" id="visit" data-scene="plane" data-void>
+        <div class="wrap visit__grid">
+          <div class="visit__info reveal">
+            <p class="eyebrow">Visit</p>
+            <h2 class="shead__title">문 앞까지가 가장<br />어려운 한 걸음입니다.</h2>
+
+            <dl class="info">
+              <div><dt>주소</dt><dd>서울특별시 ○○구 ○○로 00, 3층 (○○역 2번 출구 도보 3분)</dd></div>
+              <div><dt>전화</dt><dd><a href="tel:0200000000">02-000-0000</a></dd></div>
+              <div><dt>이메일</dt><dd><a href="mailto:hello@su-nonsul.example">hello@su-nonsul.example</a></dd></div>
+              <div><dt>상담 시간</dt><dd>평일 14:00–22:00 · 토요일 10:00–18:00</dd></div>
+            </dl>
+
+            <div class="mapish" aria-hidden="true">
+              <span class="mapish__pin">수</span>
+              <span class="mapish__label">○○역 2번 출구 · 도보 3분</span>
+            </div>
+          </div>
+
+          <form class="apply reveal" id="apply" novalidate>
+            <h3 class="apply__title">무료 진단 상담 신청</h3>
+            <p class="apply__desc">남겨주시면 영업일 기준 1일 이내에 연락드립니다.</p>
+
+            <div class="field">
+              <input id="f-name" name="name" type="text" required placeholder=" " autocomplete="name" />
+              <label for="f-name">학생 이름</label>
+            </div>
+
+            <div class="field">
+              <input id="f-phone" name="phone" type="tel" required placeholder=" " autocomplete="tel" inputmode="numeric" />
+              <label for="f-phone">연락처</label>
+            </div>
+
+            <div class="field field--select">
+              <select id="f-grade" name="grade" required>
+                <option value="" selected disabled>학년을 선택해 주세요</option>
+                <option>초등 3–4학년</option>
+                <option>초등 5–6학년</option>
+                <option>중학교 1–3학년</option>
+                <option>고등학교 1–2학년</option>
+                <option>고3 · N수</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <textarea id="f-memo" name="memo" rows="3" placeholder=" "></textarea>
+              <label for="f-memo">궁금한 점 (선택)</label>
+            </div>
+
+            <label class="check">
+              <input type="checkbox" id="f-agree" required />
+              <span>상담을 위한 개인정보 수집·이용에 동의합니다.</span>
+            </label>
+
+            <button class="btn btn--primary btn--block btn--lg" type="submit">신청 보내기</button>
+            <p class="apply__note">데모 사이트입니다. 입력값은 전송되지 않고 화면에서만 확인됩니다.</p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <!-- ══════════════ 푸터 ══════════════ -->
+    <footer class="foot">
+      <div class="wrap foot__grid">
+        <div class="foot__brand">
+          <span class="brand__mark">수</span>
+          <p>생각을 쓰다, 세상을 읽다.</p>
+        </div>
+        <nav class="foot__links" aria-label="푸터 메뉴">
+          <a href="#courses">과정</a>
+          <a href="#method">수업 방식</a>
+          <a href="#teachers">선생님</a>
+          <a href="#faq">FAQ</a>
+          <a href="#apply">상담 신청</a>
+        </nav>
+        <p class="foot__copy">
+          © <span id="year">2026</span> 수 국어논술 학원. 본 페이지의 연락처·수치·인물은 예시 데이터입니다.
+        </p>
+      </div>
+    </footer>
+
+    <!-- ══════════════ 모바일 하단 독 ══════════════ -->
+    <div class="dock" id="dock" aria-hidden="true">
+      <a class="dock__item" href="tel:0200000000"><i data-icon="call"></i><span>전화</span></a>
+      <a class="dock__item" href="#visit"><i data-icon="map"></i><span>오시는 길</span></a>
+      <a class="dock__item dock__item--cta" href="#apply"><i data-icon="edit"></i><span>상담 신청</span></a>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/story/main.ts"></script>
+  </body>
+</html>

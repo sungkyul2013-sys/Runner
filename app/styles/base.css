@@ -1,0 +1,392 @@
+/* Reset, typography and the primitives every view shares. */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  /* No smooth scrolling on the root: this is an app shell, and the router
+     jumps to the top of each view. Animating that fights the transition
+     the view is already running and leaves content mid-flight. */
+  scroll-padding-top: calc(var(--topbar) + env(safe-area-inset-top) + 8px);
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--t-body);
+  line-height: 1.62;
+  letter-spacing: -0.012em;
+  word-break: keep-all;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  /* Never let a double-tap zoom the app out from under a quiz answer. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.4s var(--ease), color 0.4s var(--ease);
+}
+
+body.is-locked {
+  overflow: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+svg {
+  display: block;
+}
+
+::selection {
+  background: var(--jeomsak-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--cheong);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ─────────────────────────── type primitives ─────────────────────── */
+
+.display {
+  font-size: var(--t-display);
+  line-height: 1.06;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
+.h1 {
+  font-size: var(--t-h1);
+  line-height: 1.18;
+  font-weight: 780;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+.h2 {
+  font-size: var(--t-h2);
+  line-height: 1.26;
+  font-weight: 730;
+  letter-spacing: -0.038em;
+  text-wrap: balance;
+}
+.h3 {
+  font-size: var(--t-h3);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.body {
+  font-size: var(--t-body);
+  color: var(--text-2);
+  line-height: 1.68;
+}
+.sm {
+  font-size: var(--t-sm);
+  color: var(--text-2);
+}
+.mono {
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.red {
+  color: var(--jeomsak);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Eyebrow: mono label with the correction tick. */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.eyebrow::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: none;
+  background: var(--jeomsak);
+}
+
+/* Emphasis is a pen rule under the word, never a colour fill. */
+.pen {
+  position: relative;
+  white-space: nowrap;
+}
+.pen::after {
+  content: '';
+  position: absolute;
+  left: -0.04em;
+  right: -0.04em;
+  bottom: 0.04em;
+  height: 0.1em;
+  background: var(--jeomsak);
+}
+
+/* ───────────────────────────── layout ────────────────────────────── */
+
+.wrap {
+  width: 100%;
+  max-width: var(--page);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.stack--lg {
+  gap: var(--s-6);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.row--between {
+  justify-content: space-between;
+}
+.spread {
+  flex: 1;
+}
+
+/* Auto-fitting grid — the workhorse behind most responsive templates. */
+.grid {
+  display: grid;
+  gap: var(--s-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+}
+.grid--2 {
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+}
+
+/* 원고지 — the manuscript grid, used as surface texture. */
+.ruled {
+  position: relative;
+  isolation: isolate;
+}
+.ruled::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+  background-size: var(--cell) var(--cell);
+  -webkit-mask-image: linear-gradient(180deg, #000, transparent 90%);
+  mask-image: linear-gradient(180deg, #000, transparent 90%);
+}
+
+/* ───────────────────────────── surfaces ──────────────────────────── */
+
+.card {
+  position: relative;
+  padding: var(--s-5);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  box-shadow: var(--shadow-1);
+  /* Cards float over the particle layer; blurring what shows through keeps
+     the text on a readable ground without going fully opaque. */
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+.card--flat {
+  box-shadow: none;
+}
+.card--solid {
+  background: var(--bg-elev);
+}
+.card--tap {
+  transition: transform 0.18s var(--ease), border-color 0.25s;
+}
+.card--tap:active {
+  transform: scale(0.985);
+}
+
+/* ───────────────────────────── controls ──────────────────────────── */
+
+.btn {
+  --lift: 0px;
+  --press: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 var(--s-5);
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: var(--t-sm);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transform: translateY(var(--lift)) scale(var(--press));
+  transition: transform 0.18s var(--ease), background 0.25s, border-color 0.25s, opacity 0.2s;
+}
+.btn:active {
+  --press: 0.97;
+}
+.btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.btn--primary {
+  background: var(--invert-bg);
+  color: var(--invert-text);
+  font-weight: 700;
+}
+.btn--red {
+  background: var(--jeomsak);
+  color: #fff;
+  font-weight: 700;
+}
+.btn--ghost {
+  border-color: var(--line);
+  color: var(--text);
+}
+.btn--quiet {
+  color: var(--text-2);
+}
+.btn--block {
+  display: flex;
+  width: 100%;
+}
+.btn--sm {
+  min-height: 38px;
+  padding: 0 var(--s-4);
+  font-size: var(--t-xs);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: var(--t-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.chip--on {
+  background: var(--invert-bg);
+  border-color: transparent;
+  color: var(--invert-text);
+}
+
+/* Segmented control — the app's main mode switch. */
+.seg {
+  position: relative;
+  display: flex;
+  padding: 4px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.seg__thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  border-radius: var(--r-pill);
+  background: var(--invert-bg);
+  transition: transform 0.42s var(--ease), width 0.42s var(--ease);
+}
+.seg button {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 38px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-pill);
+  font-size: var(--t-sm);
+  font-weight: 650;
+  color: var(--text-2);
+  transition: color 0.3s var(--ease);
+}
+.seg button[aria-selected='true'] {
+  color: var(--invert-text);
+}
+
+/* ───────────────────────────── utilities ─────────────────────────── */
+
+.divider {
+  height: 1px;
+  background: var(--line-soft);
+}
+.hide {
+  display: none !important;
+}
+.scroll-x {
+  display: flex;
+  gap: var(--s-3);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-inline: var(--gutter);
+  margin-inline: calc(var(--gutter) * -1);
+}
+.scroll-x::-webkit-scrollbar {
+  display: none;
+}
+.scroll-x > * {
+  scroll-snap-align: start;
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

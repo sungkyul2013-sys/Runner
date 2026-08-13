@@ -1,0 +1,442 @@
+/* ═══════════════════════════════════════════════════════════════════
+   App shell — top bar, navigation, view transitions, sheets, toasts.
+
+   Mobile is the base case: a bottom tab bar, one column, safe-area
+   padding everywhere. At 900px the tab bar becomes a side rail and the
+   same views reflow into two panes. Nothing here is desktop-first.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────────── 3D field ──────────────────────────── */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--backdrop);
+  transition: opacity 0.5s var(--ease);
+}
+.backdrop canvas {
+  width: 100%;
+  height: 100%;
+}
+.backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 80% at 50% 30%, transparent 30%, var(--bg) 85%);
+  opacity: 0.86;
+}
+
+/* ───────────────────────────── top bar ───────────────────────────── */
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  height: calc(var(--topbar) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding-inline: var(--gutter);
+  background: var(--chrome);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.3s var(--ease);
+}
+.topbar.is-scrolled {
+  border-bottom-color: var(--line-soft);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  font-size: var(--t-sm);
+}
+.brand__mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--invert-bg);
+  color: var(--invert-text);
+  font-weight: 800;
+  font-size: 15px;
+}
+
+/* Back button replaces the brand on nested views. */
+.topbar__back {
+  width: 38px;
+  height: 38px;
+  margin-left: -8px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  color: var(--text);
+}
+.topbar__back:active {
+  background: var(--surface);
+}
+.topbar__title {
+  font-size: var(--t-sm);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.iconbtn {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-soft);
+  color: var(--text-2);
+  transition: background 0.2s, color 0.2s, transform 0.18s var(--ease);
+}
+.iconbtn:active {
+  transform: scale(0.92);
+  background: var(--surface);
+}
+
+/* Reading progress for long views, drawn in the correction pen. */
+.topbar__progress {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 2px;
+  width: 0;
+  background: var(--jeomsak);
+  transition: width 0.12s linear;
+}
+
+/* ───────────────────────── bottom tab bar ────────────────────────── */
+
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  height: var(--tabbar);
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  align-items: stretch;
+  background: var(--chrome);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-top: 1px solid var(--line-soft);
+}
+.tab {
+  position: relative;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding-top: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  transition: color 0.25s var(--ease);
+}
+.tab svg {
+  width: 22px;
+  height: 22px;
+  transition: transform 0.4s var(--spring);
+}
+.tab.is-on {
+  color: var(--text);
+}
+.tab.is-on svg {
+  transform: translateY(-2px) scale(1.06);
+}
+/* The active tab carries the same red tick the rest of the app uses. */
+.tab.is-on::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 18px;
+  height: 2px;
+  background: var(--jeomsak);
+  transform: translateX(-50%);
+}
+.tab__dot {
+  position: absolute;
+  top: 6px;
+  right: 50%;
+  margin-right: -16px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--jeomsak);
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.3s, transform 0.4s var(--spring);
+}
+.tab__dot.is-on {
+  opacity: 1;
+  transform: none;
+}
+
+/* ───────────────────────── desktop side rail ─────────────────────── */
+
+.rail {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .tabbar {
+    display: none;
+  }
+  .rail {
+    position: fixed;
+    top: var(--topbar);
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    width: var(--rail);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--s-5) var(--s-3);
+    border-right: 1px solid var(--line-soft);
+    background: var(--chrome);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .rail .tab {
+    flex: none;
+    grid-auto-flow: column;
+    justify-content: start;
+    align-items: center;
+    gap: var(--s-3);
+    padding: 11px var(--s-3);
+    border-radius: var(--r-2);
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+  .rail .tab.is-on {
+    background: var(--surface);
+  }
+  .rail .tab.is-on::before {
+    top: 50%;
+    left: 0;
+    width: 2px;
+    height: 18px;
+    transform: translateY(-50%);
+  }
+  .rail .tab__dot {
+    position: static;
+    margin: 0 0 0 auto;
+  }
+  .shell {
+    padding-left: var(--rail);
+  }
+}
+
+/* ───────────────────────────── view area ─────────────────────────── */
+
+.shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100dvh;
+  padding-top: calc(var(--topbar) + env(safe-area-inset-top));
+  padding-bottom: calc(var(--tabbar) + var(--s-6));
+}
+
+.view {
+  padding-block: var(--s-5) var(--s-7);
+}
+
+/* Page transitions: the outgoing view lifts away, the incoming one
+   settles in. Direction is set by the router (forward / back). */
+.view--in {
+  animation: viewIn 0.42s var(--ease) both;
+}
+.view--in-back {
+  animation: viewInBack 0.42s var(--ease) both;
+}
+@keyframes viewIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.995);
+  }
+}
+@keyframes viewInBack {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(1.004);
+  }
+}
+
+/* Staggered entrance for a view's own blocks. */
+.rise {
+  animation: rise 0.55s var(--ease) both;
+  animation-delay: var(--d, 0ms);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+/* ─────────────────────────── bottom sheet ────────────────────────── */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s var(--ease);
+}
+.scrim.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 61;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--s-3) var(--gutter) calc(var(--s-5) + env(safe-area-inset-bottom));
+  border-radius: var(--r-4) var(--r-4) 0 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-soft);
+  border-bottom: 0;
+  box-shadow: var(--shadow-2);
+  transform: translateY(101%);
+  transition: transform 0.46s var(--ease);
+  touch-action: none;
+}
+.sheet.is-open {
+  transform: translateY(0);
+}
+.sheet.is-dragging {
+  transition: none;
+}
+.sheet__grip {
+  width: 40px;
+  height: 4px;
+  margin: 0 auto var(--s-4);
+  border-radius: 2px;
+  background: var(--line);
+  flex: none;
+}
+.sheet__body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+/* On a wide screen the same component becomes a centred dialog. */
+@media (min-width: 720px) {
+  .sheet {
+    left: 50%;
+    bottom: auto;
+    top: 50%;
+    width: min(520px, calc(100vw - 48px));
+    max-height: 82dvh;
+    border-radius: var(--r-4);
+    border-bottom: 1px solid var(--line-soft);
+    padding: var(--s-4) var(--s-5) var(--s-5);
+    transform: translate(-50%, -46%) scale(0.97);
+    opacity: 0;
+    transition: transform 0.4s var(--ease), opacity 0.3s var(--ease);
+  }
+  .sheet.is-open {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  .sheet__grip {
+    display: none;
+  }
+}
+
+/* ───────────────────────────── toast ─────────────────────────────── */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar) + 16px);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 12px 18px;
+  border-radius: var(--r-pill);
+  background: var(--invert-bg);
+  color: var(--invert-text);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  box-shadow: var(--shadow-2);
+  transform: translate(-50%, 160%);
+  opacity: 0;
+  transition: transform 0.5s var(--spring), opacity 0.3s;
+}
+.toast.is-up {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+@media (min-width: 900px) {
+  .toast {
+    bottom: 28px;
+  }
+}
+
+/* ───────────────────────────── loader ────────────────────────────── */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s-4);
+  background: var(--bg);
+  transition: opacity 0.6s var(--ease), visibility 0.6s;
+}
+.boot.is-done {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.boot__mark {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 38px;
+  font-weight: 800;
+  animation: bootPulse 1.8s var(--ease-io) infinite;
+}
+@keyframes bootPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

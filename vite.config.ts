@@ -12,8 +12,11 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       input: {
-        // index.html — 수 국어논술 학원 site; game.html — the Sunset Runner game.
+        // index.html  — 수 국어논술 learning app (app/)
+        // story.html  — the scroll-driven brochure site (story/)
+        // game.html   — the original Sunset Runner game (src/)
         main: 'index.html',
+        story: 'story.html',
         game: 'game.html',
       },
     },

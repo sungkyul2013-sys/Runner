@@ -1,13 +1,20 @@
 # Progress
 
-This repo now holds two entry points, both built by one `npm run build`:
+This repo now holds three entry points, all built by one `npm run build`:
 
-- **`index.html` → 수 국어논술 학원** — a scroll-driven 3D site for a Korean
-  language & essay academy. Source in `site/`, documented in
-  [`site/README.md`](site/README.md).
+- **`index.html` → 수 국어논술 (app)** — a mobile-first learning app: a
+  12-question Korean diagnostic with three answer mechanics, a lab where you
+  mark up a student's paragraph yourself, and a four-week plan generator.
+  Source in `app/`, documented in [`app/README.md`](app/README.md).
+- **`story.html` → 수 국어논술 학원 (site)** — the scroll-driven brochure
+  site. Source in `story/`, documented in [`story/README.md`](story/README.md).
 - **`game.html` → Sunset Runner** — the original endless runner (was
   `index.html`). Source in `src/`, unchanged. `play.html` remains the
   self-contained standalone build.
+
+The Three.js particle layer is shared by the app and the site in
+`shared/three/`. `npm run build:site` and `npm run build:story` emit
+single-file, zero-request builds of the app and the site respectively.
 
 ---
 
