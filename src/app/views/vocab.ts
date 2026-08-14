@@ -2,7 +2,7 @@ import { sfx } from '../core/audio';
 import { h, shuffle } from '../core/dom';
 import { burstFrom, enhance } from '../core/motion';
 import { type ViewHandle } from '../core/router';
-import { store, touchStreak } from '../core/store';
+import { questProgress, store, touchStreak } from '../core/store';
 import type { VocabEntry } from '../core/types';
 import { VOCAB, VOCAB_BY_ID, VOCAB_KINDS } from '../data/vocab';
 import { bar, chipRow, emptyState, sectionHead, statCard, toast } from '../ui/components';
@@ -319,6 +319,7 @@ export function vocabView(): ViewHandle {
         p.xp += ok ? 5 : 2;
         touchStreak(p);
       });
+      questProgress('vocab', 1);
     };
 
     const finish = () => {

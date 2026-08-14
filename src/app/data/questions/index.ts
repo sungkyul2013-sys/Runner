@@ -1,4 +1,5 @@
 import type { Domain, Level, Question, Skill } from '../../core/types';
+import { EXTRA_QUESTIONS } from './extra';
 import { GRAMMAR_QUESTIONS } from './grammar';
 import { LITERATURE_QUESTIONS } from './literature';
 import { NONFICTION_QUESTIONS } from './nonfiction';
@@ -11,6 +12,7 @@ export const QUESTIONS: Question[] = [
   ...GRAMMAR_QUESTIONS,
   ...VOCAB_QUESTIONS,
   ...WRITING_QUESTIONS,
+  ...EXTRA_QUESTIONS,
 ];
 
 export const QUESTION_BY_ID = new Map(QUESTIONS.map((q) => [q.id, q]));

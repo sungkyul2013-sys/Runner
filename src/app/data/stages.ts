@@ -4,7 +4,19 @@ import type { Domain, Level } from '../core/types';
  * The journey map: an ordered run of stages the learner climbs, each bound to a
  * slice of the question bank. Stage N unlocks when stage N−1 has been cleared
  * (1★ or better), so the path always has exactly one obvious next step.
+ *
+ * Every stage also carries a bonus objective — a second reason to replay a
+ * stage you already cleared, and the thing that turns "done" into "done well".
  */
+
+export type BonusKind = 'nomiss' | 'combo' | 'speed';
+
+export interface StageBonus {
+  kind: BonusKind;
+  /** nomiss: unused · combo: required streak · speed: seconds per question. */
+  value: number;
+}
+
 export interface Stage {
   id: string;
   /** 1-indexed position along the path. */
@@ -14,34 +26,54 @@ export interface Stage {
   domain: Domain;
   level: Level | 'mixed';
   count: number;
-  /** Boss stages are longer, mixed-domain and worth more. */
+  bonus: StageBonus;
+  /** Boss stages are longer, mixed-level and worth more. */
   boss?: boolean;
 }
 
+const nomiss = (): StageBonus => ({ kind: 'nomiss', value: 0 });
+const combo = (n: number): StageBonus => ({ kind: 'combo', value: n });
+const speed = (sec: number): StageBonus => ({ kind: 'speed', value: sec });
+
+export function bonusLabel(b: StageBonus): string {
+  if (b.kind === 'nomiss') return '한 번도 틀리지 않기';
+  if (b.kind === 'combo') return `${b.value}연속 정답 만들기`;
+  return `문항당 평균 ${b.value}초 안에 풀기`;
+}
+
 export const STAGES: Stage[] = [
-  { id: 'st-01', no: 1, name: '첫 문장', chapter: '1장 · 말의 뼈대', domain: 'grammar', level: 1, count: 5 },
-  { id: 'st-02', no: 2, name: '소리의 규칙', chapter: '1장 · 말의 뼈대', domain: 'grammar', level: 1, count: 5 },
-  { id: 'st-03', no: 3, name: '낱말 모으기', chapter: '1장 · 말의 뼈대', domain: 'vocab', level: 1, count: 5 },
-  { id: 'st-04', no: 4, name: '음운의 문', chapter: '1장 · 말의 뼈대', domain: 'grammar', level: 2, count: 6 },
-  { id: 'st-05', no: 5, name: '1장 관문', chapter: '1장 · 말의 뼈대', domain: 'grammar', level: 'mixed', count: 8, boss: true },
+  { id: 'st-01', no: 1, name: '첫 문장', chapter: '1장 · 말의 뼈대', domain: 'grammar', level: 1, count: 5, bonus: nomiss() },
+  { id: 'st-02', no: 2, name: '소리의 규칙', chapter: '1장 · 말의 뼈대', domain: 'grammar', level: 1, count: 5, bonus: combo(3) },
+  { id: 'st-03', no: 3, name: '낱말 모으기', chapter: '1장 · 말의 뼈대', domain: 'vocab', level: 1, count: 5, bonus: speed(25) },
+  { id: 'st-04', no: 4, name: '음운의 문', chapter: '1장 · 말의 뼈대', domain: 'grammar', level: 2, count: 6, bonus: combo(4) },
+  { id: 'st-05', no: 5, name: '1장 관문', chapter: '1장 · 말의 뼈대', domain: 'grammar', level: 'mixed', count: 8, bonus: nomiss(), boss: true },
 
-  { id: 'st-06', no: 6, name: '화자의 자리', chapter: '2장 · 시의 결', domain: 'literature', level: 1, count: 5 },
-  { id: 'st-07', no: 7, name: '심상의 방', chapter: '2장 · 시의 결', domain: 'literature', level: 2, count: 5 },
-  { id: 'st-08', no: 8, name: '반어와 역설', chapter: '2장 · 시의 결', domain: 'literature', level: 2, count: 5 },
-  { id: 'st-09', no: 9, name: '옛 노래', chapter: '2장 · 시의 결', domain: 'literature', level: 3, count: 5 },
-  { id: 'st-10', no: 10, name: '2장 관문', chapter: '2장 · 시의 결', domain: 'literature', level: 'mixed', count: 8, boss: true },
+  { id: 'st-06', no: 6, name: '화자의 자리', chapter: '2장 · 시의 결', domain: 'literature', level: 1, count: 5, bonus: nomiss() },
+  { id: 'st-07', no: 7, name: '심상의 방', chapter: '2장 · 시의 결', domain: 'literature', level: 2, count: 5, bonus: combo(3) },
+  { id: 'st-08', no: 8, name: '반어와 역설', chapter: '2장 · 시의 결', domain: 'literature', level: 2, count: 5, bonus: nomiss() },
+  { id: 'st-09', no: 9, name: '옛 노래', chapter: '2장 · 시의 결', domain: 'literature', level: 3, count: 5, bonus: speed(35) },
+  { id: 'st-10', no: 10, name: '2장 관문', chapter: '2장 · 시의 결', domain: 'literature', level: 'mixed', count: 8, bonus: combo(5), boss: true },
 
-  { id: 'st-11', no: 11, name: '문단의 지도', chapter: '3장 · 지문의 숲', domain: 'nonfiction', level: 1, count: 5 },
-  { id: 'st-12', no: 12, name: '근거 찾기', chapter: '3장 · 지문의 숲', domain: 'nonfiction', level: 2, count: 5 },
-  { id: 'st-13', no: 13, name: '어휘의 샘', chapter: '3장 · 지문의 숲', domain: 'vocab', level: 2, count: 5 },
-  { id: 'st-14', no: 14, name: '추론의 다리', chapter: '3장 · 지문의 숲', domain: 'nonfiction', level: 3, count: 6 },
-  { id: 'st-15', no: 15, name: '3장 관문', chapter: '3장 · 지문의 숲', domain: 'nonfiction', level: 'mixed', count: 8, boss: true },
+  { id: 'st-11', no: 11, name: '문단의 지도', chapter: '3장 · 지문의 숲', domain: 'nonfiction', level: 1, count: 5, bonus: nomiss() },
+  { id: 'st-12', no: 12, name: '근거 찾기', chapter: '3장 · 지문의 숲', domain: 'nonfiction', level: 2, count: 5, bonus: combo(3) },
+  { id: 'st-13', no: 13, name: '어휘의 샘', chapter: '3장 · 지문의 숲', domain: 'vocab', level: 2, count: 5, bonus: speed(22) },
+  { id: 'st-14', no: 14, name: '추론의 다리', chapter: '3장 · 지문의 숲', domain: 'nonfiction', level: 3, count: 6, bonus: nomiss() },
+  { id: 'st-15', no: 15, name: '3장 관문', chapter: '3장 · 지문의 숲', domain: 'nonfiction', level: 'mixed', count: 8, bonus: combo(5), boss: true },
 
-  { id: 'st-16', no: 16, name: '문장 고치기', chapter: '4장 · 쓰는 자리', domain: 'writing', level: 1, count: 5 },
-  { id: 'st-17', no: 17, name: '논리의 함정', chapter: '4장 · 쓰는 자리', domain: 'writing', level: 2, count: 5 },
-  { id: 'st-18', no: 18, name: '높임과 시제', chapter: '4장 · 쓰는 자리', domain: 'grammar', level: 3, count: 5 },
-  { id: 'st-19', no: 19, name: '개요의 탑', chapter: '4장 · 쓰는 자리', domain: 'writing', level: 3, count: 5 },
-  { id: 'st-20', no: 20, name: '최종 관문', chapter: '4장 · 쓰는 자리', domain: 'nonfiction', level: 'mixed', count: 10, boss: true },
+  { id: 'st-16', no: 16, name: '문장 고치기', chapter: '4장 · 쓰는 자리', domain: 'writing', level: 1, count: 5, bonus: nomiss() },
+  { id: 'st-17', no: 17, name: '논리의 함정', chapter: '4장 · 쓰는 자리', domain: 'writing', level: 2, count: 5, bonus: combo(4) },
+  { id: 'st-18', no: 18, name: '높임과 시제', chapter: '4장 · 쓰는 자리', domain: 'grammar', level: 3, count: 5, bonus: nomiss() },
+  { id: 'st-19', no: 19, name: '개요의 탑', chapter: '4장 · 쓰는 자리', domain: 'writing', level: 3, count: 5, bonus: speed(40) },
+  { id: 'st-20', no: 20, name: '4장 관문', chapter: '4장 · 쓰는 자리', domain: 'writing', level: 'mixed', count: 8, bonus: combo(6), boss: true },
+
+  { id: 'st-21', no: 21, name: '시간의 결', chapter: '5장 · 겨루는 자리', domain: 'grammar', level: 3, count: 6, bonus: nomiss() },
+  { id: 'st-22', no: 22, name: '두 관점 사이', chapter: '5장 · 겨루는 자리', domain: 'nonfiction', level: 3, count: 6, bonus: combo(4) },
+  { id: 'st-23', no: 23, name: '말의 지층', chapter: '5장 · 겨루는 자리', domain: 'vocab', level: 3, count: 6, bonus: speed(20) },
+  { id: 'st-24', no: 24, name: '갈래의 문', chapter: '5장 · 겨루는 자리', domain: 'literature', level: 3, count: 6, bonus: nomiss() },
+  { id: 'st-25', no: 25, name: '논증의 뼈', chapter: '5장 · 겨루는 자리', domain: 'writing', level: 3, count: 6, bonus: combo(5) },
+  { id: 'st-26', no: 26, name: '긴 지문', chapter: '5장 · 겨루는 자리', domain: 'nonfiction', level: 'mixed', count: 8, bonus: speed(45) },
+  { id: 'st-27', no: 27, name: '섞인 판', chapter: '5장 · 겨루는 자리', domain: 'literature', level: 'mixed', count: 8, bonus: combo(6) },
+  { id: 'st-28', no: 28, name: '최종 관문', chapter: '5장 · 겨루는 자리', domain: 'nonfiction', level: 'mixed', count: 12, bonus: nomiss(), boss: true },
 ];
 
 export const STAGE_BY_ID = new Map(STAGES.map((s) => [s.id, s]));
@@ -54,6 +86,22 @@ export function starsFor(accuracy: number): number {
   if (accuracy >= 0.8) return 2;
   if (accuracy >= 0.6) return 1;
   return 0;
+}
+
+export interface StageRun {
+  accuracy: number;
+  bestCombo: number;
+  /** Total seconds spent on the stage. */
+  seconds: number;
+  questionCount: number;
+  mistakes: number;
+}
+
+export function bonusMet(stage: Stage, run: StageRun): boolean {
+  const b = stage.bonus;
+  if (b.kind === 'nomiss') return run.mistakes === 0;
+  if (b.kind === 'combo') return run.bestCombo >= b.value;
+  return run.questionCount > 0 && run.seconds / run.questionCount <= b.value;
 }
 
 export function isUnlocked(stage: Stage, progress: Record<string, { stars: number }>): boolean {
@@ -70,4 +118,8 @@ export function currentStageIndex(progress: Record<string, { stars: number }>): 
 
 export function totalStars(progress: Record<string, { stars: number }>): number {
   return STAGES.reduce((sum, s) => sum + (progress[s.id]?.stars ?? 0), 0);
+}
+
+export function clearedCount(progress: Record<string, { stars: number }>): number {
+  return STAGES.filter((s) => (progress[s.id]?.stars ?? 0) > 0).length;
 }

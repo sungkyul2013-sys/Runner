@@ -12,7 +12,15 @@ import { sfx, unlockAudioOnFirstGesture } from './core/audio';
 import { h } from './core/dom';
 import { burst, pruneScrollBindings } from './core/motion';
 import { onRouteChange, register, setFallback, start, go, type ViewHandle } from './core/router';
-import { applySettings, levelFromXp, newBadges, pendingLevelUps, rankFor, store } from './core/store';
+import {
+  applySettings,
+  finishedQuests,
+  levelFromXp,
+  newBadges,
+  pendingLevelUps,
+  rankFor,
+  store,
+} from './core/store';
 import { BADGE_BY_ID } from './data/badges';
 import { toast } from './ui/components';
 
@@ -204,6 +212,14 @@ function drainRewards(): void {
     pendingLevelUps.length = 0;
     celebrateLevel(level);
     return;
+  }
+  while (finishedQuests.length) {
+    const q = finishedQuests.shift();
+    if (!q) continue;
+    window.setTimeout(() => {
+      sfx.badge();
+      toast(`과제 완료 — ${q.label}  +${q.reward}🪙`, '🎯', 2800);
+    }, 260);
   }
   while (newBadges.length) {
     const id = newBadges.shift();

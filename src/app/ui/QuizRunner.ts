@@ -312,6 +312,7 @@ export function createQuiz(opts: QuizOptions): QuizHandle {
         chosen,
         ms,
         xpScale,
+        combo,
       });
     }
   }

@@ -9,6 +9,9 @@
 import {
   DOMAINS,
   SKILLS,
+  type DailyQuests,
+  type Quest,
+  type QuestKind,
   type AttemptLog,
   type Domain,
   type Profile,
@@ -69,6 +72,7 @@ function defaultProfile(): Profile {
     essays: [],
     badges: [],
     stages: {},
+    daily: null,
     settings: {
       theme: 'system',
       motion: 'full',
@@ -103,6 +107,7 @@ function hydrate(raw: unknown): Profile {
     essays: Array.isArray(src.essays) ? src.essays : [],
     badges: Array.isArray(src.badges) ? src.badges : [],
     stages: { ...base.stages, ...(src.stages ?? {}) },
+    daily: src.daily ?? null,
     studyDates: Array.isArray(src.studyDates) ? src.studyDates : [],
     version: PROFILE_VERSION,
   };
@@ -192,6 +197,9 @@ export const newBadges: string[] = [];
 /** Levels reached since the last drain — the shell turns these into a celebration. */
 export const pendingLevelUps: number[] = [];
 
+/** Quests finished since the last drain — the shell turns these into toasts. */
+export const finishedQuests: Quest[] = [];
+
 export const store = new Store();
 
 /* ------------------------------------------------------------------ */
@@ -268,6 +276,8 @@ export interface AttemptInput {
   ms: number;
   /** Practice awards XP; review/diagnostic pass their own multiplier. */
   xpScale?: number;
+  /** Current consecutive-correct run, used by the combo quest. */
+  combo?: number;
 }
 
 export function recordAttempt(input: AttemptInput): number {
@@ -318,6 +328,11 @@ export function recordAttempt(input: AttemptInput): number {
       }
     }
   });
+
+  questProgress('answer', 1);
+  if (input.correct) questProgress('correct', 1);
+  if (input.combo) questProgress('combo', input.combo, 'max');
+
   return gained;
 }
 
@@ -380,24 +395,135 @@ export function isDark(): boolean {
 /* Journey map                                                         */
 /* ------------------------------------------------------------------ */
 
-/** Save a stage result, keeping the learner's best stars and accuracy. */
-export function recordStage(stageId: string, acc: number, stars: number): { improved: boolean } {
+/** Save a stage result, keeping the learner's best stars, accuracy and bonus. */
+export function recordStage(
+  stageId: string,
+  acc: number,
+  stars: number,
+  bonus: boolean,
+): { improved: boolean; bonusFirst: boolean } {
   let improved = false;
+  let bonusFirst = false;
   store.update((p) => {
     const prev = p.stages[stageId];
     if (!prev) {
-      p.stages[stageId] = { stars, best: acc, plays: 1 };
+      p.stages[stageId] = { stars, best: acc, plays: 1, bonus };
       improved = stars > 0;
+      bonusFirst = bonus;
     } else {
       improved = stars > prev.stars;
+      bonusFirst = bonus && !prev.bonus;
       p.stages[stageId] = {
         stars: Math.max(prev.stars, stars),
         best: Math.max(prev.best, acc),
         plays: prev.plays + 1,
+        bonus: prev.bonus || bonus,
       };
     }
     // Clearing a stage pays out in coins; repeats pay a token amount.
     p.coins += improved ? 15 + stars * 5 : 3;
+    if (bonusFirst) p.coins += 25;
   });
-  return { improved };
+  if (stars > 0) questProgress('stage', 1);
+  return { improved, bonusFirst };
+}
+
+/* ------------------------------------------------------------------ */
+/* Daily quests                                                        */
+/* ------------------------------------------------------------------ */
+
+interface QuestTemplate {
+  kind: QuestKind;
+  label: (n: number) => string;
+  targets: number[];
+  reward: number;
+}
+
+const QUEST_POOL: QuestTemplate[] = [
+  { kind: 'answer', label: (n) => `문항 ${n}개 풀기`, targets: [10, 15, 20], reward: 20 },
+  { kind: 'correct', label: (n) => `정답 ${n}개 맞히기`, targets: [8, 12, 16], reward: 25 },
+  { kind: 'stage', label: (n) => `스테이지 ${n}개 클리어`, targets: [1, 2], reward: 30 },
+  { kind: 'combo', label: (n) => `${n}연속 정답 만들기`, targets: [4, 5, 6], reward: 25 },
+  { kind: 'vocab', label: (n) => `어휘 카드 ${n}장 학습`, targets: [10, 15, 20], reward: 20 },
+];
+
+/** All-three-done bonus. */
+export const QUEST_SET_BONUS = 50;
+
+/**
+ * Deterministic per-day pick: the same day always yields the same three
+ * quests, so reloading the page cannot reroll an inconvenient set.
+ */
+function rollQuests(dateISO: string): Quest[] {
+  let seed = 0;
+  for (let i = 0; i < dateISO.length; i += 1) seed = (seed * 31 + dateISO.charCodeAt(i)) | 0;
+  const rnd = mulberry32(seed);
+  const pool = [...QUEST_POOL];
+  const out: Quest[] = [];
+  for (let i = 0; i < 3 && pool.length; i += 1) {
+    const idx = Math.floor(rnd() * pool.length);
+    const t = pool.splice(idx, 1)[0];
+    const target = t.targets[Math.floor(rnd() * t.targets.length)];
+    out.push({
+      id: `${dateISO}-${t.kind}`,
+      kind: t.kind,
+      label: t.label(target),
+      target,
+      progress: 0,
+      reward: t.reward,
+      done: false,
+    });
+  }
+  return out;
+}
+
+/** Small local PRNG so the roll does not depend on `dom.ts`. */
+function mulberry32(a: number): () => number {
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Returns today's quest set, generating a fresh one at each date change. */
+export function ensureDaily(): DailyQuests {
+  const today = todayISO();
+  const cur = store.profile.daily;
+  if (cur && cur.date === today) return cur;
+  const next: DailyQuests = { date: today, quests: rollQuests(today), bonusClaimed: false };
+  store.update((p) => {
+    p.daily = next;
+  });
+  return next;
+}
+
+/**
+ * Advance every quest of `kind`. `mode` decides how the amount is applied:
+ * counters add up, bests take the maximum.
+ */
+export function questProgress(kind: QuestKind, amount: number, mode: 'add' | 'max' = 'add'): void {
+  ensureDaily();
+  store.update((p) => {
+    const daily = p.daily;
+    if (!daily) return;
+    for (const q of daily.quests) {
+      if (q.kind !== kind || q.done) continue;
+      q.progress = mode === 'max' ? Math.max(q.progress, amount) : q.progress + amount;
+      if (q.progress >= q.target) {
+        q.progress = q.target;
+        q.done = true;
+        p.coins += q.reward;
+        p.xp += 15;
+        finishedQuests.push(q);
+      }
+    }
+    if (!daily.bonusClaimed && daily.quests.length > 0 && daily.quests.every((q) => q.done)) {
+      daily.bonusClaimed = true;
+      p.coins += QUEST_SET_BONUS;
+      p.xp += 40;
+    }
+  });
 }

@@ -2,7 +2,7 @@ import { sfx } from '../core/audio';
 import { h } from '../core/dom';
 import { enhance } from '../core/motion';
 import { go, type ViewHandle } from '../core/router';
-import { store } from '../core/store';
+import { QUEST_SET_BONUS, ensureDaily, store } from '../core/store';
 import { CONCEPTS } from '../data/concepts';
 import { QUESTION_COUNT } from '../data/questions';
 import { SPELLING } from '../data/spelling';
@@ -36,6 +36,9 @@ export function hubView(): ViewHandle {
     { icon: '⚙️', name: '설정', desc: '테마 · 데이터', href: 'settings', hue: 220 },
   ];
 
+  const daily = ensureDaily();
+  const allDone = daily.quests.every((q) => q.done);
+
   const el = h(
     'div.wrap.section--tight',
     h(
@@ -44,6 +47,33 @@ export function hubView(): ViewHandle {
       h('div.eyebrow', 'toolbox'),
       h('h1.h1', '학습 도구'),
       h('p.lede', { style: { marginTop: '6px' } }, '필요한 훈련을 골라 바로 시작하세요.'),
+    ),
+    h(
+      'section',
+      { style: { marginBottom: '24px' } },
+      h(
+        'div.spread',
+        { style: { marginBottom: '10px' } },
+        h('h2.h3', '오늘의 과제'),
+        h(
+          'span.pill',
+          { class: allDone ? 'pill pill--gold' : 'pill' },
+          allDone ? `전부 완료 · +${QUEST_SET_BONUS}🪙` : `${daily.quests.filter((q) => q.done).length}/${daily.quests.length}`,
+        ),
+      ),
+      h(
+        'div.quests',
+        ...daily.quests.map((q) =>
+          h(
+            'div',
+            { class: `quest${q.done ? ' is-done' : ''}` },
+            h('div.quest__label', q.done ? `✓ ${q.label}` : q.label),
+            h('div.quest__reward', `+${q.reward} 🪙`),
+            h('div.quest__bar', h('i', { style: { width: `${Math.min(100, (q.progress / q.target) * 100)}%` } })),
+            h('div.quest__count', `${q.progress} / ${q.target}`),
+          ),
+        ),
+      ),
     ),
     h(
       'div.hub-grid',

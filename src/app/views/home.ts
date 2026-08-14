@@ -14,9 +14,15 @@ import {
   TESTIMONIALS,
   TRACKS,
 } from '../data/academy';
-import { STAGES, currentStageIndex, totalStars } from '../data/stages';
+import { CONCEPTS } from '../data/concepts';
+import { QUESTION_COUNT } from '../data/questions';
+import { PASSAGES } from '../data/passages';
+import { STAGES, clearedCount, currentStageIndex, totalStars } from '../data/stages';
+import { VOCAB } from '../data/vocab';
 import { createHeroScene } from '../three/HeroScene';
-import { accordion, sectionHead } from '../ui/components';
+import { accordion } from '../ui/components';
+import { consultForm } from '../ui/consultForm';
+import { cornerMark, ornamentRule, seal } from '../ui/ornament';
 
 function splitWords(text: string, delayStart = 0, wordClass = ''): HTMLElement {
   const wrap = h('span.reveal-words');
@@ -33,47 +39,58 @@ function splitWords(text: string, delayStart = 0, wordClass = ''): HTMLElement {
   return wrap;
 }
 
+/** Section heading in the editorial style used down the marketing scroll. */
+function head(eyebrow: string, title: string, lede?: string): HTMLElement {
+  return h(
+    'header.sect-head',
+    { 'data-reveal': '' },
+    h('div.sect-head__eyebrow', h('i'), h('span', eyebrow)),
+    h('h2.sect-head__title', title),
+    lede ? h('p.sect-head__lede', { html: lede }) : null,
+  );
+}
+
 export function homeView(): ViewHandle {
-  const el = h('div');
+  const el = h('div.home');
   let scene: ReturnType<typeof createHeroScene> = null;
   const unsubs: (() => void)[] = [];
 
   const p = store.profile;
   const { level } = levelFromXp(p.xp);
   const returning = p.attempts.length > 0;
-  const stageIdx = currentStageIndex(p.stages);
-  const nextStage = STAGES[stageIdx];
+  const nextStage = STAGES[currentStageIndex(p.stages)];
 
-  /* ---------------------------- title screen ---------------------------- */
+  /* =============================== 표지 ================================ */
   const canvas = h('canvas.hero__canvas') as HTMLCanvasElement;
 
-  const hero = h(
-    'section.hero',
+  const cover = h(
+    'section.cover',
     canvas,
     h('div.hero__veil'),
     h(
-      'div.wrap.hero__inner',
+      'div.cover__frame',
+      h('span.cover__corner.cover__corner--tl', cornerMark(0)),
+      h('span.cover__corner.cover__corner--tr', cornerMark(90)),
+      h('span.cover__corner.cover__corner--br', cornerMark(180)),
+      h('span.cover__corner.cover__corner--bl', cornerMark(270)),
+    ),
+    h('div.cover__rail', '讀 · 論 · 述'),
+    h(
+      'div.cover__inner',
       h(
-        'div.hero__badge',
-        { style: { marginBottom: '18px' } },
+        'div.cover__badge',
         h('i.hero__dot'),
         returning ? `${rankFor(level)} · Lv.${level}` : `since ${BRAND.since} · 국어 전문 학원`,
       ),
       h(
-        'h1.h-display',
-        { style: { marginBottom: '14px' } },
+        'h1.cover__title',
         splitWords('읽고 따지고'),
         h('br'),
-        splitWords('쓰는 힘.', 270, 'sticker'),
+        splitWords('쓰는 힘.', 260, 'foil'),
       ),
+      h('p.cover__lede', '문학 · 문법 · 비문학 · 어휘 · 논술을 스물여덟 단계로 나눠 하나씩 넘습니다.'),
       h(
-        'p.lede',
-        { style: { marginBottom: '22px' } },
-        '문학 · 문법 · 비문학 · 어휘 · 논술을 스무 개의 단계로 나눠 하나씩 넘습니다.',
-      ),
-      h(
-        'div.stack',
-        { style: { gap: '10px' } },
+        'div.cover__actions',
         h(
           'button.btn.btn--primary.btn--lg.btn--block',
           {
@@ -82,7 +99,7 @@ export function homeView(): ViewHandle {
               go('journey');
             },
           },
-          returning ? `${nextStage.no}단계 · ${nextStage.name}` : '지도에서 시작하기',
+          returning ? `${nextStage.no}단계 · ${nextStage.name}` : '여정 시작하기',
           h('span', '→'),
         ),
         h(
@@ -96,100 +113,68 @@ export function homeView(): ViewHandle {
           returning ? '학습 도구 열기' : '먼저 진단 평가 받기',
         ),
       ),
-      h(
-        'div.hero__stats',
-        ...HERO_STATS.map((s) => {
-          const b = h('b', '0');
-          countUpOnView(b, s.value, { suffix: s.suffix });
-          return h('div.hero__stat', b, h('span', s.label));
-        }),
-      ),
+      returning
+        ? h(
+            'div.cover__run',
+            h('span', `★ ${totalStars(p.stages)}`),
+            h('i'),
+            h('span', `${clearedCount(p.stages)}/${STAGES.length} 단계`),
+            h('i'),
+            h('span', `🔥 ${p.streak}일`),
+          )
+        : null,
     ),
-    h('div.scroll-cue', h('i'), h('span', 'SCROLL')),
+    h('div.cover__seal', seal('수')),
+    h('div.scroll-cue', h('i'), h('span', '아래로')),
   );
-  el.appendChild(hero);
+  el.appendChild(cover);
 
-  /* ------------------------------ progress ------------------------------ */
-  const stars = totalStars(p.stages);
-  el.appendChild(
-    h(
-      'div.wrap',
-      { style: { marginTop: '8px' } },
-      h(
-        'div.card',
-        { 'data-reveal': '' },
-        h(
-          'div.spread',
-          { style: { marginBottom: '12px' } },
-          h(
-            'div',
-            h('div.eyebrow', { style: { marginBottom: '2px' } }, 'your run'),
-            h('h3.h3', returning ? '이어서 하기' : '아직 시작 전'),
-          ),
-          h('span.pill.pill--gold', `★ ${stars} / ${STAGES.length * 3}`),
-        ),
-        h(
-          'div.grid.grid--4',
-          h('div.card.card--flat.card--pad-s', h('div.tiny.muted', '연속'), h('b', `${p.streak}일`)),
-          h('div.card.card--flat.card--pad-s', h('div.tiny.muted', '푼 문항'), h('b', String(p.attempts.length))),
-          h('div.card.card--flat.card--pad-s', h('div.tiny.muted', '코인'), h('b', String(p.coins))),
-          h('div.card.card--flat.card--pad-s', h('div.tiny.muted', '오답'), h('b', String(p.wrong.length))),
-        ),
-      ),
-    ),
-  );
+  /* ============================ 학원 소개 ============================== */
 
-  /* ------------------------------- marquee ------------------------------ */
-  const words = [
-    '현대시', '고전시가', '음운 변동', '문장 성분', '비문학 독해', '한자성어', '개요 짜기',
-    '높임법', '피동·사동', '논증 구조', '중세 국어', '오답 분석', '요약 훈련', '어휘 확장',
-    '문학 감상', '읽기 속도', '선택지 근거', '띄어쓰기',
-  ];
-  const marqueeRow = (rev: boolean) =>
-    h(
-      `div.marquee__row${rev ? '.marquee__row--rev' : ''}`,
-      ...[...words, ...words].map((w) => h('span.chip-lg', w)),
-    );
-  el.appendChild(
-    h(
-      'div.section--tight',
-      h('div.marquee', marqueeRow(false)),
-      h('div.marquee', { style: { marginTop: '9px' } }, marqueeRow(true)),
-    ),
-  );
-
-  /* ------------------------------- method ------------------------------- */
   el.appendChild(
     h(
       'section.section',
       h(
         'div.wrap',
+        head(
+          '수 국어논술',
+          '국어는 재능이 아니라 습관입니다',
+          '읽는 힘, 따지는 힘, 쓰는 힘. 세 가지를 하나의 흐름으로 잇는 것이 우리 수업의 전부입니다.',
+        ),
         h(
-          'div.pin',
-          h(
-            'div.pin__stage',
+          'div.figures',
+          { 'data-reveal-stagger': '70' },
+          ...HERO_STATS.map((s) => {
+            const b = h('b', '0');
+            countUpOnView(b, s.value, { suffix: s.suffix });
+            return h('div.figure', { 'data-reveal': '' }, b, h('span', s.label));
+          }),
+        ),
+      ),
+    ),
+  );
+
+  el.appendChild(h('div.wrap', ornamentRule()));
+
+  /* 방법론 */
+  el.appendChild(
+    h(
+      'section.section',
+      h(
+        'div.wrap',
+        head('method', '가르치는 순서', '진단 → 구조 → 근거 → 표현. 네 단계는 순서를 바꾸지 않습니다.'),
+        h(
+          'div.stack',
+          { style: { gap: '14px' }, 'data-reveal-stagger': '80' },
+          ...PILLARS.map((pl, i) =>
             h(
-              'div.pin__head',
-              h('div.eyebrow', 'our method'),
-              h('h2.h1', '가르치는 순서'),
-              h('p.lede', { style: { marginTop: '8px' } }, '진단 → 구조 → 근거 → 표현. 네 단계는 순서를 바꾸지 않습니다.'),
-            ),
-            h(
-              'div.pin__cards',
-              { 'data-reveal-stagger': '70' },
-              ...PILLARS.map((pl) =>
-                h(
-                  'div.pin__card',
-                  { 'data-reveal': 'scale' },
-                  h(
-                    'div.card',
-                    h('div', { style: { fontSize: '1.9rem', marginBottom: '10px' } }, pl.icon),
-                    h('h3.h2', { style: { marginBottom: '8px' } }, pl.title),
-                    h('p.lede', { style: { marginBottom: '14px' } }, pl.copy),
-                    h('ul.list-check', ...pl.detail.map((d) => h('li', d))),
-                  ),
-                ),
-              ),
+              'article.pillar',
+              { 'data-reveal': 'scale' },
+              h('div.pillar__no', String(i + 1).padStart(2, '0')),
+              h('div.pillar__icon', pl.icon),
+              h('h3.pillar__title', pl.title),
+              h('p.pillar__copy', pl.copy),
+              h('ul.list-check', ...pl.detail.map((d) => h('li', d))),
             ),
           ),
         ),
@@ -197,44 +182,43 @@ export function homeView(): ViewHandle {
     ),
   );
 
-  /* ------------------------------- tracks ------------------------------- */
+  /* 커리큘럼 */
   el.appendChild(
     h(
-      'section.section',
-      { style: { background: 'var(--bg-3)' } },
+      'section.section.section--sunk',
       h(
         'div.wrap',
-        sectionHead('curriculum', '학년이 아니라 진단으로', '여섯 개의 트랙, 각자의 출발선.'),
+        head('curriculum', '학년이 아니라 진단으로', '여섯 개의 트랙, 각자의 출발선.'),
         h(
           'div.stack',
           { 'data-reveal-stagger': '50' },
           ...TRACKS.map((t) =>
             h(
-              'details.card',
+              'details.track',
               { 'data-reveal': '', style: `--h:${t.hue}` },
               h(
-                'summary',
-                { style: { listStyle: 'none' } },
+                'summary.track__head',
                 h(
-                  'div.spread',
-                  h(
-                    'div',
-                    h('span.tag.tag--h', { style: `--h:${t.hue}` }, t.target),
-                    h('h3.h3', { style: { marginTop: '6px' } }, t.name),
-                    h('div.tiny.muted', t.tagline),
-                  ),
-                  h('span.tiny.muted', t.weekly),
+                  'div',
+                  h('span.tag.tag--h', { style: `--h:${t.hue}` }, t.target),
+                  h('h3.track__name', t.name),
+                  h('div.tiny.muted', t.tagline),
                 ),
+                h('span.track__chev', '＋'),
               ),
+              h('div.track__meta', t.weekly),
               h(
                 'div.stack',
-                { style: { gap: '9px', marginTop: '14px' } },
+                { style: { gap: '10px', marginTop: '12px' } },
                 ...t.modules.map((m) =>
-                  h('div', h('div.small', { style: { fontWeight: '700' } }, m.label), h('div.tiny.muted', m.desc)),
+                  h(
+                    'div.track__mod',
+                    h('div.small', { style: { fontWeight: '700' } }, m.label),
+                    h('div.tiny.muted', m.desc),
+                  ),
                 ),
               ),
-              h('div.divider'),
-              h('p.small', { style: { color: `hsl(${t.hue} 58% 46%)`, fontWeight: '700' } }, `→ ${t.outcome}`),
+              h('div.track__out', `→ ${t.outcome}`),
             ),
           ),
         ),
@@ -242,13 +226,48 @@ export function homeView(): ViewHandle {
     ),
   );
 
-  /* ------------------------------- process ------------------------------ */
+  /* 앱이 하는 일 */
   el.appendChild(
     h(
       'section.section',
       h(
         'div.wrap',
-        sectionHead('process', '한 학기가 흐르는 방식'),
+        head(
+          'the app',
+          '수업이 없는 날에도',
+          `문항 <b>${QUESTION_COUNT}개</b> · 지문 <b>${PASSAGES.length}편</b> · 개념 <b>${CONCEPTS.length}장</b> · 어휘 <b>${VOCAB.length}개</b>가 손안에 있습니다.`,
+        ),
+        h(
+          'div.grid.grid--2',
+          { 'data-reveal-stagger': '60' },
+          ...[
+            { t: '스물여덟 단계의 여정', d: '별 셋을 모두 모으면 다음 장이 열립니다. 단계마다 보너스 목표가 따로 있습니다.', k: '🗺️' },
+            { t: '여섯 역량 진단', d: '점수가 아니라 균형을 봅니다. 결과가 그대로 루틴의 설계도가 됩니다.', k: '🧭' },
+            { t: '오답은 두 번 맞혀야 졸업', d: '한 번 맞힌 것은 우연일 수 있습니다.', k: '♻️' },
+            { t: '논술 문장 점검', d: '이중 피동·겹말·긴 문장·모호한 지시어를 자동으로 잡아 줍니다.', k: '✍️' },
+          ].map((x) =>
+            h(
+              'div.feature',
+              { 'data-reveal': '' },
+              h('div.feature__icon', x.k),
+              h('h4.feature__title', x.t),
+              h('p.feature__copy', x.d),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  el.appendChild(h('div.wrap', ornamentRule()));
+
+  /* 프로세스 */
+  el.appendChild(
+    h(
+      'section.section',
+      h(
+        'div.wrap',
+        head('process', '한 학기가 흐르는 방식'),
         h(
           'div.timeline',
           { 'data-reveal-stagger': '70' },
@@ -265,32 +284,27 @@ export function homeView(): ViewHandle {
     ),
   );
 
-  /* ------------------------------ teachers ------------------------------ */
+  /* 강사진 */
   el.appendChild(
     h(
-      'section.section',
-      { style: { background: 'var(--bg-3)' } },
+      'section.section.section--sunk',
       h(
         'div.wrap',
-        sectionHead('teachers', '가르치는 사람들'),
+        head('teachers', '가르치는 사람들'),
         h(
           'div.stack',
           { 'data-reveal-stagger': '60' },
           ...TEACHERS.map((t) =>
             h(
-              'div.card',
+              'article.teacher',
               { 'data-reveal': '' },
+              h('div.avatar', { style: `--h:${t.hue}` }, t.initial),
               h(
-                'div.row',
-                { style: { gap: '13px', flexWrap: 'nowrap', alignItems: 'flex-start' } },
-                h('div.avatar', { style: `--h:${t.hue}` }, t.initial),
-                h(
-                  'div',
-                  { style: { minWidth: '0' } },
-                  h('h4.h3', t.name),
-                  h('div.tiny.muted', { style: { marginBottom: '6px' } }, `${t.role} · ${t.focus}`),
-                  h('p.small', { style: { color: 'var(--ink-2)', fontStyle: 'italic' } }, `“${t.words}”`),
-                ),
+                'div',
+                { style: { minWidth: '0' } },
+                h('h4.teacher__name', t.name),
+                h('div.tiny.muted', `${t.role} · ${t.focus}`),
+                h('p.teacher__words', `“${t.words}”`),
               ),
             ),
           ),
@@ -299,21 +313,22 @@ export function homeView(): ViewHandle {
     ),
   );
 
-  /* ----------------------------- testimonials --------------------------- */
+  /* 후기 */
   el.appendChild(
     h(
-      'section.section--tight',
+      'section.section',
       h(
         'div.wrap',
+        head('voices', '남겨 주신 말'),
         h(
-          'div.grid.grid--2',
+          'div.stack',
           { 'data-reveal-stagger': '50' },
           ...TESTIMONIALS.map((t) =>
             h(
-              'div.card.card--flat',
+              'blockquote.quote',
               { 'data-reveal': '' },
-              h('p.small', { style: { marginBottom: '9px', lineHeight: '1.7' } }, `“${t.text}”`),
-              h('div.tiny.muted', `— ${t.who}`),
+              h('p', t.text),
+              h('cite', `— ${t.who}`),
             ),
           ),
         ),
@@ -321,79 +336,61 @@ export function homeView(): ViewHandle {
     ),
   );
 
-  /* --------------------------------- faq -------------------------------- */
-  el.appendChild(
-    h('section.section', h('div.wrap', sectionHead('faq', '자주 묻는 질문'), accordion(FAQ))),
-  );
+  /* FAQ */
+  el.appendChild(h('section.section', h('div.wrap', head('faq', '자주 묻는 질문'), accordion(FAQ))));
 
-  /* --------------------------------- cta -------------------------------- */
+  el.appendChild(h('div.wrap', ornamentRule()));
+
+  /* ============================== 상담 ================================= */
   el.appendChild(
     h(
-      'section.section',
+      'section.section#consult',
       h(
         'div.wrap',
+        head(
+          'consultation',
+          '상담은 진단에서 시작합니다',
+          '학생의 현재 좌표를 확인하고, 무엇부터 바꿀지 함께 정합니다. 상담은 40분, 사전 예약제로 운영합니다.',
+        ),
+        h('div.card.consult__card', { 'data-reveal': 'scale' }, consultForm()),
         h(
-          'div.card',
-          {
-            'data-reveal': 'scale',
-            style: {
-              padding: '30px 22px',
-              textAlign: 'center',
-              background: 'linear-gradient(160deg, var(--gold), var(--danjeong))',
-              border: 'none',
-              color: '#241300',
-            },
-          },
-          h('h2.h1', { style: { color: '#241300', marginBottom: '10px' } }, '오늘의 한 단계부터.'),
-          h(
-            'p.small',
-            { style: { opacity: '0.86', marginBottom: '20px' } },
-            '계정도, 설치도 필요 없습니다. 기록은 이 브라우저에만 남습니다.',
-          ),
-          h(
-            'button.btn.btn--block',
-            {
-              style: { background: '#1a1206', color: '#ffd76a', boxShadow: '0 4px 0 #000' },
-              onclick: () => {
-                sfx.nav();
-                go('journey');
-              },
-            },
-            '지도 열기',
-          ),
+          'div.contact-grid',
+          { 'data-reveal': '' },
+          h('div.contact-cell', h('span.tiny.muted', '오시는 길'), h('b', CONTACT.address)),
+          h('div.contact-cell', h('span.tiny.muted', '운영 시간'), h('b', CONTACT.hours)),
+          h('div.contact-cell', h('span.tiny.muted', '전화'), h('b', CONTACT.phone)),
+          h('div.contact-cell', h('span.tiny.muted', '메일'), h('b', CONTACT.email)),
         ),
       ),
     ),
   );
 
-  /* ------------------------------- contact ------------------------------ */
+  /* 푸터 */
   el.appendChild(
     h(
       'footer.footer',
       h(
         'div.wrap',
         h(
-          'div.stack',
+          'div.footer__top',
+          h('div.footer__mark', seal('수')),
           h(
             'div',
-            h('div', { style: { fontWeight: '900', fontSize: '1.05rem', marginBottom: '4px' } }, BRAND.name),
+            h('div.footer__name', BRAND.name),
             h('p.small.muted', BRAND.tagline),
-          ),
-          h(
-            'div',
-            h('div.small', { style: { fontWeight: '800', marginBottom: '4px' } }, '찾아오시는 길'),
-            h('p.small.muted', CONTACT.address),
-            h('p.small.muted', CONTACT.hours),
-          ),
-          h(
-            'div',
-            h('div.small', { style: { fontWeight: '800', marginBottom: '4px' } }, '상담'),
-            h('p.small.muted', `${CONTACT.phone} · ${CONTACT.email}`),
-            h('p.tiny.muted', CONTACT.note),
           ),
         ),
         h('div.divider'),
-        h('span.tiny.muted', `© ${new Date().getFullYear()} ${BRAND.name} · ${BRAND.slogan.join(' · ')}`),
+        h(
+          'div.spread',
+          h('span.tiny.muted', `© ${new Date().getFullYear()} ${BRAND.name}`),
+          h('span.tiny.muted', BRAND.slogan.join(' · ')),
+        ),
+        h(
+          'p.tiny.muted',
+          { style: { marginTop: '12px' } },
+          '학습 기록은 이 브라우저에만 저장되며 어디로도 전송되지 않습니다.',
+        ),
       ),
     ),
   );
@@ -403,7 +400,7 @@ export function homeView(): ViewHandle {
     title: '홈',
     mounted() {
       scene = createHeroScene(canvas);
-      if (scene) unsubs.push(onScrollProgress(hero, (prog) => scene?.setProgress(prog)));
+      if (scene) unsubs.push(onScrollProgress(cover, (prog) => scene?.setProgress(prog)));
       enhance(el);
     },
     destroy() {

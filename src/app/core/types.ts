@@ -222,6 +222,29 @@ export interface StageProgress {
   /** Best accuracy on this stage, 0..1. */
   best: number;
   plays: number;
+  /** Whether the stage's bonus objective has ever been met. */
+  bonus: boolean;
+}
+
+export type QuestKind = 'answer' | 'correct' | 'stage' | 'combo' | 'vocab';
+
+export interface Quest {
+  id: string;
+  kind: QuestKind;
+  label: string;
+  target: number;
+  progress: number;
+  /** Coins paid out when the quest completes. */
+  reward: number;
+  done: boolean;
+}
+
+export interface DailyQuests {
+  /** ISO date the set was generated for. */
+  date: string;
+  quests: Quest[];
+  /** All three finished and the completion bonus already paid. */
+  bonusClaimed: boolean;
 }
 
 export interface Settings {
@@ -263,6 +286,8 @@ export interface Profile {
   badges: string[];
   /** Stage id → progress on the 3D journey map. */
   stages: Record<string, StageProgress>;
+  /** Today's quest set, regenerated on the first visit of each day. */
+  daily: DailyQuests | null;
 
   settings: Settings;
 }

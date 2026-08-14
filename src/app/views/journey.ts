@@ -5,7 +5,16 @@ import { type ViewHandle } from '../core/router';
 import { recordStage, store } from '../core/store';
 import { DOMAIN_ICON, DOMAIN_LABEL, type Question } from '../core/types';
 import { queryQuestions } from '../data/questions';
-import { STAGES, currentStageIndex, isUnlocked, starsFor, totalStars, type Stage } from '../data/stages';
+import {
+  STAGES,
+  bonusLabel,
+  bonusMet,
+  currentStageIndex,
+  isUnlocked,
+  starsFor,
+  totalStars,
+  type Stage,
+} from '../data/stages';
 import { createJourney, type JourneyHandle } from '../three/JourneyScene';
 import { toast } from '../ui/components';
 import { createQuiz, type QuizHandle } from '../ui/QuizRunner';
@@ -134,7 +143,14 @@ export function journeyView(): ViewHandle {
         const correct = result.answers.filter((a) => a.correct).length;
         const acc = result.answers.length ? correct / result.answers.length : 0;
         const stars = starsFor(acc);
-        const { improved } = recordStage(stage.id, acc, stars);
+        const gotBonus = bonusMet(stage, {
+          accuracy: acc,
+          bestCombo: result.bestCombo,
+          seconds: result.seconds,
+          questionCount: result.answers.length,
+          mistakes: result.answers.length - correct,
+        });
+        const { improved, bonusFirst } = recordStage(stage.id, acc, stars, gotBonus);
         scene?.refresh(stage.id);
         renderTop();
 
@@ -160,6 +176,17 @@ export function journeyView(): ViewHandle {
                 ),
               ),
               h('p.clear__score', `${correct} / ${result.answers.length} · 정답률 ${Math.round(acc * 100)}%`),
+              h(
+                'div',
+                { class: `bonus-row${gotBonus ? ' is-met' : ''}` },
+                h('span.bonus-row__mark', gotBonus ? '✦' : '○'),
+                h(
+                  'span',
+                  h('b', gotBonus ? '보너스 달성' : '보너스 미달'),
+                  h('span.tiny.muted', ` · ${bonusLabel(stage.bonus)}`),
+                ),
+                bonusFirst ? h('span.pill.pill--gold', '+25') : null,
+              ),
               h(
                 'p.clear__note',
                 stars === 3
