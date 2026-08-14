@@ -149,6 +149,7 @@ export function homeView(router: Router): HTMLElement {
 
 function appScreen(router: Router): HTMLElement {
   const tiles: [string, string, string, string][] = [
+    ['spark', '/map', '학습 맵', '레벨 · 스테이지'],
     ['quiz', '/quiz', '진단 테스트', '12문항 · 약 8분'],
     ['lab', '/lab', '첨삭 랩', '직접 고쳐 보기'],
     ['plan', '/plan', '학습 플랜', '4주 자동 설계'],
@@ -159,52 +160,70 @@ function appScreen(router: Router): HTMLElement {
     'div',
     { class: 'wrap stack--lg stack home' },
 
-    // The opening screen: one statement, one thing to do, and the field
-    // behind it. Everything else waits below the fold.
+    // The opening screen, in three bands: the lockup up top, the solid form
+    // holding the middle, and the copy at the bottom. The middle is left
+    // deliberately clear — it is the stage the 3D plays on.
     h(
       'header',
       { class: 'hero' },
-      h('span', { class: 'eyebrow', text: `since 2009 · ${TEACHER.name} ${TEACHER.role}` }),
-      h(
-        'h1',
-        { class: 'display' },
-        '생각을 쓰다,',
-        h('br'),
-        '세상을 ',
-        h('span', { class: 'pen', text: '읽다' }),
-        '.',
-      ),
-      h('p', {
-        class: 'body hero__lede',
-        text: '읽기에서 시작해 사유로 이어지고, 마침내 자기 문장으로 완성되는 국어.',
-      }),
       h(
         'div',
-        { class: 'hero__cta' },
+        { class: 'lockup' },
+        h('span', { class: 'lockup__mark', text: '수' }),
         h(
-          'button',
-          {
-            class: 'btn btn--primary btn--lg trybtn',
-            on: {
-              click: () => {
-                buzz(14);
-                router.go('/try');
-              },
-            },
-          },
-          '프로그램 체험',
-          icon('arrow', 18),
-        ),
-        h(
-          'button',
-          { class: 'btn btn--ghost btn--lg', on: { click: () => router.go('/apply') } },
-          '상담 신청',
+          'span',
+          { class: 'lockup__text' },
+          h('b', { text: '국어논술' }),
+          h('small', { text: `since 2009 · ${TEACHER.name} ${TEACHER.role}` }),
         ),
       ),
-      h('p', {
-        class: 'hero__note',
-        text: '진단 · 분석 · 4주 설계 · 상담까지 한 번에, 약 8분',
-      }),
+
+      h('div', { class: 'hero__stage', 'aria-hidden': 'true' }),
+
+      h(
+        'div',
+        { class: 'hero__copy' },
+        h(
+          'h1',
+          { class: 'display' },
+          '생각을 쓰다,',
+          h('br'),
+          '세상을 ',
+          h('span', { class: 'pen', text: '읽다' }),
+          '.',
+        ),
+        h('p', {
+          class: 'body hero__lede',
+          text: '읽고, 풀고, 고쳐 쓰는 과정을 한 곳에서. 진단부터 상담까지 8분에 돌려볼 수 있습니다.',
+        }),
+        h(
+          'div',
+          { class: 'hero__cta' },
+          h(
+            'button',
+            {
+              class: 'btn btn--primary btn--lg trybtn',
+              on: {
+                click: () => {
+                  buzz(14);
+                  router.go('/try');
+                },
+              },
+            },
+            '프로그램 체험',
+            icon('arrow', 18),
+          ),
+          h(
+            'button',
+            { class: 'btn btn--ghost btn--lg', on: { click: () => router.go('/map') } },
+            '학습 맵',
+          ),
+        ),
+        h('p', {
+          class: 'hero__note',
+          text: '진단 · 분석 · 4주 설계 · 상담까지 한 번에',
+        }),
+      ),
     ),
 
     progressCard(router),

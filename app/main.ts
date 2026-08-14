@@ -19,6 +19,7 @@ import { planView } from './views/plan';
 import { coursesView, courseView } from './views/courses';
 import { applyView } from './views/apply';
 import { trialView } from './views/trial';
+import { mapView } from './views/map';
 
 /* ────────────────────────────── theme ─────────────────────────────── */
 
@@ -65,6 +66,7 @@ const ROUTES: (Route & { shape: ShapeName })[] = [
   },
   { pattern: '/quiz', title: '진단', shape: 'grid', view: () => quizView(router) },
   { pattern: '/result', title: '진단 결과', nested: true, shape: 'wave', view: () => resultView(router) },
+  { pattern: '/map', title: '학습 맵', nested: true, shape: 'wave', view: () => mapView(router) },
   { pattern: '/lab', title: '첨삭 랩', shape: 'book', view: () => labView(router) },
   { pattern: '/plan', title: '학습 플랜', shape: 'helix', view: () => planView(router) },
   { pattern: '/courses', title: '과정', nested: true, shape: 'book', view: () => coursesView(router) },
@@ -184,12 +186,25 @@ router.start();
 
 /* ────────────────────────────── boot out ──────────────────────────── */
 
-function bootDone(): void {
-  qs('#boot')?.classList.add('is-done');
+const bootBar = qs('#bootBar');
+let bootAt = 0;
+
+// A determinate line: it advances on real milestones, not a fake timer.
+function bootProgress(to: number): void {
+  bootAt = Math.max(bootAt, Math.min(1, to));
+  if (bootBar) bootBar.style.width = `${bootAt * 100}%`;
 }
 
-if (document.readyState === 'complete') window.setTimeout(bootDone, 260);
-else window.addEventListener('load', () => window.setTimeout(bootDone, 260), { once: true });
+function bootDone(): void {
+  bootProgress(1);
+  window.setTimeout(() => qs('#boot')?.classList.add('is-done'), 260);
+}
+
+bootProgress(0.4); // styles parsed, shell built
+if (stage()) bootProgress(0.75); // 3D layer up
+
+if (document.readyState === 'complete') window.setTimeout(bootDone, 420);
+else window.addEventListener('load', () => window.setTimeout(bootDone, 420), { once: true });
 
 // Never trap someone behind the splash if an asset stalls.
 window.setTimeout(bootDone, 3500);

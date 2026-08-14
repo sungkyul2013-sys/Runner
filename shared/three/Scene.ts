@@ -1,7 +1,22 @@
 import * as THREE from 'three';
 import { Field } from './Field';
 import { Sheets } from './Sheets';
+import { Solids, type SolidShape } from './Solids';
 import type { ShapeName } from './shapes';
+
+/**
+ * Each named scene maps to a solid form and a particle form. The solid is
+ * the subject; the particles are the air around it.
+ */
+const SOLID_FOR: Record<ShapeName, SolidShape> = {
+  glyph: 'glyph',
+  grid: 'grid',
+  book: 'books',
+  wave: 'tower',
+  helix: 'pencil',
+  plane: 'pencil',
+  sphere: 'tower',
+};
 
 /** Soft additive halo standing in for a bloom pass — a fraction of the cost. */
 function glowSprite(): THREE.Mesh {
@@ -42,8 +57,10 @@ export class Scene {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly root = new THREE.Group();
   private readonly field: Field;
+  private readonly solids: Solids;
   private readonly sheets: Sheets;
   private readonly glow: THREE.Mesh;
+  private anchor = 0;
 
   private raf = 0;
   private clock = new THREE.Clock();
@@ -72,19 +89,23 @@ export class Scene {
     });
     this.renderer.setClearAlpha(0);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // Lit geometry needs tone mapping or the key light clips to flat white.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
 
     this.camera = new THREE.PerspectiveCamera(46, w / h, 0.1, 120);
     this.camera.position.set(0, 0, 10.5);
 
-    this.field = new Field(mobile ? 4200 : 9500, initial);
-    this.sheets = new Sheets(mobile ? 7 : 14);
+    // Solids carry the scene now, so the field drops to atmosphere.
+    this.solids = new Solids(mobile ? 240 : 340, SOLID_FOR[initial]);
+    this.field = new Field(mobile ? 1600 : 3400, initial);
+    this.sheets = new Sheets(mobile ? 5 : 10);
     this.glow = glowSprite();
 
-    this.root.add(this.glow, this.sheets.object, this.field.object);
+    this.root.add(this.glow, this.sheets.object, this.field.object, this.solids.object);
     this.scene.add(this.root);
 
-    // On phones the field sits right behind the copy, so hold it back a little.
-    if (mobile) this.field.setOpacity(0.72);
+    this.field.setOpacity(mobile ? 0.45 : 0.55);
 
     this.resize();
     this.bind();
@@ -138,14 +159,18 @@ export class Scene {
     this.turbulence = Math.min(0.34, Math.abs(v) * 0.00016);
   }
 
-  /** Fly the field in from a far shell on first paint. */
+  /** Assemble both layers from far out on first paint. */
   intro(): void {
     if (this.reduced) return;
     this.field.intro();
+    this.solids.intro();
   }
 
   morphTo(name: ShapeName): void {
     this.field.morphTo(name);
+    this.solids.morphTo(SOLID_FOR[name]);
+    // Each form starts from its own pose and turns only through its chapter.
+    this.anchor = this.scrollEased;
   }
 
   start(): void {
@@ -175,6 +200,11 @@ export class Scene {
     this.field.setDrive(this.scrollEased, this.pointer.x, this.pointer.y);
     this.field.setTurbulence(this.reduced ? 0 : this.turbulence);
     this.field.update(dt, t);
+
+    this.solids.setDrive(this.scrollEased, this.pointer.x, this.pointer.y, this.anchor);
+    this.solids.setTurbulence(this.reduced ? 0 : this.turbulence);
+    this.solids.update(dt, t);
+
     this.sheets.update(dt, t, this.scrollEased);
 
     // Camera parallax + a slow dolly across the whole page.
@@ -194,6 +224,7 @@ export class Scene {
     window.removeEventListener('pointermove', this.onPointer);
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.field.dispose();
+    this.solids.dispose();
     this.sheets.dispose();
     this.renderer.dispose();
   }

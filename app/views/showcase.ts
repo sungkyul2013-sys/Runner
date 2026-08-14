@@ -130,6 +130,13 @@ function stageChapter(): HTMLElement {
   let active = -1;
 
   onScroll(section, ({ vh }: ScrollState) => {
+    // Only while the stage is actually on screen. Asserting the shape every
+    // frame is what restores it when you scroll back in, but unguarded it
+    // also claimed the form from whatever chapter you were really looking
+    // at — including the home screen far above.
+    const box = section.getBoundingClientRect();
+    if (box.bottom <= 0 || box.top >= vh) return;
+
     // Lead-in and hand-off keep the first and last beats on screen a beat
     // longer than a plain three-way split would.
     const p = pinProgress(section, vh);
