@@ -58,6 +58,8 @@ export function homeView(): ViewHandle {
   const p = store.profile;
   const { level } = levelFromXp(p.xp);
   const returning = p.attempts.length > 0;
+  /** A newcomer gets the guided course as the headline action. */
+  const firstRun = !p.onboarded && !returning;
   const nextStage = STAGES[currentStageIndex(p.stages)];
 
   /* =============================== 표지 ================================ */
@@ -96,10 +98,10 @@ export function homeView(): ViewHandle {
           {
             onclick: () => {
               sfx.nav();
-              go('journey');
+              go(firstRun ? 'start' : 'journey');
             },
           },
-          returning ? `${nextStage.no}단계 · ${nextStage.name}` : '여정 시작하기',
+          firstRun ? '3분 체험 시작' : `${nextStage.no}단계 · ${nextStage.name}`,
           h('span', '→'),
         ),
         h(
@@ -107,12 +109,18 @@ export function homeView(): ViewHandle {
           {
             onclick: () => {
               sfx.nav();
-              go(returning ? 'hub' : 'diagnostic');
+              go(firstRun ? 'journey' : 'hub');
             },
           },
-          returning ? '학습 도구 열기' : '먼저 진단 평가 받기',
+          firstRun ? '체험 없이 바로 둘러보기' : '학습 도구 열기',
         ),
       ),
+      firstRun
+        ? h(
+            'p.cover__hint',
+            '진단 · 수업 · 어휘 · 루틴까지 한 번에 겪어 보는 안내 코스입니다.',
+          )
+        : null,
       returning
         ? h(
             'div.cover__run',

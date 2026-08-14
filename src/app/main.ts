@@ -31,6 +31,7 @@ import { homeView } from './views/home';
 import { hubView } from './views/hub';
 import { journeyView } from './views/journey';
 import { mockView } from './views/mock';
+import { onboardingView } from './views/onboarding';
 import { practiceView } from './views/practice';
 import { readingView } from './views/reading';
 import { reviewView } from './views/review';
@@ -255,6 +256,7 @@ function boot(): void {
 
   register('home', homeView);
   register('journey', journeyView);
+  register('start', onboardingView);
   register('hub', hubView);
   register('diagnostic', diagnosticView);
   register('practice', practiceView);

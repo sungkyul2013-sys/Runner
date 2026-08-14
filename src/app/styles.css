@@ -2673,3 +2673,291 @@ details summary { cursor: pointer; }
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
+
+/* =====================================================================
+   3분 체험 — the guided first run
+   ===================================================================== */
+
+.ob { padding: 0 0 30px; }
+
+.ob__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 10px;
+}
+
+.ob__brand { display: flex; align-items: center; gap: 9px; }
+
+.ob__mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--danjeong);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 0.92rem;
+  font-weight: 900;
+  transform: rotate(-4deg);
+}
+
+.ob__brandname {
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  font-size: 0.98rem;
+}
+
+.ob__skip {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-3);
+  padding: 6px 10px;
+  border-radius: 99px;
+}
+
+.ob__skip:hover { background: var(--bg-3); color: var(--ink); }
+
+.ob__rail {
+  display: flex;
+  gap: 5px;
+  padding: 0 16px 14px;
+}
+
+.ob__pip { flex: 1; }
+
+.ob__pip i {
+  display: block;
+  height: 3px;
+  border-radius: 99px;
+  background: var(--bg-sunk);
+  transition: background 0.4s var(--ease);
+}
+
+.ob__pip.is-done i { background: color-mix(in oklab, var(--gold) 55%, transparent); }
+.ob__pip.is-on i { background: var(--gold); }
+
+.ob__stage {
+  padding: 0 16px;
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.ob__stage.is-in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.45s var(--ease), transform 0.45s var(--ease);
+}
+
+:root[data-motion='reduced'] .ob__stage { opacity: 1; transform: none; transition: none; }
+
+.ob__panel { padding: 4px 0 8px; }
+
+.ob__eyebrow {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 10px;
+}
+
+.ob__title {
+  font-size: clamp(1.5rem, 6.6vw, 2rem);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 1.2;
+  margin-bottom: 12px;
+}
+
+.ob__lede {
+  font-size: 0.94rem;
+  line-height: 1.78;
+  color: var(--ink-2);
+}
+
+.ob__note {
+  margin-top: 16px;
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: var(--ink-4);
+  text-align: center;
+}
+
+/* Welcome mark */
+.ob__hero {
+  position: relative;
+  height: 130px;
+  display: grid;
+  place-items: center;
+  margin: 22px 0 8px;
+}
+
+.ob__hero-seal { position: relative; z-index: 1; }
+.ob__hero-seal .seal { width: 62px; height: 62px; border-radius: 9px; }
+.ob__hero-seal .seal__glyph { font-size: 2rem; }
+
+.ob__hero-rosette {
+  position: absolute;
+  color: color-mix(in oklab, var(--gold) 55%, transparent);
+  animation: obSpin 24s linear infinite;
+}
+
+.ob__hero-rosette svg { width: 118px; height: 118px; }
+
+@keyframes obSpin { to { transform: rotate(360deg); } }
+
+:root[data-motion='reduced'] .ob__hero-rosette { animation: none; }
+
+.ob__course { list-style: none; display: grid; gap: 10px; margin-top: 20px; }
+
+.ob__course-item {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: var(--r-m);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+}
+
+.ob__course-no {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--gold) 20%, transparent);
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.ob__course-item b { display: block; font-size: 0.92rem; font-weight: 800; }
+.ob__course-item span { font-size: 0.79rem; color: var(--ink-3); line-height: 1.55; }
+
+/* Report */
+.ob__verdict {
+  margin-top: 16px;
+  border-radius: var(--r-m);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.ob__verdict-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 15px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.ob__verdict-row:last-child { border-bottom: none; }
+.ob__verdict-row b { font-size: 0.92rem; font-weight: 800; }
+
+/* Lesson */
+.ob__concept { margin-top: 18px; }
+
+.ob__trap {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--r-s);
+  background: color-mix(in oklab, var(--warn) 13%, transparent);
+  border-left: 3px solid var(--warn);
+  font-size: 0.84rem;
+  line-height: 1.68;
+}
+
+/* Routine preview */
+.ob__preview { display: grid; gap: 9px; }
+
+.ob__preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.86rem;
+}
+
+.ob__preview-row span { color: var(--ink-3); }
+.ob__preview-row b { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Done */
+.ob__ledger {
+  margin-top: 20px;
+  display: grid;
+  gap: 9px;
+}
+
+.ob__ledger-row {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 11px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: var(--r-m);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+}
+
+.ob__check {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--jade) 20%, transparent);
+  color: var(--jade);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.ob__ledger-row b { display: block; font-size: 0.9rem; font-weight: 800; }
+.ob__ledger-row span { font-size: 0.78rem; color: var(--ink-3); line-height: 1.55; }
+
+.ob__today { margin-top: 16px; }
+
+.ob__today-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 0.86rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.ob__today-row:last-child { border-bottom: none; }
+
+.ob__today-row i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+  flex-shrink: 0;
+}
+
+.ob__today-row span { flex: 1; }
+.ob__today-row b { font-size: 0.78rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.ob__unlocked {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: var(--r-l);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+}
+
+.ob__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ob__chips .chip { pointer-events: none; }
+
+.ob__actions { display: grid; gap: 10px; margin-top: 22px; }
+
+.cover__hint {
+  margin-top: 12px;
+  font-size: 0.76rem;
+  color: var(--ink-4);
+  line-height: 1.6;
+}

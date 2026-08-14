@@ -73,6 +73,7 @@ function defaultProfile(): Profile {
     badges: [],
     stages: {},
     daily: null,
+    onboarded: false,
     settings: {
       theme: 'system',
       motion: 'full',
@@ -108,6 +109,7 @@ function hydrate(raw: unknown): Profile {
     badges: Array.isArray(src.badges) ? src.badges : [],
     stages: { ...base.stages, ...(src.stages ?? {}) },
     daily: src.daily ?? null,
+    onboarded: src.onboarded ?? false,
     studyDates: Array.isArray(src.studyDates) ? src.studyDates : [],
     version: PROFILE_VERSION,
   };

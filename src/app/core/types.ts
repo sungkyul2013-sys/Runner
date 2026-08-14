@@ -288,6 +288,8 @@ export interface Profile {
   stages: Record<string, StageProgress>;
   /** Today's quest set, regenerated on the first visit of each day. */
   daily: DailyQuests | null;
+  /** Whether the guided first-run course has been completed. */
+  onboarded: boolean;
 
   settings: Settings;
 }
