@@ -8,6 +8,7 @@
 
 export type ShapeName =
   | 'glyph'
+  | 'wordmark'
   | 'sphere'
   | 'book'
   | 'wave'
@@ -78,6 +79,80 @@ export function glyphPoints(text: string, count: number, seed = 7): Float32Array
     out[i * 3 + 1] = -(py - H / 2) * scale;
     // Give the flat glyph a little thickness so rotation reads as 3D.
     out[i * 3 + 2] = (rng() - 0.5) * 0.55 + Math.sin(px * 0.06) * 0.18;
+  }
+
+  return out;
+}
+
+/* ──────────────────────── 국어논술 (the wordmark) ─────────────────────── */
+
+/**
+ * The academy's name, in light.
+ *
+ * The solid layer builds the 수 mark out of blocks; this builds the word
+ * that follows it out of points, wide and low, so the two layers together
+ * read as the lockup — 수 국어논술 — standing in space rather than as two
+ * unrelated objects sharing a screen.
+ *
+ * The band is curved on Z: the ends bend away from the viewer, so turning
+ * it a few degrees reads as a cylinder rather than a flat billboard.
+ */
+export function wordmarkPoints(count: number, seed = 31, text = '국어논술'): Float32Array {
+  const rng = makeRng(seed);
+  const out = new Float32Array(count * 3);
+
+  const W = 900;
+  const H = 240;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  if (!ctx) return glyphPoints(text, count, seed);
+
+  // Drawn character by character: canvas letter-spacing is not universally
+  // supported, and even spacing is the whole point of a wordmark.
+  const size = 168;
+  const gap = size * 0.16;
+  const step = size + gap;
+  const startX = W / 2 - ((text.length - 1) * step) / 2;
+
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `800 ${size}px "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif`;
+  for (let i = 0; i < text.length; i += 1) {
+    ctx.fillText(text[i], startX + i * step, H / 2 + 4);
+  }
+
+  const data = ctx.getImageData(0, 0, W, H).data;
+
+  const hits: number[] = [];
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; x += 1) {
+      if (data[(y * W + x) * 4 + 3] > 128) hits.push(x, y);
+    }
+  }
+
+  if (hits.length === 0) return glyphPoints(text, count, seed);
+
+  const pairs = hits.length / 2;
+  const scale = 9.6 / W; // the band spans ~9.6 world units
+  // Sits just under the solid 수 and still inside the hero's clear band —
+  // any lower and the copy's scrim swallows the name it is there to say.
+  const drop = 0.45;
+
+  for (let i = 0; i < count; i += 1) {
+    const hi = ((rng() * pairs) | 0) * 2;
+    const px = hits[hi] + rng() - 0.5;
+    const py = hits[hi + 1] + rng() - 0.5;
+
+    const x = (px - W / 2) * scale;
+    const u = x / 4.8; // −1 … 1 across the band
+
+    out[i * 3] = x;
+    out[i * 3 + 1] = -(py - H / 2) * scale + drop;
+    out[i * 3 + 2] = -u * u * 1.9 + (rng() - 0.5) * 0.42;
   }
 
   return out;
@@ -316,6 +391,8 @@ export function buildShape(name: ShapeName, count: number): Float32Array {
   switch (name) {
     case 'glyph':
       return glyphPoints('수', count);
+    case 'wordmark':
+      return wordmarkPoints(count);
     case 'sphere':
       return spherePoints(count);
     case 'book':
@@ -350,8 +427,20 @@ export function scatterPoints(count: number, seed = 97): Float32Array {
 }
 
 /** Per-shape presentation tweaks: base scale + resting tilt of the field. */
-export const SHAPE_POSE: Record<ShapeName, { scale: number; rx: number; ry: number }> = {
-  glyph: { scale: 1, rx: 0, ry: 0 },
+/**
+ * `spin` scales how much the scroll turns a shape. Forms that carry meaning
+ * face-on — the glyph, the wordmark — turn far less than the abstract ones,
+ * or they read as a smear at exactly the moment they should read as a name.
+ */
+export const SHAPE_POSE: Record<
+  ShapeName,
+  { scale: number; rx: number; ry: number; spin?: number; wide?: true }
+> = {
+  glyph: { scale: 1, rx: 0, ry: 0, spin: 0.5 },
+  // Nearly face-on: a wordmark you cannot read is not a wordmark.
+  // `wide`: the band is 9.6 units across — wider than a phone's frustum —
+  // so it takes an extra viewport-driven scale the other shapes don't need.
+  wordmark: { scale: 1, rx: 0.03, ry: -0.06, spin: 0.22, wide: true },
   sphere: { scale: 0.95, rx: 0.1, ry: 0 },
   book: { scale: 0.94, rx: 0.34, ry: -0.25 },
   wave: { scale: 0.98, rx: 0.82, ry: 0.2 },

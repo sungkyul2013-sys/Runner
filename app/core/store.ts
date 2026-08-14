@@ -7,6 +7,7 @@
  */
 
 import { addDays, todayISO } from './dates';
+import { setStageTheme } from './stage';
 
 export interface DomainScore {
   correct: number;
@@ -188,6 +189,8 @@ export function applyTheme(theme: AppState['theme']): void {
     'content',
     dark ? '#05060b' : '#f4f2ec',
   );
+
+  setStageTheme(dark);
 }
 
 /** Cycles system → light → dark → system. */

@@ -1029,16 +1029,11 @@
     max-width: none;
     isolation: isolate;
   }
-  /* The particle layer runs behind the hero column here; ease it back so the
-     sub-copy keeps its contrast. */
-  .home > .hero::before {
-    content: '';
-    position: absolute;
-    inset: -28px -40px;
-    z-index: -1;
-    pointer-events: none;
-    background: radial-gradient(70% 66% at 34% 46%, var(--bg) 38%, transparent 80%);
-  }
+  /* No shield behind the hero column: the 3D lockup lives in this column's
+     empty band, and the opaque core of the old radial gradient sat exactly
+     on top of it — 국어논술 was being painted out by its own backdrop. The
+     copy keeps its contrast from .hero__copy::before, which is sized to the
+     text block rather than the column. */
   .home > *:not(.hero) {
     grid-column: 2;
   }
@@ -1756,4 +1751,61 @@
 }
 .pad__foot b.is-met {
   color: var(--ok);
+}
+
+/* ── the brand band ──────────────────────────────────────────────── */
+
+.band {
+  position: relative;
+  overflow: hidden;
+  margin-inline: calc(var(--gutter) * -1);
+  padding-block: clamp(12px, 3vw, 18px);
+  border-block: 1px solid var(--line-soft);
+  /* Fade at both ends so the loop has no visible seam at the edges. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+.band__track {
+  display: flex;
+  width: max-content;
+  animation: bandRun 34s linear infinite;
+}
+.band__run {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 3.6vw, 24px);
+  padding-inline: clamp(7px, 1.8vw, 12px);
+  white-space: nowrap;
+}
+.band__run b {
+  font-size: clamp(15px, 4.2vw, 21px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--text-2);
+}
+.band__run b:first-of-type {
+  color: var(--text);
+}
+.band__seal {
+  display: grid;
+  place-items: center;
+  width: clamp(20px, 5.4vw, 26px);
+  height: clamp(20px, 5.4vw, 26px);
+  flex: none;
+  border-radius: 6px;
+  background: var(--jeomsak);
+  color: #fff;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+  font-style: normal;
+}
+@keyframes bandRun {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .band__track {
+    animation: none;
+  }
 }

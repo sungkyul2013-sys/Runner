@@ -28,6 +28,9 @@ export function initStage(canvas: HTMLCanvasElement): Scene | null {
     console.warn('[수] 3D layer unavailable.', err);
     scene = null;
   }
+
+  // A handle for poking at the layer while developing; never shipped.
+  if (import.meta.env.DEV) (window as unknown as { __stage?: Scene | null }).__stage = scene;
   return scene;
 }
 
@@ -44,6 +47,20 @@ export function morph(shape: ShapeName): void {
   if (shape === requested) return;
   requested = shape;
   scene?.morphTo(shape);
+}
+
+/**
+ * Gives the 3D a box on the page to sit in — the hero's reserved band. The
+ * scene drops it by itself once the element leaves the document, so views
+ * register and forget.
+ */
+export function focusOn(el: HTMLElement | null): void {
+  scene?.setFocusEl(el);
+}
+
+/** Called by the theme switch: the field is ink on paper, light on ink. */
+export function setStageTheme(dark: boolean): void {
+  scene?.setTheme(dark);
 }
 
 /* ─────────────────────────── scroll bus ──────────────────────────── */

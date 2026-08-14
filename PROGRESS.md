@@ -14,8 +14,11 @@ This repo now holds three entry points, all built by one `npm run build`:
   `index.html`). Source in `src/`, unchanged. `play.html` remains the
   self-contained standalone build.
 
-The Three.js particle layer is shared by the app and the site in
-`shared/three/`. `npm run build:site` and `npm run build:story` emit
+The Three.js layer is shared by the app and the site in `shared/three/`, and
+runs in two coats: `Solids.ts` builds the blocky 수 mark, and `Field.ts`
+spells 국어논술 out of points below it, so the opening screen states the
+academy's name in 3D. The pair is fitted into the hero's reserved band by
+measurement rather than by guesswork, at every viewport. `npm run build:site` and `npm run build:story` emit
 single-file, zero-request builds of the app and the site respectively.
 
 ---

@@ -20,12 +20,19 @@
   width: 100%;
   height: 100%;
 }
+/* A vignette so type stays readable over the 3D. Its clear centre follows
+   the lockup (--vig-x/--vig-y, written by the scene while the hero band is
+   on screen); left alone it sits high and centred, as before. */
 .backdrop::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(120% 80% at 50% 30%, transparent 30%, var(--bg) 85%);
-  opacity: 0.86;
+  background: radial-gradient(
+    132% 96% at var(--vig-x, 50%) var(--vig-y, 30%),
+    transparent 42%,
+    var(--bg) 92%
+  );
+  opacity: 0.82;
 }
 
 /* ───────────────────────────── top bar ───────────────────────────── */

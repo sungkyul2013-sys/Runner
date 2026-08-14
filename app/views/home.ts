@@ -1,11 +1,12 @@
 import { h, icon } from '../core/dom';
 import type { Router } from '../core/router';
-import { buzz, meter } from '../core/ui';
+import { brandBand, buzz, meter } from '../core/ui';
 import { store } from '../core/store';
 import { QUESTIONS, type ChoiceQ } from '../data/questions';
 import { COURSES, TEACHER } from '../data/content';
 import { KINDS, TOTAL_LESSONS, buildSchedule, nextSession } from '../data/curriculum';
 import { relativeDay, todayISO } from '../core/dates';
+import { focusOn } from '../core/stage';
 import { showcase } from './showcase';
 
 /** Picks a stable "question of the day" so it changes daily, not per reload. */
@@ -214,6 +215,9 @@ export function homeView(router: Router): HTMLElement {
 }
 
 function appScreen(router: Router): HTMLElement {
+  const stageBand = h('div', { class: 'hero__stage', 'aria-hidden': 'true' });
+  focusOn(stageBand);
+
   const tiles: [string, string, string, string][] = [
     ['cal', '/study', '학습 시스템', '날짜별 · 단계별 24회차'],
     ['spark', '/map', '학습 맵', '레벨 · 스테이지'],
@@ -245,7 +249,9 @@ function appScreen(router: Router): HTMLElement {
         ),
       ),
 
-      h('div', { class: 'hero__stage', 'aria-hidden': 'true' }),
+      // The band the 3D lockup lives in. It is empty on purpose: the solid
+      // 수 and the particle 국어논술 are painted into exactly this box.
+      stageBand,
 
       h(
         'div',
@@ -319,6 +325,7 @@ function appScreen(router: Router): HTMLElement {
       ),
     ),
 
+    brandBand(),
     dailyCard(router),
 
     h(

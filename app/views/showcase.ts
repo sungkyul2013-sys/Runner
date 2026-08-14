@@ -149,9 +149,12 @@ function stageChapter(): HTMLElement {
       ticks[i].style.width = `${fill * 100}%`;
     }
 
-    // Asserted every frame: morph() ignores a repeat, and this is what
-    // restores the right form when you scroll back up into the stage.
-    morph(BEATS[index].shape);
+    // Asserted every frame — that is what restores the right form when you
+    // scroll back up into the stage — but only while this section holds the
+    // middle of the screen. The chapter arbiter below uses the same line, so
+    // exactly one claim is live at a time; when two of them alternated, the
+    // morph relaunched on every tick and never settled.
+    if (box.top <= vh * 0.5 && box.bottom >= vh * 0.5) morph(BEATS[index].shape);
 
     if (index === active) return;
     active = index;

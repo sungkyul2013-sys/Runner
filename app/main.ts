@@ -149,6 +149,9 @@ store.subscribe(paintBadges);
 
 const canvas = qs<HTMLCanvasElement>('#scene');
 if (canvas && !initStage(canvas)) qs('#backdrop')?.remove();
+// The theme was applied before the layer existed; hand it the current one so
+// the field starts as ink or as light rather than always as light.
+else applyTheme(store.get().theme);
 
 /* ─────────────────────── per-frame chrome updates ─────────────────── */
 

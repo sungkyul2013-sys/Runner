@@ -289,7 +289,9 @@ export const SOLID_POSE: Record<
   SolidShape,
   { rx: number; ry: number; scale: number; y: number }
 > = {
-  glyph: { rx: 0.02, ry: -0.13, scale: 0.92, y: 0.95 },
+  // Sized and lifted to sit *on top of* the particle wordmark below it:
+  // the block 수 and the light 국어논술 read as one lockup, not two objects.
+  glyph: { rx: 0.02, ry: -0.13, scale: 0.68, y: 2.5 },
   grid: { rx: 0.5, ry: -0.4, scale: 1.02, y: 0.45 },
   books: { rx: 0.16, ry: -0.5, scale: 1, y: 0.5 },
   pencil: { rx: 0.06, ry: -0.6, scale: 0.98, y: 0.4 },

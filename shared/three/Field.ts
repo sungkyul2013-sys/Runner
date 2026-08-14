@@ -81,6 +81,7 @@ const FRAG = /* glsl */ `
   precision mediump float;
 
   uniform float uOpacity;
+  uniform float uCore;
   varying vec3 vColor;
   varying float vFade;
 
@@ -90,7 +91,9 @@ const FRAG = /* glsl */ `
     float a = smoothstep(0.5, 0.05, d);
     if (a < 0.01) discard;
 
-    float core = smoothstep(0.28, 0.0, d) * 0.5;
+    // The hot centre only makes sense where points add light; on paper it
+    // would just wash the ink out, so it is switched off with uCore.
+    float core = smoothstep(0.28, 0.0, d) * 0.5 * uCore;
     gl_FragColor = vec4(vColor + core, a * vFade * uOpacity);
   }
 `;
@@ -111,6 +114,8 @@ export class Field {
   /** Scroll position when the current shape took over, and the latest seen. */
   private anchor = 0;
   private scroll = 0;
+  private targetOpacity = 1;
+  private fit = 1;
 
   /** Pose the field lerps toward (set per shape, nudged by scroll/pointer). */
   private targetPose = { scale: 1, rx: 0, ry: 0 };
@@ -147,12 +152,13 @@ export class Field {
       uniforms: {
         uProgress: { value: 1 },
         uTime: { value: 0 },
-        uSize: { value: 3.4 },
+        uSize: { value: 4.2 },
         uDpr: { value: 1 },
         uStagger: { value: STAGGER },
         uBulge: { value: BULGE },
         uTurb: { value: 0 },
         uOpacity: { value: 1 },
+        uCore: { value: 1 },
         // Ink on paper, with the correction pen showing through in a small
         // minority of points — the same three colours the page uses.
         uColorA: { value: new THREE.Color('#e6e3da') },
@@ -185,7 +191,11 @@ export class Field {
 
   /** Morph to `name`. Safe to call at any time, including mid-morph. */
   morphTo(name: ShapeName): void {
-    if (name === this.current && !this.morphing) return;
+    // Never restart a flight to the shape already in hand. Sections assert
+    // their shape every frame, and re-entering here at progress ≥ 0.9 used
+    // to relaunch the same morph forever — the cloud never landed, so most
+    // points sat out in the scatter shell where the depth fade hides them.
+    if (name === this.current) return;
     if (this.morphing && this.progress < 0.9) {
       // Let the current flight land first; remember the newest request.
       this.queued = name === this.current ? null : name;
@@ -241,10 +251,37 @@ export class Field {
     this.scroll = scroll;
     const pose = SHAPE_POSE[this.current];
     const local = scroll - this.anchor;
+    const spin = pose.spin ?? 1;
 
-    this.targetPose.rx = pose.rx + py * 0.22 + local * 0.6;
-    this.targetPose.ry = pose.ry + local * 4.2 + px * 0.34;
-    this.targetPose.scale = pose.scale;
+    this.targetPose.rx = pose.rx + py * 0.22 + local * 0.6 * spin;
+    this.targetPose.ry = pose.ry + local * 4.2 * spin + px * 0.34 * spin;
+    this.targetPose.scale = pose.scale * (pose.wide ? this.fit : 1);
+  }
+
+  /**
+   * Ink for paper, light for ink.
+   *
+   * Additive white points are the right answer on a dark page and the wrong
+   * one on a light page — they add light to something already near white and
+   * disappear. On paper the field switches to normal blending and dark ink,
+   * so the wordmark reads as writing rather than as glare.
+   */
+  setInk(dark: boolean): void {
+    const u = this.mat.uniforms;
+    u.uColorA.value.set(dark ? '#e6e3da' : '#232733');
+    u.uColorB.value.set(dark ? '#5aa9ff' : '#2f6ad0');
+    u.uColorC.value.set(dark ? '#ff4d3d' : '#d8382a');
+
+    u.uCore.value = dark ? 1 : 0;
+    this.mat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+    this.mat.needsUpdate = true;
+  }
+
+  /** Extra scale for shapes too wide for a narrow viewport. */
+  setFit(v: number): void {
+    this.fit = v;
+    const pose = SHAPE_POSE[this.current];
+    this.targetPose.scale = pose.scale * (pose.wide ? v : 1);
   }
 
   private applyPose(): void {
@@ -252,7 +289,14 @@ export class Field {
     this.object.scale.setScalar(this.pose.scale);
   }
 
+  /** Eased: the field brightens into a wordmark rather than snapping to it. */
   setOpacity(v: number): void {
+    this.targetOpacity = v;
+  }
+
+  /** Sets the level with no transition — used once, at construction. */
+  setOpacityNow(v: number): void {
+    this.targetOpacity = v;
     this.mat.uniforms.uOpacity.value = v;
   }
 
@@ -298,6 +342,9 @@ export class Field {
     }
 
     this.mat.uniforms.uTime.value = time;
+
+    const o = this.mat.uniforms.uOpacity;
+    o.value += (this.targetOpacity - o.value) * (1 - Math.pow(0.02, dt));
 
     // Critically-damped-ish easing toward the target pose.
     const k = 1 - Math.pow(0.0016, dt);

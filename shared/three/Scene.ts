@@ -5,17 +5,29 @@ import { Solids, type SolidShape } from './Solids';
 import type { ShapeName } from './shapes';
 
 /**
- * Each named scene maps to a solid form and a particle form. The solid is
- * the subject; the particles are the air around it.
+ * Each named scene pairs a solid form with a particle form.
+ *
+ * The two layers are cast, not stacked: on the opening scene the blocks
+ * build the 수 mark while the points spell 국어논술 beneath it, so the 3D
+ * says the academy's name outright. Elsewhere the solid takes the subject
+ * and the points play the air around it, dimmer but never absent.
  */
-const SOLID_FOR: Record<ShapeName, SolidShape> = {
-  glyph: 'glyph',
-  grid: 'grid',
-  book: 'books',
-  wave: 'tower',
-  helix: 'pencil',
-  plane: 'pencil',
-  sphere: 'tower',
+interface Cast {
+  solid: SolidShape;
+  field: ShapeName;
+  /** How loud the particle layer plays in this scene. */
+  fieldLevel: number;
+}
+
+const CAST: Record<ShapeName, Cast> = {
+  glyph: { solid: 'glyph', field: 'wordmark', fieldLevel: 1 },
+  wordmark: { solid: 'glyph', field: 'wordmark', fieldLevel: 1 },
+  grid: { solid: 'grid', field: 'grid', fieldLevel: 0.72 },
+  book: { solid: 'books', field: 'book', fieldLevel: 0.72 },
+  wave: { solid: 'tower', field: 'wave', fieldLevel: 0.78 },
+  helix: { solid: 'pencil', field: 'helix', fieldLevel: 0.78 },
+  plane: { solid: 'pencil', field: 'plane', fieldLevel: 0.72 },
+  sphere: { solid: 'tower', field: 'sphere', fieldLevel: 0.78 },
 };
 
 /** Soft additive halo standing in for a bloom pass — a fraction of the cost. */
@@ -60,6 +72,13 @@ export class Scene {
   private readonly solids: Solids;
   private readonly sheets: Sheets;
   private readonly glow: THREE.Mesh;
+  /** Ceiling for the particle layer on this device. */
+  private readonly base: number;
+  /** Fallback scale, used when no focus box is on screen. */
+  private fit = 1;
+  private focusEl: HTMLElement | null = null;
+  /** Which cast is on stage, for the per-frame field level. */
+  private castName: ShapeName;
   private anchor = 0;
 
   private raf = 0;
@@ -96,16 +115,21 @@ export class Scene {
     this.camera = new THREE.PerspectiveCamera(46, w / h, 0.1, 120);
     this.camera.position.set(0, 0, 10.5);
 
-    // Solids carry the scene now, so the field drops to atmosphere.
-    this.solids = new Solids(mobile ? 240 : 340, SOLID_FOR[initial]);
-    this.field = new Field(mobile ? 1600 : 3400, initial);
+    const cast = CAST[initial];
+    this.castName = initial;
+
+    // Both layers carry weight. The points are back up to a readable
+    // density — they have to spell a word, not suggest one.
+    this.solids = new Solids(mobile ? 240 : 340, cast.solid);
+    this.field = new Field(mobile ? 3400 : 6000, cast.field);
     this.sheets = new Sheets(mobile ? 5 : 10);
     this.glow = glowSprite();
 
     this.root.add(this.glow, this.sheets.object, this.field.object, this.solids.object);
     this.scene.add(this.root);
 
-    this.field.setOpacity(mobile ? 0.45 : 0.55);
+    this.base = mobile ? 0.78 : 0.9;
+    this.field.setOpacityNow(this.base * cast.fieldLevel);
 
     this.resize();
     this.bind();
@@ -131,6 +155,68 @@ export class Scene {
     this.pointerTarget.y = (e.clientY / window.innerHeight) * 2 - 1;
   };
 
+  /**
+   * Hands the 3D a box on the page to live inside — the hero's reserved
+   * band. While that box is on screen the lockup is scaled and placed to sit
+   * in it exactly, at any viewport, instead of being centred on the window
+   * and hoping the layout leaves room. Pass null to go back to centred.
+   */
+  setFocusEl(el: HTMLElement | null): void {
+    this.focusEl = el;
+  }
+
+  /** Half-extents of the z = 0 plane, in world units. */
+  private frustum(): { halfW: number; halfH: number } {
+    const halfH = Math.tan((this.camera.fov * Math.PI) / 360) * this.camera.position.z;
+    return { halfH, halfW: halfH * this.camera.aspect };
+  }
+
+  /** True when the focus box was applied this frame. */
+  private applyFocus(): boolean {
+    const el = this.focusEl;
+    if (!el || !el.isConnected) return false;
+
+    const r = el.getBoundingClientRect();
+    const vh = window.innerHeight;
+    if (r.bottom <= 0 || r.top >= vh || r.width < 40) return false;
+
+    const { halfW, halfH } = this.frustum();
+    const w = window.innerWidth;
+
+    // The lockup's own extents: the wordmark is the widest part, the block
+    // 수 the tallest, and its centre sits above the origin.
+    const SPAN_X = 8.6;
+    const SPAN_Y = 5.6;
+    const MID_Y = 2.115;
+
+    const boxW = (r.width / w) * 2 * halfW;
+    const boxH = (r.height / vh) * 2 * halfH;
+    const s = Math.min(boxW / SPAN_X, boxH / SPAN_Y);
+
+    const cx = r.x + r.width / 2;
+    const cy = r.y + r.height / 2;
+
+    this.root.scale.setScalar(s);
+    this.root.position.x = ((cx / w) * 2 - 1) * halfW;
+    this.root.position.y = -((cy / vh) * 2 - 1) * halfH - MID_Y * s;
+
+    // The page paints a vignette over the canvas to keep type readable; move
+    // its clear centre onto the lockup, or the lockup sits in the dark part.
+    this.vignette((cx / w) * 100, (cy / vh) * 100);
+    return true;
+  }
+
+  private vig = { x: -1, y: -1 };
+
+  private vignette(x: number, y: number): void {
+    // Only touch the stylesheet when it actually moved — this runs per frame.
+    if (Math.abs(x - this.vig.x) < 0.4 && Math.abs(y - this.vig.y) < 0.4) return;
+    this.vig = { x, y };
+    const root = document.documentElement.style;
+    root.setProperty('--vig-x', `${x.toFixed(1)}%`);
+    root.setProperty('--vig-y', `${y.toFixed(1)}%`);
+  }
+
   private resize = (): void => {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -143,11 +229,21 @@ export class Scene {
 
     // Shrink the whole scene on narrow screens: a 6.4-unit-wide glyph is wider
     // than a phone's visible frustum, and the field would swallow the copy.
-    const fit = Math.min(1, Math.max(0.58, w / 1150));
-    this.root.scale.setScalar(fit);
+    // Fallback sizing, used on every screen that does not hand the 3D a box
+    // of its own (see setFocusEl).
+    this.fit = Math.min(1, Math.max(0.58, w / 1150));
+    this.root.scale.setScalar(this.fit);
 
+    // The wordmark is wider than everything else, so it gets its own fit or
+    // 국어논술 runs off both sides of a phone.
+    this.field.setFit(Math.min(1, Math.max(0.6, w / 900)));
     this.field.setDpr(dpr);
   };
+
+  /** Follows the page between its ink and paper themes. */
+  setTheme(dark: boolean): void {
+    this.field.setInk(dark);
+  }
 
   /** 0 → 1 across the whole document. */
   setScroll(p: number): void {
@@ -167,8 +263,10 @@ export class Scene {
   }
 
   morphTo(name: ShapeName): void {
-    this.field.morphTo(name);
-    this.solids.morphTo(SOLID_FOR[name]);
+    const cast = CAST[name];
+    this.castName = name;
+    this.field.morphTo(cast.field);
+    this.solids.morphTo(cast.solid);
     // Each form starts from its own pose and turns only through its chapter.
     this.anchor = this.scrollEased;
   }
@@ -210,7 +308,20 @@ export class Scene {
     // Camera parallax + a slow dolly across the whole page.
     this.camera.position.x = this.pointer.x * 0.85;
     this.camera.position.y = -this.pointer.y * 0.55;
-    this.root.position.y = this.scrollEased * -1.1;
+
+    // Inside its box the lockup tracks the band as the page moves, so it
+    // scrolls away with the hero rather than sliding against it.
+    const focused = this.applyFocus();
+    if (!focused) {
+      this.root.scale.setScalar(this.fit);
+      this.root.position.x = 0;
+      this.root.position.y = this.scrollEased * -1.1;
+      this.vignette(50, 30);
+    }
+
+    // Full strength while the lockup is being read; once the page has moved
+    // past its band the points step back behind the cards.
+    this.field.setOpacity(this.base * CAST[this.castName].fieldLevel * (focused ? 1 : 0.6));
     this.glow.rotation.z = t * 0.03;
     this.camera.lookAt(0, this.root.position.y * 0.4, 0);
 

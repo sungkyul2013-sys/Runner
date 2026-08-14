@@ -145,6 +145,33 @@ export function sheet(title: string, body: Node, footer?: Node): SheetHandle {
 /* ─────────────────────────── small components ────────────────────── */
 
 /**
+ * The brand band: 수 국어논술 running edge to edge.
+ *
+ * The name is the only thing on the page allowed to repeat, so it is the
+ * only thing that moves on its own. The strip is duplicated once and slid
+ * by exactly half its width, which is what makes the loop seamless.
+ */
+export function brandBand(): HTMLElement {
+  const beats = ['수 국어논술', '읽고 · 쓰고 · 고쳐 쓴다', 'SINCE 2009', '윤원수 원장', '한 문장을 끝까지'];
+
+  const run = (): HTMLElement =>
+    h(
+      'span',
+      { class: 'band__run' },
+      ...beats.flatMap((text) => [
+        h('i', { class: 'band__seal', text: '수', 'aria-hidden': 'true' }),
+        h('b', { text }),
+      ]),
+    );
+
+  return h(
+    'div',
+    { class: 'band', role: 'presentation' },
+    h('div', { class: 'band__track' }, run(), run()),
+  );
+}
+
+/**
  * Segmented control. The thumb is one column wide, so it can be moved by
  * whole multiples of its own width — no measuring, and it stays right
  * through a resize or a font swap.
