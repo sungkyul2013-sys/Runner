@@ -4,6 +4,8 @@ import { buzz, meter } from '../core/ui';
 import { store } from '../core/store';
 import { QUESTIONS, type ChoiceQ } from '../data/questions';
 import { COURSES, TEACHER } from '../data/content';
+import { KINDS, TOTAL_LESSONS, buildSchedule, nextSession } from '../data/curriculum';
+import { relativeDay, todayISO } from '../core/dates';
 import { showcase } from './showcase';
 
 /** Picks a stable "question of the day" so it changes daily, not per reload. */
@@ -141,6 +143,70 @@ function progressCard(router: Router): HTMLElement | null {
   );
 }
 
+/**
+ * Today's sessions, straight on the home screen — the timetable is only
+ * useful if it is the first thing you see. Absent until there is one.
+ */
+function todayCard(router: Router): HTMLElement | null {
+  const tt = store.get().timetable;
+  if (!tt) return null;
+
+  const sessions = buildSchedule(tt.startISO, tt.days);
+  const today = todayISO();
+  const todays = sessions.filter((s) => s.date === today);
+  const next = nextSession(sessions, today);
+  const done = store.doneCount;
+
+  const rows = (todays.length > 0 ? todays : next ? [next] : []).map((s) =>
+    h(
+      'button',
+      {
+        class: `les ${store.isDone(s.lesson.id) ? 'is-done' : ''}`,
+        type: 'button',
+        style: { '--tone': KINDS[s.lesson.kind].tone } as Partial<CSSStyleDeclaration>,
+        on: {
+          click: () => {
+            buzz(10);
+            router.go('/study');
+          },
+        },
+      },
+      h('span', { class: 'les__kind mono', text: KINDS[s.lesson.kind].label }),
+      h(
+        'span',
+        { class: 'les__body' },
+        h('b', { text: s.lesson.title }),
+        h('span', { class: 'sm', text: `${s.stage.no}단계 ${s.stage.name} · ${s.lesson.minutes}분` }),
+      ),
+      store.isDone(s.lesson.id)
+        ? h('span', { class: 'les__end les__end--done' }, icon('check', 16))
+        : h('span', { class: 'les__end mono', text: relativeDay(s.date) }),
+    ),
+  );
+
+  return h(
+    'section',
+    { class: 'card ruled rise', style: { '--d': '40ms' } as Partial<CSSStyleDeclaration> },
+    h(
+      'div',
+      { class: 'row row--between' },
+      h('span', { class: 'eyebrow', text: todays.length > 0 ? '오늘 할 것' : '다음 수업' }),
+      h('span', { class: 'mono', text: `${done} / ${TOTAL_LESSONS}회차` }),
+    ),
+    h('div', { class: 'stack les__list', style: { gap: '8px', marginTop: '16px' } }, ...rows),
+    h(
+      'button',
+      {
+        class: 'btn btn--ghost btn--block',
+        style: { marginTop: '14px' },
+        on: { click: () => router.go('/study') },
+      },
+      '시간표 전체 보기',
+      icon('arrow', 16),
+    ),
+  );
+}
+
 export function homeView(router: Router): HTMLElement {
   // The screen splits in two: the app you use, then the long-form chapter
   // that continues below it when you keep scrolling.
@@ -149,6 +215,7 @@ export function homeView(router: Router): HTMLElement {
 
 function appScreen(router: Router): HTMLElement {
   const tiles: [string, string, string, string][] = [
+    ['cal', '/study', '학습 시스템', '날짜별 · 단계별 24회차'],
     ['spark', '/map', '학습 맵', '레벨 · 스테이지'],
     ['quiz', '/quiz', '진단 테스트', '12문항 · 약 8분'],
     ['lab', '/lab', '첨삭 랩', '직접 고쳐 보기'],
@@ -226,6 +293,7 @@ function appScreen(router: Router): HTMLElement {
       ),
     ),
 
+    todayCard(router),
     progressCard(router),
 
     h(

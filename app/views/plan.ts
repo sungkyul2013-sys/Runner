@@ -3,6 +3,8 @@ import type { Router } from '../core/router';
 import { buzz, toast } from '../core/ui';
 import { store } from '../core/store';
 import { GOALS, GRADES, buildPlan, planMinutes } from '../data/content';
+import { defaultDays } from '../data/curriculum';
+import { todayISO } from '../core/dates';
 
 /**
  * 학습 플랜 — three inputs, a four-week cycle out.
@@ -98,12 +100,18 @@ export function planView(router: Router): HTMLElement {
     );
   }
 
+  const savePlan = (): void => {
+    store.set({
+      plan: { grade, goal, perWeek, minutes: planMinutes(grade, perWeek), createdAt: Date.now() },
+    });
+  };
+
   /* ── render the generated plan ───────────────────────────────────── */
 
   function render(): void {
     perWeekOut.textContent = String(perWeek);
 
-    const weeks = buildPlan(grade, goal, perWeek);
+    const weeks = buildPlan(goal, perWeek);
     const minutes = planMinutes(grade, perWeek);
     const load = minutes >= 360 ? '높음' : minutes >= 200 ? '보통' : '가벼움';
 
@@ -193,9 +201,7 @@ export function planView(router: Router): HTMLElement {
           class: 'btn btn--primary',
           on: {
             click: () => {
-              store.set({
-                plan: { grade, goal, perWeek, minutes: planMinutes(grade, perWeek), createdAt: Date.now() },
-              });
+              savePlan();
               toast('플랜을 저장했습니다.', 'good');
               buzz(14);
             },
@@ -205,9 +211,33 @@ export function planView(router: Router): HTMLElement {
       ),
       h(
         'button',
-        { class: 'btn btn--ghost', on: { click: () => router.go('/apply') } },
-        '이 플랜으로 상담 신청',
+        {
+          class: 'btn btn--ghost',
+          on: {
+            click: () => {
+              // The plan says how often; the timetable says which days and
+              // from when. Saving both here means one tap gets a calendar.
+              savePlan();
+              store.set({
+                timetable: {
+                  startISO: todayISO(),
+                  days: defaultDays(perWeek),
+                  createdAt: Date.now(),
+                },
+              });
+              buzz(14);
+              toast('오늘부터 시간표를 배치했습니다.', 'good');
+              router.go('/study');
+            },
+          },
+        },
+        '이 플랜으로 시간표 만들기',
         icon('arrow', 17),
+      ),
+      h(
+        'button',
+        { class: 'btn btn--quiet', on: { click: () => router.go('/apply') } },
+        '상담 신청',
       ),
     ),
   );

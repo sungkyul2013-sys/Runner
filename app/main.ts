@@ -20,6 +20,7 @@ import { coursesView, courseView } from './views/courses';
 import { applyView } from './views/apply';
 import { trialView } from './views/trial';
 import { mapView } from './views/map';
+import { studyView } from './views/study';
 
 /* ────────────────────────────── theme ─────────────────────────────── */
 
@@ -64,6 +65,7 @@ const ROUTES: (Route & { shape: ShapeName })[] = [
     shape: 'helix',
     view: () => trialView(router),
   },
+  { pattern: '/study', title: '학습 시스템', shape: 'grid', view: () => studyView(router) },
   { pattern: '/quiz', title: '진단', shape: 'grid', view: () => quizView(router) },
   { pattern: '/result', title: '진단 결과', nested: true, shape: 'wave', view: () => resultView(router) },
   { pattern: '/map', title: '학습 맵', nested: true, shape: 'wave', view: () => mapView(router) },
@@ -86,11 +88,20 @@ for (const route of ROUTES) router.add(route);
 
 const TABS: [string, string, string][] = [
   ['/', 'home', '홈'],
+  ['/study', 'cal', '학습'],
   ['/quiz', 'quiz', '진단'],
   ['/lab', 'lab', '첨삭'],
-  ['/plan', 'plan', '플랜'],
   ['/apply', 'chat', '상담'],
 ];
+
+/** Screens that live under a tab without being it. */
+const TAB_OWNER: Record<string, string> = {
+  '/result': '/quiz',
+  '/plan': '/study',
+  '/map': '/study',
+  '/courses': '/study',
+  '/course': '/study',
+};
 
 /** The same markup fills the bottom bar on phones and the side rail on desktop. */
 function buildTabs(host: HTMLElement | null): void {
@@ -115,8 +126,7 @@ buildTabs(rail);
 
 function paintTabs(path: string): void {
   const root = path === '/' ? '/' : `/${path.split('/').filter(Boolean)[0]}`;
-  // /result belongs to the diagnosis flow; /courses to nothing in the bar.
-  const owner = root === '/result' ? '/quiz' : root;
+  const owner = TAB_OWNER[root] ?? root;
 
   for (const tab of [...(tabbar?.children ?? []), ...(rail?.children ?? [])]) {
     const el = tab as HTMLElement;

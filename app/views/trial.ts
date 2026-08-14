@@ -5,6 +5,8 @@ import { store } from '../core/store';
 import { withJosa } from '../core/hangul';
 import { DOMAINS, DOMAIN_COURSE, DOMAIN_NOTE, type Domain } from '../data/questions';
 import { GOALS, GRADES, TEACHER, buildPlan, courseById, planMinutes } from '../data/content';
+import { buildSchedule, defaultDays } from '../data/curriculum';
+import { WEEKDAYS, dayLabel, todayISO } from '../core/dates';
 import { quizView } from './quiz';
 import { consultForm } from './apply';
 
@@ -308,7 +310,7 @@ export function trialView(router: Router): HTMLElement {
 
     const draw = (): void => {
       perWeekOut.textContent = String(state.perWeek);
-      const list = buildPlan(state.grade, state.goal, state.perWeek);
+      const list = buildPlan(state.goal, state.perWeek);
       const minutes = planMinutes(state.grade, state.perWeek);
 
       summary.replaceChildren(
@@ -343,15 +345,29 @@ export function trialView(router: Router): HTMLElement {
       );
     };
 
+    // What the 4주 표 turns into on a calendar, refreshed with the stepper.
+    const timetableNote = h('p', { class: 'setup__preview' });
+
+    const drawNote = (): void => {
+      const days = defaultDays(state.perWeek);
+      const sessions = buildSchedule(todayISO(), days);
+      const last = sessions[sessions.length - 1];
+      timetableNote.textContent = last
+        ? `${days.map((d) => WEEKDAYS[d]).join('·')}요일에 정규 과정 ${sessions.length}회차가 배치됩니다. 오늘 시작해 ${dayLabel(last.date)}에 끝납니다.`
+        : '';
+    };
+
     const step = (delta: number): void => {
       const next = Math.min(4, Math.max(1, state.perWeek + delta));
       if (next === state.perWeek) return;
       state.perWeek = next;
       buzz(10);
       draw();
+      drawNote();
     };
 
     draw();
+    drawNote();
 
     return h(
       'div',
@@ -379,6 +395,7 @@ export function trialView(router: Router): HTMLElement {
       ),
       h('section', { class: 'card card--solid' }, summary),
       weeks,
+      timetableNote,
       h(
         'button',
         {
@@ -394,14 +411,21 @@ export function trialView(router: Router): HTMLElement {
                   minutes: planMinutes(state.grade, state.perWeek),
                   createdAt: Date.now(),
                 },
+                // The 4주 표 says what; the timetable says when. The trial
+                // promises both in one pass, so both are written here.
+                timetable: {
+                  startISO: todayISO(),
+                  days: defaultDays(state.perWeek),
+                  createdAt: Date.now(),
+                },
               });
               buzz(14);
-              toast('플랜을 저장했습니다.', 'good');
+              toast('플랜과 시간표를 저장했습니다.', 'good');
               go(4);
             },
           },
         },
-        '이 플랜으로 상담 신청',
+        '시간표 만들고 상담 신청',
         icon('arrow', 18),
       ),
     );
@@ -427,6 +451,11 @@ export function trialView(router: Router): HTMLElement {
           h(
             'div',
             { class: 'row', style: { gap: '8px', marginTop: '18px', flexWrap: 'wrap' } },
+            h(
+              'button',
+              { class: 'btn btn--ghost', type: 'button', on: { click: () => router.go('/study') } },
+              '학습 시간표 보기',
+            ),
             h(
               'button',
               { class: 'btn btn--ghost', type: 'button', on: { click: () => router.go('/lab') } },

@@ -144,6 +144,53 @@ export function sheet(title: string, body: Node, footer?: Node): SheetHandle {
 
 /* ─────────────────────────── small components ────────────────────── */
 
+/**
+ * Segmented control. The thumb is one column wide, so it can be moved by
+ * whole multiples of its own width — no measuring, and it stays right
+ * through a resize or a font swap.
+ */
+export function segmented(
+  labels: string[],
+  initial: number,
+  onPick: (index: number) => void,
+): HTMLElement {
+  const thumb = h('i', {
+    class: 'seg__thumb',
+    'aria-hidden': 'true',
+    style: { width: `calc((100% - 8px) / ${labels.length})` },
+  });
+
+  const buttons = labels.map((label, i) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        role: 'tab',
+        text: label,
+        'aria-selected': String(i === initial),
+        on: {
+          click: () => {
+            if (thumb.dataset.at === String(i)) return;
+            paint(i);
+            buzz(10);
+            onPick(i);
+          },
+        },
+      },
+    ),
+  );
+
+  function paint(i: number): void {
+    thumb.dataset.at = String(i);
+    thumb.style.transform = `translateX(${i * 100}%)`;
+    buttons.forEach((b, j) => b.setAttribute('aria-selected', String(i === j)));
+  }
+
+  const root = h('div', { class: 'seg', role: 'tablist' }, thumb, ...buttons);
+  paint(initial);
+  return root;
+}
+
 /** A labelled bar — used for domain scores and plan load. */
 export function meter(label: string, value: number, max: number, tone = 'var(--cheong)'): HTMLElement {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;

@@ -100,8 +100,9 @@ export function consultForm(onSent?: () => void): HTMLFormElement {
     }),
   );
 
-  const flag = (el: Element, bad: boolean): void =>
+  const flag = (el: Element, bad: boolean): void => {
     el.closest('.formfield, .check')?.classList.toggle('is-bad', bad);
+  };
 
   for (const el of [name, phone, gradeSel, agree]) {
     el.addEventListener('input', () => flag(el, false));

@@ -155,7 +155,7 @@ export interface PlanWeek {
  * chosen by goal, so every combination produces a plan that reads as
  * deliberate rather than generic.
  */
-export function buildPlan(grade: string, goal: string, perWeek: number): PlanWeek[] {
+export function buildPlan(goal: string, perWeek: number): PlanWeek[] {
   const booksPerWeek = perWeek >= 3 ? 1 : perWeek === 2 ? 0.5 : 0.5;
 
   const writeByGoal: Record<string, string[]> = {

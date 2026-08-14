@@ -6,6 +6,8 @@
  * study app should degrade to "works, forgets" rather than break.
  */
 
+import { addDays, todayISO } from './dates';
+
 export interface DomainScore {
   correct: number;
   total: number;
@@ -28,11 +30,25 @@ export interface StudyPlan {
   createdAt: number;
 }
 
+/** When the course starts and which weekdays it runs on. */
+export interface Timetable {
+  /** `YYYY-MM-DD`, local. */
+  startISO: string;
+  /** Weekday numbers, 0 = 일요일. */
+  days: number[];
+  createdAt: number;
+}
+
 export interface AppState {
   theme: 'system' | 'light' | 'dark';
   runs: QuizRun[];
   labBest: number;
   plan: StudyPlan | null;
+  timetable: Timetable | null;
+  /** lesson id → the date it was completed. */
+  done: Record<string, string>;
+  /** lesson id → what the student wrote for it. */
+  drafts: Record<string, string>;
   seenIntro: boolean;
   streak: { days: number; last: string };
 }
@@ -44,6 +60,9 @@ const EMPTY: AppState = {
   runs: [],
   labBest: 0,
   plan: null,
+  timetable: null,
+  done: {},
+  drafts: {},
   seenIntro: false,
   streak: { days: 0, last: '' },
 };
@@ -57,6 +76,11 @@ function read(): AppState {
       ...EMPTY,
       ...parsed,
       runs: Array.isArray(parsed.runs) ? parsed.runs : [],
+      // An older save has no timetable and no completion map; both default
+      // to "nothing done yet" rather than breaking the study screen.
+      done: parsed.done && typeof parsed.done === 'object' ? parsed.done : {},
+      drafts: parsed.drafts && typeof parsed.drafts === 'object' ? parsed.drafts : {},
+      timetable: parsed.timetable ?? null,
       streak: parsed.streak ?? { ...EMPTY.streak },
     };
   } catch {
@@ -105,14 +129,45 @@ class Store {
     this.touchStreak();
   }
 
+  /* ── the course ────────────────────────────────────────────────── */
+
+  get doneCount(): number {
+    return Object.keys(this.state.done).length;
+  }
+
+  isDone(lessonId: string): boolean {
+    return lessonId in this.state.done;
+  }
+
+  draft(lessonId: string): string {
+    return this.state.drafts[lessonId] ?? '';
+  }
+
+  /** Keeps what the student wrote. An empty draft is dropped, not stored. */
+  saveDraft(lessonId: string, text: string): void {
+    const next = { ...this.state.drafts };
+    if (text.trim()) next[lessonId] = text;
+    else delete next[lessonId];
+    this.set({ drafts: next });
+  }
+
+  /** Marks a session done (or undoes it). Completing one counts as study. */
+  markLesson(lessonId: string, done: boolean): void {
+    const next = { ...this.state.done };
+    if (done) next[lessonId] = todayISO();
+    else delete next[lessonId];
+
+    this.set({ done: next });
+    if (done) this.touchStreak();
+  }
+
   /** Counts consecutive calendar days with at least one session. */
   private touchStreak(): void {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     const { days, last } = this.state.streak;
     if (last === today) return;
 
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    this.set({ streak: { days: last === yesterday ? days + 1 : 1, last: today } });
+    this.set({ streak: { days: last === addDays(today, -1) ? days + 1 : 1, last: today } });
   }
 }
 

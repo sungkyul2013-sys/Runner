@@ -4,8 +4,10 @@ This repo now holds three entry points, all built by one `npm run build`:
 
 - **`index.html` → 수 국어논술 (app)** — a mobile-first learning app: a
   12-question Korean diagnostic with three answer mechanics, a lab where you
-  mark up a student's paragraph yourself, and a four-week plan generator.
-  Source in `app/`, documented in [`app/README.md`](app/README.md).
+  mark up a student's paragraph yourself, a four-week plan generator, and a
+  six-stage 24-session course you can run **by date** (a calendar timetable)
+  or **by stage** (a curriculum ladder), with the writing sessions done in
+  the app. Source in `app/`, documented in [`app/README.md`](app/README.md).
 - **`story.html` → 수 국어논술 학원 (site)** — the scroll-driven brochure
   site. Source in `story/`, documented in [`story/README.md`](story/README.md).
 - **`game.html` → Sunset Runner** — the original endless runner (was

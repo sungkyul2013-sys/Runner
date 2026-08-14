@@ -4,6 +4,7 @@ import { buzz, toast } from '../core/ui';
 import { store } from '../core/store';
 import { DOMAINS, type Domain } from '../data/questions';
 import { TEACHER } from '../data/content';
+import { STAGES as COURSE_STAGES, TOTAL_LESSONS } from '../data/curriculum';
 
 /**
  * 학습 맵 — the progression board that turns the separate screens into one
@@ -40,6 +41,9 @@ interface Progress {
   best: number;
   labBest: number;
   hasPlan: boolean;
+  hasTimetable: boolean;
+  lessons: number;
+  stagesCleared: number;
   streak: number;
   weakest: Domain | null;
 }
@@ -50,12 +54,19 @@ function read(): Progress {
   const best = store.best;
   const labBest = s.labBest;
   const hasPlan = s.plan !== null;
+  const lessons = store.doneCount;
+  const stagesCleared = COURSE_STAGES.filter((st) =>
+    st.lessons.every((l) => store.isDone(l.id)),
+  ).length;
 
-  // Earned, not granted: each run pays for the questions it got right.
+  // Earned, not granted: each run pays for the questions it got right, and
+  // each completed session of the course pays the same way.
   const xp =
     s.runs.reduce((sum, r) => sum + 10 + r.score * 5, 0) +
     Math.round(labBest / 2) +
     (hasPlan ? 30 : 0) +
+    lessons * 12 +
+    stagesCleared * 40 +
     Math.max(0, s.streak.days - 1) * 15;
 
   let level = 1;
@@ -82,6 +93,9 @@ function read(): Progress {
     best,
     labBest,
     hasPlan,
+    hasTimetable: s.timetable !== null,
+    lessons,
+    stagesCleared,
     streak: s.streak.days,
     weakest,
   };
@@ -92,7 +106,8 @@ function read(): Progress {
 interface Stage {
   no: number;
   title: string;
-  note: string;
+  /** A function when the line has to quote live numbers. */
+  note: string | ((p: Progress) => string);
   route: string;
   /** Unlocked when this is true. */
   open: (p: Progress) => boolean;
@@ -149,6 +164,33 @@ const STAGES: Stage[] = [
   },
   {
     no: 6,
+    title: '시간표 배치',
+    note: '시작일과 요일을 고르면 24회차가 날짜에 붙습니다.',
+    route: '/study',
+    open: (p) => p.hasPlan,
+    done: (p) => p.hasTimetable,
+    reward: 25,
+  },
+  {
+    no: 7,
+    title: '1단계 문장 마치기',
+    note: '읽기 · 문제 · 쓰기 · 첨삭 네 회차를 모두 완료합니다.',
+    route: '/study',
+    open: (p) => p.hasTimetable,
+    done: () => COURSE_STAGES[0].lessons.every((l) => store.isDone(l.id)),
+    reward: 80,
+  },
+  {
+    no: 8,
+    title: '정규 과정 절반',
+    note: (p) => `${TOTAL_LESSONS}회차 중 ${TOTAL_LESSONS / 2}회차까지 — 지금 ${p.lessons}회차 완료.`,
+    route: '/study',
+    open: (p) => p.lessons >= 1,
+    done: (p) => p.lessons >= TOTAL_LESSONS / 2,
+    reward: 120,
+  },
+  {
+    no: 9,
     title: '내 단계 확인',
     note: '어느 과정에서 시작하면 되는지 봅니다.',
     route: '/courses',
@@ -157,7 +199,7 @@ const STAGES: Stage[] = [
     reward: 10,
   },
   {
-    no: 7,
+    no: 10,
     title: '진단 다시 풀기',
     note: '80점을 넘기면 다음 단계가 열립니다.',
     route: '/quiz',
@@ -166,7 +208,7 @@ const STAGES: Stage[] = [
     reward: 90,
   },
   {
-    no: 8,
+    no: 11,
     title: '상담 신청',
     note: `${TEACHER.name} ${TEACHER.role}이 결과를 직접 확인합니다.`,
     route: '/apply',
@@ -182,6 +224,9 @@ const BADGES: { key: string; label: string; note: string; has: (p: Progress) => 
   { key: '진', label: '첫 진단', note: '진단을 한 번 완주', has: (p) => p.runs >= 1 },
   { key: '삭', label: '첨삭가', note: '첨삭 랩 70점 이상', has: (p) => p.labBest >= 70 },
   { key: '계', label: '설계자', note: '4주 플랜 저장', has: (p) => p.hasPlan },
+  { key: '표', label: '시간표', note: '24회차를 날짜에 배치', has: (p) => p.hasTimetable },
+  { key: '차', label: '첫 회차', note: '정규 과정 1회차 완료', has: (p) => p.lessons >= 1 },
+  { key: '단', label: '단계 통과', note: '한 단계를 모두 완료', has: (p) => p.stagesCleared >= 1 },
   { key: '연', label: '연속 3일', note: '3일 연속 학습', has: (p) => p.streak >= 3 },
   { key: '반', label: '반복 학습', note: '진단 3회 이상', has: (p) => p.runs >= 3 },
   { key: '수', label: '자기 문장', note: '진단 80점 이상', has: (p) => p.best >= 0.8 },
@@ -297,7 +342,7 @@ export function mapView(router: Router): HTMLElement {
                 'span',
                 { class: 'node__body' },
                 h('b', { text: s.title }),
-                h('span', { class: 'sm', text: s.note }),
+                h('span', { class: 'sm', text: typeof s.note === 'function' ? s.note(p) : s.note }),
               ),
               h(
                 'span',
