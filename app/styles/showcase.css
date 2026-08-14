@@ -1,0 +1,535 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Showcase — the long-form chapter that continues below the app home.
+
+   Product-page discipline: full-bleed chapters, one idea per screen,
+   very large tight-set type, hairline rules, and no cards. The app above
+   is made of surfaces; this is made of ground and type, so the shift in
+   register is felt rather than announced.
+
+   Ink chapters are transparent so the particle layer shows through — the
+   page's own ground darkens under them instead (see .is-dark-chapter),
+   which is what makes the field appear without a box around it.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.showcase {
+  --ink: #05060b;
+  --on-ink: #f4f3ef;
+  --on-ink-2: #a3a5ad;
+  --on-ink-3: #6a6d78;
+  --paper: #f4f2ec;
+  --on-paper: #14161d;
+  --on-paper-2: #55524b;
+  --on-paper-3: #8b877e;
+
+  position: relative;
+  margin-top: clamp(48px, 12vw, 96px);
+}
+
+/* The whole page ground follows the chapter you are in — which is also
+   what makes the final chapter run flush to the bottom of the document
+   instead of ending on a strip of the app's own ground. */
+body.is-dark-chapter {
+  background: #05060b;
+}
+body.is-paper-chapter {
+  background: #f4f2ec;
+}
+
+/* The app screens read the field through cards, so its vignette is tight.
+   Full-bleed chapters need the opposite: open the clear core right out to
+   the edges, or the field looks like a band stuck across the middle. */
+body.is-dark-chapter .backdrop {
+  opacity: 0.92;
+}
+body.is-dark-chapter .backdrop::after {
+  background: radial-gradient(150% 120% at 50% 46%, transparent 58%, #05060b 100%);
+  opacity: 0.78;
+}
+
+/* The chrome follows the chapter too. Redefining the tokens on the bars
+   themselves is enough — everything inside them reads through these. */
+body.is-dark-chapter .topbar,
+body.is-dark-chapter .tabbar,
+body.is-dark-chapter .rail {
+  --chrome: rgba(9, 11, 18, 0.72);
+  --text: #f4f3ef;
+  --text-2: #a7a9af;
+  --text-3: #6d6f79;
+  --line-soft: rgba(255, 255, 255, 0.07);
+  --surface: rgba(255, 255, 255, 0.06);
+  --invert-bg: #fffefa;
+  --invert-text: #05060b;
+  color: #f4f3ef;
+}
+body.is-paper-chapter .topbar,
+body.is-paper-chapter .tabbar,
+body.is-paper-chapter .rail {
+  --chrome: rgba(244, 242, 236, 0.82);
+  --text: #14161d;
+  --text-2: #55524b;
+  --text-3: #8b877e;
+  --line-soft: rgba(20, 22, 29, 0.07);
+  --surface: rgba(20, 22, 29, 0.05);
+  --invert-bg: #14161d;
+  --invert-text: #fffefa;
+  color: #14161d;
+}
+
+.ch {
+  position: relative;
+  padding-block: clamp(84px, 18vw, 168px);
+}
+.ch--ink {
+  color: var(--on-ink);
+}
+/* A veil between the field and the copy. The field stays clearly visible
+   at 0.92; this only buys the type its contrast back. */
+.ch--ink::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(5, 6, 11, 0.5);
+}
+.ch--ink > * {
+  position: relative;
+}
+.ch--paper {
+  background: var(--paper);
+  color: var(--on-paper);
+}
+/* Chapters butt straight against each other — no rounded seams. */
+.ch + .ch {
+  margin-top: 0;
+}
+
+.ch__wrap {
+  width: 100%;
+  max-width: 980px;
+  margin-inline: auto;
+  padding-inline: clamp(20px, 6vw, 40px);
+}
+
+/* ── type ─────────────────────────────────────────────────────────── */
+
+.ch__eyebrow {
+  font-family: var(--mono);
+  font-size: clamp(10.5px, 2.7vw, 12px);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-bottom: clamp(20px, 4vw, 30px);
+  color: var(--on-ink-3);
+}
+.ch--paper .ch__eyebrow {
+  color: var(--on-paper-3);
+}
+
+/* Sized for Korean: at 390px this lands near 34px, so a ten-syllable line
+   still fits one row. The larger setting the Latin scale would allow wraps
+   mid-phrase and reads as an accident. */
+.ch__display {
+  font-size: clamp(30px, 8.6vw, 76px);
+  line-height: 1.04;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+.ch__lede {
+  margin-top: clamp(18px, 3.6vw, 28px);
+  font-size: clamp(15.5px, 4.1vw, 21px);
+  line-height: 1.62;
+  letter-spacing: -0.02em;
+  max-width: 34ch;
+  color: var(--on-ink-2);
+}
+.ch--paper .ch__lede {
+  color: var(--on-paper-2);
+}
+
+/* Emphasis stays the pen rule the rest of the product uses. */
+.ch .pen::after {
+  background: #ff4d3d;
+  height: 0.075em;
+  bottom: 0.02em;
+}
+.ch--ink .pen::after {
+  background: #ff5f50;
+}
+
+/* ── 01 opening ───────────────────────────────────────────────────── */
+
+.ch--open {
+  min-height: 86svh;
+  display: flex;
+  align-items: center;
+}
+.ch__cue {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: clamp(34px, 7vw, 56px);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--on-ink-3);
+}
+.ch__cue i {
+  display: block;
+  width: 1px;
+  height: 30px;
+  background: currentColor;
+  transform-origin: 50% 0;
+  animation: cueDrop 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes cueDrop {
+  0% { transform: scaleY(0); opacity: 0; }
+  40% { transform: scaleY(1); opacity: 1; }
+  100% { transform: scaleY(1) translateY(30px); opacity: 0; }
+}
+
+/* ── 02 pinned stage ──────────────────────────────────────────────── */
+
+.stage {
+  position: relative;
+  /* Three beats plus a lead-in and a hand-off. */
+  height: 420svh;
+}
+.stage__pin {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-bottom: clamp(72px, 16vh, 132px);
+  overflow: hidden;
+}
+/* Weighted to the bottom, where the beat copy sits, so the form itself
+   stays completely clear in the upper two thirds. */
+.stage__pin::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 30%,
+    rgba(5, 6, 11, 0.55) 58%,
+    rgba(5, 6, 11, 0.9) 100%
+  );
+}
+.stage__pin > * {
+  position: relative;
+}
+
+/* Beats occupy the same space and cross-fade. */
+.beat {
+  grid-area: 1 / 1;
+  max-width: 720px;
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s var(--ease), transform 0.7s var(--ease);
+  pointer-events: none;
+}
+.beat.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.beats {
+  display: grid;
+  width: 100%;
+  max-width: 980px;
+  margin-inline: auto;
+  padding-inline: clamp(20px, 6vw, 40px);
+}
+.beat__no {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: #ff5f50;
+  margin-bottom: 14px;
+}
+.beat__head {
+  font-size: clamp(30px, 8.6vw, 62px);
+  line-height: 1.08;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  color: var(--on-ink);
+  text-wrap: balance;
+}
+.beat__sub {
+  margin-top: 14px;
+  font-size: clamp(14.5px, 3.8vw, 18px);
+  line-height: 1.62;
+  color: var(--on-ink-2);
+  max-width: 32ch;
+}
+
+/* Beat rail — three ticks, the current one filling as you scroll. */
+.stage__rail {
+  width: 100%;
+  max-width: 980px;
+  margin: clamp(28px, 5vw, 40px) auto 0;
+  padding-inline: clamp(20px, 6vw, 40px);
+  display: flex;
+  gap: 6px;
+}
+.stage__tick {
+  flex: 1;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+.stage__tick i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--on-ink);
+}
+
+/* ── 03 redline ───────────────────────────────────────────────────── */
+
+.rewrite {
+  display: grid;
+  gap: clamp(22px, 5vw, 34px);
+}
+.rewrite__line {
+  font-size: clamp(21px, 5.6vw, 38px);
+  line-height: 1.5;
+  letter-spacing: -0.04em;
+  font-weight: 700;
+}
+.rewrite__before {
+  color: var(--on-paper-3);
+}
+/* The strike is drawn, not stated: it sweeps in when the block is seen. */
+.rewrite__before span {
+  background-image: linear-gradient(#d63a2b, #d63a2b);
+  background-repeat: no-repeat;
+  background-position: 0 58%;
+  background-size: 0% 2px;
+  transition: background-size 0.85s var(--ease) 0.15s;
+}
+.is-seen .rewrite__before span {
+  background-size: 100% 2px;
+}
+.rewrite__after {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.7s var(--ease) 0.75s, transform 0.7s var(--ease) 0.75s;
+}
+.is-seen .rewrite__after {
+  opacity: 1;
+  transform: none;
+}
+.rewrite__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #d63a2b;
+}
+.rewrite__meta::before {
+  content: '';
+  width: 26px;
+  height: 1px;
+  background: currentColor;
+}
+.rewrite__caption {
+  font-size: clamp(13.5px, 3.4vw, 15px);
+  color: var(--on-paper-3);
+  max-width: 40ch;
+}
+
+/* ── 04 numbers ───────────────────────────────────────────────────── */
+
+.specs {
+  display: grid;
+  gap: 0;
+  margin-top: clamp(34px, 7vw, 56px);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+.spec {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding: clamp(20px, 4.4vw, 30px) 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+.spec__n {
+  font-size: clamp(34px, 10vw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--on-ink);
+}
+.spec__n em {
+  font-style: normal;
+  font-size: 0.44em;
+  font-weight: 650;
+  margin-left: 0.12em;
+  color: var(--on-ink-2);
+}
+.spec__label {
+  font-family: var(--mono);
+  font-size: clamp(10.5px, 2.8vw, 12px);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--on-ink-3);
+  text-align: right;
+}
+.specs__note {
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--on-ink-3);
+}
+
+/* ── 05 steps rail (pinned, horizontal) ───────────────────────────── */
+
+.steps {
+  position: relative;
+  height: 360svh;
+}
+.steps__pin {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(24px, 5vw, 40px);
+  overflow: hidden;
+}
+.steps__head {
+  width: 100%;
+  max-width: 980px;
+  margin-inline: auto;
+  padding-inline: clamp(20px, 6vw, 40px);
+}
+.steps__track {
+  display: flex;
+  gap: clamp(12px, 3vw, 20px);
+  padding-inline: clamp(20px, 6vw, 40px);
+  will-change: transform;
+}
+.step {
+  flex: none;
+  width: min(320px, 76vw);
+  min-height: min(420px, 54svh);
+  display: flex;
+  flex-direction: column;
+  padding: clamp(22px, 4.6vw, 30px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--on-ink);
+  text-align: left;
+  /* The field runs straight behind these, so they carry just enough ground
+     to hold text — a wash and a blur, not a filled card. */
+  background: rgba(5, 6, 11, 0.52);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  transition: background 0.3s var(--ease), border-color 0.3s var(--ease);
+}
+.step:active {
+  background: rgba(5, 6, 11, 0.7);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.step__no {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: #ff5f50;
+}
+.step__name {
+  margin-top: 12px;
+  font-size: clamp(22px, 5.4vw, 30px);
+  font-weight: 780;
+  letter-spacing: -0.04em;
+  line-height: 1.14;
+}
+.step__who {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--on-ink-3);
+}
+.step__sum {
+  margin-top: 16px;
+  font-size: clamp(13.5px, 3.5vw, 15px);
+  line-height: 1.62;
+  color: var(--on-ink-2);
+}
+.step__hours {
+  margin-top: auto;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--on-ink-3);
+}
+
+/* ── 06 close ─────────────────────────────────────────────────────── */
+
+.ch--close {
+  text-align: center;
+}
+.ch--close .ch__lede {
+  margin-inline: auto;
+}
+.close__acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: clamp(28px, 6vw, 40px);
+}
+.close__acts .btn--primary {
+  background: var(--on-paper);
+  color: var(--paper);
+}
+.close__acts .btn--ghost {
+  border-color: rgba(20, 22, 29, 0.2);
+  color: var(--on-paper);
+}
+.close__fine {
+  margin-top: clamp(30px, 6vw, 44px);
+  font-size: 12px;
+  color: var(--on-paper-3);
+}
+
+/* ── entrance ─────────────────────────────────────────────────────── */
+
+.lift {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.8s var(--ease), transform 0.9s var(--ease);
+  transition-delay: var(--d, 0ms);
+}
+.lift.is-seen {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lift,
+  .beat,
+  .rewrite__after {
+    opacity: 1;
+    transform: none;
+  }
+  .is-seen .rewrite__before span,
+  .rewrite__before span {
+    background-size: 100% 2px;
+  }
+  .ch__cue i {
+    animation: none;
+  }
+}

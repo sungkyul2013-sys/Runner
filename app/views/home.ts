@@ -4,6 +4,7 @@ import { buzz, meter } from '../core/ui';
 import { store } from '../core/store';
 import { QUESTIONS, type ChoiceQ } from '../data/questions';
 import { COURSES } from '../data/content';
+import { showcase } from './showcase';
 
 /** Picks a stable "question of the day" so it changes daily, not per reload. */
 function todayQuestion(): ChoiceQ {
@@ -141,6 +142,12 @@ function progressCard(router: Router): HTMLElement | null {
 }
 
 export function homeView(router: Router): HTMLElement {
+  // The screen splits in two: the app you use, then the long-form chapter
+  // that continues below it when you keep scrolling.
+  return h('div', {}, appScreen(router), showcase(router));
+}
+
+function appScreen(router: Router): HTMLElement {
   const tiles: [string, string, string, string][] = [
     ['quiz', '/quiz', '진단 테스트', '12문항 · 약 8분'],
     ['lab', '/lab', '첨삭 랩', '직접 고쳐 보기'],

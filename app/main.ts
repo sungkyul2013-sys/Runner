@@ -2,12 +2,13 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/shell.css';
 import './styles/views.css';
+import './styles/showcase.css';
 
 import { h, icon, qs } from './core/dom';
 import { Router, type Route } from './core/router';
 import { applyTheme, nextTheme, store } from './core/store';
 import { setTopbar, toast } from './core/ui';
-import { Scene } from '../shared/three/Scene';
+import { initStage, morph, stage, tickScroll } from './core/stage';
 import type { ShapeName } from '../shared/three/shapes';
 
 import { homeView } from './views/home';
@@ -124,23 +125,10 @@ function paintBadges(): void {
 paintBadges();
 store.subscribe(paintBadges);
 
-/* ───────────────────────────── 3D field ───────────────────────────── */
+/* ───────────────────────────── 3D layer ───────────────────────────── */
 
-let scene: Scene | null = null;
 const canvas = qs<HTMLCanvasElement>('#scene');
-
-if (canvas) {
-  try {
-    scene = new Scene(canvas, 'glyph');
-    scene.intro();
-    scene.start();
-  } catch (err) {
-    // No WebGL: the app is fully usable without it, so just drop the layer.
-    console.warn('[수] 3D layer unavailable.', err);
-    qs('#backdrop')?.remove();
-    scene = null;
-  }
-}
+if (canvas && !initStage(canvas)) qs('#backdrop')?.remove();
 
 /* ─────────────────────── per-frame chrome updates ─────────────────── */
 
@@ -154,13 +142,12 @@ function onScroll(): void {
   ticking = true;
 
   requestAnimationFrame(() => {
-    const y = window.scrollY;
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    const p = max > 40 ? Math.min(1, y / max) : 0;
+    // One layout read per frame, shared by the chrome and every view.
+    const { y, progress } = tickScroll();
 
     topbar?.classList.toggle('is-scrolled', y > 6);
-    if (topProgress) topProgress.style.width = `${p * 100}%`;
-    scene?.setScroll(p);
+    if (topProgress) topProgress.style.width = `${progress * 100}%`;
+    stage()?.setScroll(progress);
     ticking = false;
   });
 }
@@ -175,7 +162,10 @@ router.onNavigate((route) => {
 
   setTopbar(route.nested ? route.title : null, () => router.back());
   paintTabs(router.currentPath());
-  if (meta && scene) scene.morphTo(meta.shape);
+  if (meta) morph(meta.shape);
+
+  // Only the home showcase paints the page ground; leaving it must clear.
+  document.body.classList.remove('is-dark-chapter', 'is-paper-chapter');
 
   // A fresh view resets the reading progress.
   if (topProgress) topProgress.style.width = '0%';
@@ -197,5 +187,5 @@ else window.addEventListener('load', () => window.setTimeout(bootDone, 260), { o
 window.setTimeout(bootDone, 3500);
 
 if (import.meta.env.DEV) {
-  import.meta.hot?.dispose(() => scene?.dispose());
+  import.meta.hot?.dispose(() => stage()?.dispose());
 }
