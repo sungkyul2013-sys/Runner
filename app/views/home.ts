@@ -6,7 +6,7 @@ import { QUESTIONS, type ChoiceQ } from '../data/questions';
 import { COURSES, TEACHER } from '../data/content';
 import { KINDS, TOTAL_LESSONS, buildSchedule, nextSession } from '../data/curriculum';
 import { relativeDay, todayISO } from '../core/dates';
-import { focusOn } from '../core/stage';
+import { focusOn, morph, onScroll } from '../core/stage';
 import { showcase } from './showcase';
 
 /** Picks a stable "question of the day" so it changes daily, not per reload. */
@@ -227,7 +227,7 @@ function appScreen(router: Router): HTMLElement {
     ['book', '/courses', '과정', '4단계'],
   ];
 
-  return h(
+  const screen = h(
     'div',
     { class: 'wrap stack--lg stack home' },
 
@@ -388,4 +388,15 @@ function appScreen(router: Router): HTMLElement {
       text: '본 페이지의 연락처·수치·인물은 예시 데이터입니다.',
     }),
   );
+
+  // The chapters below claim the 3D whenever one of them holds the middle of
+  // the screen. Nothing claimed it back for the top of the page, so scrolling
+  // down through the showcase and returning left the last chapter's form
+  // standing where the lockup belongs. The hero band claims its own.
+  onScroll(screen, ({ vh }) => {
+    const r = stageBand.getBoundingClientRect();
+    if (r.bottom > 0 && r.top < vh) morph('glyph');
+  });
+
+  return screen;
 }
