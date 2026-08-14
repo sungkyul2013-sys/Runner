@@ -3,7 +3,7 @@ import type { Router } from '../core/router';
 import { buzz, meter } from '../core/ui';
 import { store } from '../core/store';
 import { QUESTIONS, type ChoiceQ } from '../data/questions';
-import { COURSES } from '../data/content';
+import { COURSES, TEACHER } from '../data/content';
 import { showcase } from './showcase';
 
 /** Picks a stable "question of the day" so it changes daily, not per reload. */
@@ -159,10 +159,12 @@ function appScreen(router: Router): HTMLElement {
     'div',
     { class: 'wrap stack--lg stack home' },
 
+    // The opening screen: one statement, one thing to do, and the field
+    // behind it. Everything else waits below the fold.
     h(
       'header',
-      { class: 'hero rise' },
-      h('span', { class: 'eyebrow', text: 'since 2009 · 소수정예' }),
+      { class: 'hero' },
+      h('span', { class: 'eyebrow', text: `since 2009 · ${TEACHER.name} ${TEACHER.role}` }),
       h(
         'h1',
         { class: 'display' },
@@ -173,24 +175,36 @@ function appScreen(router: Router): HTMLElement {
         '.',
       ),
       h('p', {
-        class: 'body',
-        text: '읽기에서 시작해 사유로 이어지고, 마침내 자기 문장으로 완성되는 국어. 먼저 한 문제 풀어 보세요.',
+        class: 'body hero__lede',
+        text: '읽기에서 시작해 사유로 이어지고, 마침내 자기 문장으로 완성되는 국어.',
       }),
       h(
         'div',
-        { class: 'row', style: { gap: '8px', flexWrap: 'wrap', marginTop: '6px' } },
+        { class: 'hero__cta' },
         h(
           'button',
-          { class: 'btn btn--primary', on: { click: () => router.go('/quiz') } },
-          '무료 진단 시작',
-          icon('arrow', 17),
+          {
+            class: 'btn btn--primary btn--lg trybtn',
+            on: {
+              click: () => {
+                buzz(14);
+                router.go('/try');
+              },
+            },
+          },
+          '프로그램 체험',
+          icon('arrow', 18),
         ),
         h(
           'button',
-          { class: 'btn btn--ghost', on: { click: () => router.go('/apply') } },
+          { class: 'btn btn--ghost btn--lg', on: { click: () => router.go('/apply') } },
           '상담 신청',
         ),
       ),
+      h('p', {
+        class: 'hero__note',
+        text: '진단 · 분석 · 4주 설계 · 상담까지 한 번에, 약 8분',
+      }),
     ),
 
     progressCard(router),

@@ -2,7 +2,7 @@ import { h } from '../core/dom';
 import type { Router } from '../core/router';
 import { morph, onScroll, pinProgress, type ScrollState } from '../core/stage';
 import type { ShapeName } from '../../shared/three/shapes';
-import { COURSES } from '../data/content';
+import { COURSES, TEACHER } from '../data/content';
 
 /**
  * The long-form chapter below the app home.
@@ -205,7 +205,47 @@ function rewriteChapter(): HTMLElement {
   );
 }
 
-/* ───────────────────────── 04 the numbers ────────────────────────── */
+/* ───────────────────────── 04 the teacher ────────────────────────── */
+
+function teacherChapter(): HTMLElement {
+  return h(
+    'section',
+    { class: 'ch ch--ink', 'data-ground': 'ink', 'data-shape': 'sphere' },
+    h(
+      'div',
+      { class: 'ch__wrap' },
+      reveal(
+        h(
+          'div',
+          { class: 'lift' },
+          h('p', { class: 'ch__eyebrow', text: '선생님' }),
+          h(
+            'h2',
+            { class: 'ch__display' },
+            '한 반을',
+            h('br'),
+            h('span', { class: 'pen', text: '끝까지' }),
+            ' 맡습니다.',
+          ),
+          h(
+            'div',
+            { class: 'teacher' },
+            h(
+              'div',
+              { class: 'teacher__id' },
+              h('span', { class: 'teacher__name', text: `${TEACHER.name} ${TEACHER.role}` }),
+              h('span', { class: 'teacher__line', text: TEACHER.line }),
+            ),
+            h('p', { class: 'teacher__bio', text: TEACHER.bio }),
+            h('blockquote', { class: 'teacher__quote', text: TEACHER.belief }),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/* ───────────────────────── 05 the numbers ────────────────────────── */
 
 const SPECS: [number, string, string][] = [
   [1200, '+', '누적 수강생'],
@@ -395,6 +435,7 @@ export function showcase(router: Router): HTMLElement {
     opening(),
     stageChapter(),
     rewriteChapter(),
+    teacherChapter(),
     numbersChapter(),
     stepsChapter(router),
     closing(router),

@@ -18,6 +18,7 @@ import { labView } from './views/lab';
 import { planView } from './views/plan';
 import { coursesView, courseView } from './views/courses';
 import { applyView } from './views/apply';
+import { trialView } from './views/trial';
 
 /* ────────────────────────────── theme ─────────────────────────────── */
 
@@ -55,6 +56,13 @@ const router = new Router('#view');
 
 const ROUTES: (Route & { shape: ShapeName })[] = [
   { pattern: '/', title: '홈', shape: 'glyph', view: () => homeView(router) },
+  {
+    pattern: '/try',
+    title: '프로그램 체험',
+    nested: true,
+    shape: 'helix',
+    view: () => trialView(router),
+  },
   { pattern: '/quiz', title: '진단', shape: 'grid', view: () => quizView(router) },
   { pattern: '/result', title: '진단 결과', nested: true, shape: 'wave', view: () => resultView(router) },
   { pattern: '/lab', title: '첨삭 랩', shape: 'book', view: () => labView(router) },

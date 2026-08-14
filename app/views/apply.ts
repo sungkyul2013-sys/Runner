@@ -6,11 +6,14 @@ import { GRADES } from '../data/content';
 import { DOMAINS } from '../data/questions';
 
 /**
- * 상담 신청 — the form, pre-filled from whatever the visitor has already
- * done in the app. Someone who just finished a diagnosis should not have
- * to retype their grade or explain their weak area.
+ * 상담 신청 — pre-filled from whatever the visitor has already done in the
+ * app. Someone who just finished a diagnosis should not have to retype
+ * their grade or explain their weak area.
+ *
+ * The form is separated from the page around it so the guided programme
+ * can finish inside its own flow rather than handing off to another screen.
  */
-export function applyView(router: Router): HTMLElement {
+export function consultForm(onSent?: () => void): HTMLFormElement {
   const run = store.lastRun;
   const plan = store.get().plan;
 
@@ -126,7 +129,29 @@ export function applyView(router: Router): HTMLElement {
     toast(`${name.value.trim()} 학생 신청이 접수되었습니다 (데모).`, 'good');
     form.reset();
     qs('.is-bad', form)?.classList.remove('is-bad');
+    onSent?.();
   });
+
+  return form;
+}
+
+export function applyView(router: Router): HTMLElement {
+  const run = store.lastRun;
+  const plan = store.get().plan;
+
+  const weakest = run
+    ? DOMAINS.map((d) => ({
+        d,
+        r: run.byDomain[d] ? run.byDomain[d].correct / Math.max(1, run.byDomain[d].total) : 1,
+      })).sort((a, b) => a.r - b.r)[0].d
+    : null;
+
+  const prefill = [
+    run ? `진단 ${Math.round((run.score / run.total) * 100)}점 (보완: ${weakest})` : '',
+    plan ? `플랜: ${plan.grade} · ${plan.goal} · 주 ${plan.perWeek}회` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   return h(
     'div',
@@ -163,7 +188,7 @@ export function applyView(router: Router): HTMLElement {
           ),
         ),
 
-    form,
+    consultForm(),
 
     h(
       'section',

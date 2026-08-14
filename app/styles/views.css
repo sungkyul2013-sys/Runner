@@ -5,11 +5,85 @@
 
 /* ─────────────────────────────── home ────────────────────────────── */
 
+/* The opening screen. Given the height of a real first impression on a
+   phone, with the field behind it and one thing to do. */
 .hero {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: var(--s-4);
-  padding-block: var(--s-4) var(--s-2);
+  min-height: calc(100svh - var(--topbar) - var(--tabbar) - var(--s-7));
+  padding-block: var(--s-5) var(--s-6);
+}
+/* The field is densest right where the opening copy sits, so give the type
+   its own ground — sized to the text block, not the screen. */
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: -6% -8% -4%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(78% 60% at 26% 54%, var(--bg) 32%, transparent 76%);
+}
+.hero .display {
+  font-size: clamp(36px, 11vw, 76px);
+  line-height: 1.02;
+  letter-spacing: -0.055em;
+}
+.hero__lede {
+  max-width: 24ch;
+}
+.hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: var(--s-2);
+}
+.hero__note {
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+
+/* The one control that runs the whole programme carries a moving edge —
+   the only animated affordance on the screen, so it reads as the way in. */
+.trybtn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.trybtn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--invert-text) 22%, transparent) 50%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  animation: tryShine 3.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes tryShine {
+  0%,
+  55% {
+    transform: translateX(-100%);
+  }
+  85%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trybtn::after {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .tiles {
@@ -920,5 +994,70 @@
   }
   .home > *:not(.hero) {
     grid-column: 2;
+  }
+}
+
+/* ───────────────────── 프로그램 체험 (guided flow) ─────────────────── */
+
+.trial__head {
+  position: sticky;
+  top: calc(var(--topbar) + env(safe-area-inset-top));
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--s-3) 0 var(--s-4);
+  margin-bottom: var(--s-5);
+  background: var(--chrome);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  border-bottom: 1px solid var(--line-soft);
+}
+.trial__marks {
+  display: flex;
+  gap: 6px;
+}
+.tstep {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.tstep__bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background 0.4s var(--ease);
+}
+.tstep__label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.3s var(--ease);
+}
+.tstep.is-done .tstep__bar {
+  background: var(--ok);
+}
+.tstep.is-now .tstep__bar {
+  background: var(--jeomsak);
+}
+.tstep.is-now .tstep__label {
+  color: var(--text);
+}
+
+/* The quiz keeps its own header inside the flow; drop its duplicate top
+   padding so the two do not stack into a wall. */
+.trial__body .quiz {
+  padding-top: 0;
+}
+
+@media (min-width: 900px) {
+  .trial__head {
+    top: var(--topbar);
   }
 }

@@ -51,7 +51,12 @@ function shuffled<T>(items: T[], seed: number): T[] {
   return out;
 }
 
-export function quizView(router: Router): HTMLElement {
+/**
+ * @param onFinish  When given, the run is saved and handed back instead of
+ *                  navigating to /result — this is what lets the guided
+ *                  programme keep the quiz inside its own flow.
+ */
+export function quizView(router: Router, onFinish?: () => void): HTMLElement {
   if (!session || session.finished) session = fresh();
   const state = session;
 
@@ -392,7 +397,9 @@ export function quizView(router: Router): HTMLElement {
     });
 
     session = null;
-    router.go('/result');
+
+    if (onFinish) onFinish();
+    else router.go('/result');
   }
 
   drawPips();

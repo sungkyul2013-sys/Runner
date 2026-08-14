@@ -1,5 +1,15 @@
 /** Courses, the redline lab material, and the plan generator's inputs. */
 
+/** 원장. One teacher takes a class from the first week to the last. */
+export const TEACHER = {
+  name: '윤원수',
+  role: '원장',
+  years: 20,
+  line: '국어교육 전공 · 20년차',
+  bio: '초등 독서논술부터 대입 논술까지 직접 맡습니다. 첨삭은 조교에게 넘기지 않고, 수업한 사람이 문장마다 이유를 답니다.',
+  belief: '“잘 썼어요”는 첨삭이 아닙니다. 무엇을 왜 고쳐야 하는지 적어 주고, 학생이 같은 글을 다시 쓰는 데까지가 한 편입니다.',
+} as const;
+
 export interface Course {
   id: string;
   step: string;
