@@ -10,6 +10,11 @@ This repo now holds three entry points, all built by one `npm run build`:
   the app. Source in `app/`, documented in [`app/README.md`](app/README.md).
 - **`story.html` → 수 국어논술 학원 (site)** — the scroll-driven brochure
   site. Source in `story/`, documented in [`story/README.md`](story/README.md).
+- **`raon.html` → 라온국어 (promo site)** — a promotion-only scroll page for a
+  second academy, built on the same 3D engine with its brand text swapped in
+  (blocks build 라온, points spell 즐거운). Deliberately the opposite design to
+  수 국어논술: cream paper, circles, an apricot ring for emphasis. Source in
+  `raon/`, documented in [`raon/README.md`](raon/README.md).
 - **`game.html` → Sunset Runner** — the original endless runner (was
   `index.html`). Source in `src/`, unchanged. `play.html` remains the
   self-contained standalone build.

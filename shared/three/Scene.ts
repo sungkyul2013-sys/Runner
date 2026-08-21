@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Field } from './Field';
 import { Sheets } from './Sheets';
 import { Solids, type SolidShape } from './Solids';
-import type { ShapeName } from './shapes';
+import { DEFAULT_BRAND, type Brand, type ShapeName } from './shapes';
 
 /**
  * Each named scene pairs a solid form with a particle form.
@@ -93,7 +93,7 @@ export class Scene {
   private turbulence = 0;
   private readonly reduced: boolean;
 
-  constructor(canvas: HTMLCanvasElement, initial: ShapeName) {
+  constructor(canvas: HTMLCanvasElement, initial: ShapeName, brand: Brand = DEFAULT_BRAND) {
     this.reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const w = window.innerWidth;
@@ -120,8 +120,8 @@ export class Scene {
 
     // Both layers carry weight. The points are back up to a readable
     // density — they have to spell a word, not suggest one.
-    this.solids = new Solids(mobile ? 240 : 340, cast.solid);
-    this.field = new Field(mobile ? 3400 : 6000, cast.field);
+    this.solids = new Solids(mobile ? 240 : 340, cast.solid, brand.mark);
+    this.field = new Field(mobile ? 3400 : 6000, cast.field, brand);
     this.sheets = new Sheets(mobile ? 5 : 10);
     this.glow = glowSprite();
 

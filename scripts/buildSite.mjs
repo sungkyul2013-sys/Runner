@@ -6,6 +6,7 @@
  *
  *   node scripts/buildSite.mjs                     → su-academy.html (the app)
  *   node scripts/buildSite.mjs --entry story       → su-story.html
+ *   node scripts/buildSite.mjs --entry raon        → su-raon.html (라온국어)
  *   node scripts/buildSite.mjs --artifact <path> [--title <name>]
  *       → also writes a wrapper-free copy (title + style + markup + script
  *         only) for hosts that supply their own <html>/<head>/<body>, with an
@@ -22,6 +23,7 @@ const arg = (name) => {
 const ENTRIES = {
   app: { source: 'index.html', script: 'app/main.ts', out: 'su-academy.html' },
   story: { source: 'story.html', script: 'story/main.ts', out: 'su-story.html' },
+  raon: { source: 'raon.html', script: 'raon/main.ts', out: 'su-raon.html' },
 };
 
 const entry = ENTRIES[arg('--entry') ?? 'app'];

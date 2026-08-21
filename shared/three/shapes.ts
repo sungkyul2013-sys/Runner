@@ -387,12 +387,28 @@ export function helixPoints(count: number, seed = 57): Float32Array {
 
 /* ─────────────────────────────── registry ─────────────────────────────── */
 
-export function buildShape(name: ShapeName, count: number): Float32Array {
+/**
+ * The two pieces of text the 3D spells out: the mark the blocks build, and
+ * the word the points spell under it. Defaulted so the 수 국어논술 app and
+ * site keep their lockup without passing anything.
+ */
+export interface Brand {
+  mark: string;
+  word: string;
+}
+
+export const DEFAULT_BRAND: Brand = { mark: '수', word: '국어논술' };
+
+export function buildShape(
+  name: ShapeName,
+  count: number,
+  brand: Brand = DEFAULT_BRAND,
+): Float32Array {
   switch (name) {
     case 'glyph':
-      return glyphPoints('수', count);
+      return glyphPoints(brand.mark, count);
     case 'wordmark':
-      return wordmarkPoints(count);
+      return wordmarkPoints(count, 31, brand.word);
     case 'sphere':
       return spherePoints(count);
     case 'book':

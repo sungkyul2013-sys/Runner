@@ -17,5 +17,5 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["src", "site", "app", "shared", "story", "vite.config.ts"]
+  "include": ["src", "site", "app", "shared", "story", "raon", "vite.config.ts"]
 }

@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { SHAPE_POSE, buildShape, scatterPoints, type ShapeName } from './shapes';
+import {
+  DEFAULT_BRAND,
+  SHAPE_POSE,
+  buildShape,
+  scatterPoints,
+  type Brand,
+  type ShapeName,
+} from './shapes';
 
 /**
  * The hero object: a cloud of glowing points that morphs between shapes.
@@ -105,6 +112,7 @@ export class Field {
   private readonly mat: THREE.ShaderMaterial;
   private readonly count: number;
   private readonly cache = new Map<ShapeName, Float32Array>();
+  private readonly brand: Brand;
 
   private progress = 1;
   private morphing = false;
@@ -121,9 +129,10 @@ export class Field {
   private targetPose = { scale: 1, rx: 0, ry: 0 };
   private pose = { scale: 1, rx: 0, ry: 0 };
 
-  constructor(count: number, initial: ShapeName) {
+  constructor(count: number, initial: ShapeName, brand: Brand = DEFAULT_BRAND) {
     this.count = count;
     this.current = initial;
+    this.brand = brand;
 
     const from = this.shape(initial);
     const seeds = new Float32Array(count);
@@ -179,7 +188,7 @@ export class Field {
   private shape(name: ShapeName): Float32Array {
     let pts = this.cache.get(name);
     if (!pts) {
-      pts = buildShape(name, this.count);
+      pts = buildShape(name, this.count, this.brand);
       this.cache.set(name, pts);
     }
     return pts;

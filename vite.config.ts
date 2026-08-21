@@ -14,9 +14,11 @@ export default defineConfig({
       input: {
         // index.html  — 수 국어논술 learning app (app/)
         // story.html  — the scroll-driven brochure site (story/)
+        // raon.html   — 라온국어, a promotion-only site (raon/)
         // game.html   — the original Sunset Runner game (src/)
         main: 'index.html',
         story: 'story.html',
+        raon: 'raon.html',
         game: 'game.html',
       },
     },

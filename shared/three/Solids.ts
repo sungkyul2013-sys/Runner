@@ -48,26 +48,33 @@ function rng(seed: number): () => number {
  */
 function glyphBlocks(text: string, count: number, cells = 20): Block[] {
   const out: Block[] = [];
+  // A second character needs a wider grid — but not more blocks than the mesh
+  // has instances, or fit() samples the mark down until the strokes dissolve.
+  // So a longer mark trades resolution for width: fewer rows, bigger blocks.
+  const rows = text.length > 1 ? Math.max(12, Math.round(cells / Math.sqrt(text.length))) : cells;
+  const cols = text.length > 1 ? Math.round(rows * (0.62 + text.length * 0.58)) : rows;
+  const step = 8;
+  const W = cols * step;
+  const H = rows * step;
+
   const canvas = document.createElement('canvas');
-  const S = cells * 8;
-  canvas.width = S;
-  canvas.height = S;
+  canvas.width = W;
+  canvas.height = H;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return towerBlocks(count);
 
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `800 ${S * 0.82}px "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif`;
-  ctx.fillText(text, S / 2, S / 2 + S * 0.03);
+  ctx.font = `800 ${H * 0.82}px "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif`;
+  ctx.fillText(text, W / 2, H / 2 + H * 0.03);
 
-  const data = ctx.getImageData(0, 0, S, S).data;
-  const step = S / cells;
-  const unit = 6.2 / cells;
+  const data = ctx.getImageData(0, 0, W, H).data;
+  const unit = 6.2 / rows;
   const r = rng(11);
 
-  for (let gy = 0; gy < cells; gy += 1) {
-    for (let gx = 0; gx < cells; gx += 1) {
+  for (let gy = 0; gy < rows; gy += 1) {
+    for (let gx = 0; gx < cols; gx += 1) {
       // Coverage of this cell decides whether a block sits here.
       let hit = 0;
       let total = 0;
@@ -76,13 +83,13 @@ function glyphBlocks(text: string, count: number, cells = 20): Block[] {
           const px = Math.floor(gx * step + sx);
           const py = Math.floor(gy * step + sy);
           total += 1;
-          if (data[(py * S + px) * 4 + 3] > 110) hit += 1;
+          if (data[(py * W + px) * 4 + 3] > 110) hit += 1;
         }
       }
       if (total === 0 || hit / total < 0.34) continue;
 
-      const x = (gx - (cells - 1) / 2) * unit;
-      const y = -(gy - (cells - 1) / 2) * unit;
+      const x = (gx - (cols - 1) / 2) * unit;
+      const y = -(gy - (rows - 1) / 2) * unit;
       // Two plates of depth so the mark has real thickness when it turns.
       const layers = hit / total > 0.75 ? 2 : 1;
       for (let l = 0; l < layers; l += 1) {
@@ -275,8 +282,8 @@ function fit(blocks: Block[], count: number, seed: number): Block[] {
   return out;
 }
 
-const BUILDERS: Record<SolidShape, (count: number) => Block[]> = {
-  glyph: (n) => glyphBlocks('수', n),
+const BUILDERS: Record<SolidShape, (count: number, mark: string) => Block[]> = {
+  glyph: (n, mark) => glyphBlocks(mark, n),
   grid: gridBlocks,
   books: booksBlocks,
   pencil: pencilBlocks,
@@ -317,15 +324,18 @@ export class Solids {
   private readonly seeds: Float32Array;
   private readonly spin: Float32Array;
 
+  /** The character the blocks assemble into. */
+  private readonly mark: string;
   private readonly dummy = new THREE.Object3D();
   private readonly qFrom = new THREE.Quaternion();
   private readonly pose = { rx: 0, ry: 0, scale: 1, y: 0 };
   private readonly target = { rx: 0, ry: 0, scale: 1, y: 0 };
   private turbulence = 0;
 
-  constructor(count: number, initial: SolidShape) {
+  constructor(count: number, initial: SolidShape, mark = '수') {
     this.count = count;
     this.current = initial;
+    this.mark = mark;
 
     const geo = new RoundedBoxGeometry(1, 1, 1, 2, 0.16);
     const mat = new THREE.MeshStandardMaterial({
@@ -381,7 +391,7 @@ export class Solids {
   private shape(name: SolidShape): Block[] {
     let blocks = this.cache.get(name);
     if (!blocks) {
-      blocks = BUILDERS[name](this.count);
+      blocks = BUILDERS[name](this.count, this.mark);
       this.cache.set(name, blocks);
     }
     return blocks;

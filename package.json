@@ -12,7 +12,8 @@
     "build:site": "node scripts/buildSite.mjs",
     "check:templates": "esbuild scripts/checkTemplates.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-templates.mjs --log-level=error && node node_modules/.cache/check-templates.mjs",
     "check:meta": "esbuild scripts/checkMeta.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-meta.mjs --log-level=error && node node_modules/.cache/check-meta.mjs",
-    "build:story": "node scripts/buildSite.mjs --entry story"
+    "build:story": "node scripts/buildSite.mjs --entry story",
+    "build:raon": "node scripts/buildSite.mjs --entry raon"
   },
   "dependencies": {
     "gsap": "^3.12.5",
