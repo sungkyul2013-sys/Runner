@@ -1,0 +1,2250 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>NEXUS CALC — 3D 계산기</title>
+    <style>
+      /* ────────────────────────────────────────────────────────────
+         Theme tokens
+      ──────────────────────────────────────────────────────────── */
+      :root {
+        --bg: #04050e;
+        --ink: #eaf2ff;
+        --dim: #7e8bb5;
+        --neon: #3fd8ff;
+        --violet: #8b5cff;
+        --gold: #ffcf5c;
+        --danger: #ff4d6d;
+        --glass: rgba(16, 20, 44, 0.62);
+        --stroke: rgba(150, 180, 255, 0.14);
+        --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+        --ui: system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', Roboto, sans-serif;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        min-height: 100%;
+        background:
+          radial-gradient(70% 55% at 50% 34%, rgba(84, 62, 190, 0.42), transparent 70%),
+          radial-gradient(90% 70% at 50% 112%, rgba(16, 90, 140, 0.4), transparent 65%),
+          var(--bg);
+        color: var(--ink);
+        font-family: var(--ui);
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      /* ────────────────────────────────────────────────────────────
+         Backdrop: raymarched WebGL scene + fallback gradient
+      ──────────────────────────────────────────────────────────── */
+      #bg,
+      #fx {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #bg {
+        z-index: 0;
+        background: transparent;
+      }
+      #fx {
+        z-index: 60;
+        pointer-events: none;
+      }
+
+      .scanlines {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background: repeating-linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.025) 0 1px,
+          transparent 1px 3px
+        );
+        mix-blend-mode: overlay;
+        opacity: 0.5;
+      }
+
+      /* ────────────────────────────────────────────────────────────
+         Stage / 3D calculator shell
+      ──────────────────────────────────────────────────────────── */
+      .stage {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        place-items: center;
+        min-height: 100svh;
+        padding: 24px 16px 84px;
+        perspective: 1500px;
+        perspective-origin: 50% 42%;
+      }
+
+      .calc {
+        position: relative;
+        width: min(392px, 94vw);
+        border-radius: 34px;
+        transform-style: preserve-3d;
+        transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--fy, 0px));
+        will-change: transform;
+      }
+
+      /* Extruded side wall: stacked z-layers behind the face. */
+      .calc__depth {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        transform-style: preserve-3d;
+        pointer-events: none;
+      }
+      .calc__depth i {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        display: block;
+      }
+
+      .calc__face {
+        position: relative;
+        border-radius: inherit;
+        padding: 20px 20px 24px;
+        transform-style: preserve-3d;
+        background:
+          linear-gradient(165deg, rgba(56, 72, 136, 0.5), rgba(9, 12, 28, 0.97) 46%),
+          rgba(9, 12, 28, 0.96);
+        border: 1px solid var(--stroke);
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.16) inset,
+          0 -30px 60px rgba(0, 0, 0, 0.45) inset,
+          0 60px 120px rgba(0, 0, 0, 0.65),
+          0 0 90px rgba(63, 216, 255, 0.12);
+      }
+
+      /* Moving specular sheen floating above the glass. */
+      .gloss {
+        position: absolute;
+        inset: -2px;
+        border-radius: inherit;
+        transform: translateZ(44px);
+        pointer-events: none;
+        mix-blend-mode: screen;
+        opacity: 0.16;
+        background: linear-gradient(
+          115deg,
+          transparent 32%,
+          rgba(255, 255, 255, 0.55) 46%,
+          rgba(255, 255, 255, 0.08) 54%,
+          transparent 66%
+        );
+        background-size: 280% 280%;
+        animation: sheen 7s linear infinite;
+      }
+      @keyframes sheen {
+        from {
+          background-position: 120% 0%;
+        }
+        to {
+          background-position: -60% 100%;
+        }
+      }
+
+      /* ── Brand row ── */
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        transform: translateZ(16px);
+        margin-bottom: 14px;
+      }
+      .brand__dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--neon);
+        box-shadow: 0 0 14px var(--neon);
+        animation: pulseDot 2.4s ease-in-out infinite;
+      }
+      @keyframes pulseDot {
+        50% {
+          opacity: 0.35;
+          transform: scale(0.8);
+        }
+      }
+      .brand__name {
+        font-size: 12px;
+        letter-spacing: 0.34em;
+        font-weight: 700;
+        color: #cfe0ff;
+      }
+      .badge {
+        margin-left: auto;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        font-weight: 800;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        color: #9fb2e0;
+        background: rgba(255, 255, 255, 0.04);
+        white-space: nowrap;
+      }
+      .badge.is-trial {
+        color: var(--neon);
+        border-color: rgba(63, 216, 255, 0.45);
+        box-shadow: 0 0 18px rgba(63, 216, 255, 0.25);
+      }
+      .badge.is-locked {
+        color: var(--danger);
+        border-color: rgba(255, 77, 109, 0.5);
+        box-shadow: 0 0 18px rgba(255, 77, 109, 0.28);
+      }
+      .badge.is-pro {
+        color: #241a04;
+        background: linear-gradient(180deg, #ffe9a8, #f5b83d);
+        border-color: rgba(255, 220, 140, 0.9);
+        box-shadow: 0 0 22px rgba(255, 207, 92, 0.45);
+      }
+
+      /* ── Display ── */
+      .display {
+        position: relative;
+        transform: translateZ(10px);
+        border-radius: 22px;
+        padding: 18px 18px 16px;
+        min-height: 128px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: 8px;
+        overflow: hidden;
+        background: linear-gradient(180deg, rgba(3, 6, 18, 0.92), rgba(6, 10, 26, 0.82));
+        border: 1px solid rgba(120, 160, 255, 0.12);
+        box-shadow:
+          0 18px 30px rgba(0, 0, 0, 0.55) inset,
+          0 1px 0 rgba(255, 255, 255, 0.07);
+      }
+      .display::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(120% 90% at 50% 0%, rgba(63, 216, 255, 0.16), transparent 62%);
+      }
+      .expr {
+        font-family: var(--mono);
+        font-size: 15px;
+        color: var(--dim);
+        min-height: 20px;
+        text-align: right;
+        letter-spacing: 0.04em;
+        word-break: break-all;
+      }
+      .result {
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: clamp(30px, 10vw, 46px);
+        text-align: right;
+        line-height: 1.1;
+        letter-spacing: -0.01em;
+        color: #fff;
+        text-shadow:
+          0 0 18px rgba(63, 216, 255, 0.55),
+          0 0 44px rgba(139, 92, 255, 0.35);
+        transform-style: preserve-3d;
+        word-break: break-all;
+        transition: filter 0.5s ease, color 0.4s ease;
+      }
+      .result span {
+        display: inline-block;
+        transform-origin: 50% 0%;
+        animation: flipIn 0.44s cubic-bezier(0.18, 0.9, 0.25, 1) backwards;
+      }
+      @keyframes flipIn {
+        from {
+          transform: rotateX(-92deg) translateZ(14px);
+          opacity: 0;
+          filter: blur(3px);
+        }
+        to {
+          transform: none;
+          opacity: 1;
+          filter: none;
+        }
+      }
+      .result.is-redacted {
+        filter: blur(11px) saturate(0.4);
+        color: var(--danger);
+      }
+      .result.is-error {
+        color: var(--danger);
+        font-size: clamp(20px, 6vw, 28px);
+        text-shadow: 0 0 22px rgba(255, 77, 109, 0.55);
+      }
+
+      .lockchip {
+        position: absolute;
+        top: 12px;
+        left: 14px;
+        display: none;
+        align-items: center;
+        gap: 6px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        padding: 5px 9px;
+        border-radius: 999px;
+        color: var(--danger);
+        border: 1px solid rgba(255, 77, 109, 0.4);
+        background: rgba(255, 77, 109, 0.09);
+      }
+      .is-locked-ui .lockchip {
+        display: inline-flex;
+        animation: chipIn 0.4s ease backwards;
+      }
+      @keyframes chipIn {
+        from {
+          opacity: 0;
+          transform: translateY(-6px);
+        }
+      }
+
+      /* ── Keypad ── */
+      .keys {
+        margin-top: 18px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        transform-style: preserve-3d;
+      }
+
+      .key {
+        position: relative;
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        font-family: var(--mono);
+        font-size: 21px;
+        font-weight: 600;
+        color: #e9f1ff;
+        height: 62px;
+        border-radius: 18px;
+        transform-style: preserve-3d;
+        transform: translateZ(18px);
+        background: linear-gradient(180deg, #232a4d 0%, #141a35 58%, #0e1228 100%);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.22) inset,
+          0 -6px 12px rgba(0, 0, 0, 0.5) inset,
+          0 0 0 1px rgba(255, 255, 255, 0.05),
+          0 14px 22px rgba(0, 0, 0, 0.55);
+        transition:
+          transform 0.13s cubic-bezier(0.2, 0.8, 0.3, 1),
+          box-shadow 0.13s ease,
+          filter 0.2s ease;
+        touch-action: manipulation;
+      }
+      /* The shaft under each cap — sells the extrusion when the board tilts. */
+      .key::before {
+        content: '';
+        position: absolute;
+        inset: 2px 2px -2px;
+        border-radius: inherit;
+        transform: translateZ(-16px);
+        background: linear-gradient(180deg, #0a0d1e, #05070f);
+        box-shadow: 0 0 26px rgba(0, 0, 0, 0.85);
+        z-index: -1;
+      }
+      .key::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+        background: radial-gradient(90% 80% at 50% 0%, rgba(63, 216, 255, 0.4), transparent 65%);
+      }
+      .key:hover::after {
+        opacity: 1;
+      }
+      .key:hover {
+        filter: brightness(1.14);
+      }
+      .key:focus-visible {
+        outline: 2px solid var(--neon);
+        outline-offset: 3px;
+      }
+      .key.is-down,
+      .key:active {
+        transform: translateZ(4px) scale(0.97);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.1) inset,
+          0 -2px 8px rgba(0, 0, 0, 0.6) inset,
+          0 0 0 1px rgba(255, 255, 255, 0.05),
+          0 4px 8px rgba(0, 0, 0, 0.5);
+      }
+
+      .key--fn {
+        color: #9fb2e0;
+        background: linear-gradient(180deg, #1a2140 0%, #111730 60%, #0c1024 100%);
+      }
+      .key--op {
+        color: #d8ecff;
+        background: linear-gradient(180deg, #2a3a72 0%, #1a2450 58%, #131a3c 100%);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.26) inset,
+          0 -6px 12px rgba(0, 0, 0, 0.45) inset,
+          0 0 0 1px rgba(120, 170, 255, 0.16),
+          0 14px 24px rgba(0, 0, 0, 0.55),
+          0 0 26px rgba(63, 216, 255, 0.14);
+      }
+      .key--eq {
+        color: #06121c;
+        background: linear-gradient(180deg, #a8f1ff 0%, #3fd8ff 52%, #1a9ecb 100%);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.7) inset,
+          0 -6px 12px rgba(0, 60, 90, 0.45) inset,
+          0 0 0 1px rgba(160, 240, 255, 0.5),
+          0 16px 30px rgba(0, 0, 0, 0.55),
+          0 0 34px rgba(63, 216, 255, 0.5);
+      }
+      .is-locked-ui .key--eq {
+        color: #240409;
+        background: linear-gradient(180deg, #ffb3c2 0%, #ff4d6d 52%, #c01f3e 100%);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.55) inset,
+          0 -6px 12px rgba(80, 0, 15, 0.5) inset,
+          0 0 0 1px rgba(255, 150, 170, 0.5),
+          0 16px 30px rgba(0, 0, 0, 0.55),
+          0 0 34px rgba(255, 77, 109, 0.5);
+      }
+      .is-pro-ui .key--eq {
+        color: #241a04;
+        background: linear-gradient(180deg, #fff0bd 0%, #ffcf5c 52%, #d69a1c 100%);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.8) inset,
+          0 -6px 12px rgba(90, 60, 0, 0.45) inset,
+          0 0 0 1px rgba(255, 226, 150, 0.55),
+          0 16px 30px rgba(0, 0, 0, 0.55),
+          0 0 38px rgba(255, 207, 92, 0.55);
+      }
+
+      .hint {
+        position: relative;
+        z-index: 2;
+        margin-top: 14px;
+        text-align: center;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        color: rgba(160, 178, 220, 0.6);
+        transform: translateZ(6px);
+      }
+
+      .shake {
+        animation: shake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+      }
+      @keyframes shake {
+        10%,
+        90% {
+          transform: translateX(-3px);
+        }
+        20%,
+        80% {
+          transform: translateX(5px);
+        }
+        30%,
+        50%,
+        70% {
+          transform: translateX(-8px);
+        }
+        40%,
+        60% {
+          transform: translateX(8px);
+        }
+      }
+
+      /* ────────────────────────────────────────────────────────────
+         Paywall
+      ──────────────────────────────────────────────────────────── */
+      .paywall {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 18px;
+        background: rgba(3, 4, 12, 0.72);
+        backdrop-filter: blur(14px) saturate(120%);
+        -webkit-backdrop-filter: blur(14px) saturate(120%);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.4s ease, visibility 0.4s;
+        perspective: 1400px;
+        overflow-y: auto;
+      }
+      .paywall.is-open {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .sheet {
+        position: relative;
+        margin: auto;           /* centers when it fits, scrolls when it doesn't */
+        width: min(430px, 100%);
+        border-radius: 28px;
+        padding: 22px 22px 20px;
+        transform: rotateX(16deg) translateY(40px) scale(0.94);
+        opacity: 0;
+        transition: transform 0.6s cubic-bezier(0.18, 0.9, 0.24, 1), opacity 0.45s ease;
+        background:
+          linear-gradient(170deg, rgba(72, 58, 150, 0.55), rgba(8, 10, 26, 0.94) 52%),
+          rgba(10, 13, 30, 0.9);
+        border: 1px solid rgba(255, 210, 130, 0.22);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.14) inset,
+          0 50px 110px rgba(0, 0, 0, 0.7),
+          0 0 80px rgba(255, 207, 92, 0.12);
+        transform-style: preserve-3d;
+      }
+      .paywall.is-open .sheet {
+        transform: rotateX(0deg) translateY(0) scale(1);
+        opacity: 1;
+      }
+
+      .step {
+        animation: stepIn 0.45s cubic-bezier(0.18, 0.9, 0.24, 1) backwards;
+      }
+      .step[hidden] {
+        display: none;
+      }
+      @keyframes stepIn {
+        from {
+          opacity: 0;
+          transform: translateX(28px) rotateY(-14deg);
+        }
+      }
+
+      .demo-banner {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        font-size: 11.5px;
+        line-height: 1.5;
+        color: #ffd98f;
+        background: rgba(255, 190, 60, 0.1);
+        border: 1px solid rgba(255, 190, 60, 0.32);
+        border-radius: 14px;
+        padding: 10px 12px;
+        margin-bottom: 16px;
+      }
+
+      .sheet__eyebrow {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.3em;
+        color: var(--gold);
+        text-transform: uppercase;
+      }
+      .sheet__title {
+        margin-top: 8px;
+        font-size: 23px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+      .sheet__sub {
+        margin-top: 7px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--dim);
+      }
+
+      .price {
+        position: relative;
+        margin: 18px 0 14px;
+        padding: 18px;
+        border-radius: 20px;
+        text-align: center;
+        transform: translateZ(28px);
+        background: linear-gradient(180deg, rgba(255, 207, 92, 0.16), rgba(255, 207, 92, 0.03));
+        border: 1px solid rgba(255, 207, 92, 0.3);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45), 0 0 50px rgba(255, 207, 92, 0.12) inset;
+        overflow: hidden;
+      }
+      .price::after {
+        content: '';
+        position: absolute;
+        inset: -40%;
+        background: conic-gradient(
+          from 0deg,
+          transparent 0 70%,
+          rgba(255, 233, 168, 0.22) 82%,
+          transparent 92%
+        );
+        animation: spin 6s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .price__amount {
+        position: relative;
+        font-family: var(--mono);
+        font-weight: 800;
+        font-size: clamp(38px, 12vw, 54px);
+        letter-spacing: -0.02em;
+        background: linear-gradient(180deg, #fff6d8, #ffcf5c 55%, #d18f13);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        filter: drop-shadow(0 6px 18px rgba(255, 180, 60, 0.4));
+      }
+      .price__meta {
+        position: relative;
+        margin-top: 4px;
+        font-size: 11.5px;
+        letter-spacing: 0.1em;
+        color: #e8cf9b;
+      }
+      .price__strike {
+        position: relative;
+        margin-top: 6px;
+        font-size: 12px;
+        color: rgba(232, 207, 155, 0.6);
+      }
+      .price__strike s {
+        opacity: 0.7;
+      }
+
+      .perks {
+        list-style: none;
+        display: grid;
+        gap: 8px;
+        margin-bottom: 18px;
+        font-size: 12.5px;
+        color: #c6d3f0;
+      }
+      .perks li {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .perks li::before {
+        content: '✦';
+        color: var(--gold);
+        font-size: 11px;
+      }
+
+      /* 3D credit card (visual only, demo) */
+      .cardwrap {
+        perspective: 1000px;
+        margin: 20px 0 16px;
+      }
+      .card3d {
+        position: relative;
+        height: 168px;
+        transform-style: preserve-3d;
+        transition: transform 0.7s cubic-bezier(0.2, 0.85, 0.25, 1);
+        animation: cardFloat 6s ease-in-out infinite;
+      }
+      @keyframes cardFloat {
+        50% {
+          transform: translateY(-6px) rotateX(6deg) rotateY(-6deg);
+        }
+      }
+      .card3d.is-flipped {
+        animation: none;
+        transform: rotateY(180deg);
+      }
+      .card__face {
+        position: absolute;
+        inset: 0;
+        border-radius: 18px;
+        padding: 18px;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow: 0 26px 50px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.28) inset;
+        background:
+          radial-gradient(120% 120% at 10% 0%, rgba(255, 255, 255, 0.2), transparent 45%),
+          linear-gradient(135deg, #2b2050 0%, #123054 45%, #0b1430 100%);
+        overflow: hidden;
+      }
+      .card__face::after {
+        content: '';
+        position: absolute;
+        inset: -60%;
+        background: linear-gradient(
+          115deg,
+          transparent 40%,
+          rgba(255, 255, 255, 0.28) 50%,
+          transparent 60%
+        );
+        animation: sheen 5.5s linear infinite;
+        mix-blend-mode: screen;
+        opacity: 0.5;
+      }
+      .card__face--back {
+        transform: rotateY(180deg);
+        background: linear-gradient(135deg, #1a1436 0%, #0d1a33 100%);
+      }
+      .card__chip {
+        width: 42px;
+        height: 30px;
+        border-radius: 7px;
+        background: linear-gradient(135deg, #ffe9a8, #c99a25);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) inset;
+      }
+      .card__brand {
+        position: absolute;
+        top: 18px;
+        right: 18px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .card__num {
+        position: absolute;
+        left: 18px;
+        bottom: 62px;
+        font-family: var(--mono);
+        font-size: clamp(15px, 4.6vw, 19px);
+        letter-spacing: 0.14em;
+        color: #fff;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+      }
+      .card__row {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 18px;
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        color: rgba(255, 255, 255, 0.82);
+        font-family: var(--mono);
+        gap: 12px;
+      }
+      .card__label {
+        display: block;
+        font-size: 8px;
+        letter-spacing: 0.22em;
+        color: rgba(255, 255, 255, 0.45);
+        margin-bottom: 3px;
+      }
+      .card__stripe {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 22px;
+        height: 38px;
+        background: #05070f;
+      }
+      .card__cvcbox {
+        position: absolute;
+        right: 18px;
+        top: 76px;
+        background: #e9edf7;
+        color: #0b1024;
+        font-family: var(--mono);
+        font-size: 13px;
+        padding: 7px 12px;
+        border-radius: 5px;
+        letter-spacing: 0.2em;
+      }
+      .card__note {
+        position: absolute;
+        left: 18px;
+        bottom: 16px;
+        font-size: 9px;
+        line-height: 1.5;
+        color: rgba(255, 255, 255, 0.4);
+        max-width: 60%;
+      }
+
+      .form {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 1fr 1fr;
+      }
+      .field {
+        display: block;
+      }
+      .field--wide {
+        grid-column: 1 / -1;
+      }
+      .field span {
+        display: block;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        color: var(--dim);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+      .field input {
+        width: 100%;
+        font-family: var(--mono);
+        font-size: 14px;
+        color: var(--ink);
+        background: rgba(4, 7, 20, 0.85);
+        border: 1px solid rgba(140, 170, 255, 0.16);
+        border-radius: 13px;
+        padding: 12px 13px;
+        outline: none;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      .field input:focus {
+        border-color: rgba(63, 216, 255, 0.6);
+        box-shadow: 0 0 0 3px rgba(63, 216, 255, 0.14);
+      }
+      .field input::placeholder {
+        color: rgba(126, 139, 181, 0.5);
+      }
+
+      .formerr {
+        grid-column: 1 / -1;
+        min-height: 16px;
+        font-size: 11.5px;
+        color: var(--danger);
+      }
+
+      .actions {
+        display: grid;
+        gap: 10px;
+        margin-top: 6px;
+      }
+      .btn {
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        font-family: var(--ui);
+        font-weight: 700;
+        font-size: 15px;
+        padding: 15px 18px;
+        border-radius: 16px;
+        color: #241a04;
+        background: linear-gradient(180deg, #ffe9a8 0%, #ffcf5c 52%, #e0a52a 100%);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.7) inset,
+          0 16px 30px rgba(0, 0, 0, 0.5),
+          0 0 34px rgba(255, 207, 92, 0.35);
+        transition: transform 0.15s ease, filter 0.2s ease;
+        touch-action: manipulation;
+      }
+      .btn:hover {
+        filter: brightness(1.06);
+        transform: translateY(-1px);
+      }
+      .btn:active {
+        transform: translateY(1px) scale(0.99);
+      }
+      .btn[disabled] {
+        opacity: 0.6;
+        cursor: progress;
+        transform: none;
+      }
+      .btn--ghost {
+        background: transparent;
+        color: var(--dim);
+        font-weight: 600;
+        font-size: 13px;
+        padding: 10px;
+        box-shadow: none;
+      }
+      .btn--ghost:hover {
+        color: var(--ink);
+        filter: none;
+        transform: none;
+      }
+
+      .progress {
+        display: none;
+        margin-top: 14px;
+      }
+      .progress.is-on {
+        display: block;
+      }
+      .progress__bar {
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+      .progress__fill {
+        height: 100%;
+        width: 0%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #3fd8ff, #ffcf5c);
+        box-shadow: 0 0 18px rgba(255, 207, 92, 0.6);
+        transition: width 0.5s ease;
+      }
+      .progress__label {
+        margin-top: 8px;
+        font-size: 11.5px;
+        font-family: var(--mono);
+        color: var(--dim);
+        letter-spacing: 0.06em;
+      }
+
+      .success {
+        display: none;
+        text-align: center;
+        padding: 12px 0 4px;
+      }
+      .success.is-on {
+        display: block;
+      }
+      .seal {
+        width: 96px;
+        height: 96px;
+        margin: 6px auto 16px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 44px;
+        color: #241a04;
+        background: linear-gradient(180deg, #fff6d8, #ffcf5c 60%, #d18f13);
+        box-shadow: 0 0 60px rgba(255, 207, 92, 0.55), 0 20px 40px rgba(0, 0, 0, 0.5);
+        animation: sealIn 0.9s cubic-bezier(0.18, 0.9, 0.24, 1) backwards;
+        transform-style: preserve-3d;
+      }
+      @keyframes sealIn {
+        from {
+          transform: rotateY(220deg) scale(0.4);
+          opacity: 0;
+        }
+        to {
+          transform: rotateY(0) scale(1);
+          opacity: 1;
+        }
+      }
+
+      .legal {
+        margin-top: 12px;
+        font-size: 10.5px;
+        line-height: 1.6;
+        color: rgba(126, 139, 181, 0.75);
+        text-align: center;
+      }
+
+      .devbar {
+        position: fixed;
+        z-index: 40;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .devbar button {
+        appearance: none;
+        cursor: pointer;
+        font-family: var(--ui);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        color: rgba(160, 178, 220, 0.75);
+        background: rgba(10, 14, 32, 0.7);
+        border: 1px solid var(--stroke);
+        border-radius: 999px;
+        padding: 7px 12px;
+        backdrop-filter: blur(8px);
+      }
+      .devbar button:hover {
+        color: var(--ink);
+        border-color: rgba(63, 216, 255, 0.4);
+      }
+
+      @media (max-width: 400px) {
+        .key {
+          height: 56px;
+          font-size: 19px;
+        }
+        .keys {
+          gap: 10px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .gloss,
+        .card3d,
+        .price::after,
+        .card__face::after,
+        .brand__dot {
+          animation: none !important;
+        }
+        .result span {
+          animation-duration: 0.01s;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="bg" aria-hidden="true"></canvas>
+    <div class="scanlines" aria-hidden="true"></div>
+
+    <main class="stage">
+      <div class="calc" id="calc">
+        <div class="calc__depth" id="depth" aria-hidden="true"></div>
+
+        <div class="calc__face">
+          <div class="gloss" aria-hidden="true"></div>
+
+          <div class="brand">
+            <span class="brand__dot"></span>
+            <span class="brand__name">NEXUS&nbsp;CALC</span>
+            <span class="badge is-trial" id="badge">FREE TRIAL · 1회</span>
+          </div>
+
+          <div class="display" id="display">
+            <span class="lockchip">🔒 PRO 필요</span>
+            <div class="expr" id="expr">&nbsp;</div>
+            <div class="result" id="result" aria-live="polite">0</div>
+          </div>
+
+          <div class="keys" id="keys">
+            <button class="key key--fn" data-k="ac" type="button">AC</button>
+            <button class="key key--fn" data-k="del" type="button" aria-label="지우기">⌫</button>
+            <button class="key key--fn" data-k="%" type="button">%</button>
+            <button class="key key--op" data-k="/" type="button" aria-label="나누기">÷</button>
+
+            <button class="key" data-k="7" type="button">7</button>
+            <button class="key" data-k="8" type="button">8</button>
+            <button class="key" data-k="9" type="button">9</button>
+            <button class="key key--op" data-k="*" type="button" aria-label="곱하기">×</button>
+
+            <button class="key" data-k="4" type="button">4</button>
+            <button class="key" data-k="5" type="button">5</button>
+            <button class="key" data-k="6" type="button">6</button>
+            <button class="key key--op" data-k="-" type="button" aria-label="빼기">−</button>
+
+            <button class="key" data-k="1" type="button">1</button>
+            <button class="key" data-k="2" type="button">2</button>
+            <button class="key" data-k="3" type="button">3</button>
+            <button class="key key--op" data-k="+" type="button" aria-label="더하기">+</button>
+
+            <button class="key key--fn" data-k="neg" type="button" aria-label="부호 바꾸기">±</button>
+            <button class="key" data-k="0" type="button">0</button>
+            <button class="key" data-k="." type="button">.</button>
+            <button class="key key--eq" data-k="=" type="button" aria-label="계산">=</button>
+          </div>
+
+          <p class="hint" id="hint">마우스를 움직여 기울여 보세요 · 키보드 입력 지원</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- ── Paywall ─────────────────────────────────────────────── -->
+    <div class="paywall" id="paywall" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+      <div class="sheet" id="sheet">
+        <div id="pwBuy">
+          <p class="demo-banner">
+            <span>⚠️</span>
+            <span
+              ><b>데모입니다.</b> 실제 결제는 일어나지 않고, 입력한 값은 어디로도 전송되거나 저장되지
+              않습니다. 카드번호는 테스트용 숫자로 미리 채워져 있습니다.</span
+            >
+          </p>
+
+          <!-- Step 1 — the offer -->
+          <section class="step" id="pwStep1">
+            <p class="sheet__eyebrow">무료 체험 종료</p>
+            <h2 class="sheet__title" id="pwTitle">방금 1회의 계산을 사용하셨습니다</h2>
+            <p class="sheet__sub">
+              NEXUS CALC의 무료 체험은 <b>평생 1회 계산</b>까지입니다. 두 번째 계산부터는 PRO
+              라이선스가 필요합니다.
+            </p>
+
+            <div class="price">
+              <div class="price__amount">$1,299.00</div>
+              <div class="price__meta">USD · 1회 결제 · 평생 라이선스</div>
+              <div class="price__strike"><s>$2,598.00</s> 오늘만 50% 할인</div>
+            </div>
+
+            <ul class="perks">
+              <li>= 버튼 무제한 사용 (횟수 제한 없음)</li>
+              <li>숫자 0부터 9까지 전 범위 번들 포함</li>
+              <li>사칙연산 4종 + 백분율 모듈 영구 활성화</li>
+              <li>소수점 최대 12자리 정밀도 언락</li>
+            </ul>
+
+            <div class="actions">
+              <button class="btn" id="toPayBtn" type="button">결제 진행하기</button>
+              <button class="btn btn--ghost" id="laterBtn" type="button">
+                나중에 하기 (계산기는 계속 잠김)
+              </button>
+            </div>
+          </section>
+
+          <!-- Step 2 — the (fake) card sheet -->
+          <section class="step" id="pwStep2" hidden>
+            <p class="sheet__eyebrow">결제 정보 · 데모</p>
+            <h2 class="sheet__title">$1,299.00 결제</h2>
+
+            <div class="cardwrap">
+              <div class="card3d" id="card3d">
+                <div class="card__face">
+                  <div class="card__chip"></div>
+                  <div class="card__brand">DEMO CARD</div>
+                  <div class="card__num" id="cardNum">4242 4242 4242 4242</div>
+                  <div class="card__row">
+                    <span
+                      ><span class="card__label">CARD HOLDER</span
+                      ><span id="cardName">HONG GILDONG</span></span
+                    >
+                    <span
+                      ><span class="card__label">VALID THRU</span><span id="cardExp">12/34</span></span
+                    >
+                  </div>
+                </div>
+                <div class="card__face card__face--back">
+                  <div class="card__stripe"></div>
+                  <div class="card__cvcbox" id="cardCvc">•••</div>
+                  <p class="card__note">
+                    이 카드는 실제로 존재하지 않습니다. 이 화면은 어떤 네트워크 요청도 보내지
+                    않습니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form class="form" id="payForm" novalidate autocomplete="off">
+              <label class="field field--wide">
+                <span>이름 (데모)</span>
+                <input id="fName" type="text" value="HONG GILDONG" maxlength="24" />
+              </label>
+              <label class="field field--wide">
+                <span>카드번호 (테스트 번호)</span>
+                <input
+                  id="fNum"
+                  type="text"
+                  inputmode="numeric"
+                  value="4242 4242 4242 4242"
+                  maxlength="19"
+                />
+              </label>
+              <label class="field">
+                <span>유효기간</span>
+                <input id="fExp" type="text" inputmode="numeric" value="12/34" maxlength="5" />
+              </label>
+              <label class="field">
+                <span>CVC</span>
+                <input id="fCvc" type="text" inputmode="numeric" value="424" maxlength="4" />
+              </label>
+              <p class="formerr" id="formErr"></p>
+            </form>
+
+            <div class="actions">
+              <button class="btn" id="payBtn" type="button">$1,299.00 결제하고 잠금 해제</button>
+              <button class="btn btn--ghost" id="backBtn" type="button">← 요금제로 돌아가기</button>
+            </div>
+
+            <div class="progress" id="progress">
+              <div class="progress__bar"><div class="progress__fill" id="progressFill"></div></div>
+              <p class="progress__label" id="progressLabel">결제 준비 중…</p>
+            </div>
+
+            <p class="legal">
+              데모용 화면 · 실제 청구 없음 · 카드 정보는 이 브라우저 밖으로 나가지 않습니다.
+              라이선스 상태는 localStorage에만 저장되며 언제든 초기화할 수 있습니다.
+            </p>
+          </section>
+        </div>
+
+        <div class="success" id="pwSuccess">
+          <div class="seal">✓</div>
+          <p class="sheet__eyebrow">결제 완료 (데모)</p>
+          <h2 class="sheet__title">PRO 라이선스가 활성화되었습니다</h2>
+          <p class="sheet__sub">
+            $1,299.00이 청구된 <b>척</b> 했습니다. 이제 = 버튼을 무제한으로 누르실 수 있습니다.
+          </p>
+          <div class="actions">
+            <button class="btn" id="doneBtn" type="button">계산기로 돌아가기</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="devbar">
+      <button id="resetBtn" type="button">라이선스 초기화 (데모)</button>
+    </div>
+
+    <canvas id="fx" aria-hidden="true"></canvas>
+
+    <script>
+      (() => {
+        'use strict';
+
+        /* ═══════════════════════════════════════════════════════════
+           1. WebGL backdrop — raymarched core + neon grid floor
+           ═══════════════════════════════════════════════════════════ */
+        const bg = document.getElementById('bg');
+        const VERT = `
+          attribute vec2 p;
+          void main(){ gl_Position = vec4(p, 0.0, 1.0); }
+        `;
+        const FRAG = `
+          precision highp float;
+          uniform vec2  uRes;
+          uniform float uTime;
+          uniform float uPulse;
+          uniform float uLock;
+          uniform float uGold;
+          uniform vec2  uMouse;
+
+          mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+
+          float sdBox(vec3 p, vec3 b){
+            vec3 d = abs(p) - b;
+            return length(max(d, vec3(0.0))) + min(max(d.x, max(d.y, d.z)), 0.0);
+          }
+          float sdTorus(vec3 p, vec2 t){
+            vec2 q = vec2(length(p.xz) - t.x, p.y);
+            return length(q) - t.y;
+          }
+          float smin(float a, float b, float k){
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+          }
+
+          // returns vec2(distance, materialId)
+          vec2 map(vec3 p){
+            vec3 q = p - vec3(0.0, 1.30, 0.0);
+            q.xz *= rot(uTime * 0.30);
+            q.xy *= rot(uTime * 0.21);
+
+            float core  = sdBox(q, vec3(0.30)) - 0.12;
+            float r1    = sdTorus(q, vec2(0.98, 0.038));
+            vec3 s = q; s.xy *= rot(1.5707963);
+            float r2    = sdTorus(s, vec2(1.24, 0.028));
+            vec3 t = q; t.yz *= rot(1.5707963);
+            float r3    = sdTorus(t, vec2(1.50, 0.021));
+            float rings = min(r1, min(r2, r3));
+
+            // 1 = crystal core, 2 = grid floor, 3 = emissive rings
+            vec2 res = vec2(core, 1.0);
+            if (rings < res.x) res = vec2(rings, 3.0);
+            float fl = p.y + 2.05;
+            if (fl < res.x) res = vec2(fl, 2.0);
+            return res;
+          }
+
+          float stars(vec2 uv){
+            vec2 g = uv * 46.0;
+            vec2 id = floor(g);
+            vec2 f = fract(g) - 0.5;
+            float h = fract(sin(dot(id, vec2(127.1, 311.7))) * 43758.5453);
+            float br = step(0.982, h);
+            float tw = 0.45 + 0.55 * sin(uTime * 1.8 + h * 64.0);
+            return br * smoothstep(0.14, 0.0, length(f)) * tw;
+          }
+
+          vec3 calcNormal(vec3 p){
+            vec2 e = vec2(0.0018, 0.0);
+            return normalize(vec3(
+              map(p + e.xyy).x - map(p - e.xyy).x,
+              map(p + e.yxy).x - map(p - e.yxy).x,
+              map(p + e.yyx).x - map(p - e.yyx).x
+            ));
+          }
+
+          void main(){
+            vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+
+            vec3 accent = mix(vec3(0.25, 0.78, 1.0), vec3(1.0, 0.24, 0.42), uLock);
+            accent = mix(accent, vec3(1.0, 0.78, 0.26), uGold);
+            vec3 violet = mix(vec3(0.45, 0.28, 0.95), vec3(0.95, 0.35, 0.35), uLock);
+            violet = mix(violet, vec3(0.95, 0.60, 0.15), uGold);
+
+            vec3 ro = vec3(0.0, 0.50 + uMouse.y * 0.55, 7.2);
+            ro.xz *= rot(uMouse.x * 0.42);
+            vec3 ta = vec3(0.0, 0.0, 0.0);
+            vec3 f = normalize(ta - ro);
+            vec3 r = normalize(cross(vec3(0.0, 1.0, 0.0), f));
+            vec3 u = cross(f, r);
+            vec3 rd = normalize(uv.x * r + uv.y * u + 1.65 * f);
+
+            float t = 0.0;
+            float mat = 0.0;
+            float glow = 0.0;
+            bool hit = false;
+            vec3 pos = ro;
+
+            for (int i = 0; i < 88; i++){
+              pos = ro + rd * t;
+              vec2 h = map(pos);
+              float dt = max(h.x * 0.86, 0.006);
+              if (h.y < 1.5 || h.y > 2.5) glow += dt * 0.150 / (0.030 + h.x * h.x * 14.0);
+              if (h.x < 0.0018){ mat = h.y; hit = true; break; }
+              t += dt;
+              if (t > 42.0) break;
+            }
+
+            // Background: deep space gradient with a soft halo behind the core.
+            float halo = exp(-length(uv - vec2(0.0, 0.26)) * 2.2);
+            vec3 col = mix(vec3(0.012, 0.014, 0.046), violet * 0.34, halo * 0.9);
+            col += accent * halo * 0.20;
+            col += vec3(0.75, 0.85, 1.0) * stars(uv) * 0.55 * (1.0 - halo);
+
+            if (hit){
+              vec3 n = calcNormal(pos);
+              vec3 ld = normalize(vec3(0.6, 0.9, 0.5));
+              float dif = clamp(dot(n, ld), 0.0, 1.0);
+              float fres = pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 3.0);
+
+              if (mat < 1.5){
+                // Core: near-black crystal that only lights up at its edges.
+                col = violet * 0.10 + accent * 0.04;
+                col += mix(accent, violet, 0.45) * pow(fres, 1.4) * 2.4;
+                col += mix(accent, vec3(1.0), 0.5)
+                     * pow(clamp(dot(reflect(rd, n), ld), 0.0, 1.0), 64.0) * 0.9;
+                col += accent * dif * 0.12;
+              } else if (mat > 2.5){
+                // Rings: emissive neon tubing.
+                col = accent * 1.25 + violet * 0.30;
+                col += mix(accent, vec3(1.0), 0.4) * fres * 0.7;
+              } else {
+                // Floor: neon grid with a pulse shockwave.
+                vec2 g = abs(fract(pos.xz * 0.5) - 0.5);
+                float w = 0.012 + t * 0.004;
+                float line = 1.0 - smoothstep(0.0, w, min(g.x, g.y));
+                float wave = sin(length(pos.xz) * 1.6 - uTime * 3.2);
+                float ring = smoothstep(0.85, 1.0, wave) * uPulse;
+                col = accent * line * 1.05 + violet * line * 0.45;
+                col += accent * ring * 1.2;
+                col *= 1.0 / (1.0 + t * t * 0.02);
+              }
+            }
+
+            col += mix(accent, violet, 0.25) * glow * (1.0 + uPulse * 2.6);
+            col = mix(col, vec3(0.010, 0.012, 0.038), 1.0 - exp(-t * 0.05));
+
+            // Luminance-based Reinhard: rolls off highlights without
+            // washing the neon hues toward white the way per-channel does.
+            float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+            col *= 1.0 / (1.0 + lum * 0.85);
+            float vig = 1.0 - 0.52 * dot(uv * vec2(0.85, 1.0), uv * vec2(0.85, 1.0));
+            col *= vig;
+            col = clamp(col, 0.0, 1.0);
+            float grain = fract(sin(dot(gl_FragCoord.xy + uTime, vec2(12.9898, 78.233))) * 43758.5453);
+            col += (grain - 0.5) * 0.022;
+
+            gl_FragColor = vec4(col, 1.0);
+          }
+        `;
+
+        const shaderState = { pulse: 0, lock: 0, gold: 0, mx: 0, my: 0, tmx: 0, tmy: 0 };
+        let gfx = null; // { draw(tSec), setScale(s) } once WebGL is up
+
+        (function initGL() {
+          const gl = bg.getContext('webgl', { antialias: false, alpha: false, depth: false });
+          if (!gl) return; // CSS gradient fallback stays visible.
+
+          const compile = (type, src) => {
+            const sh = gl.createShader(type);
+            gl.shaderSource(sh, src);
+            gl.compileShader(sh);
+            if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+              console.warn('shader:', gl.getShaderInfoLog(sh));
+              return null;
+            }
+            return sh;
+          };
+
+          const vs = compile(gl.VERTEX_SHADER, VERT);
+          const fs = compile(gl.FRAGMENT_SHADER, FRAG);
+          if (!vs || !fs) return;
+
+          const prog = gl.createProgram();
+          gl.attachShader(prog, vs);
+          gl.attachShader(prog, fs);
+          gl.linkProgram(prog);
+          if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+            console.warn('link:', gl.getProgramInfoLog(prog));
+            return;
+          }
+          gl.useProgram(prog);
+
+          const buf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array([-1, -1, 3, -1, -1, 3]),
+            gl.STATIC_DRAW
+          );
+          const loc = gl.getAttribLocation(prog, 'p');
+          gl.enableVertexAttribArray(loc);
+          gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+          const U = {
+            res: gl.getUniformLocation(prog, 'uRes'),
+            time: gl.getUniformLocation(prog, 'uTime'),
+            pulse: gl.getUniformLocation(prog, 'uPulse'),
+            lock: gl.getUniformLocation(prog, 'uLock'),
+            gold: gl.getUniformLocation(prog, 'uGold'),
+            mouse: gl.getUniformLocation(prog, 'uMouse'),
+          };
+
+          // The raymarcher is fragment-bound, so render below native res and
+          // let the quality watchdog below drop further if frames get slow.
+          const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+          let scale = dpr * (window.innerWidth < 640 ? 0.62 : 0.82);
+          let lost = false;
+
+          const resize = () => {
+            bg.width = Math.max(1, Math.floor(window.innerWidth * scale));
+            bg.height = Math.max(1, Math.floor(window.innerHeight * scale));
+            gl.viewport(0, 0, bg.width, bg.height);
+          };
+          resize();
+          window.addEventListener('resize', resize);
+
+          bg.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            lost = true;
+            bg.style.display = 'none'; // fall back to the body gradient
+          });
+
+          gfx = {
+            disable() {
+              lost = true;
+              bg.style.display = 'none';
+            },
+            setScale(factor) {
+              scale = dpr * factor;
+              resize();
+            },
+            draw(timeSec) {
+              if (lost) return;
+              gl.uniform2f(U.res, bg.width, bg.height);
+              gl.uniform1f(U.time, timeSec);
+              gl.uniform1f(U.pulse, shaderState.pulse);
+              gl.uniform1f(U.lock, shaderState.lock);
+              gl.uniform1f(U.gold, shaderState.gold);
+              gl.uniform2f(U.mouse, shaderState.mx, shaderState.my);
+              gl.drawArrays(gl.TRIANGLES, 0, 3);
+            },
+          };
+        })();
+
+        /* ═══════════════════════════════════════════════════════════
+           2. Tilt + idle float + master animation loop
+           ═══════════════════════════════════════════════════════════ */
+        const calcEl = document.getElementById('calc');
+        const tilt = { rx: 0, ry: 0, trx: 0, try_: 0 };
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const coarse = window.matchMedia('(hover: none)').matches;
+        const IDLE_HINT = coarse
+          ? '화면을 드래그해 기울여 보세요 · 무료 체험 1회'
+          : '마우스를 움직여 기울여 보세요 · 키보드 입력 지원';
+
+        window.addEventListener('pointermove', (e) => {
+          const nx = e.clientX / window.innerWidth - 0.5;
+          const ny = e.clientY / window.innerHeight - 0.5;
+          tilt.try_ = nx * 20;
+          tilt.trx = -ny * 13;
+          shaderState.tmx = nx;
+          shaderState.tmy = -ny;
+        });
+        window.addEventListener('pointerleave', () => {
+          tilt.try_ = 0;
+          tilt.trx = 0;
+          shaderState.tmx = 0;
+          shaderState.tmy = 0;
+        });
+
+        // Frame-time watchdog. Re-measures for ~0.7s after each step down, so a
+        // weak GPU walks down the ladder in a couple of seconds instead of
+        // grinding at 5fps: three resolution steps, then half-rate, then off.
+        const QUALITY_SCALES = [0.58, 0.42, 0.30];
+        const quality = { ema: 16, frames: 0, elapsed: 0, level: 0 };
+
+        function watchQuality(dt) {
+          if (!gfx || quality.level > 3 || dt > 500) return; // skip tab-switch hitches
+          quality.ema = quality.ema * 0.88 + dt * 0.12;
+          quality.frames++;
+          quality.elapsed += dt;
+          if (quality.frames < 10 || quality.elapsed < 700) return;
+
+          if (quality.level < 3 && quality.ema > 32) {
+            gfx.setScale(QUALITY_SCALES[quality.level]);
+            quality.level++;          // level 3 also halves the backdrop's rate
+          } else if (quality.level === 3 && quality.ema > 90) {
+            gfx.disable();            // hopeless: keep the CSS gradient instead
+            quality.level = 4;
+          }
+          quality.frames = 0;
+          quality.elapsed = 0;
+          quality.ema = 16;
+        }
+
+        const start = performance.now();
+        let last = start;
+        let frame = 0;
+        function loop(now) {
+          const tSec = (now - start) / 1000;
+          watchQuality(now - last);
+          last = now;
+          frame++;
+
+          tilt.rx += (tilt.trx - tilt.rx) * 0.08;
+          tilt.ry += (tilt.try_ - tilt.ry) * 0.08;
+          const float = reduced ? 0 : Math.sin(tSec * 1.15) * 5;
+          calcEl.style.setProperty('--rx', tilt.rx.toFixed(2) + 'deg');
+          calcEl.style.setProperty('--ry', tilt.ry.toFixed(2) + 'deg');
+          calcEl.style.setProperty('--fy', float.toFixed(2) + 'px');
+
+          shaderState.mx += (shaderState.tmx - shaderState.mx) * 0.05;
+          shaderState.my += (shaderState.tmy - shaderState.my) * 0.05;
+          shaderState.pulse *= 0.92;
+          shaderState.lock += ((state.locked() ? 1 : 0) - shaderState.lock) * 0.05;
+          shaderState.gold += ((goldTarget - shaderState.gold) * 0.06);
+
+          // At the lowest quality step the backdrop runs at half rate.
+          if (gfx && quality.level < 4 && (quality.level < 3 || (frame & 1) === 0)) {
+            gfx.draw(tSec);
+          }
+          drawConfetti();
+          requestAnimationFrame(loop);
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           3. Extruded side wall for the calculator body
+           ═══════════════════════════════════════════════════════════ */
+        const depth = document.getElementById('depth');
+        for (let i = 1; i <= 16; i++) {
+          const layer = document.createElement('i');
+          const shade = Math.max(0, 26 - i * 1.4);
+          layer.style.transform = 'translateZ(' + -i * 2.4 + 'px)';
+          layer.style.background = 'rgb(' + shade + ',' + (shade + 2) + ',' + (shade + 12) + ')';
+          depth.appendChild(layer);
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           4. Tiny synth (clicks / buzz / cha-ching)
+           ═══════════════════════════════════════════════════════════ */
+        let actx = null;
+        const audio = {
+          ensure() {
+            try {
+              if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+              if (actx.state === 'suspended') actx.resume();
+            } catch (_) {
+              actx = null;
+            }
+          },
+          tone(freq, dur, type, gain, delay) {
+            if (!actx) return;
+            const t0 = actx.currentTime + (delay || 0);
+            const osc = actx.createOscillator();
+            const g = actx.createGain();
+            osc.type = type || 'sine';
+            osc.frequency.setValueAtTime(freq, t0);
+            g.gain.setValueAtTime(0.0001, t0);
+            g.gain.exponentialRampToValueAtTime(gain || 0.08, t0 + 0.012);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+            osc.connect(g).connect(actx.destination);
+            osc.start(t0);
+            osc.stop(t0 + dur + 0.02);
+          },
+          click() {
+            this.tone(620 + Math.random() * 90, 0.07, 'triangle', 0.05);
+          },
+          thock() {
+            this.tone(240, 0.12, 'sine', 0.09);
+            this.tone(880, 0.06, 'triangle', 0.04, 0.01);
+          },
+          buzz() {
+            this.tone(150, 0.18, 'sawtooth', 0.07);
+            this.tone(105, 0.26, 'sawtooth', 0.06, 0.09);
+          },
+          chaching() {
+            [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+              this.tone(f, 0.5, 'triangle', 0.07, i * 0.09);
+            });
+            this.tone(1318.5, 0.9, 'sine', 0.05, 0.4);
+          },
+        };
+
+        /* ═══════════════════════════════════════════════════════════
+           5. Expression engine (no eval — hand-rolled parser)
+           ═══════════════════════════════════════════════════════════ */
+        function tokenize(src) {
+          const out = [];
+          let i = 0;
+          while (i < src.length) {
+            const c = src[i];
+            if (/[\d.]/.test(c)) {
+              let j = i;
+              while (j < src.length && /[\d.]/.test(src[j])) j++;
+              const v = parseFloat(src.slice(i, j));
+              if (isNaN(v)) throw new Error('SYNTAX');
+              out.push({ t: 'num', v });
+              i = j;
+              while (src[i] === '%') {
+                out[out.length - 1].v /= 100;
+                i++;
+              }
+              continue;
+            }
+            if ('+-*/'.indexOf(c) >= 0) {
+              out.push({ t: 'op', v: c });
+              i++;
+              continue;
+            }
+            if (c === '(' || c === ')') {
+              out.push({ t: c });
+              i++;
+              continue;
+            }
+            i++; // ignore anything else
+          }
+          return out;
+        }
+
+        function evaluate(src) {
+          const toks = tokenize(src);
+          let p = 0;
+          const peek = () => toks[p];
+
+          function atom() {
+            const t = peek();
+            if (!t) throw new Error('SYNTAX');
+            if (t.t === 'num') {
+              p++;
+              return t.v;
+            }
+            if (t.t === '(') {
+              p++;
+              const v = expr();
+              if (peek() && peek().t === ')') p++;
+              return v;
+            }
+            throw new Error('SYNTAX');
+          }
+          function unary() {
+            const t = peek();
+            if (t && t.t === 'op' && (t.v === '-' || t.v === '+')) {
+              p++;
+              const v = unary();
+              return t.v === '-' ? -v : v;
+            }
+            return atom();
+          }
+          function term() {
+            let v = unary();
+            while (peek() && peek().t === 'op' && (peek().v === '*' || peek().v === '/')) {
+              const o = toks[p++].v;
+              const r = unary();
+              if (o === '/' && r === 0) throw new Error('DIV0');
+              v = o === '*' ? v * r : v / r;
+            }
+            return v;
+          }
+          function expr() {
+            let v = term();
+            while (peek() && peek().t === 'op' && (peek().v === '+' || peek().v === '-')) {
+              const o = toks[p++].v;
+              const r = term();
+              v = o === '+' ? v + r : v - r;
+            }
+            return v;
+          }
+
+          const v = expr();
+          if (p < toks.length) throw new Error('SYNTAX');
+          if (!isFinite(v)) throw new Error('OVERFLOW');
+          return v;
+        }
+
+        function format(n) {
+          if (!isFinite(n)) return '∞';
+          const abs = Math.abs(n);
+          let s;
+          if (abs !== 0 && (abs >= 1e12 || abs < 1e-9)) {
+            s = n.toExponential(6);
+          } else {
+            s = String(parseFloat(n.toPrecision(12)));
+          }
+          if (s.indexOf('e') >= 0) return s;
+          const parts = s.split('.');
+          parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          return parts.join('.');
+        }
+
+        const pretty = (s) =>
+          s.replace(/\*/g, ' × ').replace(/\//g, ' ÷ ').replace(/\+/g, ' + ').replace(/-/g, ' − ');
+
+        /* ═══════════════════════════════════════════════════════════
+           6. License state — free tier is exactly one calculation
+           ═══════════════════════════════════════════════════════════ */
+        const STORE = 'nexuscalc.license.v1';
+        const PRICE = 1299;
+
+        const state = {
+          pro: false,
+          usedFree: false,
+          load() {
+            try {
+              const raw = localStorage.getItem(STORE);
+              if (raw) {
+                const o = JSON.parse(raw);
+                this.pro = !!o.pro;
+                this.usedFree = !!o.usedFree;
+              }
+            } catch (_) {
+              /* private mode — stay in memory */
+            }
+          },
+          save() {
+            try {
+              localStorage.setItem(
+                STORE,
+                JSON.stringify({ pro: this.pro, usedFree: this.usedFree, price: PRICE })
+              );
+            } catch (_) {
+              /* ignore */
+            }
+          },
+          locked() {
+            return !this.pro && this.usedFree;
+          },
+        };
+        state.load();
+
+        let goldTarget = 0;
+
+        /* ═══════════════════════════════════════════════════════════
+           7. Calculator UI
+           ═══════════════════════════════════════════════════════════ */
+        const exprEl = document.getElementById('expr');
+        const resultEl = document.getElementById('result');
+        const displayEl = document.getElementById('display');
+        const badgeEl = document.getElementById('badge');
+        const hintEl = document.getElementById('hint');
+
+        let raw = '';
+        let shownResult = '0';
+        let justEvaluated = false;
+
+        function paintResult(text, opts) {
+          const o = opts || {};
+          resultEl.className = 'result' + (o.error ? ' is-error' : '');
+          resultEl.innerHTML = '';
+          const chars = String(text).split('');
+          chars.forEach((ch, i) => {
+            const s = document.createElement('span');
+            s.textContent = ch === ' ' ? ' ' : ch;
+            s.style.animationDelay = Math.min(i * 22, 420) + 'ms';
+            resultEl.appendChild(s);
+          });
+          shownResult = text;
+        }
+
+        function render() {
+          exprEl.textContent = raw ? pretty(raw) : ' ';
+        }
+
+        function refreshChrome() {
+          document.body.classList.toggle('is-locked-ui', state.locked());
+          document.body.classList.toggle('is-pro-ui', state.pro);
+          calcEl.classList.toggle('is-locked-ui', state.locked());
+          calcEl.classList.toggle('is-pro-ui', state.pro);
+
+          if (state.pro) {
+            badgeEl.className = 'badge is-pro';
+            badgeEl.textContent = 'PRO · 평생';
+            hintEl.textContent = 'PRO 활성화됨 · = 무제한';
+            goldTarget = 1;
+          } else if (state.locked()) {
+            badgeEl.className = 'badge is-locked';
+            badgeEl.textContent = 'LOCKED · $1,299';
+            hintEl.textContent = '무료 체험 종료 — = 를 누르면 결제 화면이 열립니다';
+            goldTarget = 0;
+          } else {
+            badgeEl.className = 'badge is-trial';
+            badgeEl.textContent = 'FREE TRIAL · 1회';
+            hintEl.textContent = IDLE_HINT;
+            goldTarget = 0;
+          }
+        }
+
+        function bump(strength) {
+          shaderState.pulse = Math.min(1.2, shaderState.pulse + (strength || 0.35));
+        }
+
+        function shake(el) {
+          el.classList.remove('shake');
+          void el.offsetWidth;
+          el.classList.add('shake');
+        }
+
+        const isOp = (c) => '+-*/'.indexOf(c) >= 0;
+
+        function input(k) {
+          if (justEvaluated) {
+            // `raw` already holds the previous result, so an operator chains off
+            // it; a fresh digit starts a brand-new expression instead.
+            if (/[\d.]/.test(k)) raw = '';
+            justEvaluated = false;
+            resultEl.classList.remove('is-redacted');
+          }
+
+          if (/[\d.]/.test(k)) {
+            if (k === '.') {
+              const tail = raw.match(/(\d*\.?\d*)$/)[1];
+              if (tail.indexOf('.') >= 0) return;
+              if (!tail) raw += '0';
+            }
+            raw += k;
+          } else if (isOp(k)) {
+            if (!raw) {
+              if (k !== '-') return;
+              raw = '-';
+            } else if (isOp(raw[raw.length - 1])) {
+              raw = raw.slice(0, -1) + k;
+            } else {
+              raw += k;
+            }
+          } else if (k === '%') {
+            if (!raw || !/[\d.]$/.test(raw)) return;
+            raw += '%';
+          } else if (k === 'neg') {
+            const wrapped = raw.match(/\(-(\d*\.?\d*)\)$/);
+            if (wrapped) {
+              raw = raw.slice(0, wrapped.index) + wrapped[1];
+            } else {
+              const m = raw.match(/(\d*\.?\d*)$/);
+              if (m && m[1]) raw = raw.slice(0, m.index) + '(-' + m[1] + ')';
+            }
+          }
+          render();
+        }
+
+        function clearAll() {
+          raw = '';
+          justEvaluated = false;
+          resultEl.classList.remove('is-redacted');
+          render();
+          paintResult('0');
+        }
+
+        function backspace() {
+          if (justEvaluated) {
+            clearAll();
+            return;
+          }
+          const wrapped = raw.match(/\(-(\d*\.?\d*)\)$/);
+          raw = wrapped ? raw.slice(0, wrapped.index) + wrapped[1] : raw.slice(0, -1);
+          render();
+        }
+
+        function compute() {
+          let src = raw;
+          while (src && isOp(src[src.length - 1])) src = src.slice(0, -1);
+          if (!src) throw new Error('EMPTY');
+          return evaluate(src);
+        }
+
+        function onEquals() {
+          // Already paid → normal calculator forever.
+          if (state.pro) {
+            runCalculation();
+            return;
+          }
+          // Free calculation already spent → straight to the paywall.
+          if (state.usedFree) {
+            audio.buzz();
+            shake(displayEl);
+            bump(0.8);
+            openPaywall();
+            return;
+          }
+          // The one and only free calculation.
+          const ok = runCalculation();
+          if (!ok) return;
+
+          state.usedFree = true;
+          state.save();
+
+          window.setTimeout(() => {
+            resultEl.classList.add('is-redacted');
+            audio.buzz();
+            refreshChrome();
+            bump(1.0);
+            window.setTimeout(openPaywall, 520);
+          }, 1150);
+        }
+
+        function runCalculation() {
+          let value;
+          try {
+            value = compute();
+          } catch (err) {
+            const msg =
+              err.message === 'DIV0'
+                ? '0으로 나눌 수 없습니다'
+                : err.message === 'OVERFLOW'
+                  ? '계산 범위를 초과했습니다'
+                  : err.message === 'EMPTY'
+                    ? '식을 입력하세요'
+                    : '식을 확인해 주세요';
+            paintResult(msg, { error: true });
+            audio.buzz();
+            shake(displayEl);
+            return false;
+          }
+          paintResult(format(value));
+          exprEl.textContent = pretty(raw.replace(/[+\-*/]$/, '')) + ' =';
+          raw = String(value);
+          justEvaluated = true;
+          audio.thock();
+          bump(0.9);
+          burst(28, ['#3fd8ff', '#8b5cff', '#ffffff']);
+          return true;
+        }
+
+        function press(k) {
+          audio.ensure();
+          switch (k) {
+            case 'ac':
+              clearAll();
+              audio.click();
+              bump(0.25);
+              return;
+            case 'del':
+              backspace();
+              audio.click();
+              bump(0.2);
+              return;
+            case '=':
+              onEquals();
+              return;
+            default:
+              input(k);
+              audio.click();
+              bump(0.28);
+          }
+        }
+
+        const keysEl = document.getElementById('keys');
+        keysEl.addEventListener('click', (e) => {
+          const btn = e.target.closest('.key');
+          if (btn) press(btn.dataset.k);
+        });
+
+        const KEYMAP = {
+          Enter: '=',
+          '=': '=',
+          Backspace: 'del',
+          Delete: 'ac',
+          Escape: 'ac',
+          c: 'ac',
+          C: 'ac',
+          x: '*',
+          X: '*',
+          n: 'neg',
+          N: 'neg',
+        };
+        window.addEventListener('keydown', (e) => {
+          if (paywall.classList.contains('is-open')) return;
+          if (e.target && e.target.tagName === 'INPUT') return;
+          let k = null;
+          if (/^[0-9]$/.test(e.key)) k = e.key;
+          else if ('+-*/.%'.indexOf(e.key) >= 0 && e.key.length === 1) k = e.key;
+          else if (KEYMAP[e.key]) k = KEYMAP[e.key];
+          if (!k) return;
+          e.preventDefault();
+          press(k);
+          const btn = keysEl.querySelector('[data-k="' + (k === '*' ? '*' : k) + '"]');
+          if (btn) {
+            btn.classList.add('is-down');
+            window.setTimeout(() => btn.classList.remove('is-down'), 120);
+          }
+        });
+
+        /* ═══════════════════════════════════════════════════════════
+           8. Paywall flow (demo only — nothing is sent anywhere)
+           ═══════════════════════════════════════════════════════════ */
+        const paywall = document.getElementById('paywall');
+        const sheet = document.getElementById('sheet');
+        const pwBuy = document.getElementById('pwBuy');
+        const pwSuccess = document.getElementById('pwSuccess');
+        const pwStep1 = document.getElementById('pwStep1');
+        const pwStep2 = document.getElementById('pwStep2');
+        const toPayBtn = document.getElementById('toPayBtn');
+        const backBtn = document.getElementById('backBtn');
+        const payBtn = document.getElementById('payBtn');
+        const laterBtn = document.getElementById('laterBtn');
+        const doneBtn = document.getElementById('doneBtn');
+        const progress = document.getElementById('progress');
+        const progressFill = document.getElementById('progressFill');
+        const progressLabel = document.getElementById('progressLabel');
+        const formErr = document.getElementById('formErr');
+
+        function showStep(n) {
+          pwStep1.hidden = n !== 1;
+          pwStep2.hidden = n !== 2;
+          sheet.scrollIntoView({ block: 'nearest' });
+        }
+
+        function openPaywall() {
+          paywall.classList.add('is-open');
+          pwBuy.style.display = '';
+          pwSuccess.classList.remove('is-on');
+          progress.classList.remove('is-on');
+          progressFill.style.width = '0%';
+          payBtn.disabled = false;
+          laterBtn.disabled = false;
+          payBtn.textContent = '$1,299.00 결제하고 잠금 해제';
+          formErr.textContent = '';
+          showStep(1);
+        }
+
+        toPayBtn.addEventListener('click', () => {
+          audio.ensure();
+          audio.click();
+          showStep(2);
+        });
+        backBtn.addEventListener('click', () => {
+          audio.click();
+          showStep(1);
+        });
+        function closePaywall() {
+          paywall.classList.remove('is-open');
+        }
+
+        function dismissPaywall() {
+          audio.click();
+          closePaywall();
+          refreshChrome();
+          shake(displayEl);
+        }
+        laterBtn.addEventListener('click', dismissPaywall);
+        paywall.addEventListener('click', (e) => {
+          if (e.target === paywall && !payBtn.disabled) dismissPaywall();
+        });
+        window.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && paywall.classList.contains('is-open') && !payBtn.disabled) {
+            dismissPaywall();
+          }
+        });
+
+        /* ── card form ↔ 3D card mirror ── */
+        const fName = document.getElementById('fName');
+        const fNum = document.getElementById('fNum');
+        const fExp = document.getElementById('fExp');
+        const fCvc = document.getElementById('fCvc');
+        const card3d = document.getElementById('card3d');
+        const cardNum = document.getElementById('cardNum');
+        const cardName = document.getElementById('cardName');
+        const cardExp = document.getElementById('cardExp');
+        const cardCvc = document.getElementById('cardCvc');
+
+        const groups = (digits) => (digits.match(/.{1,4}/g) || []).join(' ');
+
+        fNum.addEventListener('input', () => {
+          const digits = fNum.value.replace(/\D/g, '').slice(0, 16);
+          fNum.value = groups(digits);
+          cardNum.textContent = groups(digits.padEnd(16, '•'));
+        });
+        fName.addEventListener('input', () => {
+          cardName.textContent = fName.value.toUpperCase() || 'YOUR NAME';
+        });
+        fExp.addEventListener('input', () => {
+          const d = fExp.value.replace(/\D/g, '').slice(0, 4);
+          fExp.value = d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d;
+          cardExp.textContent = fExp.value || 'MM/YY';
+        });
+        fCvc.addEventListener('input', () => {
+          fCvc.value = fCvc.value.replace(/\D/g, '').slice(0, 4);
+          cardCvc.textContent = fCvc.value || '•••';
+        });
+        fCvc.addEventListener('focus', () => card3d.classList.add('is-flipped'));
+        fCvc.addEventListener('blur', () => card3d.classList.remove('is-flipped'));
+
+        function validate() {
+          if (fName.value.trim().length < 2) return '이름을 입력해 주세요 (데모라 아무거나 괜찮습니다).';
+          if (fNum.value.replace(/\D/g, '').length !== 16) return '카드번호 16자리를 채워 주세요.';
+          if (!/^\d{2}\/\d{2}$/.test(fExp.value)) return '유효기간을 MM/YY 형식으로 입력해 주세요.';
+          const mm = parseInt(fExp.value.slice(0, 2), 10);
+          if (!(mm >= 1 && mm <= 12)) return '유효기간의 월은 01~12 사이여야 합니다.';
+          if (fCvc.value.length < 3) return 'CVC를 3자리 이상 입력해 주세요.';
+          return null;
+        }
+
+        const STEPS = [
+          ['카드 확인 중…', 18, 520],
+          ['3D Secure 데모 인증…', 42, 620],
+          ['발급사 승인 요청 ($1,299.00)…', 72, 760],
+          ['라이선스 발급 중…', 92, 520],
+          ['완료', 100, 360],
+        ];
+
+        payBtn.addEventListener('click', () => {
+          audio.ensure();
+          const err = validate();
+          if (err) {
+            formErr.textContent = err;
+            audio.buzz();
+            shake(sheet);
+            return;
+          }
+          formErr.textContent = '';
+          payBtn.disabled = true;
+          backBtn.disabled = true;
+          payBtn.textContent = '처리 중…';
+          progress.classList.add('is-on');
+
+          let i = 0;
+          const step = () => {
+            if (i >= STEPS.length) {
+              completePurchase();
+              return;
+            }
+            const [label, pct, wait] = STEPS[i++];
+            progressLabel.textContent = label;
+            progressFill.style.width = pct + '%';
+            audio.tone(420 + i * 90, 0.08, 'triangle', 0.04);
+            window.setTimeout(step, wait);
+          };
+          step();
+        });
+
+        function completePurchase() {
+          state.pro = true;
+          state.save();
+          refreshChrome();
+
+          pwBuy.style.display = 'none';
+          pwSuccess.classList.add('is-on');
+          backBtn.disabled = false;
+          audio.chaching();
+          bump(1.2);
+          burst(180, ['#ffcf5c', '#fff6d8', '#3fd8ff', '#8b5cff']);
+
+          resultEl.classList.remove('is-redacted');
+          // Nothing about the card ever leaves the page — clear it anyway.
+          fCvc.value = '';
+          cardCvc.textContent = '•••';
+        }
+
+        doneBtn.addEventListener('click', () => {
+          audio.click();
+          closePaywall();
+          burst(80, ['#ffcf5c', '#fff6d8']);
+          clearAll();
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+          state.pro = false;
+          state.usedFree = false;
+          state.save();
+          closePaywall();
+          refreshChrome();
+          clearAll();
+          shaderState.gold = 0;
+          audio.ensure();
+          audio.click();
+        });
+
+        /* ═══════════════════════════════════════════════════════════
+           9. Confetti / particle burst (pseudo-3D projection)
+           ═══════════════════════════════════════════════════════════ */
+        const fx = document.getElementById('fx');
+        const fxc = fx.getContext('2d');
+        let parts = [];
+
+        function sizeFx() {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          fx.width = Math.floor(window.innerWidth * dpr);
+          fx.height = Math.floor(window.innerHeight * dpr);
+          fxc.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        sizeFx();
+        window.addEventListener('resize', sizeFx);
+
+        function burst(count, palette) {
+          if (reduced) count = Math.min(count, 24);
+          const cx = window.innerWidth / 2;
+          const cy = window.innerHeight * 0.45;
+          for (let i = 0; i < count; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 3 + Math.random() * 9;
+            parts.push({
+              x: cx,
+              y: cy,
+              z: Math.random() * 1.4,
+              vx: Math.cos(a) * sp,
+              vy: Math.sin(a) * sp - 4,
+              vz: (Math.random() - 0.5) * 0.06,
+              rot: Math.random() * Math.PI,
+              vr: (Math.random() - 0.5) * 0.4,
+              life: 1,
+              size: 4 + Math.random() * 7,
+              color: palette[(Math.random() * palette.length) | 0],
+            });
+          }
+          if (parts.length > 900) parts = parts.slice(-900);
+        }
+
+        function drawConfetti() {
+          fxc.clearRect(0, 0, window.innerWidth, window.innerHeight);
+          if (!parts.length) return;
+          for (let i = parts.length - 1; i >= 0; i--) {
+            const p = parts[i];
+            p.vy += 0.34;
+            p.vx *= 0.99;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.z += p.vz;
+            p.rot += p.vr;
+            p.life -= 0.0115;
+            if (p.life <= 0 || p.y > window.innerHeight + 60) {
+              parts.splice(i, 1);
+              continue;
+            }
+            const scale = 1 / (1 + Math.max(-0.7, p.z));
+            const s = p.size * scale;
+            fxc.save();
+            fxc.globalAlpha = Math.max(0, Math.min(1, p.life)) * 0.95;
+            fxc.translate(p.x, p.y);
+            fxc.rotate(p.rot);
+            fxc.fillStyle = p.color;
+            fxc.shadowColor = p.color;
+            fxc.shadowBlur = 12 * scale;
+            fxc.fillRect(-s / 2, -s / 4, s, s / 2);
+            fxc.restore();
+          }
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           10. Boot
+           ═══════════════════════════════════════════════════════════ */
+        refreshChrome();
+        render();
+        paintResult('0');
+        requestAnimationFrame(loop);
+
+        if (state.locked()) {
+          hintEl.textContent = '무료 체험 종료 — = 를 누르면 결제 화면이 열립니다';
+        }
+      })();
+    </script>
+  </body>
+</html>
