@@ -3,738 +3,413 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <title>NEXUS CALC — 3D 계산기</title>
+    <title>NEXUS CALC</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+    />
     <style>
-      /* ═══════════════════════════════════════════════════════════
-         Tokens
-         ═══════════════════════════════════════════════════════════ */
       :root {
-        --bg: #04050e;
-        --ink: #eaf2ff;
+        --void: #05060d;
+        --panel: #0b0e18;
+        --panel2: #10141f;
+        --ink: #e8eeff;
         --dim: #8593ba;
         --faint: #5d6b93;
+        --line: rgba(150, 180, 255, 0.13);
         --neon: #3fd8ff;
         --violet: #8b5cff;
         --gold: #ffcf5c;
-        --danger: #ff4d6d;
         --ok: #37d9a0;
-        --stroke: rgba(150, 180, 255, 0.14);
-        --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
-        --ui: system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', Roboto, sans-serif;
+        --danger: #ff4d6d;
+        --ui: 'Chakra Petch', system-ui, -apple-system, 'Pretendard', 'Apple SD Gothic Neo',
+          'Malgun Gothic', sans-serif;
+        --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
-
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
-
       html,
       body {
-        width: 100%;
-        min-height: 100%;
-        background:
-          radial-gradient(70% 55% at 50% 34%, rgba(84, 62, 190, 0.42), transparent 70%),
-          radial-gradient(90% 70% at 50% 112%, rgba(16, 90, 140, 0.4), transparent 65%),
-          var(--bg);
+        height: 100%;
+        background: var(--void);
         color: var(--ink);
         font-family: var(--ui);
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
         -webkit-tap-highlight-color: transparent;
       }
-      body.is-checkout {
-        overflow: hidden;
+      button,
+      input,
+      select {
+        font-family: inherit;
       }
 
-      /* ═══════════════════════════════════════════════════════════
-         Backdrop
-         ═══════════════════════════════════════════════════════════ */
-      #bg,
-      #fx {
+      /* ── stage ── */
+      #stage {
         position: fixed;
         inset: 0;
         width: 100%;
         height: 100%;
         display: block;
-      }
-      #bg {
+        touch-action: none;
+        cursor: grab;
         z-index: 0;
-        background: transparent;
+      }
+      #stage.is-dragging {
+        cursor: grabbing;
       }
       #fx {
-        z-index: 60;
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 3;
         pointer-events: none;
       }
-      .scanlines {
+      .grain {
         position: fixed;
         inset: 0;
         z-index: 1;
         pointer-events: none;
+        opacity: 0.5;
+        mix-blend-mode: overlay;
         background: repeating-linear-gradient(
           180deg,
-          rgba(255, 255, 255, 0.025) 0 1px,
+          rgba(255, 255, 255, 0.022) 0 1px,
           transparent 1px 3px
         );
-        mix-blend-mode: overlay;
-        opacity: 0.5;
       }
 
-      /* ═══════════════════════════════════════════════════════════
-         Stage + rotatable device
-         ═══════════════════════════════════════════════════════════ */
-      .stage {
-        position: relative;
-        z-index: 2;
-        display: grid;
-        place-items: center;
-        min-height: 100svh;
-        padding: 20px 16px 76px;
-        perspective: 1500px;
-        perspective-origin: 50% 44%;
-      }
-
-      .calc {
-        position: relative;
-        width: min(392px, 94vw);
-        border-radius: 34px;
-        transform-style: preserve-3d;
-        transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--fy, 0px));
-        will-change: transform;
-        cursor: grab;
-        touch-action: none;
-      }
-      .calc.is-dragging {
-        cursor: grabbing;
-      }
-
-      /* Slab between the two faces. */
-      .calc__depth {
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        transform-style: preserve-3d;
-        pointer-events: none;
-      }
-      .calc__depth i {
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        display: block;
-      }
-
-      .face {
-        border-radius: inherit;
-        padding: 18px 18px 16px;
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
-        transform-style: preserve-3d;
-        background:
-          linear-gradient(165deg, rgba(56, 72, 136, 0.5), rgba(9, 12, 28, 0.97) 46%),
-          rgba(9, 12, 28, 0.96);
-        border: 1px solid var(--stroke);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.16) inset,
-          0 -30px 60px rgba(0, 0, 0, 0.45) inset,
-          0 60px 120px rgba(0, 0, 0, 0.65),
-          0 0 90px rgba(63, 216, 255, 0.12);
-      }
-      .face--front {
-        position: relative;
-        transform: translateZ(15px);
-      }
-      .face--back {
-        position: absolute;
-        inset: 0;
-        transform: rotateY(180deg) translateZ(15px);
-        display: flex;
-        flex-direction: column;
-        background:
-          linear-gradient(165deg, rgba(116, 82, 172, 0.42), rgba(9, 12, 28, 0.97) 46%),
-          rgba(9, 12, 28, 0.96);
-      }
-      .face[aria-hidden='true'] {
-        pointer-events: none;
-      }
-
-      .gloss {
-        position: absolute;
-        inset: -2px;
-        border-radius: inherit;
-        transform: translateZ(26px);
-        pointer-events: none;
-        mix-blend-mode: screen;
-        opacity: 0.14;
-        background: linear-gradient(
-          115deg,
-          transparent 32%,
-          rgba(255, 255, 255, 0.55) 46%,
-          rgba(255, 255, 255, 0.08) 54%,
-          transparent 66%
-        );
-        background-size: 280% 280%;
-        animation: sheen 7s linear infinite;
-      }
-      @keyframes sheen {
-        from {
-          background-position: 120% 0%;
-        }
-        to {
-          background-position: -60% 100%;
-        }
-      }
-
-      /* ── brand row ── */
-      .brand {
+      /* ── top bar ── */
+      .top {
+        position: fixed;
+        z-index: 10;
+        top: 0;
+        left: 0;
+        right: 0;
         display: flex;
         align-items: center;
-        gap: 9px;
-        transform: translateZ(10px);
-        margin-bottom: 13px;
+        gap: 10px;
+        padding: 14px 18px;
+        padding-top: calc(14px + env(safe-area-inset-top, 0px));
+        pointer-events: none;
       }
-      .brand__dot {
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        background: var(--neon);
-        box-shadow: 0 0 14px var(--neon);
-        animation: pulseDot 2.4s ease-in-out infinite;
+      .top > * {
+        pointer-events: auto;
       }
-      @keyframes pulseDot {
-        50% {
-          opacity: 0.35;
-          transform: scale(0.8);
-        }
+      .mark {
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        background: linear-gradient(140deg, var(--neon), var(--violet));
+        box-shadow: 0 0 18px rgba(63, 216, 255, 0.45);
       }
-      .brand__name {
-        font-size: 11.5px;
-        letter-spacing: 0.3em;
+      .wordmark {
+        font-size: 13px;
         font-weight: 700;
-        color: #cfe0ff;
-        white-space: nowrap;
+        letter-spacing: 0.26em;
       }
       .badge {
-        margin-left: auto;
-        font-size: 9.5px;
-        letter-spacing: 0.14em;
-        font-weight: 800;
-        padding: 5px 9px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        padding: 5px 10px;
         border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        color: #9fb2e0;
-        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--line);
+        color: var(--dim);
+        background: rgba(10, 14, 32, 0.7);
+        backdrop-filter: blur(8px);
         white-space: nowrap;
       }
       .badge.is-trial {
         color: var(--neon);
         border-color: rgba(63, 216, 255, 0.45);
-        box-shadow: 0 0 18px rgba(63, 216, 255, 0.25);
       }
       .badge.is-locked {
         color: var(--danger);
         border-color: rgba(255, 77, 109, 0.5);
-        box-shadow: 0 0 18px rgba(255, 77, 109, 0.28);
       }
       .badge.is-pro {
         color: #241a04;
         background: linear-gradient(180deg, #ffe9a8, #f5b83d);
         border-color: rgba(255, 220, 140, 0.9);
-        box-shadow: 0 0 22px rgba(255, 207, 92, 0.45);
+      }
+      .top__spacer {
+        flex: 1;
+      }
+      .ghost {
+        appearance: none;
+        cursor: pointer;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        color: var(--faint);
+        background: rgba(10, 14, 32, 0.6);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 11px;
+        backdrop-filter: blur(8px);
+      }
+      .ghost:hover {
+        color: var(--ink);
+        border-color: rgba(63, 216, 255, 0.4);
       }
 
-      /* ── display ── */
-      .display {
-        position: relative;
-        transform: translateZ(6px);
-        border-radius: 20px;
-        padding: 16px 16px 14px;
-        min-height: 118px;
+      /* ── readout (mirrors the 3D screen for a11y + small viewports) ── */
+      .readout {
+        position: fixed;
+        z-index: 9;
+        left: 50%;
+        transform: translateX(-50%);
+        top: calc(56px + env(safe-area-inset-top, 0px));
+        text-align: center;
+        pointer-events: none;
+        font-family: var(--mono);
+      }
+      .readout__expr {
+        font-size: 11px;
+        color: var(--faint);
+        min-height: 14px;
+        letter-spacing: 0.04em;
+      }
+      .readout__hint {
+        margin-top: 4px;
+        font-family: var(--ui);
+        font-size: 11px;
+        color: rgba(133, 147, 186, 0.7);
+        letter-spacing: 0.04em;
+      }
+
+      /* ── bottom rail ── */
+      .rail {
+        position: fixed;
+        z-index: 10;
+        left: 0;
+        right: 0;
+        bottom: 0;
         display: flex;
         flex-direction: column;
-        justify-content: flex-end;
-        gap: 7px;
-        overflow: hidden;
-        background: linear-gradient(180deg, rgba(3, 6, 18, 0.92), rgba(6, 10, 26, 0.82));
-        border: 1px solid rgba(120, 160, 255, 0.12);
-        box-shadow:
-          0 18px 30px rgba(0, 0, 0, 0.55) inset,
-          0 1px 0 rgba(255, 255, 255, 0.07);
-      }
-      .display::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        background: radial-gradient(120% 90% at 50% 0%, rgba(63, 216, 255, 0.16), transparent 62%);
-      }
-      .expr {
-        font-family: var(--mono);
-        font-size: 14px;
-        color: var(--dim);
-        min-height: 19px;
-        text-align: right;
-        letter-spacing: 0.03em;
-        word-break: break-all;
-      }
-      .result {
-        font-family: var(--mono);
-        font-weight: 700;
-        font-size: clamp(28px, 9.5vw, 44px);
-        text-align: right;
-        line-height: 1.1;
-        color: #fff;
-        text-shadow:
-          0 0 18px rgba(63, 216, 255, 0.55),
-          0 0 44px rgba(139, 92, 255, 0.35);
-        transform-style: preserve-3d;
-        word-break: break-all;
-        transition: filter 0.5s ease, color 0.4s ease;
-      }
-      .result span {
-        display: inline-block;
-        transform-origin: 50% 0%;
-        animation: flipIn 0.44s cubic-bezier(0.18, 0.9, 0.25, 1) backwards;
-      }
-      @keyframes flipIn {
-        from {
-          transform: rotateX(-92deg) translateZ(14px);
-          opacity: 0;
-          filter: blur(3px);
-        }
-      }
-      .result.is-redacted {
-        filter: blur(11px) saturate(0.4);
-        color: var(--danger);
-      }
-      .result.is-error {
-        color: var(--danger);
-        font-size: clamp(18px, 5.4vw, 24px);
-        text-shadow: 0 0 22px rgba(255, 77, 109, 0.55);
-      }
-      .lockchip {
-        position: absolute;
-        top: 11px;
-        left: 13px;
-        display: none;
-        align-items: center;
-        gap: 5px;
-        font-size: 9.5px;
-        font-weight: 800;
-        letter-spacing: 0.12em;
-        padding: 5px 9px;
-        border-radius: 999px;
-        color: var(--danger);
-        border: 1px solid rgba(255, 77, 109, 0.4);
-        background: rgba(255, 77, 109, 0.09);
-      }
-      body.is-locked-ui .lockchip {
-        display: inline-flex;
-      }
-
-      /* ── keypads ── */
-      .keys {
-        margin-top: 15px;
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 11px;
-        transform-style: preserve-3d;
-      }
-      .key {
-        position: relative;
-        appearance: none;
-        border: 0;
-        cursor: pointer;
-        font-family: var(--mono);
-        font-size: 20px;
-        font-weight: 600;
-        color: #e9f1ff;
-        height: 58px;
-        border-radius: 17px;
-        transform-style: preserve-3d;
-        transform: translateZ(16px);
-        background: linear-gradient(180deg, #232a4d 0%, #141a35 58%, #0e1228 100%);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.22) inset,
-          0 -6px 12px rgba(0, 0, 0, 0.5) inset,
-          0 0 0 1px rgba(255, 255, 255, 0.05),
-          0 14px 22px rgba(0, 0, 0, 0.55);
-        transition:
-          transform 0.13s cubic-bezier(0.2, 0.8, 0.3, 1),
-          box-shadow 0.13s ease,
-          filter 0.2s ease;
-        touch-action: none;
-      }
-      .key::before {
-        content: '';
-        position: absolute;
-        inset: 2px 2px -2px;
-        border-radius: inherit;
-        transform: translateZ(-14px);
-        background: linear-gradient(180deg, #0a0d1e, #05070f);
-        box-shadow: 0 0 26px rgba(0, 0, 0, 0.85);
-        z-index: -1;
-      }
-      .key::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.25s ease;
-        background: radial-gradient(90% 80% at 50% 0%, rgba(63, 216, 255, 0.4), transparent 65%);
-      }
-      .key:hover::after {
-        opacity: 1;
-      }
-      .key:hover {
-        filter: brightness(1.14);
-      }
-      .key:focus-visible {
-        outline: 2px solid var(--neon);
-        outline-offset: 3px;
-      }
-      .key.is-down,
-      .key:active {
-        transform: translateZ(4px) scale(0.97);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.1) inset,
-          0 -2px 8px rgba(0, 0, 0, 0.6) inset,
-          0 0 0 1px rgba(255, 255, 255, 0.05),
-          0 4px 8px rgba(0, 0, 0, 0.5);
-      }
-      .key--fn {
-        color: #9fb2e0;
-        background: linear-gradient(180deg, #1a2140 0%, #111730 60%, #0c1024 100%);
-      }
-      .key--op {
-        color: #d8ecff;
-        background: linear-gradient(180deg, #2a3a72 0%, #1a2450 58%, #131a3c 100%);
-      }
-      .key--eq {
-        color: #06121c;
-        background: linear-gradient(180deg, #a8f1ff 0%, #3fd8ff 52%, #1a9ecb 100%);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.7) inset,
-          0 -6px 12px rgba(0, 60, 90, 0.45) inset,
-          0 16px 30px rgba(0, 0, 0, 0.55),
-          0 0 34px rgba(63, 216, 255, 0.5);
-      }
-      body.is-locked-ui .key--eq {
-        color: #240409;
-        background: linear-gradient(180deg, #ffb3c2 0%, #ff4d6d 52%, #c01f3e 100%);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.55) inset,
-          0 16px 30px rgba(0, 0, 0, 0.55),
-          0 0 34px rgba(255, 77, 109, 0.5);
-      }
-      body.is-pro-ui .key--eq {
-        color: #241a04;
-        background: linear-gradient(180deg, #fff0bd 0%, #ffcf5c 52%, #d69a1c 100%);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.8) inset,
-          0 16px 30px rgba(0, 0, 0, 0.55),
-          0 0 38px rgba(255, 207, 92, 0.55);
-      }
-
-      /* ── face footer ── */
-      .footrow {
-        position: relative;
-        z-index: 2;
-        margin-top: 12px;
-        display: flex;
         align-items: center;
         gap: 10px;
-        transform: translateZ(6px);
+        padding: 14px 16px;
+        padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
       }
-      .hint {
-        flex: 1;
-        font-size: 10.5px;
-        letter-spacing: 0.05em;
-        color: rgba(160, 178, 220, 0.62);
-        line-height: 1.4;
+      .segs,
+      .acts {
+        display: flex;
+        gap: 6px;
+        padding: 5px;
+        border-radius: 14px;
+        background: rgba(8, 11, 22, 0.72);
+        border: 1px solid var(--line);
+        backdrop-filter: blur(12px);
+        max-width: 100%;
+        overflow-x: auto;
+        scrollbar-width: none;
       }
-      .flipbtn {
+      .segs::-webkit-scrollbar,
+      .acts::-webkit-scrollbar {
+        display: none;
+      }
+      .seg,
+      .act {
         appearance: none;
         cursor: pointer;
-        flex: none;
+        border: 0;
+        white-space: nowrap;
+        font-size: 12.5px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: var(--dim);
+        background: transparent;
+        border-radius: 10px;
+        padding: 9px 14px;
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        font-family: var(--ui);
-        font-size: 11px;
+        transition: color 0.18s ease, background 0.18s ease;
+      }
+      .seg:hover,
+      .act:hover {
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .seg.is-on {
+        color: #06121c;
+        background: linear-gradient(180deg, #8ceaff, #3fd8ff);
+        box-shadow: 0 0 22px rgba(63, 216, 255, 0.3);
+      }
+      .seg .lock,
+      .act .lock {
+        font-size: 10px;
+        opacity: 0.8;
+      }
+      .act--warn:hover {
+        color: var(--danger);
+        background: rgba(255, 77, 109, 0.1);
+      }
+      .act:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+    </style>
+    <style>
+      /* ── customizer drawer ── */
+      .drawer {
+        position: fixed;
+        z-index: 12;
+        left: 50%;
+        bottom: 0;
+        transform: translate(-50%, 110%);
+        width: min(440px, calc(100% - 24px));
+        border-radius: 18px 18px 0 0;
+        background: rgba(9, 12, 22, 0.94);
+        border: 1px solid var(--line);
+        border-bottom: 0;
+        backdrop-filter: blur(16px);
+        box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.6);
+        padding: 18px 18px 22px;
+        padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+        transition: transform 0.38s cubic-bezier(0.18, 0.9, 0.24, 1);
+        max-height: 72svh;
+        overflow-y: auto;
+      }
+      .drawer.is-open {
+        transform: translate(-50%, 0);
+      }
+      .drawer__head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .drawer__title {
+        font-size: 14px;
         font-weight: 700;
         letter-spacing: 0.04em;
-        color: #bcd2ff;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 999px;
-        padding: 7px 12px;
-        transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
-        touch-action: none;
       }
-      .flipbtn:hover {
-        background: rgba(63, 216, 255, 0.16);
-        color: #fff;
-      }
-      .flipbtn:active {
-        transform: scale(0.96);
-      }
-
-      /* ═══════════════════════════════════════════════════════════
-         Back face — NEXUS LAB (PRO)
-         ═══════════════════════════════════════════════════════════ */
-      .lab {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-height: 0;
-        transform-style: preserve-3d;
-      }
-      .lab__readout {
-        transform: translateZ(6px);
-        border-radius: 16px;
-        padding: 11px 14px;
-        background: linear-gradient(180deg, rgba(3, 6, 18, 0.92), rgba(10, 6, 26, 0.82));
-        border: 1px solid rgba(160, 130, 255, 0.16);
-        box-shadow: 0 14px 24px rgba(0, 0, 0, 0.5) inset;
-        display: flex;
-        align-items: baseline;
-        gap: 10px;
-      }
-      .lab__label {
-        font-size: 9px;
-        letter-spacing: 0.2em;
-        color: var(--faint);
-        flex: none;
-      }
-      .lab__value {
-        flex: 1;
-        text-align: right;
-        font-family: var(--mono);
-        font-size: 21px;
-        font-weight: 700;
-        color: #fff;
-        text-shadow: 0 0 20px rgba(139, 92, 255, 0.55);
-        word-break: break-all;
-      }
-      .angle {
-        appearance: none;
-        cursor: pointer;
-        flex: none;
-        font-family: var(--mono);
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        color: #d7c6ff;
-        background: rgba(139, 92, 255, 0.16);
-        border: 1px solid rgba(139, 92, 255, 0.4);
-        border-radius: 8px;
-        padding: 4px 8px;
-        touch-action: none;
-      }
-      .lab__grid {
-        margin-top: 12px;
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 9px;
-        transform-style: preserve-3d;
-      }
-      .skey {
-        position: relative;
-        appearance: none;
-        border: 0;
-        cursor: pointer;
-        font-family: var(--mono);
-        font-size: 14px;
-        font-weight: 600;
-        color: #e4dcff;
-        height: 46px;
-        border-radius: 14px;
-        transform: translateZ(14px);
-        background: linear-gradient(180deg, #2c2352 0%, #1a1438 58%, #120e28 100%);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.2) inset,
-          0 -5px 10px rgba(0, 0, 0, 0.5) inset,
-          0 12px 18px rgba(0, 0, 0, 0.5);
-        transition: transform 0.13s cubic-bezier(0.2, 0.8, 0.3, 1), filter 0.2s ease;
-        touch-action: none;
-      }
-      .skey:hover {
-        filter: brightness(1.18);
-      }
-      .skey.is-down,
-      .skey:active {
-        transform: translateZ(3px) scale(0.96);
-      }
-      .skey sup {
-        font-size: 9px;
-      }
-      .lab__tapehead {
-        margin: 14px 0 6px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transform: translateZ(4px);
-      }
-      .lab__tapehead span {
-        font-size: 9px;
-        letter-spacing: 0.2em;
-        color: var(--faint);
-      }
-      .lab__clear {
+      .drawer__x {
         margin-left: auto;
         appearance: none;
-        cursor: pointer;
-        font-family: var(--ui);
-        font-size: 10px;
-        color: var(--faint);
-        background: none;
         border: 0;
-        padding: 2px 4px;
-        touch-action: none;
-      }
-      .lab__clear:hover {
-        color: var(--danger);
-      }
-      .tape {
-        flex: 1;
-        min-height: 54px;
-        overflow-y: auto;
-        transform: translateZ(4px);
-        border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.07);
-        background: rgba(3, 5, 16, 0.6);
-        padding: 6px;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        scrollbar-width: thin;
-      }
-      .tape__empty {
-        margin: auto;
-        font-size: 11px;
-        color: var(--faint);
-      }
-      .tape__row {
-        appearance: none;
         cursor: pointer;
-        text-align: left;
-        border: 0;
-        background: rgba(255, 255, 255, 0.03);
-        border-radius: 9px;
-        padding: 7px 9px;
-        display: flex;
-        align-items: baseline;
-        gap: 8px;
-        font-family: var(--mono);
-        transition: background 0.18s ease;
-        touch-action: none;
-      }
-      .tape__row:hover {
-        background: rgba(139, 92, 255, 0.18);
-      }
-      .tape__expr {
-        flex: 1;
-        font-size: 10.5px;
-        color: var(--dim);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .tape__val {
-        font-size: 12.5px;
-        font-weight: 700;
-        color: #dcd2ff;
-      }
-
-      /* PRO gate over the back face */
-      .veil {
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        transform: translateZ(22px);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        text-align: center;
-        padding: 26px;
-        background: rgba(6, 8, 20, 0.82);
-        backdrop-filter: blur(9px) saturate(120%);
-        -webkit-backdrop-filter: blur(9px) saturate(120%);
-      }
-      .veil[hidden] {
-        display: none;
-      }
-      .veil__lock {
-        width: 54px;
-        height: 54px;
-        border-radius: 16px;
-        display: grid;
-        place-items: center;
-        font-size: 24px;
-        background: linear-gradient(180deg, rgba(255, 207, 92, 0.22), rgba(255, 207, 92, 0.06));
-        border: 1px solid rgba(255, 207, 92, 0.4);
-        box-shadow: 0 0 40px rgba(255, 207, 92, 0.2);
-      }
-      .veil__title {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
         font-size: 17px;
-        font-weight: 800;
-      }
-      .veil__sub {
-        font-size: 12px;
-        line-height: 1.6;
+        line-height: 1;
         color: var(--dim);
-        max-width: 280px;
+        background: rgba(255, 255, 255, 0.06);
       }
-      .veil__cta {
+      .drawer__x:hover {
+        color: var(--ink);
+      }
+      .swatchrow {
+        margin-bottom: 15px;
+      }
+      .swatchrow > span {
+        display: block;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        color: var(--faint);
+        margin-bottom: 8px;
+      }
+      .swatches {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .sw {
         appearance: none;
         cursor: pointer;
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+        border: 2px solid transparent;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.2) inset;
+        transition: transform 0.15s ease, border-color 0.15s ease;
+      }
+      .sw:hover {
+        transform: translateY(-2px);
+      }
+      .sw.is-on {
+        border-color: var(--ink);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .chip {
+        appearance: none;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--dim);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 8px 13px;
+      }
+      .chip:hover {
+        color: var(--ink);
+      }
+      .chip.is-on {
+        color: #06121c;
+        background: linear-gradient(180deg, #8ceaff, #3fd8ff);
+        border-color: transparent;
+      }
+      .drawer__note {
         margin-top: 4px;
-        font-family: var(--ui);
-        font-weight: 700;
-        font-size: 13.5px;
-        color: #241a04;
-        background: linear-gradient(180deg, #ffe9a8 0%, #ffcf5c 52%, #e0a52a 100%);
-        border: 0;
-        border-radius: 12px;
-        padding: 12px 20px;
-        box-shadow: 0 12px 26px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 207, 92, 0.32);
-        touch-action: none;
-      }
-      .veil__cta:active {
-        transform: scale(0.98);
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--faint);
       }
 
-      .shake {
-        animation: shake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+      /* ── toast ── */
+      .toast {
+        position: fixed;
+        z-index: 14;
+        left: 50%;
+        bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+        transform: translate(-50%, 14px);
+        opacity: 0;
+        pointer-events: none;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--ink);
+        background: rgba(12, 16, 30, 0.94);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 10px 18px;
+        backdrop-filter: blur(10px);
+        transition: opacity 0.25s ease, transform 0.25s ease;
       }
-      @keyframes shake {
-        10%,
-        90% {
-          transform: translateX(-3px);
-        }
-        20%,
-        80% {
-          transform: translateX(5px);
-        }
-        30%,
-        50%,
-        70% {
-          transform: translateX(-8px);
-        }
-        40%,
-        60% {
-          transform: translateX(8px);
-        }
+      .toast.is-on {
+        opacity: 1;
+        transform: translate(-50%, 0);
       }
-
-      /* ═══════════════════════════════════════════════════════════
-         Checkout
-         ═══════════════════════════════════════════════════════════ */
+      .shakeco {
+        animation: shakeco 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+      }
+      @keyframes shakeco {
+        10%, 90% { transform: translateX(-3px); }
+        20%, 80% { transform: translateX(5px); }
+        30%, 50%, 70% { transform: translateX(-8px); }
+        40%, 60% { transform: translateX(8px); }
+      }
+      .toast.is-gold {
+        color: var(--gold);
+        border-color: rgba(255, 207, 92, 0.4);
+      }
+    </style>
+    <style>
+      /* ═══ Checkout (test-mode card sheet) ═══ */
       .checkout {
         position: fixed;
         inset: 0;
@@ -1450,35 +1125,6 @@
         box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
       }
 
-      /* ── dev bar ── */
-      .devbar {
-        position: fixed;
-        z-index: 40;
-        right: 12px;
-        bottom: 12px;
-        display: flex;
-        gap: 8px;
-      }
-      .devbar button {
-        appearance: none;
-        cursor: pointer;
-        font-family: var(--ui);
-        font-size: 11px;
-        color: rgba(160, 178, 220, 0.75);
-        background: rgba(10, 14, 32, 0.7);
-        border: 1px solid var(--stroke);
-        border-radius: 999px;
-        padding: 7px 12px;
-        backdrop-filter: blur(8px);
-      }
-      .devbar button:hover {
-        color: var(--ink);
-        border-color: rgba(63, 216, 255, 0.4);
-      }
-
-      /* ═══════════════════════════════════════════════════════════
-         Responsive
-         ═══════════════════════════════════════════════════════════ */
       @media (max-width: 780px) {
         .co__grid {
           grid-template-columns: 1fr;
@@ -1504,147 +1150,88 @@
           width: 100%;
         }
       }
-      @media (max-width: 400px) {
-        .key {
-          height: 54px;
-          font-size: 19px;
-        }
-        .keys {
-          gap: 9px;
-        }
-        .skey {
-          height: 42px;
-          font-size: 13px;
+      @media (max-width: 520px) {
+        .readout__hint {
+          display: none;
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        .gloss,
-        .brand__dot {
-          animation: none !important;
-        }
-        .result span {
-          animation-duration: 0.01s;
+        .drawer,
+        .toast {
+          transition-duration: 0.01s;
         }
       }
     </style>
   </head>
   <body>
-    <canvas id="bg" aria-hidden="true"></canvas>
-    <div class="scanlines" aria-hidden="true"></div>
+    <canvas id="stage"></canvas>
+    <div class="grain" aria-hidden="true"></div>
 
-    <main class="stage">
-      <div class="calc" id="calc">
-        <div class="calc__depth" id="depth" aria-hidden="true"></div>
+    <header class="top">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="wordmark">NEXUS&nbsp;CALC</span>
+      <span class="badge is-trial" id="badge">FREE TRIAL · 1회</span>
+      <span class="top__spacer"></span>
+      <button class="ghost" id="resetBtn" type="button">라이선스 초기화</button>
+    </header>
 
-        <!-- ── FRONT ─────────────────────────────────────────── -->
-        <section class="face face--front" id="faceFront">
-          <div class="gloss" aria-hidden="true"></div>
+    <div class="readout" aria-live="polite">
+      <div class="readout__expr" id="roExpr">&nbsp;</div>
+      <div class="readout__hint" id="roHint">드래그로 돌리고 · 키를 눌러 계산하세요</div>
+    </div>
 
-          <div class="brand">
-            <span class="brand__dot"></span>
-            <span class="brand__name">NEXUS&nbsp;CALC</span>
-            <span class="badge is-trial" id="badge">FREE TRIAL · 1회</span>
-          </div>
-
-          <div class="display" id="display">
-            <span class="lockchip">🔒 PRO 필요</span>
-            <div class="expr" id="expr">&nbsp;</div>
-            <div class="result" id="result" aria-live="polite">0</div>
-          </div>
-
-          <div class="keys" id="keys">
-            <button class="key key--fn" data-k="ac" type="button">AC</button>
-            <button class="key key--fn" data-k="del" type="button" aria-label="지우기">⌫</button>
-            <button class="key key--fn" data-k="%" type="button">%</button>
-            <button class="key key--op" data-k="/" type="button" aria-label="나누기">÷</button>
-
-            <button class="key" data-k="7" type="button">7</button>
-            <button class="key" data-k="8" type="button">8</button>
-            <button class="key" data-k="9" type="button">9</button>
-            <button class="key key--op" data-k="*" type="button" aria-label="곱하기">×</button>
-
-            <button class="key" data-k="4" type="button">4</button>
-            <button class="key" data-k="5" type="button">5</button>
-            <button class="key" data-k="6" type="button">6</button>
-            <button class="key key--op" data-k="-" type="button" aria-label="빼기">−</button>
-
-            <button class="key" data-k="1" type="button">1</button>
-            <button class="key" data-k="2" type="button">2</button>
-            <button class="key" data-k="3" type="button">3</button>
-            <button class="key key--op" data-k="+" type="button" aria-label="더하기">+</button>
-
-            <button class="key key--fn" data-k="neg" type="button" aria-label="부호 바꾸기">±</button>
-            <button class="key" data-k="0" type="button">0</button>
-            <button class="key" data-k="." type="button">.</button>
-            <button class="key key--eq" data-k="=" type="button" aria-label="계산">=</button>
-          </div>
-
-          <div class="footrow">
-            <p class="hint" id="hint">드래그해서 돌려보세요 · 뒷면에 LAB</p>
-            <button class="flipbtn" id="flipFront" type="button">↻ 뒷면</button>
-          </div>
-        </section>
-
-        <!-- ── BACK: NEXUS LAB (PRO) ─────────────────────────── -->
-        <section class="face face--back" id="faceBack" aria-hidden="true">
-          <div class="gloss" aria-hidden="true"></div>
-
-          <div class="brand">
-            <span class="brand__dot" style="background: var(--violet); box-shadow: 0 0 14px var(--violet)"></span>
-            <span class="brand__name">NEXUS&nbsp;LAB</span>
-            <span class="badge" id="labBadge">PRO 전용</span>
-          </div>
-
-          <div class="lab">
-            <div class="lab__readout">
-              <span class="lab__label">VALUE</span>
-              <span class="lab__value" id="labValue">0</span>
-              <button class="angle" id="angleBtn" type="button">DEG</button>
-            </div>
-
-            <div class="lab__grid" id="sciKeys">
-              <button class="skey" data-s="sqrt" type="button">√x</button>
-              <button class="skey" data-s="sqr" type="button">x<sup>2</sup></button>
-              <button class="skey" data-s="pow" type="button">x<sup>y</sup></button>
-              <button class="skey" data-s="inv" type="button">1/x</button>
-              <button class="skey" data-s="sin" type="button">sin</button>
-              <button class="skey" data-s="cos" type="button">cos</button>
-              <button class="skey" data-s="tan" type="button">tan</button>
-              <button class="skey" data-s="pi" type="button">π</button>
-              <button class="skey" data-s="log" type="button">log</button>
-              <button class="skey" data-s="ln" type="button">ln</button>
-              <button class="skey" data-s="e" type="button">e</button>
-              <button class="skey" data-s="fact" type="button">n!</button>
-            </div>
-
-            <div class="lab__tapehead">
-              <span>HISTORY TAPE</span>
-              <button class="lab__clear" id="tapeClear" type="button">비우기</button>
-            </div>
-            <div class="tape" id="tape"></div>
-
-            <div class="footrow">
-              <p class="hint">기록을 누르면 값을 불러옵니다</p>
-              <button class="flipbtn" id="flipBack" type="button">↻ 앞면</button>
-            </div>
-          </div>
-
-          <div class="veil" id="veil">
-            <div class="veil__lock">🔒</div>
-            <p class="veil__title">NEXUS LAB은 PRO 전용입니다</p>
-            <p class="veil__sub">
-              공학 계산 12종과 히스토리 테이프는 PRO 라이선스에서만 열립니다.
-            </p>
-            <button class="veil__cta" id="veilCta" type="button">$1,299.00으로 잠금 해제</button>
-            <button class="flipbtn" id="flipVeil" type="button">↻ 앞면으로</button>
-          </div>
-        </section>
+    <nav class="rail">
+      <div class="segs" id="segs" role="tablist" aria-label="기기 형태">
+        <button class="seg is-on" data-form="calc" type="button" role="tab">계산기</button>
+        <button class="seg" data-form="pc" type="button" role="tab">
+          컴퓨터 <span class="lock" data-lock>🔒</span>
+        </button>
+        <button class="seg" data-form="laptop" type="button" role="tab">
+          노트북 <span class="lock" data-lock>🔒</span>
+        </button>
       </div>
-    </main>
+      <div class="acts">
+        <button class="act" id="flipBtn" type="button">↻ 뒤집기</button>
+        <button class="act act--warn" id="smashBtn" type="button">
+          부수기 <span class="lock" data-lock>🔒</span>
+        </button>
+        <button class="act" id="rebuildBtn" type="button" disabled>조립</button>
+        <button class="act" id="customBtn" type="button">
+          커스텀 <span class="lock" data-lock>🔒</span>
+        </button>
+      </div>
+    </nav>
 
-    <!-- ═══════════════════════════════════════════════════════════
-         Checkout
-         ═══════════════════════════════════════════════════════════ -->
+    <section class="drawer" id="drawer" aria-label="커스터마이즈">
+      <div class="drawer__head">
+        <span class="drawer__title">커스터마이즈</span>
+        <button class="drawer__x" id="drawerX" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="swatchrow">
+        <span>본체</span>
+        <div class="swatches" id="swBody"></div>
+      </div>
+      <div class="swatchrow">
+        <span>키캡</span>
+        <div class="swatches" id="swKey"></div>
+      </div>
+      <div class="swatchrow">
+        <span>악센트</span>
+        <div class="swatches" id="swAccent"></div>
+      </div>
+      <div class="swatchrow">
+        <span>마감</span>
+        <div class="chips" id="swFinish"></div>
+      </div>
+      <div class="swatchrow" style="margin-bottom: 0">
+        <span>프리셋</span>
+        <div class="chips" id="swPreset"></div>
+      </div>
+      <p class="drawer__note">선택한 구성은 이 브라우저에 저장됩니다.</p>
+    </section>
+
+    <div class="toast" id="toast" role="status"></div>
+    <canvas id="fx" aria-hidden="true"></canvas>
     <div class="checkout" id="checkout" role="dialog" aria-modal="true" aria-labelledby="coHead">
       <div class="co" id="co">
         <div class="co__testbar">
@@ -1669,9 +1256,9 @@
 
             <ul class="co__perks">
               <li>= 버튼 무제한</li>
-              <li>NEXUS LAB (공학 계산 12종)</li>
-              <li>히스토리 테이프 저장</li>
-              <li>평생 업데이트</li>
+              <li>컴퓨터 / 노트북 형태 변환</li>
+              <li>공학 계산 12종 + 히스토리 테이프</li>
+              <li>부수기 & 색상 커스터마이즈</li>
             </ul>
           </aside>
 
@@ -1789,486 +1376,1053 @@
       </div>
     </div>
 
-    <div class="devbar">
-      <button id="resetBtn" type="button">라이선스 초기화 (데모)</button>
-    </div>
-
-    <canvas id="fx" aria-hidden="true"></canvas>
-
     <script>
       (() => {
         'use strict';
 
-        /* ═══════════════════════════════════════════════════════════
-           1. WebGL backdrop — raymarched core, rings, grid floor
-           ═══════════════════════════════════════════════════════════ */
-        const bg = document.getElementById('bg');
-        const VERT = `
-          attribute vec2 p;
-          void main(){ gl_Position = vec4(p, 0.0, 1.0); }
+        /* ═════════════════════════════════════════════════════════
+           0. Small matrix / vector helpers
+           ═════════════════════════════════════════════════════════ */
+        const DEG = Math.PI / 180;
+        const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+        const lerp = (a, b, t) => a + (b - a) * t;
+
+        function mat4Perspective(fovy, aspect, near, far) {
+          const f = 1 / Math.tan(fovy / 2);
+          const nf = 1 / (near - far);
+          // prettier-ignore
+          return new Float32Array([
+            f / aspect, 0, 0, 0,
+            0, f, 0, 0,
+            0, 0, (far + near) * nf, -1,
+            0, 0, 2 * far * near * nf, 0,
+          ]);
+        }
+
+        function mat4LookAt(eye, target, up) {
+          let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+          let l = Math.hypot(zx, zy, zz) || 1;
+          zx /= l; zy /= l; zz /= l;
+          let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+          l = Math.hypot(xx, xy, xz) || 1;
+          xx /= l; xy /= l; xz /= l;
+          const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+          // prettier-ignore
+          return new Float32Array([
+            xx, yx, zx, 0,
+            xy, yy, zy, 0,
+            xz, yz, zz, 0,
+            -(xx * eye[0] + xy * eye[1] + xz * eye[2]),
+            -(yx * eye[0] + yy * eye[1] + yz * eye[2]),
+            -(zx * eye[0] + zy * eye[1] + zz * eye[2]),
+            1,
+          ]);
+        }
+
+        // Column-major 3x3 rotation, applied as Rz * Ry * Rx.
+        function rot3(rx, ry, rz, out) {
+          const cx = Math.cos(rx), sx = Math.sin(rx);
+          const cy = Math.cos(ry), sy = Math.sin(ry);
+          const cz = Math.cos(rz), sz = Math.sin(rz);
+          out[0] = cz * cy;
+          out[1] = sz * cy;
+          out[2] = -sy;
+          out[3] = cz * sy * sx - sz * cx;
+          out[4] = sz * sy * sx + cz * cx;
+          out[5] = cy * sx;
+          out[6] = cz * sy * cx + sz * sx;
+          out[7] = sz * sy * cx - cz * sx;
+          out[8] = cy * cx;
+          return out;
+        }
+
+        // model = T * R * S, built straight into a mat4.
+        function composeModel(out, p, r3m, s) {
+          out[0] = r3m[0] * s[0]; out[1] = r3m[1] * s[0]; out[2] = r3m[2] * s[0]; out[3] = 0;
+          out[4] = r3m[3] * s[1]; out[5] = r3m[4] * s[1]; out[6] = r3m[5] * s[1]; out[7] = 0;
+          out[8] = r3m[6] * s[2]; out[9] = r3m[7] * s[2]; out[10] = r3m[8] * s[2]; out[11] = 0;
+          out[12] = p[0]; out[13] = p[1]; out[14] = p[2]; out[15] = 1;
+          return out;
+        }
+
+        const hex2rgb = (h) => {
+          const n = parseInt(h.slice(1), 16);
+          return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+        };
+
+        /* ═════════════════════════════════════════════════════════
+           1. GL context + programs
+           ═════════════════════════════════════════════════════════ */
+        const canvas = document.getElementById('stage');
+        const gl = canvas.getContext('webgl', {
+          antialias: true,
+          alpha: false,
+          preserveDrawingBuffer: false,
+        });
+        const hasGL = !!gl;
+
+        function build(vsSrc, fsSrc) {
+          const mk = (type, src) => {
+            const sh = gl.createShader(type);
+            gl.shaderSource(sh, src);
+            gl.compileShader(sh);
+            if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+              console.warn(gl.getShaderInfoLog(sh));
+              return null;
+            }
+            return sh;
+          };
+          const vs = mk(gl.VERTEX_SHADER, vsSrc);
+          const fs = mk(gl.FRAGMENT_SHADER, fsSrc);
+          if (!vs || !fs) return null;
+          const p = gl.createProgram();
+          gl.attachShader(p, vs);
+          gl.attachShader(p, fs);
+          gl.linkProgram(p);
+          if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+            console.warn(gl.getProgramInfoLog(p));
+            return null;
+          }
+          return p;
+        }
+
+        const BG_VS = `
+          attribute vec2 aP;
+          varying vec2 vUv;
+          void main(){ vUv = aP; gl_Position = vec4(aP, 0.0, 1.0); }
         `;
-        const FRAG = `
+
+        // Analytic floor + stars: the device is the subject now, so the
+        // backdrop stays cheap and never competes with it.
+        const BG_FS = `
           precision highp float;
+          varying vec2 vUv;
           uniform vec2  uRes;
           uniform float uTime;
           uniform float uPulse;
-          uniform float uLock;
-          uniform float uGold;
-          uniform vec2  uMouse;
-
-          mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
-
-          float sdBox(vec3 p, vec3 b){
-            vec3 d = abs(p) - b;
-            return length(max(d, vec3(0.0))) + min(max(d.x, max(d.y, d.z)), 0.0);
-          }
-          float sdTorus(vec3 p, vec2 t){
-            vec2 q = vec2(length(p.xz) - t.x, p.y);
-            return length(q) - t.y;
-          }
-
-          // returns vec2(distance, materialId)
-          vec2 map(vec3 p){
-            vec3 q = p - vec3(0.0, 1.30, 0.0);
-            q.xz *= rot(uTime * 0.30);
-            q.xy *= rot(uTime * 0.21);
-
-            float core  = sdBox(q, vec3(0.30)) - 0.12;
-            float r1    = sdTorus(q, vec2(0.98, 0.038));
-            vec3 s = q; s.xy *= rot(1.5707963);
-            float r2    = sdTorus(s, vec2(1.24, 0.028));
-            vec3 t = q; t.yz *= rot(1.5707963);
-            float r3    = sdTorus(t, vec2(1.50, 0.021));
-            float rings = min(r1, min(r2, r3));
-
-            // 1 = crystal core, 2 = grid floor, 3 = emissive rings
-            vec2 res = vec2(core, 1.0);
-            if (rings < res.x) res = vec2(rings, 3.0);
-            float fl = p.y + 2.05;
-            if (fl < res.x) res = vec2(fl, 2.0);
-            return res;
-          }
+          uniform vec3  uAccent;
+          uniform vec3  uMood;
+          uniform vec3  uCam;
+          uniform mat3  uBasis;     // right / up / forward
+          uniform vec3  uShadow;    // device centre on the floor
+          uniform float uShadowR;
 
           float stars(vec2 uv){
             vec2 g = uv * 46.0;
             vec2 id = floor(g);
             vec2 f = fract(g) - 0.5;
             float h = fract(sin(dot(id, vec2(127.1, 311.7))) * 43758.5453);
-            float br = step(0.982, h);
             float tw = 0.45 + 0.55 * sin(uTime * 1.8 + h * 64.0);
-            return br * smoothstep(0.14, 0.0, length(f)) * tw;
-          }
-
-          vec3 calcNormal(vec3 p){
-            vec2 e = vec2(0.0018, 0.0);
-            return normalize(vec3(
-              map(p + e.xyy).x - map(p - e.xyy).x,
-              map(p + e.yxy).x - map(p - e.yxy).x,
-              map(p + e.yyx).x - map(p - e.yyx).x
-            ));
+            return step(0.982, h) * smoothstep(0.14, 0.0, length(f)) * tw;
           }
 
           void main(){
             vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+            vec3 rd = normalize(uBasis * vec3(uv, -1.65));
 
-            vec3 accent = mix(vec3(0.25, 0.78, 1.0), vec3(1.0, 0.24, 0.42), uLock);
-            accent = mix(accent, vec3(1.0, 0.78, 0.26), uGold);
-            vec3 violet = mix(vec3(0.45, 0.28, 0.95), vec3(0.95, 0.35, 0.35), uLock);
-            violet = mix(violet, vec3(0.95, 0.60, 0.15), uGold);
+            float halo = exp(-length(uv - vec2(0.0, 0.08)) * 1.9);
+            vec3 col = mix(vec3(0.010, 0.012, 0.030), uMood * 0.30, halo * 0.9);
+            col += uAccent * halo * 0.14;
+            col += vec3(0.75, 0.85, 1.0) * stars(uv) * 0.5 * (1.0 - halo);
 
-            vec3 ro = vec3(0.0, 0.50 + uMouse.y * 0.55, 7.2);
-            ro.xz *= rot(uMouse.x * 0.42);
-            vec3 ta = vec3(0.0, 0.0, 0.0);
-            vec3 f = normalize(ta - ro);
-            vec3 r = normalize(cross(vec3(0.0, 1.0, 0.0), f));
-            vec3 u = cross(f, r);
-            vec3 rd = normalize(uv.x * r + uv.y * u + 1.65 * f);
-
-            float t = 0.0;
-            float mat = 0.0;
-            float glow = 0.0;
-            bool hit = false;
-            vec3 pos = ro;
-
-            for (int i = 0; i < 88; i++){
-              pos = ro + rd * t;
-              vec2 h = map(pos);
-              float dt = max(h.x * 0.86, 0.006);
-              if (h.y < 1.5 || h.y > 2.5) glow += dt * 0.150 / (0.030 + h.x * h.x * 14.0);
-              if (h.x < 0.0018){ mat = h.y; hit = true; break; }
-              t += dt;
-              if (t > 42.0) break;
-            }
-
-            float halo = exp(-length(uv - vec2(0.0, 0.26)) * 2.2);
-            vec3 col = mix(vec3(0.012, 0.014, 0.046), violet * 0.34, halo * 0.9);
-            col += accent * halo * 0.20;
-            col += vec3(0.75, 0.85, 1.0) * stars(uv) * 0.55 * (1.0 - halo);
-
-            if (hit){
-              vec3 n = calcNormal(pos);
-              vec3 ld = normalize(vec3(0.6, 0.9, 0.5));
-              float dif = clamp(dot(n, ld), 0.0, 1.0);
-              float fres = pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 3.0);
-
-              if (mat < 1.5){
-                // Core: near-black crystal that only lights up at its edges.
-                col = violet * 0.10 + accent * 0.04;
-                col += mix(accent, violet, 0.45) * pow(fres, 1.4) * 2.4;
-                col += mix(accent, vec3(1.0), 0.5)
-                     * pow(clamp(dot(reflect(rd, n), ld), 0.0, 1.0), 64.0) * 0.9;
-                col += accent * dif * 0.12;
-              } else if (mat > 2.5){
-                // Rings: emissive neon tubing.
-                col = accent * 1.25 + violet * 0.30;
-                col += mix(accent, vec3(1.0), 0.4) * fres * 0.7;
-              } else {
-                // Floor: neon grid with a keypress shockwave.
+            float FLOOR = -2.05;
+            if (rd.y < -0.0005) {
+              float t = (FLOOR - uCam.y) / rd.y;
+              if (t > 0.0 && t < 90.0) {
+                vec3 pos = uCam + rd * t;
                 vec2 g = abs(fract(pos.xz * 0.5) - 0.5);
-                float w = 0.012 + t * 0.004;
+                float w = 0.012 + t * 0.0035;
                 float line = 1.0 - smoothstep(0.0, w, min(g.x, g.y));
-                float wave = sin(length(pos.xz) * 1.6 - uTime * 3.2);
-                float ring = smoothstep(0.85, 1.0, wave) * uPulse;
-                col = accent * line * 1.05 + violet * line * 0.45;
-                col += accent * ring * 1.2;
-                col *= 1.0 / (1.0 + t * t * 0.02);
+                float wave = sin(length(pos.xz - uShadow.xz) * 1.7 - uTime * 3.2);
+                float ring = smoothstep(0.86, 1.0, wave) * uPulse;
+                vec3 fl = uAccent * line * 1.05 + uMood * line * 0.42 + uAccent * ring * 1.1;
+                vec2 d = pos.xz - uShadow.xz;
+                fl *= 1.0 - 0.82 * exp(-dot(d, d) / (uShadowR * uShadowR));
+                fl *= 1.0 / (1.0 + t * t * 0.016);
+                col += fl;
               }
             }
 
-            col += mix(accent, violet, 0.25) * glow * (1.0 + uPulse * 2.6);
-            col = mix(col, vec3(0.010, 0.012, 0.038), 1.0 - exp(-t * 0.05));
-
-            // Luminance-based Reinhard: rolls off highlights without washing
-            // the neon hues toward white the way per-channel does.
             float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-            col *= 1.0 / (1.0 + lum * 0.85);
-            float vig = 1.0 - 0.52 * dot(uv * vec2(0.85, 1.0), uv * vec2(0.85, 1.0));
-            col *= vig;
-            col = clamp(col, 0.0, 1.0);
+            col *= 1.0 / (1.0 + lum * 0.8);
+            col *= 1.0 - 0.5 * dot(uv * vec2(0.85, 1.0), uv * vec2(0.85, 1.0));
             float grain = fract(sin(dot(gl_FragCoord.xy + uTime, vec2(12.9898, 78.233))) * 43758.5453);
-            col += (grain - 0.5) * 0.022;
-
-            gl_FragColor = vec4(col, 1.0);
+            gl_FragColor = vec4(clamp(col, 0.0, 1.0) + (grain - 0.5) * 0.02, 1.0);
           }
         `;
 
-        const shaderState = { pulse: 0, lock: 0, gold: 0, mx: 0, my: 0, tmx: 0, tmy: 0 };
-        let gfx = null; // { draw(tSec), setScale(f), disable() }
-
-        (function initGL() {
-          const gl = bg.getContext('webgl', { antialias: false, alpha: false, depth: false });
-          if (!gl) return; // CSS gradient fallback stays visible
-
-          const compile = (type, src) => {
-            const sh = gl.createShader(type);
-            gl.shaderSource(sh, src);
-            gl.compileShader(sh);
-            if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-              console.warn('shader:', gl.getShaderInfoLog(sh));
-              return null;
-            }
-            return sh;
-          };
-          const vs = compile(gl.VERTEX_SHADER, VERT);
-          const fs = compile(gl.FRAGMENT_SHADER, FRAG);
-          if (!vs || !fs) return;
-
-          const prog = gl.createProgram();
-          gl.attachShader(prog, vs);
-          gl.attachShader(prog, fs);
-          gl.linkProgram(prog);
-          if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-            console.warn('link:', gl.getProgramInfoLog(prog));
-            return;
+        const BOX_VS = `
+          attribute vec3 aPos;
+          attribute vec3 aNorm;
+          attribute vec2 aUv;
+          uniform mat4 uProj, uView, uModel;
+          uniform mat3 uRot;
+          varying vec3 vN, vW, vLn;
+          varying vec2 vUv;
+          void main(){
+            vec4 w = uModel * vec4(aPos, 1.0);
+            vW = w.xyz;
+            vN = normalize(uRot * aNorm);
+            vLn = aNorm;
+            vUv = aUv;
+            gl_Position = uProj * uView * w;
           }
-          gl.useProgram(prog);
+        `;
 
-          const buf = gl.createBuffer();
-          gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        const BOX_FS = `
+          precision highp float;
+          varying vec3 vN, vW, vLn;
+          varying vec2 vUv;
+          uniform vec3 uColor, uAccent, uCam;
+          uniform float uEmissive, uGloss, uFade;
+          uniform int uTexMode;          // 0 plain · 1 screen(+Z) · 2 label(+Z) · 3 label(+Y)
+          uniform vec4 uCell;
+          uniform sampler2D uScreen, uAtlas;
+
+          void main(){
+            vec3 N = normalize(vN);
+            vec3 V = normalize(uCam - vW);
+            vec3 L1 = normalize(vec3(0.45, 0.95, 0.75));
+            vec3 L2 = normalize(vec3(-0.8, 0.30, -0.35));
+
+            // Moulded-edge bevel: the last few percent of each face rolls off.
+            float e = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
+            float bev = smoothstep(0.0, 0.05, e);
+            vec3 base = uColor * mix(0.5, 1.0, bev);
+
+            float d1 = max(dot(N, L1), 0.0);
+            float d2 = max(dot(N, L2), 0.0);
+            vec3 col = base * (0.30 + 0.95 * d1) + base * d2 * vec3(0.30, 0.40, 0.62);
+            vec3 H = normalize(L1 + V);
+            col += vec3(1.0) * pow(max(dot(N, H), 0.0), mix(16.0, 110.0, uGloss)) * (0.12 + 0.8 * uGloss) * bev;
+            float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+            col += uAccent * rim * 0.42;
+            col += uColor * uEmissive * 1.7;
+
+            float keyLum = dot(uColor, vec3(0.299, 0.587, 0.114));
+            vec3 legend = mix(uAccent * 1.1 + vec3(0.42), vec3(0.03, 0.05, 0.09), step(0.42, keyLum));
+            if (uTexMode == 1 && vLn.z > 0.5) {
+              col = texture2D(uScreen, vUv).rgb * 1.12;
+            } else if ((uTexMode == 2 && vLn.z > 0.5) || (uTexMode == 3 && vLn.y > 0.5)) {
+              col = mix(col, legend, texture2D(uAtlas, uCell.xy + vUv * uCell.zw).a);
+            }
+
+            gl_FragColor = vec4(col * uFade, 1.0);
+          }
+        `;
+
+        /* ═════════════════════════════════════════════════════════
+           2. Buffers, uniforms, textures
+           ═════════════════════════════════════════════════════════ */
+        let bgProg = null, boxProg = null, BG = null, BOX = null;
+        let quadBuf = null, posBuf = null, normBuf = null, uvBuf = null, idxBuf = null;
+        let screenTex = null, atlasTex = null;
+
+        // prettier-ignore
+        const CUBE_POS = new Float32Array([
+          -0.5, 0.5, 0.5,  0.5, 0.5, 0.5,  0.5,-0.5, 0.5, -0.5,-0.5, 0.5,
+           0.5, 0.5,-0.5, -0.5, 0.5,-0.5, -0.5,-0.5,-0.5,  0.5,-0.5,-0.5,
+           0.5, 0.5, 0.5,  0.5, 0.5,-0.5,  0.5,-0.5,-0.5,  0.5,-0.5, 0.5,
+          -0.5, 0.5,-0.5, -0.5, 0.5, 0.5, -0.5,-0.5, 0.5, -0.5,-0.5,-0.5,
+          -0.5, 0.5,-0.5,  0.5, 0.5,-0.5,  0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+          -0.5,-0.5, 0.5,  0.5,-0.5, 0.5,  0.5,-0.5,-0.5, -0.5,-0.5,-0.5,
+        ]);
+        const CUBE_NORM = new Float32Array(72);
+        [[0,0,1],[0,0,-1],[1,0,0],[-1,0,0],[0,1,0],[0,-1,0]].forEach((n, f) => {
+          for (let i = 0; i < 4; i++) CUBE_NORM.set(n, f * 12 + i * 3);
+        });
+        const CUBE_UV = new Float32Array(48);
+        for (let f = 0; f < 6; f++) CUBE_UV.set([0, 0, 1, 0, 1, 1, 0, 1], f * 8);
+        const CUBE_IDX = new Uint16Array(36);
+        for (let f = 0; f < 6; f++) {
+          const b = f * 4;
+          CUBE_IDX.set([b, b + 1, b + 2, b, b + 2, b + 3], f * 6);
+        }
+
+        function makeTex(src) {
+          const t = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, t);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+          return t;
+        }
+
+        function initGL() {
+          bgProg = build(BG_VS, BG_FS);
+          boxProg = build(BOX_VS, BOX_FS);
+          if (!bgProg || !boxProg) return false;
+
+          BG = {
+            aP: gl.getAttribLocation(bgProg, 'aP'),
+            uRes: gl.getUniformLocation(bgProg, 'uRes'),
+            uTime: gl.getUniformLocation(bgProg, 'uTime'),
+            uPulse: gl.getUniformLocation(bgProg, 'uPulse'),
+            uAccent: gl.getUniformLocation(bgProg, 'uAccent'),
+            uMood: gl.getUniformLocation(bgProg, 'uMood'),
+            uCam: gl.getUniformLocation(bgProg, 'uCam'),
+            uBasis: gl.getUniformLocation(bgProg, 'uBasis'),
+            uShadow: gl.getUniformLocation(bgProg, 'uShadow'),
+            uShadowR: gl.getUniformLocation(bgProg, 'uShadowR'),
+          };
+          BOX = {
+            aPos: gl.getAttribLocation(boxProg, 'aPos'),
+            aNorm: gl.getAttribLocation(boxProg, 'aNorm'),
+            aUv: gl.getAttribLocation(boxProg, 'aUv'),
+            uProj: gl.getUniformLocation(boxProg, 'uProj'),
+            uView: gl.getUniformLocation(boxProg, 'uView'),
+            uModel: gl.getUniformLocation(boxProg, 'uModel'),
+            uRot: gl.getUniformLocation(boxProg, 'uRot'),
+            uColor: gl.getUniformLocation(boxProg, 'uColor'),
+            uAccent: gl.getUniformLocation(boxProg, 'uAccent'),
+            uCam: gl.getUniformLocation(boxProg, 'uCam'),
+            uEmissive: gl.getUniformLocation(boxProg, 'uEmissive'),
+            uGloss: gl.getUniformLocation(boxProg, 'uGloss'),
+            uFade: gl.getUniformLocation(boxProg, 'uFade'),
+            uTexMode: gl.getUniformLocation(boxProg, 'uTexMode'),
+            uCell: gl.getUniformLocation(boxProg, 'uCell'),
+            uScreen: gl.getUniformLocation(boxProg, 'uScreen'),
+            uAtlas: gl.getUniformLocation(boxProg, 'uAtlas'),
+          };
+
+          quadBuf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
           gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-          const loc = gl.getAttribLocation(prog, 'p');
-          gl.enableVertexAttribArray(loc);
-          gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
-          const U = {
-            res: gl.getUniformLocation(prog, 'uRes'),
-            time: gl.getUniformLocation(prog, 'uTime'),
-            pulse: gl.getUniformLocation(prog, 'uPulse'),
-            lock: gl.getUniformLocation(prog, 'uLock'),
-            gold: gl.getUniformLocation(prog, 'uGold'),
-            mouse: gl.getUniformLocation(prog, 'uMouse'),
+          const mkBuf = (data) => {
+            const b = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, b);
+            gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+            return b;
           };
+          posBuf = mkBuf(CUBE_POS);
+          normBuf = mkBuf(CUBE_NORM);
+          uvBuf = mkBuf(CUBE_UV);
+          idxBuf = gl.createBuffer();
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+          gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, CUBE_IDX, gl.STATIC_DRAW);
 
-          const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-          let scale = dpr * (window.innerWidth < 640 ? 0.62 : 0.82);
-          let dead = false;
+          gl.enable(gl.DEPTH_TEST);
+          gl.enable(gl.CULL_FACE);
+          gl.frontFace(gl.CW); // the cube's faces are wound clockwise from outside
+          gl.clearColor(0.02, 0.023, 0.05, 1);
+          return true;
+        }
 
-          const resize = () => {
-            bg.width = Math.max(1, Math.floor(window.innerWidth * scale));
-            bg.height = Math.max(1, Math.floor(window.innerHeight * scale));
-            gl.viewport(0, 0, bg.width, bg.height);
-          };
-          resize();
-          window.addEventListener('resize', resize);
+        /* ── label atlas: one 8×8 sheet of keycap legends ── */
+        const ATLAS_N = 8;
+        const atlasCanvas = document.createElement('canvas');
+        atlasCanvas.width = atlasCanvas.height = 1024;
+        const actx = atlasCanvas.getContext('2d');
+        const LABELS = [
+          'AC', '⌫', '%', '÷', '7', '8', '9', '×',
+          '4', '5', '6', '−', '1', '2', '3', '+',
+          '±', '0', '.', '=', '√x', 'x²', 'xʸ', '1/x',
+          'sin', 'cos', 'tan', 'π', 'log', 'ln', 'e', 'n!',
+          '▲', '▼', 'LOAD', 'CLR',
+        ];
+        const cellIndex = {};
+        LABELS.forEach((l, i) => (cellIndex[l] = i));
 
-          bg.addEventListener('webglcontextlost', (e) => {
-            e.preventDefault();
-            dead = true;
-            bg.style.display = 'none';
+        function drawAtlas() {
+          const S = 1024 / ATLAS_N;
+          actx.clearRect(0, 0, 1024, 1024);
+          actx.fillStyle = '#fff';
+          actx.textAlign = 'center';
+          actx.textBaseline = 'middle';
+          LABELS.forEach((label, i) => {
+            const cx = (i % ATLAS_N) * S + S / 2;
+            const cy = Math.floor(i / ATLAS_N) * S + S / 2;
+            const size = label.length > 3 ? 40 : label.length > 2 ? 48 : label.length > 1 ? 58 : 72;
+            actx.font = '700 ' + size + 'px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+            actx.fillText(label, cx, cy);
           });
+          if (atlasTex) {
+            gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlasCanvas);
+          }
+        }
+        function cellOf(label) {
+          const i = cellIndex[label];
+          if (i === undefined) return [0, 0, 0, 0];
+          const d = 1 / ATLAS_N;
+          return [(i % ATLAS_N) * d, Math.floor(i / ATLAS_N) * d, d, d];
+        }
 
-          gfx = {
-            disable() {
-              dead = true;
-              bg.style.display = 'none';
+        /* ── device screen: redrawn whenever its content changes ── */
+        const scrCanvas = document.createElement('canvas');
+        scrCanvas.width = 512;
+        scrCanvas.height = 224;
+        const sctx = scrCanvas.getContext('2d');
+        let screenDirty = true;
+        const markScreen = () => (screenDirty = true);
+
+        /* ═════════════════════════════════════════════════════════
+           3. The device: three forms built from the same 28 boxes
+           ═════════════════════════════════════════════════════════ */
+        const PART_IDS = ['body', 'bezel', 'screen', 'stand', 'foot', 'deck', 'led', 'trim'];
+        for (let i = 0; i < 20; i++) PART_IDS.push('k' + i);
+
+        const CALC_KEYS = [
+          'ac', 'del', '%', '/', '7', '8', '9', '*', '4', '5',
+          '6', '-', '1', '2', '3', '+', 'neg', '0', '.', '=',
+        ];
+        const CALC_LABELS = [
+          'AC', '⌫', '%', '÷', '7', '8', '9', '×', '4', '5',
+          '6', '−', '1', '2', '3', '+', '±', '0', '.', '=',
+        ];
+        const SCI_KEYS = ['sqrt', 'sqr', 'pow', 'inv', 'sin', 'cos', 'tan', 'pi', 'log', 'ln', 'e', 'fact'];
+        const SCI_LABELS = ['√x', 'x²', 'xʸ', '1/x', 'sin', 'cos', 'tan', 'π', 'log', 'ln', 'e', 'n!'];
+        const TAPE_KEYS = ['up', 'down', 'load', 'clr'];
+        const TAPE_LABELS = ['▲', '▼', 'LOAD', 'CLR'];
+
+        function buildForms() {
+          const forms = {};
+
+          /* ── 계산기 ── */
+          const calc = {
+            id: 'calc',
+            origin: [0, 0.75, 0],
+            cam: { dist: 9.6, pitch: 4 * DEG, yaw: 0 },
+            screen: [512, 244],
+            parts: {
+              body: { p: [0, 0.75, 0], s: [3.4, 5.4, 0.55], mat: 'body' },
+              bezel: { p: [0, 2.55, 0.29], s: [3.0, 1.5, 0.06], mat: 'dark' },
+              screen: { p: [0, 2.55, 0.33], s: [2.86, 1.36, 0.02], mat: 'screen', tex: 1 },
+              trim: { p: [0, 3.28, 0.29], s: [1.1, 0.06, 0.02], mat: 'trim', em: 0.9 },
+              led: { p: [-1.28, 3.28, 0.3], s: [0.12, 0.12, 0.04], mat: 'trim', em: 1.3 },
             },
-            setScale(factor) {
-              scale = dpr * factor;
-              resize();
-            },
-            draw(tSec) {
-              if (dead) return;
-              gl.uniform2f(U.res, bg.width, bg.height);
-              gl.uniform1f(U.time, tSec);
-              gl.uniform1f(U.pulse, shaderState.pulse);
-              gl.uniform1f(U.lock, shaderState.lock);
-              gl.uniform1f(U.gold, shaderState.gold);
-              gl.uniform2f(U.mouse, shaderState.mx, shaderState.my);
-              gl.drawArrays(gl.TRIANGLES, 0, 3);
-            },
+            act: {},
           };
-        })();
+          const COL_X = [-1.05, -0.35, 0.35, 1.05];
+          const ROW_Y = [1.32, 0.62, -0.08, -0.78, -1.48];
+          for (let i = 0; i < 20; i++) {
+            calc.parts['k' + i] = {
+              p: [COL_X[i % 4], ROW_Y[Math.floor(i / 4)], 0.395],
+              s: [0.62, 0.56, 0.24],
+              mat: i === 19 ? 'accentkey' : 'key',
+              tex: 2,
+              label: CALC_LABELS[i],
+              em: i === 19 ? 0.35 : 0,
+            };
+            calc.act['k' + i] = ['calc', CALC_KEYS[i]];
+          }
+          forms.calc = calc;
 
-        /* ═══════════════════════════════════════════════════════════
-           2. The device: drag to rotate, flip to the LAB side
-           ═══════════════════════════════════════════════════════════ */
-        const calcEl = document.getElementById('calc');
-        const faceFront = document.getElementById('faceFront');
-        const faceBack = document.getElementById('faceBack');
-        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const coarse = window.matchMedia('(hover: none)').matches;
-        const IDLE_HINT = coarse
-          ? '드래그해서 돌려보세요 · 뒷면에 LAB'
-          : '드래그해서 돌려보세요 · F키로 뒤집기';
+          /* ── 컴퓨터 ── */
+          const pc = {
+            id: 'pc',
+            origin: [0, -0.9, 0],
+            cam: { dist: 13.5, pitch: 7 * DEG, yaw: 0 },
+            screen: [512, 299],
+            parts: {
+              bezel: { p: [0, 0.6, -0.7], s: [4.6, 2.9, 0.24], mat: 'body' },
+              screen: { p: [0, 0.65, -0.55], s: [4.2, 2.45, 0.02], mat: 'screen', tex: 1 },
+              stand: { p: [0, -1.15, -0.7], s: [0.45, 1.5, 0.35], mat: 'dark' },
+              foot: { p: [0, -1.9, -0.55], s: [1.9, 0.14, 1.0], mat: 'body' },
+              body: { p: [-3.2, -0.85, 0.1], s: [1.1, 2.2, 2.0], mat: 'body' },
+              deck: { p: [0.35, -1.85, 1.15], s: [4.2, 0.16, 1.5], mat: 'body' },
+              led: { p: [-3.2, -0.1, 1.11], s: [0.12, 0.12, 0.04], mat: 'trim', em: 1.3 },
+              trim: { p: [-3.2, -1.6, 1.11], s: [0.5, 0.05, 0.02], mat: 'trim', em: 0.9 },
+            },
+            act: {},
+          };
+          const KB_X = [-1.5, -0.9, -0.3, 0.3, 0.9, 1.5];
+          for (let i = 0; i < 12; i++) {
+            pc.parts['k' + i] = {
+              p: [0.35 + KB_X[i % 6], -1.69, Math.floor(i / 6) === 0 ? 0.85 : 1.42],
+              s: [0.5, 0.16, 0.42],
+              mat: 'key',
+              tex: 3,
+              label: SCI_LABELS[i],
+            };
+            pc.act['k' + i] = ['sci', SCI_KEYS[i]];
+          }
+          forms.pc = pc;
 
-        // spin.y is the live Y rotation in degrees; goal drives the snap-back.
-        const spin = { y: 0, vel: 0, goal: 0 };
-        const drag = { active: false, id: null, x: 0, y: 0, t: 0, moved: 0 };
-        let suppressClick = false; // a drag must not also fire the key under it
-        const look = { rx: 0, ry: 0, trx: 0, try_: 0 };
-        let showingBack = false;
+          /* ── 노트북 ── */
+          const lid = -12 * DEG;
+          const laptop = {
+            id: 'laptop',
+            origin: [0, -1.9, 0.4],
+            cam: { dist: 12, pitch: 17 * DEG, yaw: 0 },
+            screen: [512, 307],
+            parts: {
+              deck: { p: [0, -1.92, 0.6], s: [4.4, 0.22, 3.0], mat: 'body' },
+              bezel: { p: [0, -0.48, -1.19], s: [4.4, 2.8, 0.18], r: [lid, 0, 0], mat: 'body' },
+              screen: { p: [0, -0.46, -1.09], s: [4.0, 2.4, 0.02], r: [lid, 0, 0], mat: 'screen', tex: 1 },
+              led: { p: [0, -1.8, 2.08], s: [0.1, 0.1, 0.03], mat: 'trim', em: 1.3 },
+              trim: { p: [0, -1.8, -0.78], s: [1.0, 0.04, 0.02], mat: 'trim', em: 0.9 },
+            },
+            act: {},
+          };
+          [-1.2, -0.4, 0.4, 1.2].forEach((x, i) => {
+            laptop.parts['k' + i] = {
+              p: [x, -1.74, 1.5],
+              s: [0.7, 0.14, 0.5],
+              mat: 'key',
+              tex: 3,
+              label: TAPE_LABELS[i],
+            };
+            laptop.act['k' + i] = ['tape', TAPE_KEYS[i]];
+          });
+          forms.laptop = laptop;
 
-        const isBackFacing = () => {
-          const a = ((spin.y % 360) + 360) % 360;
-          return a > 90 && a < 270;
+          return forms;
+        }
+
+        const FORMS = buildForms();
+        const FORM_ORDER = ['calc', 'pc', 'laptop'];
+        const FORM_NAMES = { calc: '계산기', pc: '컴퓨터', laptop: '노트북' };
+
+        /* runtime part state — live transform chases the target */
+        const parts = PART_IDS.map((id) => ({
+          id,
+          p: [0, 0, 0],
+          r: [0, 0, 0],
+          s: [0.001, 0.001, 0.001],
+          tp: [0, 0, 0],
+          tr: [0, 0, 0],
+          ts: [0.001, 0.001, 0.001],
+          mat: 'body',
+          em: 0,
+          tex: 0,
+          cell: [0, 0, 0, 0],
+          press: 0,
+          vis: false,
+          phys: null,
+        }));
+        const partById = {};
+        parts.forEach((p) => (partById[p.id] = p));
+
+        let formId = 'calc';
+        let smashed = false;
+
+        function applyForm(id, instant) {
+          const form = FORMS[id];
+          formId = id;
+          parts.forEach((part) => {
+            const def = form.parts[part.id];
+            if (def) {
+              part.tp = def.p.slice();
+              part.tr = (def.r || [0, 0, 0]).slice();
+              part.ts = def.s.slice();
+              part.mat = def.mat;
+              part.em = def.em || 0;
+              part.tex = def.tex || 0;
+              part.cell = def.label ? cellOf(def.label) : [0, 0, 0, 0];
+              part.vis = true;
+            } else {
+              part.tp = form.origin.slice();
+              part.tr = [0, 0, 0];
+              part.ts = [0.001, 0.001, 0.001];
+              part.vis = false;
+            }
+            if (instant) {
+              part.p = part.tp.slice();
+              part.r = part.tr.slice();
+              part.s = part.ts.slice();
+            }
+          });
+          scrCanvas.width = form.screen[0];
+          scrCanvas.height = form.screen[1];
+          cam.tDist = form.cam.dist;
+          cam.tPitch = form.cam.pitch;
+          markScreen();
+        }
+
+        /* ═════════════════════════════════════════════════════════
+           4. Camera, orbit input, picking
+           ═════════════════════════════════════════════════════════ */
+        const FOCAL = 1.65;
+        const FLOOR_Y = -2.05;
+        const cam = {
+          yaw: -0.32,
+          pitch: 4 * DEG,
+          dist: 9.6,
+          tDist: 9.6,
+          tPitch: 4 * DEG,
+          vyaw: 0,
+          vpitch: 0,
+          shake: 0,
+          eye: [0, 0, 8],
+          right: [1, 0, 0],
+          up: [0, 1, 0],
+          back: [0, 0, 1],
         };
+        const basis = new Float32Array(9);
+        let idleSince = performance.now();
 
-        function setFaceState(back) {
-          showingBack = back;
-          faceFront.setAttribute('aria-hidden', String(back));
-          faceBack.setAttribute('aria-hidden', String(!back));
-          faceFront.querySelectorAll('button, input').forEach((el) => {
-            el.tabIndex = back ? -1 : 0;
-          });
-          faceBack.querySelectorAll('button, input').forEach((el) => {
-            el.tabIndex = back ? 0 : -1;
-          });
-          if (back) refreshLab();
+        function updateCamera() {
+          const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+          const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+          const shakeX = cam.shake * (Math.random() - 0.5) * 0.5;
+          const shakeY = cam.shake * (Math.random() - 0.5) * 0.5;
+          cam.eye[0] = sy * cp * cam.dist + shakeX;
+          cam.eye[1] = sp * cam.dist + 0.35 + shakeY;
+          cam.eye[2] = cy * cp * cam.dist;
+          // camera basis: right / up / back (back points eye → target reversed)
+          cam.back = [
+            cam.eye[0] - 0,
+            cam.eye[1] - 0.35,
+            cam.eye[2] - 0,
+          ];
+          const bl = Math.hypot(cam.back[0], cam.back[1], cam.back[2]) || 1;
+          cam.back = [cam.back[0] / bl, cam.back[1] / bl, cam.back[2] / bl];
+          cam.right = [cam.back[2], 0, -cam.back[0]];
+          const rl = Math.hypot(cam.right[0], cam.right[2]) || 1;
+          cam.right = [cam.right[0] / rl, 0, cam.right[2] / rl];
+          cam.up = [
+            cam.back[1] * cam.right[2] - cam.back[2] * cam.right[1],
+            cam.back[2] * cam.right[0] - cam.back[0] * cam.right[2],
+            cam.back[0] * cam.right[1] - cam.back[1] * cam.right[0],
+          ];
+          basis.set([...cam.right, ...cam.up, ...cam.back]);
         }
 
-        function flip() {
-          audio.ensure();
-          audio.thock();
-          spin.vel = 0;
-          spin.goal = Math.round(spin.y / 180) * 180 + 180;
-          bump(0.6);
+        function rayFromPixel(px, py) {
+          const w = canvas.clientWidth, h = canvas.clientHeight;
+          const ux = (px - w / 2) / h;
+          const uy = (h / 2 - py) / h;
+          const d = [
+            cam.right[0] * ux + cam.up[0] * uy - cam.back[0] * FOCAL,
+            cam.right[1] * ux + cam.up[1] * uy - cam.back[1] * FOCAL,
+            cam.right[2] * ux + cam.up[2] * uy - cam.back[2] * FOCAL,
+          ];
+          const l = Math.hypot(d[0], d[1], d[2]) || 1;
+          return { o: cam.eye.slice(), d: [d[0] / l, d[1] / l, d[2] / l] };
         }
 
-        calcEl.addEventListener('pointerdown', (e) => {
+        const pickRot = new Float32Array(9);
+        function pickPart(px, py) {
+          const ray = rayFromPixel(px, py);
+          let best = null, bestT = Infinity;
+          for (const part of parts) {
+            if (!part.vis || part.s[0] < 0.02) continue;
+            rot3(part.r[0], part.r[1], part.r[2], pickRot);
+            const ox = ray.o[0] - part.p[0], oy = ray.o[1] - part.p[1], oz = ray.o[2] - part.p[2];
+            const lo = [
+              (pickRot[0] * ox + pickRot[1] * oy + pickRot[2] * oz) / part.s[0],
+              (pickRot[3] * ox + pickRot[4] * oy + pickRot[5] * oz) / part.s[1],
+              (pickRot[6] * ox + pickRot[7] * oy + pickRot[8] * oz) / part.s[2],
+            ];
+            const ld = [
+              (pickRot[0] * ray.d[0] + pickRot[1] * ray.d[1] + pickRot[2] * ray.d[2]) / part.s[0],
+              (pickRot[3] * ray.d[0] + pickRot[4] * ray.d[1] + pickRot[5] * ray.d[2]) / part.s[1],
+              (pickRot[6] * ray.d[0] + pickRot[7] * ray.d[1] + pickRot[8] * ray.d[2]) / part.s[2],
+            ];
+            let tmin = -Infinity, tmax = Infinity, hit = true;
+            for (let a = 0; a < 3; a++) {
+              if (Math.abs(ld[a]) < 1e-8) {
+                if (lo[a] < -0.5 || lo[a] > 0.5) { hit = false; break; }
+                continue;
+              }
+              let t1 = (-0.5 - lo[a]) / ld[a], t2 = (0.5 - lo[a]) / ld[a];
+              if (t1 > t2) { const tt = t1; t1 = t2; t2 = tt; }
+              if (t1 > tmin) tmin = t1;
+              if (t2 < tmax) tmax = t2;
+              if (tmin > tmax) { hit = false; break; }
+            }
+            if (hit && tmax > 0) {
+              const t = tmin > 0 ? tmin : tmax;
+              if (t < bestT) { bestT = t; best = part; }
+            }
+          }
+          return best;
+        }
+
+        /* ── pointer: drag orbits, tap presses a key ── */
+        const drag = { active: false, id: null, x: 0, y: 0, moved: 0, t: 0, lastDx: 0 };
+        canvas.addEventListener('pointerdown', (e) => {
           if (checkout.classList.contains('is-open')) return;
           drag.active = true;
           drag.id = e.pointerId;
           drag.x = e.clientX;
           drag.y = e.clientY;
-          drag.t = performance.now();
           drag.moved = 0;
-          suppressClick = false;
-          spin.vel = 0;
-          spin.goal = null;
-          calcEl.classList.add('is-dragging');
+          drag.lastDx = 0;
+          drag.t = performance.now();
+          cam.vyaw = 0;
+          cam.vpitch = 0;
+          canvas.classList.add('is-dragging');
+          idleSince = performance.now();
         });
-
+        window.addEventListener('pointermove', (e) => {
+          if (!drag.active || e.pointerId !== drag.id) return;
+          const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+          drag.moved += Math.abs(dx) + Math.abs(dy);
+          drag.lastDx = dx;
+          const now = performance.now();
+          const dt = Math.max(1, now - drag.t);
+          cam.yaw -= dx * 0.008;
+          cam.pitch = clamp(cam.pitch + dy * 0.006, -0.55, 1.15);
+          cam.vyaw = (-dx * 0.008 / dt) * 16;
+          drag.x = e.clientX;
+          drag.y = e.clientY;
+          drag.t = now;
+          idleSince = now;
+        });
         const endDrag = (e) => {
           if (!drag.active || (e && e.pointerId !== drag.id)) return;
           drag.active = false;
-          calcEl.classList.remove('is-dragging');
-          // The click lands right after pointerup, so clear one task later —
-          // otherwise a keyboard-activated click would stay suppressed.
-          if (suppressClick) window.setTimeout(() => (suppressClick = false), 0);
+          canvas.classList.remove('is-dragging');
+          canvas.style.cursor = '';
+          if (drag.moved <= 10) {
+            const hit = pickPart(e.clientX, e.clientY);
+            if (hit) onPartTap(hit);
+          } else if (Math.abs(cam.vyaw) > 0.115) {
+            onFlick();
+          }
+          idleSince = performance.now();
         };
         window.addEventListener('pointerup', endDrag);
-        window.addEventListener('pointercancel', endDrag);
-
-        const wasDragged = () => suppressClick;
-
-        window.addEventListener('pointermove', (e) => {
-          if (drag.active && e.pointerId === drag.id) {
-            const dx = e.clientX - drag.x;
-            const dy = e.clientY - drag.y;
-            drag.moved += Math.abs(dx) + Math.abs(dy);
-            if (drag.moved > 10) suppressClick = true;
-            const now = performance.now();
-            const dt = Math.max(1, now - drag.t);
-            spin.y += dx * 0.5;
-            spin.vel = ((dx * 0.5) / dt) * 16;
-            drag.x = e.clientX;
-            drag.y = e.clientY;
-            drag.t = now;
-            return;
-          }
-          if (drag.active) return;
-          const nx = e.clientX / window.innerWidth - 0.5;
-          const ny = e.clientY / window.innerHeight - 0.5;
-          look.try_ = nx * 9;
-          look.trx = -ny * 11;
-          shaderState.tmx = nx;
-          shaderState.tmy = -ny;
+        window.addEventListener('pointercancel', () => (drag.active = false));
+        canvas.addEventListener(
+          'wheel',
+          (e) => {
+            e.preventDefault();
+            cam.tDist = clamp(cam.tDist + e.deltaY * 0.012, 5.5, 26);
+            idleSince = performance.now();
+          },
+          { passive: false }
+        );
+        canvas.addEventListener('dblclick', () => {
+          if (state.pro) doSmash();
         });
 
-        /* quality watchdog */
-        const QUALITY_SCALES = [0.58, 0.42, 0.3];
-        const quality = { ema: 16, frames: 0, elapsed: 0, level: 0 };
-        function watchQuality(dt) {
-          if (!gfx || quality.level > 3 || dt > 500) return;
-          quality.ema = quality.ema * 0.88 + dt * 0.12;
-          quality.frames++;
-          quality.elapsed += dt;
-          if (quality.frames < 10 || quality.elapsed < 700) return;
-          if (quality.level < 3 && quality.ema > 32) {
-            gfx.setScale(QUALITY_SCALES[quality.level]);
-            quality.level++;
-          } else if (quality.level === 3 && quality.ema > 90) {
-            gfx.disable();
-            quality.level = 4;
-          }
-          quality.frames = 0;
-          quality.elapsed = 0;
-          quality.ema = 16;
+        /* ═════════════════════════════════════════════════════════
+           5. Smash / rebuild physics
+           ═════════════════════════════════════════════════════════ */
+        function doSmash() {
+          if (smashed) return;
+          smashed = true;
+          const c = FORMS[formId].origin;
+          parts.forEach((pt) => {
+            if (!pt.vis) return;
+            const dx = pt.p[0] - c[0], dy = pt.p[1] - c[1], dz = pt.p[2] - c[2];
+            const l = Math.hypot(dx, dy, dz) || 0.001;
+            const f = 5 + Math.random() * 6;
+            pt.phys = {
+              v: [
+                (dx / l) * f + (Math.random() - 0.5) * 2.4,
+                (dy / l) * f * 0.6 + 4.2 + Math.random() * 2.6,
+                (dz / l) * f + (Math.random() - 0.5) * 2.4,
+              ],
+              w: [(Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12],
+            };
+          });
+          cam.shake = 1;
+          pulse = 1.2;
+          cam.tDist = Math.min(26, FORMS[formId].cam.dist * 1.5);
+          audio.crash();
+          burst(70, ['#3fd8ff', '#8b5cff', '#ffffff', theme.body]);
+          rebuildBtn.disabled = false;
+          toast('부쉈습니다 — 조립으로 되돌립니다');
         }
 
-        const start = performance.now();
-        let last = start;
-        let frame = 0;
+        function doRebuild() {
+          if (!smashed) return;
+          smashed = false;
+          parts.forEach((pt) => (pt.phys = null));
+          rebuildBtn.disabled = true;
+          cam.tDist = FORMS[formId].cam.dist;
+          audio.thock();
+          pulse = 0.7;
+          toast('조립 완료');
+        }
 
-        function loop(now) {
-          const tSec = (now - start) / 1000;
-          watchQuality(now - last);
-          last = now;
-          frame++;
+        function stepPhysics(pt, dt) {
+          const ph = pt.phys;
+          ph.v[1] -= 26 * dt;
+          pt.p[0] += ph.v[0] * dt;
+          pt.p[1] += ph.v[1] * dt;
+          pt.p[2] += ph.v[2] * dt;
+          pt.r[0] += ph.w[0] * dt;
+          pt.r[1] += ph.w[1] * dt;
+          pt.r[2] += ph.w[2] * dt;
+          const rest = FLOOR_Y + Math.min(pt.s[0], pt.s[1], pt.s[2]) * 0.5 + 0.02;
+          if (pt.p[1] < rest) {
+            pt.p[1] = rest;
+            if (ph.v[1] < 0) ph.v[1] = -ph.v[1] * 0.4;
+            ph.v[0] *= 0.72;
+            ph.v[2] *= 0.72;
+            ph.w[0] *= 0.55;
+            ph.w[1] *= 0.55;
+            ph.w[2] *= 0.55;
+            if (Math.abs(ph.v[1]) < 0.7) {
+              ph.v[1] = 0;
+              pt.p[1] = rest;
+            }
+          }
+        }
 
-          if (!drag.active) {
-            if (spin.goal !== null) {
-              spin.y += (spin.goal - spin.y) * 0.16;
-              if (Math.abs(spin.goal - spin.y) < 0.15) {
-                spin.y = spin.goal;
-                spin.goal = null;
+        /* ═════════════════════════════════════════════════════════
+           6. Frame loop
+           ═════════════════════════════════════════════════════════ */
+        let pulse = 0;
+        let quality = 1;
+        const qWatch = { ema: 16, n: 0, ms: 0 };
+        const modelM = new Float32Array(16);
+        const rotM = new Float32Array(9);
+        const MAT_KEYS = { body: 'body', key: 'key', accentkey: 'accent', dark: 'dark', trim: 'accent', screen: 'dark' };
+
+        function resize() {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2) * quality;
+          const w = Math.max(1, Math.floor(window.innerWidth * dpr));
+          const h = Math.max(1, Math.floor(window.innerHeight * dpr));
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+          gl.viewport(0, 0, w, h);
+        }
+        window.addEventListener('resize', () => resize());
+
+        let lastT = performance.now();
+        function frame(now) {
+          const raw = (now - lastT) / 1000;
+          const dt = Math.min(raw, 1 / 24);
+          lastT = now;
+
+          // quality watchdog
+          if (raw * 1000 < 500) {
+            qWatch.ema = qWatch.ema * 0.88 + raw * 1000 * 0.12;
+            qWatch.n++;
+            qWatch.ms += raw * 1000;
+            if (qWatch.n > 12 && qWatch.ms > 700) {
+              if (qWatch.ema > 34 && quality > 0.55) {
+                quality = quality > 0.8 ? 0.7 : 0.55;
+                resize();
               }
-            } else if (Math.abs(spin.vel) > 0.35) {
-              spin.y += spin.vel;
-              spin.vel *= 0.94;
-            } else {
-              spin.vel = 0;
-              spin.goal = Math.round(spin.y / 180) * 180;
+              qWatch.n = 0;
+              qWatch.ms = 0;
+              qWatch.ema = 16;
             }
           }
 
-          if (isBackFacing() !== showingBack) setFaceState(!showingBack);
-
-          look.rx += (look.trx - look.rx) * 0.08;
-          look.ry += (look.try_ - look.ry) * 0.08;
-          const floatY = reduced ? 0 : Math.sin(tSec * 1.15) * 5;
-          calcEl.style.setProperty('--rx', look.rx.toFixed(2) + 'deg');
-          calcEl.style.setProperty('--ry', (spin.y + look.ry).toFixed(2) + 'deg');
-          calcEl.style.setProperty('--fy', floatY.toFixed(2) + 'px');
-
-          shaderState.mx += (shaderState.tmx - shaderState.mx) * 0.05;
-          shaderState.my += (shaderState.tmy - shaderState.my) * 0.05;
-          shaderState.pulse *= 0.92;
-          shaderState.lock += ((state.locked() ? 1 : 0) - shaderState.lock) * 0.05;
-          shaderState.gold += (goldTarget - shaderState.gold) * 0.06;
-
-          if (gfx && quality.level < 4 && (quality.level < 3 || (frame & 1) === 0)) {
-            gfx.draw(tSec);
+          // camera easing + idle drift
+          if (!drag.active) {
+            if (Math.abs(cam.vyaw) > 0.0006) {
+              cam.yaw += cam.vyaw;
+              cam.vyaw *= 0.93;
+            } else if (now - idleSince > 4200) {
+              cam.yaw += 0.0016;
+            }
+            if (now < cam.pitchUntil) cam.pitch = lerp(cam.pitch, cam.tPitch, 0.06);
           }
-          drawConfetti();
-          requestAnimationFrame(loop);
+          cam.dist = lerp(cam.dist, cam.tDist, 0.07);
+          cam.shake *= 0.86;
+          pulse *= 0.93;
+          updateCamera();
+
+          // part transforms
+          const f = clamp(dt * 9.5, 0, 1);
+          for (const pt of parts) {
+            if (smashed && pt.phys) {
+              stepPhysics(pt, dt);
+              for (let a = 0; a < 3; a++) pt.s[a] = lerp(pt.s[a], pt.ts[a], f);
+            } else {
+              for (let a = 0; a < 3; a++) {
+                pt.p[a] = lerp(pt.p[a], pt.tp[a], f);
+                pt.r[a] = lerp(pt.r[a], pt.tr[a], f);
+                pt.s[a] = lerp(pt.s[a], pt.ts[a], f);
+              }
+            }
+            pt.press *= 0.86;
+          }
+
+          render(now / 1000);
+          drawBits();
+          requestAnimationFrame(frame);
         }
 
-        /* ═══════════════════════════════════════════════════════════
-           3. Slab between the two faces
-           ═══════════════════════════════════════════════════════════ */
-        const depth = document.getElementById('depth');
-        for (let i = 0; i <= 15; i++) {
-          const layer = document.createElement('i');
-          const shade = Math.max(4, 24 - Math.abs(7.5 - i) * 2);
-          layer.style.transform = 'translateZ(' + (15 - i * 2) + 'px)';
-          layer.style.background = 'rgb(' + shade + ',' + (shade + 2) + ',' + (shade + 12) + ')';
-          depth.appendChild(layer);
+        function render(tSec) {
+          resize();
+          const aspect = canvas.width / canvas.height;
+          const proj = mat4Perspective(2 * Math.atan(1 / FOCAL), aspect, 0.1, 120);
+          const view = mat4LookAt(cam.eye, [0, 0.35, 0], [0, 1, 0]);
+          const origin = FORMS[formId].origin;
+
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+          // backdrop
+          gl.disable(gl.DEPTH_TEST);
+          gl.disable(gl.CULL_FACE); // the fullscreen triangle winds the other way
+          gl.useProgram(bgProg);
+          gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+          gl.enableVertexAttribArray(BG.aP);
+          gl.vertexAttribPointer(BG.aP, 2, gl.FLOAT, false, 0, 0);
+          gl.uniform2f(BG.uRes, canvas.width, canvas.height);
+          gl.uniform1f(BG.uTime, tSec);
+          gl.uniform1f(BG.uPulse, pulse);
+          gl.uniform3fv(BG.uAccent, moodAccent);
+          gl.uniform3fv(BG.uMood, moodSecond);
+          gl.uniform3fv(BG.uCam, cam.eye);
+          gl.uniformMatrix3fv(BG.uBasis, false, basis);
+          gl.uniform3f(BG.uShadow, origin[0], FLOOR_Y, origin[2]);
+          gl.uniform1f(BG.uShadowR, smashed ? 5.5 : 2.6);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+          gl.enable(gl.DEPTH_TEST);
+          gl.enable(gl.CULL_FACE);
+
+          // device
+          gl.useProgram(boxProg);
+          gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+          gl.enableVertexAttribArray(BOX.aPos);
+          gl.vertexAttribPointer(BOX.aPos, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
+          gl.enableVertexAttribArray(BOX.aNorm);
+          gl.vertexAttribPointer(BOX.aNorm, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+          gl.enableVertexAttribArray(BOX.aUv);
+          gl.vertexAttribPointer(BOX.aUv, 2, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+
+          gl.uniformMatrix4fv(BOX.uProj, false, proj);
+          gl.uniformMatrix4fv(BOX.uView, false, view);
+          gl.uniform3fv(BOX.uCam, cam.eye);
+          gl.uniform3fv(BOX.uAccent, themeRGB.accent);
+          gl.uniform1f(BOX.uGloss, theme.gloss);
+
+          if (screenDirty) {
+            drawScreen();
+            gl.bindTexture(gl.TEXTURE_2D, screenTex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, scrCanvas);
+            screenDirty = false;
+          }
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, screenTex);
+          gl.uniform1i(BOX.uScreen, 0);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+          gl.uniform1i(BOX.uAtlas, 1);
+
+          for (const pt of parts) {
+            if (pt.s[0] < 0.01 && pt.s[1] < 0.01) continue;
+            rot3(pt.r[0], pt.r[1], pt.r[2], rotM);
+            let px = pt.p[0], py = pt.p[1], pz = pt.p[2];
+            if (pt.press > 0.01) {
+              const d = pt.press * 0.13;
+              if (pt.tex === 3) py -= d;
+              else pz -= d;
+            }
+            composeModel(modelM, [px, py, pz], rotM, pt.s);
+            gl.uniformMatrix4fv(BOX.uModel, false, modelM);
+            gl.uniformMatrix3fv(BOX.uRot, false, rotM);
+            gl.uniform3fv(BOX.uColor, themeRGB[MAT_KEYS[pt.mat] || 'body']);
+            gl.uniform1f(BOX.uEmissive, pt.em + pt.press * 0.5);
+            gl.uniform1f(BOX.uFade, 1);
+            gl.uniform1i(BOX.uTexMode, pt.tex);
+            gl.uniform4fv(BOX.uCell, pt.cell);
+            gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0);
+          }
         }
 
-        /* ═══════════════════════════════════════════════════════════
-           4. Tiny synth
-           ═══════════════════════════════════════════════════════════ */
-        let actx = null;
+        /* ═════════════════════════════════════════════════════════
+           7. Theme / customisation
+           ═════════════════════════════════════════════════════════ */
+        const THEME_STORE = 'nexuscalc.theme.v2';
+        const BODY_COLORS = ['#2b3556', '#4a5568', '#1d2b24', '#4a2334', '#3a2f55', '#c9cdd6', '#191b22', '#5a4326'];
+        const KEY_COLORS = ['#19203a', '#2c3550', '#0f1a16', '#331a26', '#262042', '#e8eaf0', '#101218', '#3d2d18'];
+        const ACCENT_COLORS = ['#3fd8ff', '#8b5cff', '#37d9a0', '#ffcf5c', '#ff4d6d', '#ff8a3d'];
+        const FINISHES = [
+          { id: 'matte', name: '매트', gloss: 0.12 },
+          { id: 'satin', name: '새틴', gloss: 0.45 },
+          { id: 'gloss', name: '유광', gloss: 0.9 },
+        ];
+        const PRESETS = [
+          { name: '미드나이트', body: '#2b3556', key: '#19203a', accent: '#3fd8ff', finish: 'satin' },
+          { name: '티타늄', body: '#c9cdd6', key: '#e8eaf0', accent: '#8b5cff', finish: 'gloss' },
+          { name: '에메랄드', body: '#1d2b24', key: '#0f1a16', accent: '#37d9a0', finish: 'matte' },
+          { name: '선셋', body: '#5a4326', key: '#3d2d18', accent: '#ff8a3d', finish: 'gloss' },
+          { name: '블러드', body: '#4a2334', key: '#331a26', accent: '#ff4d6d', finish: 'satin' },
+          { name: '모노', body: '#191b22', key: '#101218', accent: '#ffcf5c', finish: 'matte' },
+        ];
+
+        const theme = { body: '#2b3556', key: '#19203a', accent: '#3fd8ff', finish: 'satin', gloss: 0.45 };
+        const themeRGB = { body: [0, 0, 0], key: [0, 0, 0], accent: [0, 0, 0], dark: hex2rgb('#080b14') };
+        let moodAccent = new Float32Array(3);
+        let moodSecond = new Float32Array(3);
+
+        function syncTheme() {
+          themeRGB.body = hex2rgb(theme.body);
+          themeRGB.key = hex2rgb(theme.key);
+          themeRGB.accent = hex2rgb(theme.accent);
+          const fin = FINISHES.find((f) => f.id === theme.finish) || FINISHES[1];
+          theme.gloss = fin.gloss;
+          const locked = state.locked();
+          moodAccent.set(locked ? hex2rgb('#ff4d6d') : themeRGB.accent);
+          moodSecond.set(locked ? hex2rgb('#ff8090') : hex2rgb('#8b5cff'));
+          try {
+            localStorage.setItem(THEME_STORE, JSON.stringify(theme));
+          } catch (_) {}
+        }
+        function loadTheme() {
+          try {
+            const o = JSON.parse(localStorage.getItem(THEME_STORE) || 'null');
+            if (o && o.body) Object.assign(theme, o);
+          } catch (_) {}
+        }
+
+        /* ═════════════════════════════════════════════════════════
+           8. Audio
+           ═════════════════════════════════════════════════════════ */
+        let actxA = null;
         const audio = {
           ensure() {
             try {
-              if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
-              if (actx.state === 'suspended') actx.resume();
+              if (!actxA) actxA = new (window.AudioContext || window.webkitAudioContext)();
+              if (actxA.state === 'suspended') actxA.resume();
             } catch (_) {
-              actx = null;
+              actxA = null;
             }
           },
           tone(freq, dur, type, gain, delay) {
-            if (!actx) return;
+            if (!actxA) return;
             try {
-              const t0 = actx.currentTime + (delay || 0);
-              const osc = actx.createOscillator();
-              const g = actx.createGain();
+              const t0 = actxA.currentTime + (delay || 0);
+              const osc = actxA.createOscillator();
+              const g = actxA.createGain();
               osc.type = type || 'sine';
               osc.frequency.setValueAtTime(freq, t0);
               g.gain.setValueAtTime(0.0001, t0);
               g.gain.exponentialRampToValueAtTime(gain || 0.08, t0 + 0.012);
               g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-              osc.connect(g).connect(actx.destination);
+              osc.connect(g).connect(actxA.destination);
               osc.start(t0);
               osc.stop(t0 + dur + 0.02);
-            } catch (_) {
-              /* ignore */
-            }
+            } catch (_) {}
           },
-          click() {
-            this.tone(620 + Math.random() * 90, 0.07, 'triangle', 0.05);
+          noise(dur, gain) {
+            if (!actxA) return;
+            try {
+              const n = Math.floor(actxA.sampleRate * dur);
+              const buf = actxA.createBuffer(1, n, actxA.sampleRate);
+              const d = buf.getChannelData(0);
+              for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+              const src = actxA.createBufferSource();
+              const g = actxA.createGain();
+              g.gain.value = gain;
+              src.buffer = buf;
+              src.connect(g).connect(actxA.destination);
+              src.start();
+            } catch (_) {}
           },
-          thock() {
-            this.tone(240, 0.12, 'sine', 0.09);
-            this.tone(880, 0.06, 'triangle', 0.04, 0.01);
-          },
-          buzz() {
-            this.tone(150, 0.18, 'sawtooth', 0.07);
-            this.tone(105, 0.26, 'sawtooth', 0.06, 0.09);
-          },
+          click() { this.tone(620 + Math.random() * 90, 0.06, 'triangle', 0.045); },
+          thock() { this.tone(240, 0.12, 'sine', 0.085); this.tone(880, 0.05, 'triangle', 0.035, 0.01); },
+          buzz() { this.tone(150, 0.18, 'sawtooth', 0.07); this.tone(105, 0.26, 'sawtooth', 0.055, 0.09); },
+          crash() { this.noise(0.55, 0.22); this.tone(90, 0.4, 'sawtooth', 0.09); },
           chaching() {
-            [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
-              this.tone(f, 0.5, 'triangle', 0.07, i * 0.09)
-            );
-            this.tone(1318.5, 0.9, 'sine', 0.05, 0.4);
+            [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.tone(f, 0.5, 'triangle', 0.065, i * 0.09));
+            this.tone(1318.5, 0.9, 'sine', 0.045, 0.4);
           },
         };
 
-        /* ═══════════════════════════════════════════════════════════
-           5. Expression engine (hand-rolled parser, no eval)
-           ═══════════════════════════════════════════════════════════ */
+        /* ═════════════════════════════════════════════════════════
+           9. Expression engine (hand-rolled parser, no eval)
+           ═════════════════════════════════════════════════════════ */
         const PI_S = '3.141592653589793';
         const E_S = '2.718281828459045';
 
@@ -2280,7 +2434,6 @@
             if (/[\d.]/.test(c)) {
               let j = i;
               while (j < src.length && /[\d.]/.test(src[j])) j++;
-              // exponent form, e.g. 1.2e+21 — only ever right after digits
               if ((src[j] === 'e' || src[j] === 'E') && /[+\-\d]/.test(src[j + 1] || '')) {
                 j++;
                 if (src[j] === '+' || src[j] === '-') j++;
@@ -2290,23 +2443,12 @@
               if (isNaN(v)) throw new Error('SYNTAX');
               out.push({ t: 'num', v });
               i = j;
-              while (src[i] === '%') {
-                out[out.length - 1].v /= 100;
-                i++;
-              }
+              while (src[i] === '%') { out[out.length - 1].v /= 100; i++; }
               continue;
             }
-            if ('+-*/^'.indexOf(c) >= 0) {
-              out.push({ t: 'op', v: c });
-              i++;
-              continue;
-            }
-            if (c === '(' || c === ')') {
-              out.push({ t: c });
-              i++;
-              continue;
-            }
-            i++; // ignore stray characters
+            if ('+-*/^'.indexOf(c) >= 0) { out.push({ t: 'op', v: c }); i++; continue; }
+            if (c === '(' || c === ')') { out.push({ t: c }); i++; continue; }
+            i++;
           }
           return out;
         }
@@ -2315,14 +2457,10 @@
           const toks = tokenize(src);
           let p = 0;
           const peek = () => toks[p];
-
           function atom() {
             const t = peek();
             if (!t) throw new Error('SYNTAX');
-            if (t.t === 'num') {
-              p++;
-              return t.v;
-            }
+            if (t.t === 'num') { p++; return t.v; }
             if (t.t === '(') {
               p++;
               const v = expr();
@@ -2333,10 +2471,7 @@
           }
           function power() {
             const base = atom();
-            if (peek() && peek().t === 'op' && peek().v === '^') {
-              p++;
-              return Math.pow(base, unary()); // right-associative
-            }
+            if (peek() && peek().t === 'op' && peek().v === '^') { p++; return Math.pow(base, unary()); }
             return base;
           }
           function unary() {
@@ -2367,7 +2502,6 @@
             }
             return v;
           }
-
           const v = expr();
           if (p < toks.length) throw new Error('SYNTAX');
           if (!isFinite(v)) throw new Error('OVERFLOW');
@@ -2381,140 +2515,217 @@
           if (abs !== 0 && (abs >= 1e12 || abs < 1e-9)) s = n.toExponential(6);
           else s = String(parseFloat(n.toPrecision(12)));
           if (s.indexOf('e') >= 0) return s;
-          const parts = s.split('.');
-          parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-          return parts.join('.');
+          const parts2 = s.split('.');
+          parts2[0] = parts2[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          return parts2.join('.');
         }
 
         const pretty = (s) =>
-          s
-            .split(PI_S)
-            .join('π')
-            .split(E_S)
-            .join('e')
-            .replace(/\*/g, ' × ')
-            .replace(/\//g, ' ÷ ')
-            .replace(/\+/g, ' + ')
-            .replace(/-/g, ' − ')
-            .replace(/\^/g, ' ^ ');
+          s.split(PI_S).join('π').split(E_S).join('e')
+            .replace(/\*/g, ' × ').replace(/\//g, ' ÷ ')
+            .replace(/\+/g, ' + ').replace(/-/g, ' − ').replace(/\^/g, ' ^ ');
 
-        /* ═══════════════════════════════════════════════════════════
-           6. Licence state — the free tier is exactly one calculation
-           ═══════════════════════════════════════════════════════════ */
+        /* ═════════════════════════════════════════════════════════
+           10. Licence + calculator state
+           ═════════════════════════════════════════════════════════ */
+        const PRICE_TEXT = '$1,299.00';
         const STORE = 'nexuscalc.license.v1';
         const TAPE_STORE = 'nexuscalc.tape.v1';
-        const PRICE_TEXT = '$1,299.00';
 
         const state = {
           pro: false,
           usedFree: false,
           load() {
             try {
-              const raw = localStorage.getItem(STORE);
-              if (raw) {
-                const o = JSON.parse(raw);
-                this.pro = !!o.pro;
-                this.usedFree = !!o.usedFree;
-              }
-            } catch (_) {
-              /* private mode — stay in memory */
-            }
+              const o = JSON.parse(localStorage.getItem(STORE) || 'null');
+              if (o) { this.pro = !!o.pro; this.usedFree = !!o.usedFree; }
+            } catch (_) {}
           },
           save() {
             try {
-              localStorage.setItem(
-                STORE,
-                JSON.stringify({ pro: this.pro, usedFree: this.usedFree, price: 1299 })
-              );
-            } catch (_) {
-              /* ignore */
-            }
+              localStorage.setItem(STORE, JSON.stringify({ pro: this.pro, usedFree: this.usedFree, price: 1299 }));
+            } catch (_) {}
           },
-          locked() {
-            return !this.pro && this.usedFree;
-          },
+          locked() { return !this.pro && this.usedFree; },
         };
         state.load();
 
-        let goldTarget = 0;
-
-        /* ═══════════════════════════════════════════════════════════
-           7. Front face
-           ═══════════════════════════════════════════════════════════ */
-        const exprEl = document.getElementById('expr');
-        const resultEl = document.getElementById('result');
-        const displayEl = document.getElementById('display');
-        const badgeEl = document.getElementById('badge');
-        const hintEl = document.getElementById('hint');
-        const keysEl = document.getElementById('keys');
-
         let raw = '';
         let shownResult = '0';
+        let errText = '';
         let justEvaluated = false;
+        let redacted = false;
+        let degrees = true;
+        let tape = [];
+        let tapeSel = 0;
+        try {
+          tape = JSON.parse(localStorage.getItem(TAPE_STORE) || '[]');
+          if (!Array.isArray(tape)) tape = [];
+        } catch (_) { tape = []; }
 
-        function paintResult(text, opts) {
-          const o = opts || {};
-          resultEl.className = 'result' + (o.error ? ' is-error' : '');
-          resultEl.innerHTML = '';
-          String(text)
-            .split('')
-            .forEach((ch, i) => {
-              const s = document.createElement('span');
-              s.textContent = ch === ' ' ? ' ' : ch;
-              s.style.animationDelay = Math.min(i * 22, 420) + 'ms';
-              resultEl.appendChild(s);
-            });
-          shownResult = text;
-          refreshLab();
-        }
-
-        function render() {
-          exprEl.textContent = raw ? pretty(raw) : ' ';
-          refreshLab();
-        }
-
-        function refreshChrome() {
-          document.body.classList.toggle('is-locked-ui', state.locked());
-          document.body.classList.toggle('is-pro-ui', state.pro);
-
-          if (state.pro) {
-            badgeEl.className = 'badge is-pro';
-            badgeEl.textContent = 'PRO · 평생';
-            hintEl.textContent = 'PRO 활성화됨 · 뒷면 LAB 사용 가능';
-            goldTarget = 1;
-          } else if (state.locked()) {
-            badgeEl.className = 'badge is-locked';
-            badgeEl.textContent = 'LOCKED · $1,299';
-            hintEl.textContent = '무료 체험 종료 — = 를 누르면 결제창이 열립니다';
-            goldTarget = 0;
-          } else {
-            badgeEl.className = 'badge is-trial';
-            badgeEl.textContent = 'FREE TRIAL · 1회';
-            hintEl.textContent = IDLE_HINT;
-            goldTarget = 0;
-          }
-          veil.hidden = state.pro;
-          labBadge.className = 'badge' + (state.pro ? ' is-pro' : '');
-          labBadge.textContent = state.pro ? 'PRO 활성' : 'PRO 전용';
-        }
-
-        function bump(strength) {
-          shaderState.pulse = Math.min(1.2, shaderState.pulse + (strength || 0.35));
-        }
-        function shake(el) {
-          el.classList.remove('shake');
-          void el.offsetWidth;
-          el.classList.add('shake');
+        const saveTape = () => {
+          try { localStorage.setItem(TAPE_STORE, JSON.stringify(tape.slice(0, 40))); } catch (_) {}
+        };
+        function pushTape(expr, value) {
+          tape.unshift({ e: expr, v: value });
+          if (tape.length > 40) tape.pop();
+          tapeSel = 0;
+          saveTape();
+          markScreen();
         }
 
         const isOp = (c) => '+-*/^'.indexOf(c) >= 0;
+        function compute() {
+          let src = raw;
+          while (src && isOp(src[src.length - 1])) src = src.slice(0, -1);
+          if (!src) throw new Error('EMPTY');
+          return evaluate(src);
+        }
+        function currentValue() {
+          try { return compute(); } catch (_) { return 0; }
+        }
+        function errorText(code) {
+          if (code === 'DIV0') return '0으로 나눌 수 없습니다';
+          if (code === 'OVERFLOW') return '계산 범위를 초과했습니다';
+          if (code === 'EMPTY') return '식을 입력하세요';
+          if (code === 'DOMAIN') return '정의되지 않은 입력입니다';
+          return '식을 확인해 주세요';
+        }
+
+        /* ═════════════════════════════════════════════════════════
+           11. Screen artwork
+           ═════════════════════════════════════════════════════════ */
+        function drawScreen() {
+          const W = scrCanvas.width, H = scrCanvas.height;
+          const ui = "600 %dpx 'Chakra Petch', system-ui, sans-serif";
+          const mono = "700 %dpx 'JetBrains Mono', ui-monospace, monospace";
+          const g = sctx.createLinearGradient(0, 0, 0, H);
+          g.addColorStop(0, '#060a16');
+          g.addColorStop(1, '#03060f');
+          sctx.fillStyle = g;
+          sctx.fillRect(0, 0, W, H);
+          const glow = sctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, W * 0.75);
+          glow.addColorStop(0, 'rgba(63,216,255,0.16)');
+          glow.addColorStop(1, 'rgba(63,216,255,0)');
+          sctx.fillStyle = glow;
+          sctx.fillRect(0, 0, W, H);
+          sctx.textBaseline = 'alphabetic';
+
+          if (formId === 'calc') {
+            sctx.textAlign = 'right';
+            sctx.fillStyle = '#7b89ae';
+            sctx.font = mono.replace('%d', 22);
+            sctx.fillText(raw ? pretty(raw) : '', W - 22, 66);
+            if (errText) {
+              sctx.fillStyle = '#ff4d6d';
+              sctx.font = ui.replace('%d', 34);
+              sctx.fillText(errText, W - 22, H - 44);
+            } else {
+              sctx.font = mono.replace('%d', 74);
+              if (redacted) {
+                sctx.fillStyle = 'rgba(255,77,109,0.85)';
+                sctx.filter = 'blur(13px)';
+                sctx.fillText(shownResult, W - 22, H - 42);
+                sctx.filter = 'none';
+              } else {
+                sctx.shadowColor = 'rgba(63,216,255,0.75)';
+                sctx.shadowBlur = 26;
+                sctx.fillStyle = '#ffffff';
+                sctx.fillText(shownResult, W - 22, H - 42);
+                sctx.shadowBlur = 0;
+              }
+            }
+            if (state.locked()) {
+              sctx.textAlign = 'left';
+              sctx.font = ui.replace('%d', 20);
+              sctx.fillStyle = '#ff4d6d';
+              sctx.fillText('🔒 PRO 필요', 22, 40);
+            } else if (state.pro) {
+              sctx.textAlign = 'left';
+              sctx.font = ui.replace('%d', 20);
+              sctx.fillStyle = '#ffcf5c';
+              sctx.fillText('PRO', 22, 40);
+            }
+          } else if (formId === 'pc') {
+            sctx.textAlign = 'left';
+            sctx.font = ui.replace('%d', 21);
+            sctx.fillStyle = '#8b5cff';
+            sctx.fillText('NEXUS LAB', 26, 44);
+            sctx.textAlign = 'right';
+            sctx.fillStyle = degrees ? '#37d9a0' : '#ffcf5c';
+            sctx.fillText(degrees ? 'DEG' : 'RAD', W - 26, 44);
+            const v = currentValue();
+            sctx.font = mono.replace('%d', 60);
+            sctx.shadowColor = 'rgba(139,92,255,0.8)';
+            sctx.shadowBlur = 24;
+            sctx.fillStyle = errText ? '#ff4d6d' : '#ffffff';
+            sctx.fillText(errText || (isFinite(v) ? format(v) : '—'), W - 26, 128);
+            sctx.shadowBlur = 0;
+            sctx.font = mono.replace('%d', 21);
+            tape.slice(0, 3).forEach((row, i) => {
+              sctx.textAlign = 'left';
+              sctx.fillStyle = '#5d6b93';
+              sctx.fillText(row.e.slice(0, 26), 26, 180 + i * 34);
+              sctx.textAlign = 'right';
+              sctx.fillStyle = '#c3cdea';
+              sctx.fillText(format(row.v), W - 26, 180 + i * 34);
+            });
+          } else {
+            sctx.textAlign = 'left';
+            sctx.font = ui.replace('%d', 21);
+            sctx.fillStyle = '#3fd8ff';
+            sctx.fillText('HISTORY TAPE', 26, 42);
+            sctx.textAlign = 'right';
+            sctx.fillStyle = '#5d6b93';
+            sctx.fillText(tape.length ? tapeSel + 1 + ' / ' + tape.length : '0 / 0', W - 26, 42);
+            if (!tape.length) {
+              sctx.textAlign = 'center';
+              sctx.font = ui.replace('%d', 24);
+              sctx.fillStyle = '#5d6b93';
+              sctx.fillText('기록이 없습니다', W / 2, H / 2 + 8);
+            } else {
+              const from = Math.max(0, Math.min(tapeSel - 2, tape.length - 5));
+              tape.slice(from, from + 5).forEach((row, i) => {
+                const y = 82 + i * 44;
+                const on = from + i === tapeSel;
+                if (on) {
+                  sctx.fillStyle = 'rgba(63,216,255,0.16)';
+                  sctx.fillRect(16, y - 26, W - 32, 38);
+                }
+                sctx.textAlign = 'left';
+                sctx.font = mono.replace('%d', 20);
+                sctx.fillStyle = on ? '#e8eeff' : '#5d6b93';
+                sctx.fillText(row.e.slice(0, 24), 26, y);
+                sctx.textAlign = 'right';
+                sctx.font = mono.replace('%d', 24);
+                sctx.fillStyle = on ? '#3fd8ff' : '#8593ba';
+                sctx.fillText(format(row.v), W - 26, y);
+              });
+            }
+          }
+
+          // scanlines
+          sctx.fillStyle = 'rgba(0,0,0,0.16)';
+          for (let y = 0; y < H; y += 4) sctx.fillRect(0, y, W, 1);
+          roExpr.textContent = errText || (raw ? pretty(raw) : shownResult) || '\u00a0';
+        }
+
+        /* ═════════════════════════════════════════════════════════
+           12. Actions
+           ═════════════════════════════════════════════════════════ */
+        function setResult(text, isErr) {
+          if (isErr) { errText = text; }
+          else { errText = ''; shownResult = text; }
+          markScreen();
+        }
 
         function input(k) {
           if (justEvaluated) {
             if (/[\d.]/.test(k)) raw = '';
             justEvaluated = false;
-            resultEl.classList.remove('is-redacted');
+            redacted = false;
           }
+          errText = '';
           if (/[\d.]/.test(k)) {
             if (k === '.') {
               const tail = raw.match(/(\d*\.?\d*)$/)[1];
@@ -2523,14 +2734,9 @@
             }
             raw += k;
           } else if (isOp(k)) {
-            if (!raw) {
-              if (k !== '-') return;
-              raw = '-';
-            } else if (isOp(raw[raw.length - 1])) {
-              raw = raw.slice(0, -1) + k;
-            } else {
-              raw += k;
-            }
+            if (!raw) { if (k !== '-') return; raw = '-'; }
+            else if (isOp(raw[raw.length - 1])) raw = raw.slice(0, -1) + k;
+            else raw += k;
           } else if (k === '%') {
             if (!raw || !/[\d.]$/.test(raw)) return;
             raw += '%';
@@ -2542,200 +2748,73 @@
               if (m && m[1]) raw = raw.slice(0, m.index) + '(-' + m[1] + ')';
             }
           }
-          render();
+          markScreen();
         }
 
         function clearAll() {
           raw = '';
           justEvaluated = false;
-          resultEl.classList.remove('is-redacted');
-          render();
-          paintResult('0');
+          redacted = false;
+          errText = '';
+          shownResult = '0';
+          markScreen();
         }
-
         function backspace() {
-          if (justEvaluated) {
-            clearAll();
-            return;
-          }
+          if (justEvaluated) { clearAll(); return; }
           const wrapped = raw.match(/\(-(\d*\.?\d*)\)$/);
           raw = wrapped ? raw.slice(0, wrapped.index) + wrapped[1] : raw.slice(0, -1);
-          render();
-        }
-
-        function compute() {
-          let src = raw;
-          while (src && isOp(src[src.length - 1])) src = src.slice(0, -1);
-          if (!src) throw new Error('EMPTY');
-          return evaluate(src);
-        }
-
-        function errorText(code) {
-          if (code === 'DIV0') return '0으로 나눌 수 없습니다';
-          if (code === 'OVERFLOW') return '계산 범위를 초과했습니다';
-          if (code === 'EMPTY') return '식을 입력하세요';
-          if (code === 'DOMAIN') return '정의되지 않은 입력입니다';
-          return '식을 확인해 주세요';
+          markScreen();
         }
 
         function runCalculation() {
           let value;
-          try {
-            value = compute();
-          } catch (err) {
-            paintResult(errorText(err.message), { error: true });
+          try { value = compute(); }
+          catch (err) {
+            setResult(errorText(err.message), true);
             audio.buzz();
-            shake(displayEl);
+            cam.shake = 0.5;
             return false;
           }
           const shownExpr = pretty(raw.replace(/[+\-*/^]$/, ''));
-          paintResult(format(value));
-          exprEl.textContent = shownExpr + ' =';
           pushTape(shownExpr, value);
+          setResult(format(value));
           raw = String(value);
           justEvaluated = true;
           audio.thock();
-          bump(0.9);
-          burst(26, ['#3fd8ff', '#8b5cff', '#ffffff']);
+          pulse = 0.9;
+          burst(22, ['#3fd8ff', '#8b5cff', '#ffffff']);
           return true;
         }
 
         function onEquals() {
-          if (state.pro) {
-            runCalculation();
-            return;
-          }
+          if (state.pro) { runCalculation(); return; }
           if (state.usedFree) {
             audio.buzz();
-            shake(displayEl);
-            bump(0.8);
+            cam.shake = 0.6;
             openCheckout();
             return;
           }
           if (!runCalculation()) return;
-
           state.usedFree = true;
           state.save();
           window.setTimeout(() => {
-            resultEl.classList.add('is-redacted');
+            redacted = true;
+            markScreen();
             audio.buzz();
             refreshChrome();
-            bump(1);
+            pulse = 1;
             window.setTimeout(openCheckout, 520);
           }, 1150);
         }
 
         function press(k) {
           audio.ensure();
-          switch (k) {
-            case 'ac':
-              clearAll();
-              audio.click();
-              bump(0.25);
-              return;
-            case 'del':
-              backspace();
-              audio.click();
-              bump(0.2);
-              return;
-            case '=':
-              onEquals();
-              return;
-            default:
-              input(k);
-              audio.click();
-              bump(0.28);
-          }
-        }
-
-        keysEl.addEventListener('click', (e) => {
-          const btn = e.target.closest('.key');
-          if (!btn || wasDragged()) return;
-          press(btn.dataset.k);
-        });
-
-        /* ═══════════════════════════════════════════════════════════
-           8. Back face — NEXUS LAB (PRO only)
-           ═══════════════════════════════════════════════════════════ */
-        const labValue = document.getElementById('labValue');
-        const labBadge = document.getElementById('labBadge');
-        const angleBtn = document.getElementById('angleBtn');
-        const sciKeys = document.getElementById('sciKeys');
-        const tapeEl = document.getElementById('tape');
-        const tapeClear = document.getElementById('tapeClear');
-        const veil = document.getElementById('veil');
-
-        let degrees = true;
-        let tape = [];
-        try {
-          tape = JSON.parse(localStorage.getItem(TAPE_STORE) || '[]');
-          if (!Array.isArray(tape)) tape = [];
-        } catch (_) {
-          tape = [];
-        }
-
-        function saveTape() {
-          try {
-            localStorage.setItem(TAPE_STORE, JSON.stringify(tape.slice(0, 40)));
-          } catch (_) {
-            /* ignore */
-          }
-        }
-
-        function pushTape(expr, value) {
-          tape.unshift({ e: expr, v: value });
-          if (tape.length > 40) tape.pop();
-          saveTape();
-          renderTape();
-        }
-
-        function renderTape() {
-          tapeEl.innerHTML = '';
-          if (!tape.length) {
-            const p = document.createElement('p');
-            p.className = 'tape__empty';
-            p.textContent = '아직 계산 기록이 없습니다';
-            tapeEl.appendChild(p);
-            return;
-          }
-          tape.slice(0, 40).forEach((row) => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'tape__row';
-            b.tabIndex = showingBack ? 0 : -1;
-            const e = document.createElement('span');
-            e.className = 'tape__expr';
-            e.textContent = row.e;
-            const v = document.createElement('span');
-            v.className = 'tape__val';
-            v.textContent = format(row.v);
-            b.append(e, v);
-            b.addEventListener('click', () => {
-              if (wasDragged() || !state.pro) return;
-              audio.ensure();
-              audio.click();
-              raw = String(row.v);
-              justEvaluated = true;
-              render();
-              paintResult(format(row.v));
-              flip();
-            });
-            tapeEl.appendChild(b);
-          });
-        }
-
-        function currentValue() {
-          try {
-            return compute();
-          } catch (_) {
-            return 0;
-          }
-        }
-
-        function refreshLab() {
-          if (!labValue) return;
-          const v = currentValue();
-          labValue.textContent = isFinite(v) ? format(v) : '—';
+          if (k === 'ac') { clearAll(); audio.click(); pulse = 0.25; return; }
+          if (k === 'del') { backspace(); audio.click(); pulse = 0.2; return; }
+          if (k === '=') { onEquals(); return; }
+          input(k);
+          audio.click();
+          pulse = 0.28;
         }
 
         const factorial = (n) => {
@@ -2744,14 +2823,13 @@
           for (let i = 2; i <= n; i++) out *= i;
           return out;
         };
-
         const SCI = {
           sqrt: { label: '√', fn: (v) => (v < 0 ? NaN : Math.sqrt(v)) },
           sqr: { label: 'sqr', fn: (v) => v * v },
           inv: { label: '1/', fn: (v) => (v === 0 ? NaN : 1 / v) },
-          sin: { label: 'sin', fn: (v) => Math.sin(degrees ? (v * Math.PI) / 180 : v) },
-          cos: { label: 'cos', fn: (v) => Math.cos(degrees ? (v * Math.PI) / 180 : v) },
-          tan: { label: 'tan', fn: (v) => Math.tan(degrees ? (v * Math.PI) / 180 : v) },
+          sin: { label: 'sin', fn: (v) => Math.sin(degrees ? v * DEG : v) },
+          cos: { label: 'cos', fn: (v) => Math.cos(degrees ? v * DEG : v) },
+          tan: { label: 'tan', fn: (v) => Math.tan(degrees ? v * DEG : v) },
           log: { label: 'log', fn: (v) => (v <= 0 ? NaN : Math.log10(v)) },
           ln: { label: 'ln', fn: (v) => (v <= 0 ? NaN : Math.log(v)) },
           fact: { label: '!', fn: factorial },
@@ -2759,129 +2837,284 @@
 
         function applySci(key) {
           audio.ensure();
-          if (!state.pro) {
-            audio.buzz();
-            shake(veil);
-            return;
-          }
-          // constants and the power operator just extend the expression
           if (key === 'pi' || key === 'e') {
-            if (justEvaluated) {
-              raw = '';
-              justEvaluated = false;
-            }
+            if (justEvaluated) { raw = ''; justEvaluated = false; }
             if (raw && /[\d.)]$/.test(raw)) raw += '*';
             raw += key === 'pi' ? PI_S : E_S;
-            render();
+            markScreen();
             audio.click();
-            bump(0.3);
             return;
           }
           if (key === 'pow') {
-            if (justEvaluated) justEvaluated = false;
+            justEvaluated = false;
             if (!raw) return;
             if (isOp(raw[raw.length - 1])) raw = raw.slice(0, -1);
             raw += '^';
-            render();
+            markScreen();
             audio.click();
-            bump(0.3);
             return;
           }
-
           const def = SCI[key];
           if (!def) return;
           const v = currentValue();
           let out;
-          try {
-            out = def.fn(v);
-          } catch (err) {
-            paintResult(errorText(err.message), { error: true });
-            audio.buzz();
-            shake(labValue);
-            return;
-          }
-          if (!isFinite(out)) {
-            paintResult(errorText('DOMAIN'), { error: true });
-            audio.buzz();
-            shake(labValue);
-            return;
-          }
-          const shownExpr = def.label + '(' + format(v) + ')';
-          pushTape(shownExpr, out);
+          try { out = def.fn(v); }
+          catch (err) { setResult(errorText(err.message), true); audio.buzz(); return; }
+          if (!isFinite(out)) { setResult(errorText('DOMAIN'), true); audio.buzz(); return; }
+          pushTape(def.label + '(' + format(v) + ')', out);
           raw = String(out);
           justEvaluated = true;
-          exprEl.textContent = shownExpr + ' =';
-          paintResult(format(out));
+          setResult(format(out));
           audio.thock();
-          bump(0.8);
-          burst(18, ['#8b5cff', '#3fd8ff']);
+          pulse = 0.7;
         }
 
-        sciKeys.addEventListener('click', (e) => {
-          const btn = e.target.closest('.skey');
-          if (!btn || wasDragged()) return;
-          applySci(btn.dataset.s);
+        function tapeAction(code) {
+          audio.ensure();
+          audio.click();
+          if (code === 'up') tapeSel = Math.max(0, tapeSel - 1);
+          else if (code === 'down') tapeSel = Math.min(tape.length - 1, tapeSel + 1);
+          else if (code === 'clr') { tape = []; tapeSel = 0; saveTape(); }
+          else if (code === 'load') {
+            const row = tape[tapeSel];
+            if (!row) return;
+            raw = String(row.v);
+            justEvaluated = true;
+            setResult(format(row.v));
+            setForm('calc');
+            toast('값을 불러왔습니다');
+            return;
+          }
+          markScreen();
+        }
+
+        function onPartTap(part) {
+          if (smashed) {
+            if (part.phys) {
+              part.phys.v[1] += 7;
+              part.phys.v[0] += (Math.random() - 0.5) * 5;
+              part.phys.v[2] += (Math.random() - 0.5) * 5;
+              part.phys.w[0] += (Math.random() - 0.5) * 8;
+              audio.ensure();
+              audio.click();
+            }
+            return;
+          }
+          const act = FORMS[formId].act[part.id];
+          if (!act) {
+            if (part.id === 'screen' && state.locked()) openCheckout();
+            return;
+          }
+          part.press = 1;
+          idleSince = performance.now();
+          if (act[0] === 'calc') press(act[1]);
+          else if (act[0] === 'sci') applySci(act[1]);
+          else tapeAction(act[1]);
+        }
+
+        function onFlick() {
+          if (!state.pro) { lockedHint('컴퓨터 · 노트북 형태'); return; }
+          const i = FORM_ORDER.indexOf(formId);
+          setForm(FORM_ORDER[(i + 1) % FORM_ORDER.length]);
+        }
+
+        function setForm(id) {
+          if (id === formId) return;
+          if (id !== 'calc' && !state.pro) { lockedHint('컴퓨터 · 노트북 형태'); return; }
+          if (smashed) doRebuild();
+          applyForm(id);
+          cam.pitchUntil = performance.now() + 1100;
+          tapeSel = 0;
+          audio.ensure();
+          audio.thock();
+          pulse = 0.9;
+          segs.querySelectorAll('.seg').forEach((b) => b.classList.toggle('is-on', b.dataset.form === id));
+          toast(FORM_NAMES[id] + ' 형태');
+          markScreen();
+        }
+
+        /* ═════════════════════════════════════════════════════════
+           13. HUD
+           ═════════════════════════════════════════════════════════ */
+        const badge = document.getElementById('badge');
+        const roExpr = document.getElementById('roExpr');
+        const roHint = document.getElementById('roHint');
+        const segs = document.getElementById('segs');
+        const flipBtn = document.getElementById('flipBtn');
+        const smashBtn = document.getElementById('smashBtn');
+        const rebuildBtn = document.getElementById('rebuildBtn');
+        const customBtn = document.getElementById('customBtn');
+        const drawer = document.getElementById('drawer');
+        const toastEl = document.getElementById('toast');
+
+        let toastTimer = 0;
+        function toast(msg, gold) {
+          toastEl.textContent = msg;
+          toastEl.classList.toggle('is-gold', !!gold);
+          toastEl.classList.add('is-on');
+          window.clearTimeout(toastTimer);
+          toastTimer = window.setTimeout(() => toastEl.classList.remove('is-on'), 1900);
+        }
+        function lockedHint(what) {
+          audio.ensure();
+          audio.buzz();
+          cam.shake = 0.45;
+          toast(what + '은 PRO 전용입니다', true);
+          window.setTimeout(openCheckout, 420);
+        }
+
+        function refreshChrome() {
+          if (state.pro) {
+            badge.className = 'badge is-pro';
+            badge.textContent = 'PRO · 평생';
+            roHint.textContent = '드래그로 회전 · 좌우로 튕기면 형태 전환';
+          } else if (state.locked()) {
+            badge.className = 'badge is-locked';
+            badge.textContent = 'LOCKED · $1,299';
+            roHint.textContent = '무료 체험 종료 — = 를 누르면 결제창이 열립니다';
+          } else {
+            badge.className = 'badge is-trial';
+            badge.textContent = 'FREE TRIAL · 1회';
+            roHint.textContent = '드래그로 돌리고 · 키를 눌러 계산하세요';
+          }
+          document.querySelectorAll('[data-lock]').forEach((el) => (el.hidden = state.pro));
+          syncTheme();
+          markScreen();
+        }
+
+        segs.addEventListener('click', (e) => {
+          const b = e.target.closest('.seg');
+          if (b) setForm(b.dataset.form);
+        });
+        flipBtn.addEventListener('click', () => {
+          audio.ensure();
+          if (!state.pro) {
+            // free tier still gets the satisfying spin, just no new form
+            cam.vyaw = 0.42;
+            audio.thock();
+            lockedHint('컴퓨터 · 노트북 형태');
+            return;
+          }
+          cam.vyaw = 0.3;
+          onFlick();
+        });
+        smashBtn.addEventListener('click', () => {
+          if (!state.pro) { lockedHint('부수기'); return; }
+          audio.ensure();
+          doSmash();
+        });
+        rebuildBtn.addEventListener('click', () => { audio.ensure(); doRebuild(); });
+        customBtn.addEventListener('click', () => {
+          if (!state.pro) { lockedHint('커스터마이즈'); return; }
+          audio.ensure();
+          audio.click();
+          const open = !drawer.classList.contains('is-open');
+          drawer.classList.toggle('is-open', open);
+          // lift the device clear of the sheet while it is up
+          cam.tDist = FORMS[formId].cam.dist * (open ? 1.3 : 1);
+        });
+        document.getElementById('drawerX').addEventListener('click', () => {
+          drawer.classList.remove('is-open');
+          cam.tDist = FORMS[formId].cam.dist;
         });
 
-        angleBtn.addEventListener('click', () => {
-          if (wasDragged()) return;
-          if (!state.pro) return;
-          degrees = !degrees;
-          angleBtn.textContent = degrees ? 'DEG' : 'RAD';
+        function buildSwatches() {
+          const mk = (host, colors, key) => {
+            host.innerHTML = '';
+            colors.forEach((c) => {
+              const b = document.createElement('button');
+              b.type = 'button';
+              b.className = 'sw';
+              b.style.background = c;
+              b.setAttribute('aria-label', c);
+              b.addEventListener('click', () => {
+                theme[key] = c;
+                syncTheme();
+                paintSwatches();
+                audio.ensure();
+                audio.click();
+              });
+              host.appendChild(b);
+            });
+          };
+          mk(document.getElementById('swBody'), BODY_COLORS, 'body');
+          mk(document.getElementById('swKey'), KEY_COLORS, 'key');
+          mk(document.getElementById('swAccent'), ACCENT_COLORS, 'accent');
+
+          const fh = document.getElementById('swFinish');
+          fh.innerHTML = '';
+          FINISHES.forEach((f) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'chip';
+            b.textContent = f.name;
+            b.dataset.finish = f.id;
+            b.addEventListener('click', () => {
+              theme.finish = f.id;
+              syncTheme();
+              paintSwatches();
+              audio.ensure();
+              audio.click();
+            });
+            fh.appendChild(b);
+          });
+
+          const ph = document.getElementById('swPreset');
+          ph.innerHTML = '';
+          PRESETS.forEach((p) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'chip';
+            b.textContent = p.name;
+            b.addEventListener('click', () => {
+              Object.assign(theme, { body: p.body, key: p.key, accent: p.accent, finish: p.finish });
+              syncTheme();
+              paintSwatches();
+              audio.ensure();
+              audio.click();
+              toast(p.name);
+            });
+            ph.appendChild(b);
+          });
+        }
+        function paintSwatches() {
+          const mark = (host, colors, key) =>
+            [...host.children].forEach((b, i) => b.classList.toggle('is-on', colors[i] === theme[key]));
+          mark(document.getElementById('swBody'), BODY_COLORS, 'body');
+          mark(document.getElementById('swKey'), KEY_COLORS, 'key');
+          mark(document.getElementById('swAccent'), ACCENT_COLORS, 'accent');
+          [...document.getElementById('swFinish').children].forEach((b) =>
+            b.classList.toggle('is-on', b.dataset.finish === theme.finish)
+          );
+        }
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+          state.pro = false;
+          state.usedFree = false;
+          state.save();
+          closeCheckout();
+          drawer.classList.remove('is-open');
+          if (smashed) doRebuild();
+          setVerified(false);
+          hvModal.hidden = true;
+          if (formId !== 'calc') { applyForm('calc'); segs.querySelectorAll('.seg').forEach((b) => b.classList.toggle('is-on', b.dataset.form === 'calc')); }
+          clearAll();
+          refreshChrome();
           audio.ensure();
           audio.click();
         });
 
-        tapeClear.addEventListener('click', () => {
-          if (wasDragged() || !state.pro) return;
-          tape = [];
-          saveTape();
-          renderTape();
-          audio.ensure();
-          audio.click();
-        });
-
-        document.getElementById('flipFront').addEventListener('click', () => {
-          if (!wasDragged()) flip();
-        });
-        document.getElementById('flipBack').addEventListener('click', () => {
-          if (!wasDragged()) flip();
-        });
-        document.getElementById('flipVeil').addEventListener('click', () => {
-          if (!wasDragged()) flip();
-        });
-        document.getElementById('veilCta').addEventListener('click', () => {
-          if (wasDragged()) return;
-          audio.ensure();
-          audio.click();
-          openCheckout();
-        });
-
-        /* ═══════════════════════════════════════════════════════════
-           9. Keyboard
-           ═══════════════════════════════════════════════════════════ */
+        /* keyboard */
         const KEYMAP = {
-          Enter: '=',
-          '=': '=',
-          Backspace: 'del',
-          Delete: 'ac',
-          Escape: 'ac',
-          c: 'ac',
-          C: 'ac',
-          x: '*',
-          X: '*',
-          n: 'neg',
-          N: 'neg',
+          Enter: '=', '=': '=', Backspace: 'del', Delete: 'ac', Escape: 'ac',
+          c: 'ac', C: 'ac', x: '*', X: '*', n: 'neg', N: 'neg',
         };
         window.addEventListener('keydown', (e) => {
           if (checkout.classList.contains('is-open')) return;
           if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
-          if (e.key === 'f' || e.key === 'F') {
-            e.preventDefault();
-            flip();
-            return;
-          }
-          if (showingBack) return;
+          if (e.key === 'f' || e.key === 'F') { e.preventDefault(); flipBtn.click(); return; }
+          if (e.key === 'r' || e.key === 'R') { e.preventDefault(); smashed ? doRebuild() : smashBtn.click(); return; }
+          if (formId !== 'calc' || smashed) return;
           let k = null;
           if (/^[0-9]$/.test(e.key)) k = e.key;
           else if ('+-*/.%^'.indexOf(e.key) >= 0 && e.key.length === 1) k = e.key;
@@ -2889,16 +3122,63 @@
           if (!k) return;
           e.preventDefault();
           press(k);
-          const btn = keysEl.querySelector('[data-k="' + k + '"]');
-          if (btn) {
-            btn.classList.add('is-down');
-            window.setTimeout(() => btn.classList.remove('is-down'), 120);
-          }
+          const idx = CALC_KEYS.indexOf(k);
+          if (idx >= 0) partById['k' + idx].press = 1;
         });
 
-        /* ═══════════════════════════════════════════════════════════
-           10. Checkout — test-mode card sheet
-           ═══════════════════════════════════════════════════════════ */
+        /* ═════════════════════════════════════════════════════════
+           14. Confetti
+           ═════════════════════════════════════════════════════════ */
+        const fx = document.getElementById('fx');
+        const fxc = fx.getContext('2d');
+        let bits = [];
+        function sizeFx() {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          fx.width = Math.floor(window.innerWidth * dpr);
+          fx.height = Math.floor(window.innerHeight * dpr);
+          fxc.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        sizeFx();
+        window.addEventListener('resize', sizeFx);
+        function burst(count, palette) {
+          const cx = window.innerWidth / 2, cy = window.innerHeight * 0.48;
+          for (let i = 0; i < count; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 3 + Math.random() * 9;
+            bits.push({
+              x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 4,
+              rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.4,
+              life: 1, size: 4 + Math.random() * 7,
+              color: palette[(Math.random() * palette.length) | 0],
+            });
+          }
+          if (bits.length > 500) bits = bits.slice(-500);
+        }
+        function drawBits() {
+          fxc.clearRect(0, 0, window.innerWidth, window.innerHeight);
+          for (let i = bits.length - 1; i >= 0; i--) {
+            const p = bits[i];
+            p.vy += 0.34;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.rot += p.vr;
+            p.life -= 0.0115;
+            if (p.life <= 0 || p.y > window.innerHeight + 60) { bits.splice(i, 1); continue; }
+            fxc.save();
+            fxc.globalAlpha = clamp(p.life, 0, 1) * 0.95;
+            fxc.translate(p.x, p.y);
+            fxc.rotate(p.rot);
+            fxc.fillStyle = p.color;
+            fxc.shadowColor = p.color;
+            fxc.shadowBlur = 12;
+            fxc.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+            fxc.restore();
+          }
+        }
+
+        /* ═════════════════════════════════════════════════════════
+           15. Checkout + human verification (test mode)
+           ═════════════════════════════════════════════════════════ */
         const checkout = document.getElementById('checkout');
         const coGrid = document.getElementById('coGrid');
         const coVeil = document.getElementById('coVeil');
@@ -2907,6 +3187,7 @@
         const coErr = document.getElementById('coErr');
         const receipt = document.getElementById('receipt');
         const payBtn = document.getElementById('payBtn');
+        const coEl = document.getElementById('co');
         const coClose = document.getElementById('coClose');
         const fEmail = document.getElementById('fEmail');
         const fNum = document.getElementById('fNum');
@@ -2939,7 +3220,7 @@
           audio.click();
           closeCheckout();
           refreshChrome();
-          if (!state.pro) shake(displayEl);
+          if (!state.pro) cam.shake = 0.4;
         });
         checkout.addEventListener('click', (e) => {
           if (e.target === checkout && !coVeil.classList.contains('is-on')) coClose.click();
@@ -3164,7 +3445,9 @@
           } else {
             hvState.tries++;
             audio.buzz();
-            shake(hvPanel);
+            hvPanel.classList.remove('shakeco');
+            void hvPanel.offsetWidth;
+            hvPanel.classList.add('shakeco');
             hvMsg.textContent = '틀렸습니다. 다시 시도해 주세요.';
             window.setTimeout(() => {
               newChallenge();
@@ -3191,7 +3474,9 @@
             coErr.textContent = bad.msg;
             if (!hvState.verified) hvBox.classList.add('is-bad');
             audio.buzz();
-            shake(document.getElementById('co'));
+            coEl.classList.remove('shakeco');
+            void coEl.offsetWidth;
+            coEl.classList.add('shakeco');
             if (bad.el) bad.el.focus();
             return;
           }
@@ -3231,10 +3516,11 @@
           coGrid.style.display = 'none';
           receipt.classList.add('is-on');
           audio.chaching();
-          bump(1.2);
+          pulse = 1.2;
           burst(90, ['#ffcf5c', '#fff6d8', '#3fd8ff']);
 
-          resultEl.classList.remove('is-redacted');
+          redacted = false;
+          markScreen();
           fCvc.value = ''; // nothing ever left the page — clear it anyway
         }
 
@@ -3244,102 +3530,38 @@
           closeCheckout();
           clearAll();
           burst(50, ['#ffcf5c', '#fff6d8']);
-          if (!showingBack) window.setTimeout(flip, 320); // show off the LAB
+          toast('PRO 활성화 — 형태 전환 · 부수기 · 커스텀이 열렸습니다', true);
+          window.setTimeout(() => setForm('pc'), 420);
         });
 
-        document.getElementById('resetBtn').addEventListener('click', () => {
-          state.pro = false;
-          state.usedFree = false;
-          state.save();
-          closeCheckout();
+        /* ═════════════════════════════════════════════════════════
+           16. Boot
+           ═════════════════════════════════════════════════════════ */
+        function boot() {
+          loadTheme();
+          if (!hasGL || !initGL()) {
+            document.getElementById('roHint').textContent =
+              '이 브라우저에서는 WebGL을 사용할 수 없어 3D 모형을 표시할 수 없습니다.';
+            canvas.hidden = true;
+            return;
+          }
+          screenTex = makeTex(scrCanvas);
+          atlasTex = makeTex(atlasCanvas);
+          drawAtlas();
+          if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(() => { drawAtlas(); markScreen(); });
+          }
+          applyForm('calc', true);
+          cam.pitchUntil = 0;
+          buildSwatches();
+          paintSwatches();
+          setVerified(false);
           refreshChrome();
           clearAll();
-          setVerified(false);
-          hvModal.hidden = true;
-          shaderState.gold = 0;
-          audio.ensure();
-          audio.click();
-        });
-
-        /* ═══════════════════════════════════════════════════════════
-           13. Confetti
-           ═══════════════════════════════════════════════════════════ */
-        const fx = document.getElementById('fx');
-        const fxc = fx.getContext('2d');
-        let parts = [];
-
-        function sizeFx() {
-          const dpr = Math.min(window.devicePixelRatio || 1, 2);
-          fx.width = Math.floor(window.innerWidth * dpr);
-          fx.height = Math.floor(window.innerHeight * dpr);
-          fxc.setTransform(dpr, 0, 0, dpr, 0, 0);
+          resize();
+          requestAnimationFrame((t) => { lastT = t; frame(t); });
         }
-        sizeFx();
-        window.addEventListener('resize', sizeFx);
-
-        function burst(count, palette) {
-          if (reduced) count = Math.min(count, 20);
-          const cx = window.innerWidth / 2;
-          const cy = window.innerHeight * 0.45;
-          for (let i = 0; i < count; i++) {
-            const a = Math.random() * Math.PI * 2;
-            const sp = 3 + Math.random() * 9;
-            parts.push({
-              x: cx,
-              y: cy,
-              z: Math.random() * 1.4,
-              vx: Math.cos(a) * sp,
-              vy: Math.sin(a) * sp - 4,
-              vz: (Math.random() - 0.5) * 0.06,
-              rot: Math.random() * Math.PI,
-              vr: (Math.random() - 0.5) * 0.4,
-              life: 1,
-              size: 4 + Math.random() * 7,
-              color: palette[(Math.random() * palette.length) | 0],
-            });
-          }
-          if (parts.length > 600) parts = parts.slice(-600);
-        }
-
-        function drawConfetti() {
-          fxc.clearRect(0, 0, window.innerWidth, window.innerHeight);
-          for (let i = parts.length - 1; i >= 0; i--) {
-            const p = parts[i];
-            p.vy += 0.34;
-            p.vx *= 0.99;
-            p.x += p.vx;
-            p.y += p.vy;
-            p.z += p.vz;
-            p.rot += p.vr;
-            p.life -= 0.0115;
-            if (p.life <= 0 || p.y > window.innerHeight + 60) {
-              parts.splice(i, 1);
-              continue;
-            }
-            const sc = 1 / (1 + Math.max(-0.7, p.z));
-            const s = p.size * sc;
-            fxc.save();
-            fxc.globalAlpha = Math.max(0, Math.min(1, p.life)) * 0.95;
-            fxc.translate(p.x, p.y);
-            fxc.rotate(p.rot);
-            fxc.fillStyle = p.color;
-            fxc.shadowColor = p.color;
-            fxc.shadowBlur = 12 * sc;
-            fxc.fillRect(-s / 2, -s / 4, s, s / 2);
-            fxc.restore();
-          }
-        }
-
-        /* ═══════════════════════════════════════════════════════════
-           14. Boot
-           ═══════════════════════════════════════════════════════════ */
-        setFaceState(false);
-        refreshChrome();
-        renderTape();
-        render();
-        paintResult('0');
-        setVerified(false);
-        requestAnimationFrame(loop);
+        boot();
       })();
     </script>
   </body>
