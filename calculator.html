@@ -6,18 +6,19 @@
     <meta name="color-scheme" content="dark" />
     <title>NEXUS CALC — 3D 계산기</title>
     <style>
-      /* ────────────────────────────────────────────────────────────
-         Theme tokens
-      ──────────────────────────────────────────────────────────── */
+      /* ═══════════════════════════════════════════════════════════
+         Tokens
+         ═══════════════════════════════════════════════════════════ */
       :root {
         --bg: #04050e;
         --ink: #eaf2ff;
-        --dim: #7e8bb5;
+        --dim: #8593ba;
+        --faint: #5d6b93;
         --neon: #3fd8ff;
         --violet: #8b5cff;
         --gold: #ffcf5c;
         --danger: #ff4d6d;
-        --glass: rgba(16, 20, 44, 0.62);
+        --ok: #37d9a0;
         --stroke: rgba(150, 180, 255, 0.14);
         --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
         --ui: system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', Roboto, sans-serif;
@@ -43,10 +44,13 @@
         -webkit-font-smoothing: antialiased;
         -webkit-tap-highlight-color: transparent;
       }
+      body.is-checkout {
+        overflow: hidden;
+      }
 
-      /* ────────────────────────────────────────────────────────────
-         Backdrop: raymarched WebGL scene + fallback gradient
-      ──────────────────────────────────────────────────────────── */
+      /* ═══════════════════════════════════════════════════════════
+         Backdrop
+         ═══════════════════════════════════════════════════════════ */
       #bg,
       #fx {
         position: fixed;
@@ -63,7 +67,6 @@
         z-index: 60;
         pointer-events: none;
       }
-
       .scanlines {
         position: fixed;
         inset: 0;
@@ -78,18 +81,18 @@
         opacity: 0.5;
       }
 
-      /* ────────────────────────────────────────────────────────────
-         Stage / 3D calculator shell
-      ──────────────────────────────────────────────────────────── */
+      /* ═══════════════════════════════════════════════════════════
+         Stage + rotatable device
+         ═══════════════════════════════════════════════════════════ */
       .stage {
         position: relative;
         z-index: 2;
         display: grid;
         place-items: center;
         min-height: 100svh;
-        padding: 24px 16px 84px;
+        padding: 20px 16px 76px;
         perspective: 1500px;
-        perspective-origin: 50% 42%;
+        perspective-origin: 50% 44%;
       }
 
       .calc {
@@ -99,9 +102,14 @@
         transform-style: preserve-3d;
         transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--fy, 0px));
         will-change: transform;
+        cursor: grab;
+        touch-action: none;
+      }
+      .calc.is-dragging {
+        cursor: grabbing;
       }
 
-      /* Extruded side wall: stacked z-layers behind the face. */
+      /* Slab between the two faces. */
       .calc__depth {
         position: absolute;
         inset: 0;
@@ -116,33 +124,48 @@
         display: block;
       }
 
-      .calc__face {
-        position: relative;
+      .face {
         border-radius: inherit;
-        padding: 20px 20px 24px;
+        padding: 18px 18px 16px;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
         transform-style: preserve-3d;
         background:
           linear-gradient(165deg, rgba(56, 72, 136, 0.5), rgba(9, 12, 28, 0.97) 46%),
           rgba(9, 12, 28, 0.96);
         border: 1px solid var(--stroke);
-        backdrop-filter: blur(18px) saturate(140%);
-        -webkit-backdrop-filter: blur(18px) saturate(140%);
         box-shadow:
           0 1px 0 rgba(255, 255, 255, 0.16) inset,
           0 -30px 60px rgba(0, 0, 0, 0.45) inset,
           0 60px 120px rgba(0, 0, 0, 0.65),
           0 0 90px rgba(63, 216, 255, 0.12);
       }
+      .face--front {
+        position: relative;
+        transform: translateZ(15px);
+      }
+      .face--back {
+        position: absolute;
+        inset: 0;
+        transform: rotateY(180deg) translateZ(15px);
+        display: flex;
+        flex-direction: column;
+        background:
+          linear-gradient(165deg, rgba(116, 82, 172, 0.42), rgba(9, 12, 28, 0.97) 46%),
+          rgba(9, 12, 28, 0.96);
+      }
+      .face[aria-hidden='true'] {
+        pointer-events: none;
+      }
 
-      /* Moving specular sheen floating above the glass. */
       .gloss {
         position: absolute;
         inset: -2px;
         border-radius: inherit;
-        transform: translateZ(44px);
+        transform: translateZ(26px);
         pointer-events: none;
         mix-blend-mode: screen;
-        opacity: 0.16;
+        opacity: 0.14;
         background: linear-gradient(
           115deg,
           transparent 32%,
@@ -162,17 +185,17 @@
         }
       }
 
-      /* ── Brand row ── */
+      /* ── brand row ── */
       .brand {
         display: flex;
         align-items: center;
-        gap: 10px;
-        transform: translateZ(16px);
-        margin-bottom: 14px;
+        gap: 9px;
+        transform: translateZ(10px);
+        margin-bottom: 13px;
       }
       .brand__dot {
-        width: 10px;
-        height: 10px;
+        width: 9px;
+        height: 9px;
         border-radius: 50%;
         background: var(--neon);
         box-shadow: 0 0 14px var(--neon);
@@ -185,17 +208,18 @@
         }
       }
       .brand__name {
-        font-size: 12px;
-        letter-spacing: 0.34em;
+        font-size: 11.5px;
+        letter-spacing: 0.3em;
         font-weight: 700;
         color: #cfe0ff;
+        white-space: nowrap;
       }
       .badge {
         margin-left: auto;
-        font-size: 10px;
-        letter-spacing: 0.16em;
+        font-size: 9.5px;
+        letter-spacing: 0.14em;
         font-weight: 800;
-        padding: 5px 10px;
+        padding: 5px 9px;
         border-radius: 999px;
         border: 1px solid rgba(255, 255, 255, 0.16);
         color: #9fb2e0;
@@ -219,17 +243,17 @@
         box-shadow: 0 0 22px rgba(255, 207, 92, 0.45);
       }
 
-      /* ── Display ── */
+      /* ── display ── */
       .display {
         position: relative;
-        transform: translateZ(10px);
-        border-radius: 22px;
-        padding: 18px 18px 16px;
-        min-height: 128px;
+        transform: translateZ(6px);
+        border-radius: 20px;
+        padding: 16px 16px 14px;
+        min-height: 118px;
         display: flex;
         flex-direction: column;
         justify-content: flex-end;
-        gap: 8px;
+        gap: 7px;
         overflow: hidden;
         background: linear-gradient(180deg, rgba(3, 6, 18, 0.92), rgba(6, 10, 26, 0.82));
         border: 1px solid rgba(120, 160, 255, 0.12);
@@ -246,20 +270,19 @@
       }
       .expr {
         font-family: var(--mono);
-        font-size: 15px;
+        font-size: 14px;
         color: var(--dim);
-        min-height: 20px;
+        min-height: 19px;
         text-align: right;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.03em;
         word-break: break-all;
       }
       .result {
         font-family: var(--mono);
         font-weight: 700;
-        font-size: clamp(30px, 10vw, 46px);
+        font-size: clamp(28px, 9.5vw, 44px);
         text-align: right;
         line-height: 1.1;
-        letter-spacing: -0.01em;
         color: #fff;
         text-shadow:
           0 0 18px rgba(63, 216, 255, 0.55),
@@ -279,11 +302,6 @@
           opacity: 0;
           filter: blur(3px);
         }
-        to {
-          transform: none;
-          opacity: 1;
-          filter: none;
-        }
       }
       .result.is-redacted {
         filter: blur(11px) saturate(0.4);
@@ -291,59 +309,50 @@
       }
       .result.is-error {
         color: var(--danger);
-        font-size: clamp(20px, 6vw, 28px);
+        font-size: clamp(18px, 5.4vw, 24px);
         text-shadow: 0 0 22px rgba(255, 77, 109, 0.55);
       }
-
       .lockchip {
         position: absolute;
-        top: 12px;
-        left: 14px;
+        top: 11px;
+        left: 13px;
         display: none;
         align-items: center;
-        gap: 6px;
-        font-size: 10px;
+        gap: 5px;
+        font-size: 9.5px;
         font-weight: 800;
-        letter-spacing: 0.14em;
+        letter-spacing: 0.12em;
         padding: 5px 9px;
         border-radius: 999px;
         color: var(--danger);
         border: 1px solid rgba(255, 77, 109, 0.4);
         background: rgba(255, 77, 109, 0.09);
       }
-      .is-locked-ui .lockchip {
+      body.is-locked-ui .lockchip {
         display: inline-flex;
-        animation: chipIn 0.4s ease backwards;
-      }
-      @keyframes chipIn {
-        from {
-          opacity: 0;
-          transform: translateY(-6px);
-        }
       }
 
-      /* ── Keypad ── */
+      /* ── keypads ── */
       .keys {
-        margin-top: 18px;
+        margin-top: 15px;
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 12px;
+        gap: 11px;
         transform-style: preserve-3d;
       }
-
       .key {
         position: relative;
         appearance: none;
         border: 0;
         cursor: pointer;
         font-family: var(--mono);
-        font-size: 21px;
+        font-size: 20px;
         font-weight: 600;
         color: #e9f1ff;
-        height: 62px;
-        border-radius: 18px;
+        height: 58px;
+        border-radius: 17px;
         transform-style: preserve-3d;
-        transform: translateZ(18px);
+        transform: translateZ(16px);
         background: linear-gradient(180deg, #232a4d 0%, #141a35 58%, #0e1228 100%);
         box-shadow:
           0 1px 0 rgba(255, 255, 255, 0.22) inset,
@@ -354,15 +363,14 @@
           transform 0.13s cubic-bezier(0.2, 0.8, 0.3, 1),
           box-shadow 0.13s ease,
           filter 0.2s ease;
-        touch-action: manipulation;
+        touch-action: none;
       }
-      /* The shaft under each cap — sells the extrusion when the board tilts. */
       .key::before {
         content: '';
         position: absolute;
         inset: 2px 2px -2px;
         border-radius: inherit;
-        transform: translateZ(-16px);
+        transform: translateZ(-14px);
         background: linear-gradient(180deg, #0a0d1e, #05070f);
         box-shadow: 0 0 26px rgba(0, 0, 0, 0.85);
         z-index: -1;
@@ -396,7 +404,6 @@
           0 0 0 1px rgba(255, 255, 255, 0.05),
           0 4px 8px rgba(0, 0, 0, 0.5);
       }
-
       .key--fn {
         color: #9fb2e0;
         background: linear-gradient(180deg, #1a2140 0%, #111730 60%, #0c1024 100%);
@@ -404,12 +411,6 @@
       .key--op {
         color: #d8ecff;
         background: linear-gradient(180deg, #2a3a72 0%, #1a2450 58%, #131a3c 100%);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.26) inset,
-          0 -6px 12px rgba(0, 0, 0, 0.45) inset,
-          0 0 0 1px rgba(120, 170, 255, 0.16),
-          0 14px 24px rgba(0, 0, 0, 0.55),
-          0 0 26px rgba(63, 216, 255, 0.14);
       }
       .key--eq {
         color: #06121c;
@@ -417,40 +418,295 @@
         box-shadow:
           0 1px 0 rgba(255, 255, 255, 0.7) inset,
           0 -6px 12px rgba(0, 60, 90, 0.45) inset,
-          0 0 0 1px rgba(160, 240, 255, 0.5),
           0 16px 30px rgba(0, 0, 0, 0.55),
           0 0 34px rgba(63, 216, 255, 0.5);
       }
-      .is-locked-ui .key--eq {
+      body.is-locked-ui .key--eq {
         color: #240409;
         background: linear-gradient(180deg, #ffb3c2 0%, #ff4d6d 52%, #c01f3e 100%);
         box-shadow:
           0 1px 0 rgba(255, 255, 255, 0.55) inset,
-          0 -6px 12px rgba(80, 0, 15, 0.5) inset,
-          0 0 0 1px rgba(255, 150, 170, 0.5),
           0 16px 30px rgba(0, 0, 0, 0.55),
           0 0 34px rgba(255, 77, 109, 0.5);
       }
-      .is-pro-ui .key--eq {
+      body.is-pro-ui .key--eq {
         color: #241a04;
         background: linear-gradient(180deg, #fff0bd 0%, #ffcf5c 52%, #d69a1c 100%);
         box-shadow:
           0 1px 0 rgba(255, 255, 255, 0.8) inset,
-          0 -6px 12px rgba(90, 60, 0, 0.45) inset,
-          0 0 0 1px rgba(255, 226, 150, 0.55),
           0 16px 30px rgba(0, 0, 0, 0.55),
           0 0 38px rgba(255, 207, 92, 0.55);
       }
 
-      .hint {
+      /* ── face footer ── */
+      .footrow {
         position: relative;
         z-index: 2;
-        margin-top: 14px;
-        text-align: center;
-        font-size: 11px;
-        letter-spacing: 0.08em;
-        color: rgba(160, 178, 220, 0.6);
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
         transform: translateZ(6px);
+      }
+      .hint {
+        flex: 1;
+        font-size: 10.5px;
+        letter-spacing: 0.05em;
+        color: rgba(160, 178, 220, 0.62);
+        line-height: 1.4;
+      }
+      .flipbtn {
+        appearance: none;
+        cursor: pointer;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--ui);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: #bcd2ff;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        padding: 7px 12px;
+        transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
+        touch-action: none;
+      }
+      .flipbtn:hover {
+        background: rgba(63, 216, 255, 0.16);
+        color: #fff;
+      }
+      .flipbtn:active {
+        transform: scale(0.96);
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+         Back face — NEXUS LAB (PRO)
+         ═══════════════════════════════════════════════════════════ */
+      .lab {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        transform-style: preserve-3d;
+      }
+      .lab__readout {
+        transform: translateZ(6px);
+        border-radius: 16px;
+        padding: 11px 14px;
+        background: linear-gradient(180deg, rgba(3, 6, 18, 0.92), rgba(10, 6, 26, 0.82));
+        border: 1px solid rgba(160, 130, 255, 0.16);
+        box-shadow: 0 14px 24px rgba(0, 0, 0, 0.5) inset;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+      }
+      .lab__label {
+        font-size: 9px;
+        letter-spacing: 0.2em;
+        color: var(--faint);
+        flex: none;
+      }
+      .lab__value {
+        flex: 1;
+        text-align: right;
+        font-family: var(--mono);
+        font-size: 21px;
+        font-weight: 700;
+        color: #fff;
+        text-shadow: 0 0 20px rgba(139, 92, 255, 0.55);
+        word-break: break-all;
+      }
+      .angle {
+        appearance: none;
+        cursor: pointer;
+        flex: none;
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #d7c6ff;
+        background: rgba(139, 92, 255, 0.16);
+        border: 1px solid rgba(139, 92, 255, 0.4);
+        border-radius: 8px;
+        padding: 4px 8px;
+        touch-action: none;
+      }
+      .lab__grid {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 9px;
+        transform-style: preserve-3d;
+      }
+      .skey {
+        position: relative;
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        font-family: var(--mono);
+        font-size: 14px;
+        font-weight: 600;
+        color: #e4dcff;
+        height: 46px;
+        border-radius: 14px;
+        transform: translateZ(14px);
+        background: linear-gradient(180deg, #2c2352 0%, #1a1438 58%, #120e28 100%);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.2) inset,
+          0 -5px 10px rgba(0, 0, 0, 0.5) inset,
+          0 12px 18px rgba(0, 0, 0, 0.5);
+        transition: transform 0.13s cubic-bezier(0.2, 0.8, 0.3, 1), filter 0.2s ease;
+        touch-action: none;
+      }
+      .skey:hover {
+        filter: brightness(1.18);
+      }
+      .skey.is-down,
+      .skey:active {
+        transform: translateZ(3px) scale(0.96);
+      }
+      .skey sup {
+        font-size: 9px;
+      }
+      .lab__tapehead {
+        margin: 14px 0 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transform: translateZ(4px);
+      }
+      .lab__tapehead span {
+        font-size: 9px;
+        letter-spacing: 0.2em;
+        color: var(--faint);
+      }
+      .lab__clear {
+        margin-left: auto;
+        appearance: none;
+        cursor: pointer;
+        font-family: var(--ui);
+        font-size: 10px;
+        color: var(--faint);
+        background: none;
+        border: 0;
+        padding: 2px 4px;
+        touch-action: none;
+      }
+      .lab__clear:hover {
+        color: var(--danger);
+      }
+      .tape {
+        flex: 1;
+        min-height: 54px;
+        overflow-y: auto;
+        transform: translateZ(4px);
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        background: rgba(3, 5, 16, 0.6);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        scrollbar-width: thin;
+      }
+      .tape__empty {
+        margin: auto;
+        font-size: 11px;
+        color: var(--faint);
+      }
+      .tape__row {
+        appearance: none;
+        cursor: pointer;
+        text-align: left;
+        border: 0;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 9px;
+        padding: 7px 9px;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-family: var(--mono);
+        transition: background 0.18s ease;
+        touch-action: none;
+      }
+      .tape__row:hover {
+        background: rgba(139, 92, 255, 0.18);
+      }
+      .tape__expr {
+        flex: 1;
+        font-size: 10.5px;
+        color: var(--dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tape__val {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #dcd2ff;
+      }
+
+      /* PRO gate over the back face */
+      .veil {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        transform: translateZ(22px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        text-align: center;
+        padding: 26px;
+        background: rgba(6, 8, 20, 0.82);
+        backdrop-filter: blur(9px) saturate(120%);
+        -webkit-backdrop-filter: blur(9px) saturate(120%);
+      }
+      .veil[hidden] {
+        display: none;
+      }
+      .veil__lock {
+        width: 54px;
+        height: 54px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        font-size: 24px;
+        background: linear-gradient(180deg, rgba(255, 207, 92, 0.22), rgba(255, 207, 92, 0.06));
+        border: 1px solid rgba(255, 207, 92, 0.4);
+        box-shadow: 0 0 40px rgba(255, 207, 92, 0.2);
+      }
+      .veil__title {
+        font-size: 17px;
+        font-weight: 800;
+      }
+      .veil__sub {
+        font-size: 12px;
+        line-height: 1.6;
+        color: var(--dim);
+        max-width: 280px;
+      }
+      .veil__cta {
+        appearance: none;
+        cursor: pointer;
+        margin-top: 4px;
+        font-family: var(--ui);
+        font-weight: 700;
+        font-size: 13.5px;
+        color: #241a04;
+        background: linear-gradient(180deg, #ffe9a8 0%, #ffcf5c 52%, #e0a52a 100%);
+        border: 0;
+        border-radius: 12px;
+        padding: 12px 20px;
+        box-shadow: 0 12px 26px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 207, 92, 0.32);
+        touch-action: none;
+      }
+      .veil__cta:active {
+        transform: scale(0.98);
       }
 
       .shake {
@@ -476,473 +732,725 @@
         }
       }
 
-      /* ────────────────────────────────────────────────────────────
-         Paywall
-      ──────────────────────────────────────────────────────────── */
-      .paywall {
+      /* ═══════════════════════════════════════════════════════════
+         Checkout
+         ═══════════════════════════════════════════════════════════ */
+      .checkout {
         position: fixed;
         inset: 0;
         z-index: 50;
         display: flex;
         align-items: flex-start;
         justify-content: center;
-        padding: 18px;
-        background: rgba(3, 4, 12, 0.72);
-        backdrop-filter: blur(14px) saturate(120%);
-        -webkit-backdrop-filter: blur(14px) saturate(120%);
+        padding: 26px 16px;
+        background: rgba(2, 3, 9, 0.8);
+        backdrop-filter: blur(12px) saturate(120%);
+        -webkit-backdrop-filter: blur(12px) saturate(120%);
+        overflow-y: auto;
         opacity: 0;
         visibility: hidden;
-        transition: opacity 0.4s ease, visibility 0.4s;
-        perspective: 1400px;
-        overflow-y: auto;
+        transition: opacity 0.32s ease, visibility 0.32s;
       }
-      .paywall.is-open {
+      .checkout.is-open {
         opacity: 1;
         visibility: visible;
       }
 
-      .sheet {
+      .co {
         position: relative;
-        margin: auto;           /* centers when it fits, scrolls when it doesn't */
-        width: min(430px, 100%);
-        border-radius: 28px;
-        padding: 22px 22px 20px;
-        transform: rotateX(16deg) translateY(40px) scale(0.94);
+        margin: auto;
+        width: min(900px, 100%);
+        border-radius: 18px;
+        overflow: hidden;
+        background: #090b14;
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        box-shadow: 0 40px 120px rgba(0, 0, 0, 0.75);
         opacity: 0;
-        transition: transform 0.6s cubic-bezier(0.18, 0.9, 0.24, 1), opacity 0.45s ease;
-        background:
-          linear-gradient(170deg, rgba(72, 58, 150, 0.55), rgba(8, 10, 26, 0.94) 52%),
-          rgba(10, 13, 30, 0.9);
-        border: 1px solid rgba(255, 210, 130, 0.22);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.14) inset,
-          0 50px 110px rgba(0, 0, 0, 0.7),
-          0 0 80px rgba(255, 207, 92, 0.12);
-        transform-style: preserve-3d;
+        transform: translateY(20px) scale(0.985);
+        transition: opacity 0.35s ease, transform 0.45s cubic-bezier(0.18, 0.9, 0.24, 1);
       }
-      .paywall.is-open .sheet {
-        transform: rotateX(0deg) translateY(0) scale(1);
+      .checkout.is-open .co {
         opacity: 1;
+        transform: none;
       }
 
-      .step {
-        animation: stepIn 0.45s cubic-bezier(0.18, 0.9, 0.24, 1) backwards;
-      }
-      .step[hidden] {
-        display: none;
-      }
-      @keyframes stepIn {
-        from {
-          opacity: 0;
-          transform: translateX(28px) rotateY(-14deg);
-        }
-      }
-
-      .demo-banner {
+      .co__testbar {
         display: flex;
+        align-items: center;
+        justify-content: center;
         gap: 8px;
-        align-items: flex-start;
-        font-size: 11.5px;
-        line-height: 1.5;
-        color: #ffd98f;
-        background: rgba(255, 190, 60, 0.1);
-        border: 1px solid rgba(255, 190, 60, 0.32);
-        border-radius: 14px;
-        padding: 10px 12px;
-        margin-bottom: 16px;
+        padding: 9px 14px;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        color: #ffcf5c;
+        background: #241a05;
+        border-bottom: 1px solid rgba(255, 207, 92, 0.24);
+        text-align: center;
+      }
+      .co__testbar b {
+        letter-spacing: 0.2em;
       }
 
-      .sheet__eyebrow {
-        font-size: 10px;
-        font-weight: 800;
-        letter-spacing: 0.3em;
-        color: var(--gold);
-        text-transform: uppercase;
+      .co__grid {
+        display: grid;
+        grid-template-columns: 0.92fr 1.08fr;
       }
-      .sheet__title {
-        margin-top: 8px;
-        font-size: 23px;
-        font-weight: 800;
-        letter-spacing: -0.01em;
+
+      /* ── order summary ── */
+      .co__summary {
+        padding: 30px 30px 34px;
+        background: #0c0f1c;
+        border-right: 1px solid rgba(255, 255, 255, 0.07);
       }
-      .sheet__sub {
-        margin-top: 7px;
-        font-size: 13px;
-        line-height: 1.6;
+      .co__merchant {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
         color: var(--dim);
       }
-
-      .price {
-        position: relative;
-        margin: 18px 0 14px;
-        padding: 18px;
-        border-radius: 20px;
-        text-align: center;
-        transform: translateZ(28px);
-        background: linear-gradient(180deg, rgba(255, 207, 92, 0.16), rgba(255, 207, 92, 0.03));
-        border: 1px solid rgba(255, 207, 92, 0.3);
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45), 0 0 50px rgba(255, 207, 92, 0.12) inset;
-        overflow: hidden;
+      .co__mark {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        background: linear-gradient(140deg, var(--neon), var(--violet));
+        box-shadow: 0 0 16px rgba(63, 216, 255, 0.4);
       }
-      .price::after {
+      .co__item {
+        margin-top: 26px;
+        font-size: 13.5px;
+        color: var(--dim);
+      }
+      .co__amount {
+        margin-top: 6px;
+        font-family: var(--mono);
+        font-size: 38px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: #fff;
+      }
+      .co__cycle {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--faint);
+      }
+      .co__lines {
+        margin-top: 26px;
+        list-style: none;
+        display: grid;
+        gap: 11px;
+        font-size: 12.5px;
+        color: var(--dim);
+        padding-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .co__lines li {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+      }
+      .co__lines .num {
+        font-family: var(--mono);
+        white-space: nowrap;
+      }
+      .co__lines .off {
+        color: var(--ok);
+      }
+      .co__total {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .co__total .num {
+        font-family: var(--mono);
+        font-size: 17px;
+      }
+      .co__perks {
+        margin-top: 24px;
+        list-style: none;
+        display: grid;
+        gap: 9px;
+        font-size: 12px;
+        color: var(--dim);
+      }
+      .co__perks li {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .co__perks li::before {
+        content: '✓';
+        color: var(--ok);
+        font-size: 11px;
+      }
+
+      /* ── payment form ── */
+      .co__form {
+        padding: 30px 30px 34px;
+      }
+      .co__h {
+        font-size: 15px;
+        font-weight: 700;
+        margin-bottom: 18px;
+      }
+      .fields {
+        display: grid;
+        gap: 14px;
+      }
+      .f label,
+      .fgroup__label {
+        display: block;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--dim);
+        margin-bottom: 6px;
+      }
+      .f input,
+      .f select {
+        width: 100%;
+        height: 44px;
+        font-family: var(--ui);
+        font-size: 14px;
+        color: var(--ink);
+        background: #0f1322;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-radius: 10px;
+        padding: 0 13px;
+        outline: none;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
+      }
+      .f input::placeholder {
+        color: #4c5779;
+      }
+      .f input:focus,
+      .f select:focus {
+        border-color: rgba(63, 216, 255, 0.65);
+        box-shadow: 0 0 0 3px rgba(63, 216, 255, 0.13);
+      }
+      .f.is-bad input {
+        border-color: rgba(255, 77, 109, 0.7);
+      }
+
+      /* grouped card field */
+      .cardgroup {
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-radius: 10px;
+        background: #0f1322;
+        overflow: hidden;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
+      }
+      .cardgroup.is-focus {
+        border-color: rgba(63, 216, 255, 0.65);
+        box-shadow: 0 0 0 3px rgba(63, 216, 255, 0.13);
+      }
+      .cardgroup.is-bad {
+        border-color: rgba(255, 77, 109, 0.7);
+      }
+      .cardgroup input {
+        width: 100%;
+        height: 44px;
+        font-family: var(--mono);
+        font-size: 14px;
+        letter-spacing: 0.04em;
+        color: var(--ink);
+        background: transparent;
+        border: 0;
+        padding: 0 13px;
+        outline: none;
+      }
+      .cardgroup input::placeholder {
+        color: #4c5779;
+        letter-spacing: 0.04em;
+      }
+      .cardnum {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .cardnum__icon {
+        flex: none;
+        width: 34px;
+        height: 22px;
+        margin-right: 11px;
+        border-radius: 4px;
+        background: linear-gradient(140deg, #3b4467, #232a45);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        position: relative;
+        transition: background 0.3s ease;
+      }
+      .cardnum__icon::after {
         content: '';
         position: absolute;
-        inset: -40%;
-        background: conic-gradient(
-          from 0deg,
-          transparent 0 70%,
-          rgba(255, 233, 168, 0.22) 82%,
-          transparent 92%
-        );
-        animation: spin 6s linear infinite;
+        left: 3px;
+        right: 3px;
+        top: 6px;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.22);
+      }
+      .cardnum__icon.is-known {
+        background: linear-gradient(140deg, var(--neon), var(--violet));
+      }
+      .cardgroup__row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        border-top: 1px solid rgba(255, 255, 255, 0.09);
+      }
+      .cardgroup__row input + input,
+      .cardgroup__row > div + div {
+        border-left: 1px solid rgba(255, 255, 255, 0.09);
+      }
+      .row2 {
+        display: grid;
+        grid-template-columns: 1.3fr 1fr;
+        gap: 12px;
+      }
+      .testfill {
+        appearance: none;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        font-family: var(--ui);
+        font-size: 11px;
+        color: var(--neon);
+        padding: 0;
+        margin-top: 7px;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .err {
+        min-height: 15px;
+        font-size: 11.5px;
+        color: var(--danger);
+        margin-top: -4px;
+      }
+
+      /* ── human verification ── */
+      .hv {
+        position: relative;
+        margin-top: 4px;
+      }
+      .hv__box {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 13px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        background: #0f1322;
+      }
+      .hv__box.is-bad {
+        border-color: rgba(255, 77, 109, 0.7);
+      }
+      .hv__check {
+        flex: none;
+        width: 26px;
+        height: 26px;
+        border-radius: 5px;
+        border: 2px solid rgba(255, 255, 255, 0.28);
+        background: #060911;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        transition: border-color 0.2s ease, background 0.2s ease;
+      }
+      .hv__check:hover {
+        border-color: rgba(63, 216, 255, 0.6);
+      }
+      .hv__spin {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 2px solid rgba(63, 216, 255, 0.25);
+        border-top-color: var(--neon);
+        animation: spin 0.7s linear infinite;
+        display: none;
       }
       @keyframes spin {
         to {
           transform: rotate(360deg);
         }
       }
-      .price__amount {
-        position: relative;
-        font-family: var(--mono);
-        font-weight: 800;
-        font-size: clamp(38px, 12vw, 54px);
-        letter-spacing: -0.02em;
-        background: linear-gradient(180deg, #fff6d8, #ffcf5c 55%, #d18f13);
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-        filter: drop-shadow(0 6px 18px rgba(255, 180, 60, 0.4));
+      .hv.is-checking .hv__spin {
+        display: block;
       }
-      .price__meta {
-        position: relative;
-        margin-top: 4px;
-        font-size: 11.5px;
-        letter-spacing: 0.1em;
-        color: #e8cf9b;
+      .hv.is-checking .hv__check {
+        border-color: transparent;
+        cursor: default;
       }
-      .price__strike {
-        position: relative;
-        margin-top: 6px;
-        font-size: 12px;
-        color: rgba(232, 207, 155, 0.6);
+      .hv__tick {
+        display: none;
+        color: var(--ok);
+        font-size: 18px;
+        line-height: 1;
+        font-weight: 700;
       }
-      .price__strike s {
-        opacity: 0.7;
+      .hv.is-done .hv__tick {
+        display: block;
       }
-
-      .perks {
-        list-style: none;
-        display: grid;
-        gap: 8px;
-        margin-bottom: 18px;
-        font-size: 12.5px;
-        color: #c6d3f0;
+      .hv.is-done .hv__check {
+        border-color: var(--ok);
+        background: rgba(55, 217, 160, 0.12);
+        cursor: default;
       }
-      .perks li {
+      .hv__label {
+        flex: 1;
+        font-size: 13.5px;
+        color: var(--ink);
+      }
+      .hv.is-done .hv__label {
+        color: var(--ok);
+      }
+      .hv__brand {
+        flex: none;
         display: flex;
-        gap: 8px;
-        align-items: baseline;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        line-height: 1.2;
+        text-align: center;
       }
-      .perks li::before {
-        content: '✦';
-        color: var(--gold);
-        font-size: 11px;
+      .hv__shield {
+        font-size: 16px;
+      }
+      .hv__brandname {
+        font-size: 7.5px;
+        letter-spacing: 0.12em;
+        color: var(--faint);
+        font-weight: 700;
+      }
+      .hv__terms {
+        font-size: 7px;
+        color: #3f4866;
       }
 
-      /* 3D credit card (visual only, demo) */
-      .cardwrap {
-        perspective: 1000px;
-        margin: 20px 0 16px;
+      .hv__modal {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(2, 3, 9, 0.72);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
       }
-      .card3d {
-        position: relative;
-        height: 168px;
-        transform-style: preserve-3d;
-        transition: transform 0.7s cubic-bezier(0.2, 0.85, 0.25, 1);
-        animation: cardFloat 6s ease-in-out infinite;
+      .hv__modal[hidden] {
+        display: none;
       }
-      @keyframes cardFloat {
-        50% {
-          transform: translateY(-6px) rotateX(6deg) rotateY(-6deg);
+      .hv__challenge {
+        width: min(340px, 100%);
+        max-height: calc(100svh - 32px);
+        overflow-y: auto;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        background: #0b0f1d;
+        box-shadow: 0 26px 60px rgba(0, 0, 0, 0.7);
+        animation: popIn 0.25s cubic-bezier(0.18, 0.9, 0.24, 1) backwards;
+      }
+      @keyframes popIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.98);
         }
       }
-      .card3d.is-flipped {
-        animation: none;
-        transform: rotateY(180deg);
+      .hv__prompt {
+        padding: 14px 16px;
+        background: linear-gradient(140deg, #1c2a63, #131a3c);
+        font-size: 13px;
+        line-height: 1.5;
       }
-      .card__face {
-        position: absolute;
-        inset: 0;
-        border-radius: 18px;
-        padding: 18px;
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        box-shadow: 0 26px 50px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.28) inset;
-        background:
-          radial-gradient(120% 120% at 10% 0%, rgba(255, 255, 255, 0.2), transparent 45%),
-          linear-gradient(135deg, #2b2050 0%, #123054 45%, #0b1430 100%);
+      .hv__prompt b {
+        font-family: var(--mono);
+        font-size: 17px;
+        color: var(--neon);
+      }
+      .hv__tiles {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 3px;
+        padding: 3px;
+        background: rgba(255, 255, 255, 0.07);
+      }
+      .tile {
+        position: relative;
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        aspect-ratio: 1;
+        background: #070a14;
+        display: grid;
+        place-items: center;
         overflow: hidden;
+        padding: 0;
       }
-      .card__face::after {
+      .tile__g {
+        font-family: var(--mono);
+        font-weight: 700;
+        color: #cfe0ff;
+        user-select: none;
+        text-shadow: 0 0 12px rgba(63, 216, 255, 0.35);
+      }
+      .tile::before {
         content: '';
         position: absolute;
-        inset: -60%;
-        background: linear-gradient(
+        inset: 0;
+        background: repeating-linear-gradient(
           115deg,
-          transparent 40%,
-          rgba(255, 255, 255, 0.28) 50%,
-          transparent 60%
+          rgba(255, 255, 255, 0.05) 0 2px,
+          transparent 2px 5px
         );
-        animation: sheen 5.5s linear infinite;
-        mix-blend-mode: screen;
-        opacity: 0.5;
+        pointer-events: none;
       }
-      .card__face--back {
-        transform: rotateY(180deg);
-        background: linear-gradient(135deg, #1a1436 0%, #0d1a33 100%);
+      .tile.is-on {
+        outline: 3px solid var(--neon);
+        outline-offset: -3px;
       }
-      .card__chip {
-        width: 42px;
-        height: 30px;
-        border-radius: 7px;
-        background: linear-gradient(135deg, #ffe9a8, #c99a25);
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) inset;
-      }
-      .card__brand {
+      .tile.is-on::after {
+        content: '✓';
         position: absolute;
-        top: 18px;
-        right: 18px;
-        font-size: 10px;
-        font-weight: 800;
-        letter-spacing: 0.22em;
-        color: rgba(255, 255, 255, 0.8);
-      }
-      .card__num {
-        position: absolute;
-        left: 18px;
-        bottom: 62px;
-        font-family: var(--mono);
-        font-size: clamp(15px, 4.6vw, 19px);
-        letter-spacing: 0.14em;
-        color: #fff;
-        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-      }
-      .card__row {
-        position: absolute;
-        left: 18px;
-        right: 18px;
-        bottom: 18px;
-        display: flex;
-        justify-content: space-between;
-        font-size: 11px;
-        letter-spacing: 0.1em;
-        color: rgba(255, 255, 255, 0.82);
-        font-family: var(--mono);
-        gap: 12px;
-      }
-      .card__label {
-        display: block;
-        font-size: 8px;
-        letter-spacing: 0.22em;
-        color: rgba(255, 255, 255, 0.45);
-        margin-bottom: 3px;
-      }
-      .card__stripe {
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: 22px;
-        height: 38px;
-        background: #05070f;
-      }
-      .card__cvcbox {
-        position: absolute;
-        right: 18px;
-        top: 76px;
-        background: #e9edf7;
-        color: #0b1024;
-        font-family: var(--mono);
+        top: 3px;
+        right: 5px;
         font-size: 13px;
-        padding: 7px 12px;
-        border-radius: 5px;
-        letter-spacing: 0.2em;
-      }
-      .card__note {
-        position: absolute;
-        left: 18px;
-        bottom: 16px;
-        font-size: 9px;
-        line-height: 1.5;
-        color: rgba(255, 255, 255, 0.4);
-        max-width: 60%;
-      }
-
-      .form {
+        font-weight: 800;
+        color: #06121c;
+        background: var(--neon);
+        border-radius: 50%;
+        width: 19px;
+        height: 19px;
         display: grid;
+        place-items: center;
+      }
+      .hv__foot {
+        display: flex;
+        align-items: center;
         gap: 10px;
-        grid-template-columns: 1fr 1fr;
+        padding: 11px 12px;
       }
-      .field {
-        display: block;
-      }
-      .field--wide {
-        grid-column: 1 / -1;
-      }
-      .field span {
-        display: block;
-        font-size: 10px;
-        letter-spacing: 0.16em;
-        color: var(--dim);
-        margin-bottom: 6px;
-        text-transform: uppercase;
-      }
-      .field input {
-        width: 100%;
-        font-family: var(--mono);
-        font-size: 14px;
+      .hv__icon {
+        appearance: none;
+        border: 0;
+        background: none;
+        cursor: pointer;
         color: var(--ink);
-        background: rgba(4, 7, 20, 0.85);
-        border: 1px solid rgba(140, 170, 255, 0.16);
-        border-radius: 13px;
-        padding: 12px 13px;
-        outline: none;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        font-size: 17px;
+        padding: 4px 6px;
+        border-radius: 6px;
       }
-      .field input:focus {
-        border-color: rgba(63, 216, 255, 0.6);
-        box-shadow: 0 0 0 3px rgba(63, 216, 255, 0.14);
+      .hv__icon:hover {
+        color: var(--neon);
+        background: rgba(63, 216, 255, 0.1);
       }
-      .field input::placeholder {
-        color: rgba(126, 139, 181, 0.5);
-      }
-
-      .formerr {
-        grid-column: 1 / -1;
-        min-height: 16px;
+      .hv__msg {
+        flex: 1;
         font-size: 11.5px;
         color: var(--danger);
+        min-height: 15px;
       }
-
-      .actions {
-        display: grid;
-        gap: 10px;
-        margin-top: 6px;
-      }
-      .btn {
+      .hv__verify {
         appearance: none;
         border: 0;
         cursor: pointer;
         font-family: var(--ui);
-        font-weight: 700;
-        font-size: 15px;
-        padding: 15px 18px;
-        border-radius: 16px;
-        color: #241a04;
-        background: linear-gradient(180deg, #ffe9a8 0%, #ffcf5c 52%, #e0a52a 100%);
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.7) inset,
-          0 16px 30px rgba(0, 0, 0, 0.5),
-          0 0 34px rgba(255, 207, 92, 0.35);
-        transition: transform 0.15s ease, filter 0.2s ease;
-        touch-action: manipulation;
-      }
-      .btn:hover {
-        filter: brightness(1.06);
-        transform: translateY(-1px);
-      }
-      .btn:active {
-        transform: translateY(1px) scale(0.99);
-      }
-      .btn[disabled] {
-        opacity: 0.6;
-        cursor: progress;
-        transform: none;
-      }
-      .btn--ghost {
-        background: transparent;
-        color: var(--dim);
-        font-weight: 600;
         font-size: 13px;
-        padding: 10px;
-        box-shadow: none;
+        font-weight: 700;
+        color: #06121c;
+        background: var(--neon);
+        border-radius: 8px;
+        padding: 9px 18px;
       }
-      .btn--ghost:hover {
-        color: var(--ink);
-        filter: none;
-        transform: none;
+      .hv__verify:hover {
+        filter: brightness(1.08);
       }
 
-      .progress {
+      /* ── pay ── */
+      .paybtn {
+        width: 100%;
+        margin-top: 18px;
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        font-family: var(--ui);
+        font-size: 15px;
+        font-weight: 700;
+        color: #06121c;
+        background: linear-gradient(180deg, #8ceaff 0%, #3fd8ff 55%, #16a6d6 100%);
+        border-radius: 11px;
+        padding: 15px 18px;
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45), 0 0 30px rgba(63, 216, 255, 0.25);
+        transition: filter 0.2s ease, transform 0.14s ease, opacity 0.2s ease;
+      }
+      .paybtn:hover:not(:disabled) {
+        filter: brightness(1.06);
+      }
+      .paybtn:active:not(:disabled) {
+        transform: translateY(1px);
+      }
+      .paybtn:disabled {
+        opacity: 0.42;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+      .co__secure {
+        margin-top: 13px;
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--faint);
+        text-align: center;
+      }
+      .co__close {
+        position: absolute;
+        top: 46px;
+        right: 12px;
+        z-index: 4;
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        font-size: 19px;
+        line-height: 1;
+        color: var(--dim);
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .co__close:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      /* ── processing + receipt ── */
+      .co__veil {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
         display: none;
-        margin-top: 14px;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 30px;
+        text-align: center;
+        background: rgba(6, 8, 18, 0.95);
+        backdrop-filter: blur(6px);
       }
-      .progress.is-on {
-        display: block;
+      .co__veil.is-on {
+        display: flex;
       }
-      .progress__bar {
-        height: 6px;
+      .bigspin {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        border: 3px solid rgba(63, 216, 255, 0.18);
+        border-top-color: var(--neon);
+        animation: spin 0.8s linear infinite;
+      }
+      .co__step {
+        font-size: 13.5px;
+        color: var(--dim);
+        font-family: var(--mono);
+      }
+      .co__bar {
+        width: min(280px, 80%);
+        height: 4px;
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.08);
         overflow: hidden;
       }
-      .progress__fill {
+      .co__fill {
         height: 100%;
         width: 0%;
-        border-radius: inherit;
-        background: linear-gradient(90deg, #3fd8ff, #ffcf5c);
-        box-shadow: 0 0 18px rgba(255, 207, 92, 0.6);
-        transition: width 0.5s ease;
-      }
-      .progress__label {
-        margin-top: 8px;
-        font-size: 11.5px;
-        font-family: var(--mono);
-        color: var(--dim);
-        letter-spacing: 0.06em;
+        background: linear-gradient(90deg, var(--neon), var(--gold));
+        transition: width 0.45s ease;
       }
 
-      .success {
+      .receipt {
         display: none;
+        padding: 38px 30px 34px;
         text-align: center;
-        padding: 12px 0 4px;
       }
-      .success.is-on {
+      .receipt.is-on {
         display: block;
       }
       .seal {
-        width: 96px;
-        height: 96px;
-        margin: 6px auto 16px;
+        width: 72px;
+        height: 72px;
+        margin: 0 auto 18px;
         border-radius: 50%;
         display: grid;
         place-items: center;
-        font-size: 44px;
+        font-size: 33px;
         color: #241a04;
         background: linear-gradient(180deg, #fff6d8, #ffcf5c 60%, #d18f13);
-        box-shadow: 0 0 60px rgba(255, 207, 92, 0.55), 0 20px 40px rgba(0, 0, 0, 0.5);
-        animation: sealIn 0.9s cubic-bezier(0.18, 0.9, 0.24, 1) backwards;
-        transform-style: preserve-3d;
+        box-shadow: 0 0 50px rgba(255, 207, 92, 0.5), 0 16px 34px rgba(0, 0, 0, 0.5);
+        animation: sealIn 0.8s cubic-bezier(0.18, 0.9, 0.24, 1) backwards;
       }
       @keyframes sealIn {
         from {
           transform: rotateY(220deg) scale(0.4);
           opacity: 0;
         }
-        to {
-          transform: rotateY(0) scale(1);
-          opacity: 1;
-        }
+      }
+      .receipt__h {
+        font-size: 20px;
+        font-weight: 800;
+      }
+      .receipt__sub {
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--dim);
+      }
+      .receipt__rows {
+        margin: 24px auto 0;
+        width: min(380px, 100%);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 12px;
+        overflow: hidden;
+        text-align: left;
+      }
+      .receipt__rows div {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 12px 15px;
+        font-size: 12.5px;
+        color: var(--dim);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .receipt__rows div:last-child {
+        border-bottom: 0;
+      }
+      .receipt__rows b {
+        color: var(--ink);
+        font-family: var(--mono);
+        font-weight: 600;
+      }
+      .receipt__btn {
+        margin-top: 24px;
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        font-family: var(--ui);
+        font-weight: 700;
+        font-size: 14.5px;
+        color: #241a04;
+        background: linear-gradient(180deg, #ffe9a8 0%, #ffcf5c 52%, #e0a52a 100%);
+        border-radius: 11px;
+        padding: 14px 26px;
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
       }
 
-      .legal {
-        margin-top: 12px;
-        font-size: 10.5px;
-        line-height: 1.6;
-        color: rgba(126, 139, 181, 0.75);
-        text-align: center;
-      }
-
+      /* ── dev bar ── */
       .devbar {
         position: fixed;
         z-index: 40;
@@ -950,14 +1458,12 @@
         bottom: 12px;
         display: flex;
         gap: 8px;
-        align-items: center;
       }
       .devbar button {
         appearance: none;
         cursor: pointer;
         font-family: var(--ui);
         font-size: 11px;
-        letter-spacing: 0.06em;
         color: rgba(160, 178, 220, 0.75);
         background: rgba(10, 14, 32, 0.7);
         border: 1px solid var(--stroke);
@@ -970,21 +1476,49 @@
         border-color: rgba(63, 216, 255, 0.4);
       }
 
+      /* ═══════════════════════════════════════════════════════════
+         Responsive
+         ═══════════════════════════════════════════════════════════ */
+      @media (max-width: 780px) {
+        .co__grid {
+          grid-template-columns: 1fr;
+        }
+        .co__summary {
+          border-right: 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+          padding: 24px 20px;
+        }
+        .co__form {
+          padding: 24px 20px 30px;
+        }
+        .co__amount {
+          font-size: 32px;
+        }
+        .checkout {
+          padding: 0;
+        }
+        .co {
+          border-radius: 0;
+          border: 0;
+          min-height: 100svh;
+          width: 100%;
+        }
+      }
       @media (max-width: 400px) {
         .key {
-          height: 56px;
+          height: 54px;
           font-size: 19px;
         }
         .keys {
-          gap: 10px;
+          gap: 9px;
+        }
+        .skey {
+          height: 42px;
+          font-size: 13px;
         }
       }
-
       @media (prefers-reduced-motion: reduce) {
         .gloss,
-        .card3d,
-        .price::after,
-        .card__face::after,
         .brand__dot {
           animation: none !important;
         }
@@ -1002,7 +1536,8 @@
       <div class="calc" id="calc">
         <div class="calc__depth" id="depth" aria-hidden="true"></div>
 
-        <div class="calc__face">
+        <!-- ── FRONT ─────────────────────────────────────────── -->
+        <section class="face face--front" id="faceFront">
           <div class="gloss" aria-hidden="true"></div>
 
           <div class="brand">
@@ -1044,138 +1579,212 @@
             <button class="key key--eq" data-k="=" type="button" aria-label="계산">=</button>
           </div>
 
-          <p class="hint" id="hint">마우스를 움직여 기울여 보세요 · 키보드 입력 지원</p>
-        </div>
+          <div class="footrow">
+            <p class="hint" id="hint">드래그해서 돌려보세요 · 뒷면에 LAB</p>
+            <button class="flipbtn" id="flipFront" type="button">↻ 뒷면</button>
+          </div>
+        </section>
+
+        <!-- ── BACK: NEXUS LAB (PRO) ─────────────────────────── -->
+        <section class="face face--back" id="faceBack" aria-hidden="true">
+          <div class="gloss" aria-hidden="true"></div>
+
+          <div class="brand">
+            <span class="brand__dot" style="background: var(--violet); box-shadow: 0 0 14px var(--violet)"></span>
+            <span class="brand__name">NEXUS&nbsp;LAB</span>
+            <span class="badge" id="labBadge">PRO 전용</span>
+          </div>
+
+          <div class="lab">
+            <div class="lab__readout">
+              <span class="lab__label">VALUE</span>
+              <span class="lab__value" id="labValue">0</span>
+              <button class="angle" id="angleBtn" type="button">DEG</button>
+            </div>
+
+            <div class="lab__grid" id="sciKeys">
+              <button class="skey" data-s="sqrt" type="button">√x</button>
+              <button class="skey" data-s="sqr" type="button">x<sup>2</sup></button>
+              <button class="skey" data-s="pow" type="button">x<sup>y</sup></button>
+              <button class="skey" data-s="inv" type="button">1/x</button>
+              <button class="skey" data-s="sin" type="button">sin</button>
+              <button class="skey" data-s="cos" type="button">cos</button>
+              <button class="skey" data-s="tan" type="button">tan</button>
+              <button class="skey" data-s="pi" type="button">π</button>
+              <button class="skey" data-s="log" type="button">log</button>
+              <button class="skey" data-s="ln" type="button">ln</button>
+              <button class="skey" data-s="e" type="button">e</button>
+              <button class="skey" data-s="fact" type="button">n!</button>
+            </div>
+
+            <div class="lab__tapehead">
+              <span>HISTORY TAPE</span>
+              <button class="lab__clear" id="tapeClear" type="button">비우기</button>
+            </div>
+            <div class="tape" id="tape"></div>
+
+            <div class="footrow">
+              <p class="hint">기록을 누르면 값을 불러옵니다</p>
+              <button class="flipbtn" id="flipBack" type="button">↻ 앞면</button>
+            </div>
+          </div>
+
+          <div class="veil" id="veil">
+            <div class="veil__lock">🔒</div>
+            <p class="veil__title">NEXUS LAB은 PRO 전용입니다</p>
+            <p class="veil__sub">
+              공학 계산 12종과 히스토리 테이프는 PRO 라이선스에서만 열립니다.
+            </p>
+            <button class="veil__cta" id="veilCta" type="button">$1,299.00으로 잠금 해제</button>
+            <button class="flipbtn" id="flipVeil" type="button">↻ 앞면으로</button>
+          </div>
+        </section>
       </div>
     </main>
 
-    <!-- ── Paywall ─────────────────────────────────────────────── -->
-    <div class="paywall" id="paywall" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
-      <div class="sheet" id="sheet">
-        <div id="pwBuy">
-          <p class="demo-banner">
-            <span>⚠️</span>
-            <span
-              ><b>데모입니다.</b> 실제 결제는 일어나지 않고, 입력한 값은 어디로도 전송되거나 저장되지
-              않습니다. 카드번호는 테스트용 숫자로 미리 채워져 있습니다.</span
-            >
-          </p>
+    <!-- ═══════════════════════════════════════════════════════════
+         Checkout
+         ═══════════════════════════════════════════════════════════ -->
+    <div class="checkout" id="checkout" role="dialog" aria-modal="true" aria-labelledby="coHead">
+      <div class="co" id="co">
+        <div class="co__testbar">
+          <b>TEST MODE</b> · 실제 청구가 발생하지 않으며 입력값은 전송되지 않습니다
+        </div>
 
-          <!-- Step 1 — the offer -->
-          <section class="step" id="pwStep1">
-            <p class="sheet__eyebrow">무료 체험 종료</p>
-            <h2 class="sheet__title" id="pwTitle">방금 1회의 계산을 사용하셨습니다</h2>
-            <p class="sheet__sub">
-              NEXUS CALC의 무료 체험은 <b>평생 1회 계산</b>까지입니다. 두 번째 계산부터는 PRO
-              라이선스가 필요합니다.
-            </p>
+        <button class="co__close" id="coClose" type="button" aria-label="닫기">×</button>
 
-            <div class="price">
-              <div class="price__amount">$1,299.00</div>
-              <div class="price__meta">USD · 1회 결제 · 평생 라이선스</div>
-              <div class="price__strike"><s>$2,598.00</s> 오늘만 50% 할인</div>
-            </div>
+        <div class="co__grid" id="coGrid">
+          <aside class="co__summary">
+            <div class="co__merchant"><span class="co__mark"></span>NEXUS SOFTWARE</div>
+            <p class="co__item">NEXUS CALC PRO 구독</p>
+            <div class="co__amount">$1,299.00</div>
+            <p class="co__cycle">1회 결제 · 평생 라이선스 · USD</p>
 
-            <ul class="perks">
-              <li>= 버튼 무제한 사용 (횟수 제한 없음)</li>
-              <li>숫자 0부터 9까지 전 범위 번들 포함</li>
-              <li>사칙연산 4종 + 백분율 모듈 영구 활성화</li>
-              <li>소수점 최대 12자리 정밀도 언락</li>
+            <ul class="co__lines">
+              <li><span>NEXUS CALC PRO</span><span class="num">$2,598.00</span></li>
+              <li><span>런치 할인 (50%)</span><span class="num off">−$1,299.00</span></li>
+              <li><span>부가세</span><span class="num">$0.00</span></li>
             </ul>
+            <div class="co__total"><span>합계</span><span class="num">$1,299.00</span></div>
 
-            <div class="actions">
-              <button class="btn" id="toPayBtn" type="button">결제 진행하기</button>
-              <button class="btn btn--ghost" id="laterBtn" type="button">
-                나중에 하기 (계산기는 계속 잠김)
-              </button>
-            </div>
-          </section>
+            <ul class="co__perks">
+              <li>= 버튼 무제한</li>
+              <li>NEXUS LAB (공학 계산 12종)</li>
+              <li>히스토리 테이프 저장</li>
+              <li>평생 업데이트</li>
+            </ul>
+          </aside>
 
-          <!-- Step 2 — the (fake) card sheet -->
-          <section class="step" id="pwStep2" hidden>
-            <p class="sheet__eyebrow">결제 정보 · 데모</p>
-            <h2 class="sheet__title">$1,299.00 결제</h2>
+          <section class="co__form">
+            <h2 class="co__h" id="coHead">결제 정보</h2>
 
-            <div class="cardwrap">
-              <div class="card3d" id="card3d">
-                <div class="card__face">
-                  <div class="card__chip"></div>
-                  <div class="card__brand">DEMO CARD</div>
-                  <div class="card__num" id="cardNum">4242 4242 4242 4242</div>
-                  <div class="card__row">
-                    <span
-                      ><span class="card__label">CARD HOLDER</span
-                      ><span id="cardName">HONG GILDONG</span></span
-                    >
-                    <span
-                      ><span class="card__label">VALID THRU</span><span id="cardExp">12/34</span></span
-                    >
+            <div class="fields">
+              <div class="f" id="fEmailWrap">
+                <label for="fEmail">이메일</label>
+                <input id="fEmail" type="email" placeholder="you@example.com" autocomplete="email" />
+              </div>
+
+              <div>
+                <span class="fgroup__label">카드 정보</span>
+                <div class="cardgroup" id="cardGroup">
+                  <div class="cardnum">
+                    <input
+                      id="fNum"
+                      type="text"
+                      inputmode="numeric"
+                      placeholder="1234 1234 1234 1234"
+                      maxlength="19"
+                      autocomplete="off"
+                    />
+                    <span class="cardnum__icon" id="cardIcon" aria-hidden="true"></span>
+                  </div>
+                  <div class="cardgroup__row">
+                    <input id="fExp" type="text" inputmode="numeric" placeholder="MM / YY" maxlength="7" autocomplete="off" />
+                    <input id="fCvc" type="text" inputmode="numeric" placeholder="CVC" maxlength="4" autocomplete="off" />
                   </div>
                 </div>
-                <div class="card__face card__face--back">
-                  <div class="card__stripe"></div>
-                  <div class="card__cvcbox" id="cardCvc">•••</div>
-                  <p class="card__note">
-                    이 카드는 실제로 존재하지 않습니다. 이 화면은 어떤 네트워크 요청도 보내지
-                    않습니다.
-                  </p>
+                <button class="testfill" id="testFill" type="button">테스트 카드 자동 입력</button>
+              </div>
+
+              <div class="f" id="fNameWrap">
+                <label for="fName">카드 소유자 이름</label>
+                <input id="fName" type="text" placeholder="HONG GILDONG" autocomplete="off" />
+              </div>
+
+              <div class="row2">
+                <div class="f">
+                  <label for="fCountry">국가</label>
+                  <select id="fCountry">
+                    <option value="KR">대한민국</option>
+                    <option value="US">미국</option>
+                    <option value="JP">일본</option>
+                    <option value="GB">영국</option>
+                  </select>
+                </div>
+                <div class="f" id="fZipWrap">
+                  <label for="fZip">우편번호</label>
+                  <input id="fZip" type="text" inputmode="numeric" placeholder="06236" maxlength="10" />
+                </div>
+              </div>
+
+              <p class="err" id="coErr"></p>
+
+              <!-- human verification -->
+              <div class="hv" id="hv">
+                <div class="hv__modal" id="hvModal" hidden>
+                  <div class="hv__challenge" id="hvPanel">
+                    <div class="hv__prompt" id="hvPrompt"></div>
+                    <div class="hv__tiles" id="hvTiles"></div>
+                    <div class="hv__foot">
+                      <button class="hv__icon" id="hvReload" type="button" aria-label="새 문제">⟳</button>
+                      <span class="hv__msg" id="hvMsg"></span>
+                      <button class="hv__verify" id="hvVerify" type="button">확인</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="hv__box" id="hvBox">
+                  <button class="hv__check" id="hvCheck" type="button" role="checkbox" aria-checked="false">
+                    <span class="hv__spin"></span>
+                    <span class="hv__tick">✓</span>
+                  </button>
+                  <span class="hv__label" id="hvLabel">저는 로봇이 아닙니다</span>
+                  <span class="hv__brand">
+                    <span class="hv__shield">🛡️</span>
+                    <span class="hv__brandname">NEXUS<br />VERIFY</span>
+                    <span class="hv__terms">개인정보 · 약관</span>
+                  </span>
                 </div>
               </div>
             </div>
 
-            <form class="form" id="payForm" novalidate autocomplete="off">
-              <label class="field field--wide">
-                <span>이름 (데모)</span>
-                <input id="fName" type="text" value="HONG GILDONG" maxlength="24" />
-              </label>
-              <label class="field field--wide">
-                <span>카드번호 (테스트 번호)</span>
-                <input
-                  id="fNum"
-                  type="text"
-                  inputmode="numeric"
-                  value="4242 4242 4242 4242"
-                  maxlength="19"
-                />
-              </label>
-              <label class="field">
-                <span>유효기간</span>
-                <input id="fExp" type="text" inputmode="numeric" value="12/34" maxlength="5" />
-              </label>
-              <label class="field">
-                <span>CVC</span>
-                <input id="fCvc" type="text" inputmode="numeric" value="424" maxlength="4" />
-              </label>
-              <p class="formerr" id="formErr"></p>
-            </form>
-
-            <div class="actions">
-              <button class="btn" id="payBtn" type="button">$1,299.00 결제하고 잠금 해제</button>
-              <button class="btn btn--ghost" id="backBtn" type="button">← 요금제로 돌아가기</button>
-            </div>
-
-            <div class="progress" id="progress">
-              <div class="progress__bar"><div class="progress__fill" id="progressFill"></div></div>
-              <p class="progress__label" id="progressLabel">결제 준비 중…</p>
-            </div>
-
-            <p class="legal">
-              데모용 화면 · 실제 청구 없음 · 카드 정보는 이 브라우저 밖으로 나가지 않습니다.
-              라이선스 상태는 localStorage에만 저장되며 언제든 초기화할 수 있습니다.
+            <button class="paybtn" id="payBtn" type="button" disabled>$1,299.00 결제하기</button>
+            <p class="co__secure">
+              🔒 테스트 모드 결제입니다. 실제 청구는 발생하지 않고, 입력한 카드 정보는 이 브라우저를
+              벗어나지 않습니다.
             </p>
           </section>
         </div>
 
-        <div class="success" id="pwSuccess">
+        <div class="co__veil" id="coVeil">
+          <div class="bigspin"></div>
+          <p class="co__step" id="coStep">결제 준비 중…</p>
+          <div class="co__bar"><div class="co__fill" id="coFill"></div></div>
+        </div>
+
+        <div class="receipt" id="receipt">
           <div class="seal">✓</div>
-          <p class="sheet__eyebrow">결제 완료 (데모)</p>
-          <h2 class="sheet__title">PRO 라이선스가 활성화되었습니다</h2>
-          <p class="sheet__sub">
-            $1,299.00이 청구된 <b>척</b> 했습니다. 이제 = 버튼을 무제한으로 누르실 수 있습니다.
-          </p>
-          <div class="actions">
-            <button class="btn" id="doneBtn" type="button">계산기로 돌아가기</button>
+          <h2 class="receipt__h">결제가 완료되었습니다</h2>
+          <p class="receipt__sub">NEXUS CALC PRO 라이선스가 활성화되었습니다.</p>
+          <div class="receipt__rows">
+            <div><span>결제 금액</span><b id="rcAmount">$1,299.00</b></div>
+            <div><span>결제 수단</span><b id="rcCard">•••• 4242</b></div>
+            <div><span>주문 번호</span><b id="rcOrder">—</b></div>
+            <div><span>결제 일시</span><b id="rcDate">—</b></div>
+            <div><span>상태</span><b style="color: var(--ok)">승인됨 (테스트)</b></div>
           </div>
+          <button class="receipt__btn" id="rcDone" type="button">PRO로 계속하기</button>
+          <p class="co__secure">테스트 모드이므로 영수증은 발행되지 않습니다.</p>
         </div>
       </div>
     </div>
@@ -1191,7 +1800,7 @@
         'use strict';
 
         /* ═══════════════════════════════════════════════════════════
-           1. WebGL backdrop — raymarched core + neon grid floor
+           1. WebGL backdrop — raymarched core, rings, grid floor
            ═══════════════════════════════════════════════════════════ */
         const bg = document.getElementById('bg');
         const VERT = `
@@ -1216,10 +1825,6 @@
           float sdTorus(vec3 p, vec2 t){
             vec2 q = vec2(length(p.xz) - t.x, p.y);
             return length(q) - t.y;
-          }
-          float smin(float a, float b, float k){
-            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-            return mix(b, a, h) - k * h * (1.0 - h);
           }
 
           // returns vec2(distance, materialId)
@@ -1295,7 +1900,6 @@
               if (t > 42.0) break;
             }
 
-            // Background: deep space gradient with a soft halo behind the core.
             float halo = exp(-length(uv - vec2(0.0, 0.26)) * 2.2);
             vec3 col = mix(vec3(0.012, 0.014, 0.046), violet * 0.34, halo * 0.9);
             col += accent * halo * 0.20;
@@ -1319,7 +1923,7 @@
                 col = accent * 1.25 + violet * 0.30;
                 col += mix(accent, vec3(1.0), 0.4) * fres * 0.7;
               } else {
-                // Floor: neon grid with a pulse shockwave.
+                // Floor: neon grid with a keypress shockwave.
                 vec2 g = abs(fract(pos.xz * 0.5) - 0.5);
                 float w = 0.012 + t * 0.004;
                 float line = 1.0 - smoothstep(0.0, w, min(g.x, g.y));
@@ -1334,8 +1938,8 @@
             col += mix(accent, violet, 0.25) * glow * (1.0 + uPulse * 2.6);
             col = mix(col, vec3(0.010, 0.012, 0.038), 1.0 - exp(-t * 0.05));
 
-            // Luminance-based Reinhard: rolls off highlights without
-            // washing the neon hues toward white the way per-channel does.
+            // Luminance-based Reinhard: rolls off highlights without washing
+            // the neon hues toward white the way per-channel does.
             float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
             col *= 1.0 / (1.0 + lum * 0.85);
             float vig = 1.0 - 0.52 * dot(uv * vec2(0.85, 1.0), uv * vec2(0.85, 1.0));
@@ -1349,11 +1953,11 @@
         `;
 
         const shaderState = { pulse: 0, lock: 0, gold: 0, mx: 0, my: 0, tmx: 0, tmy: 0 };
-        let gfx = null; // { draw(tSec), setScale(s) } once WebGL is up
+        let gfx = null; // { draw(tSec), setScale(f), disable() }
 
         (function initGL() {
           const gl = bg.getContext('webgl', { antialias: false, alpha: false, depth: false });
-          if (!gl) return; // CSS gradient fallback stays visible.
+          if (!gl) return; // CSS gradient fallback stays visible
 
           const compile = (type, src) => {
             const sh = gl.createShader(type);
@@ -1365,7 +1969,6 @@
             }
             return sh;
           };
-
           const vs = compile(gl.VERTEX_SHADER, VERT);
           const fs = compile(gl.FRAGMENT_SHADER, FRAG);
           if (!vs || !fs) return;
@@ -1382,11 +1985,7 @@
 
           const buf = gl.createBuffer();
           gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-          gl.bufferData(
-            gl.ARRAY_BUFFER,
-            new Float32Array([-1, -1, 3, -1, -1, 3]),
-            gl.STATIC_DRAW
-          );
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
           const loc = gl.getAttribLocation(prog, 'p');
           gl.enableVertexAttribArray(loc);
           gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
@@ -1400,11 +1999,9 @@
             mouse: gl.getUniformLocation(prog, 'uMouse'),
           };
 
-          // The raymarcher is fragment-bound, so render below native res and
-          // let the quality watchdog below drop further if frames get slow.
           const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
           let scale = dpr * (window.innerWidth < 640 ? 0.62 : 0.82);
-          let lost = false;
+          let dead = false;
 
           const resize = () => {
             bg.width = Math.max(1, Math.floor(window.innerWidth * scale));
@@ -1416,23 +2013,23 @@
 
           bg.addEventListener('webglcontextlost', (e) => {
             e.preventDefault();
-            lost = true;
-            bg.style.display = 'none'; // fall back to the body gradient
+            dead = true;
+            bg.style.display = 'none';
           });
 
           gfx = {
             disable() {
-              lost = true;
+              dead = true;
               bg.style.display = 'none';
             },
             setScale(factor) {
               scale = dpr * factor;
               resize();
             },
-            draw(timeSec) {
-              if (lost) return;
+            draw(tSec) {
+              if (dead) return;
               gl.uniform2f(U.res, bg.width, bg.height);
-              gl.uniform1f(U.time, timeSec);
+              gl.uniform1f(U.time, tSec);
               gl.uniform1f(U.pulse, shaderState.pulse);
               gl.uniform1f(U.lock, shaderState.lock);
               gl.uniform1f(U.gold, shaderState.gold);
@@ -1443,49 +2040,115 @@
         })();
 
         /* ═══════════════════════════════════════════════════════════
-           2. Tilt + idle float + master animation loop
+           2. The device: drag to rotate, flip to the LAB side
            ═══════════════════════════════════════════════════════════ */
         const calcEl = document.getElementById('calc');
-        const tilt = { rx: 0, ry: 0, trx: 0, try_: 0 };
+        const faceFront = document.getElementById('faceFront');
+        const faceBack = document.getElementById('faceBack');
         const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const coarse = window.matchMedia('(hover: none)').matches;
         const IDLE_HINT = coarse
-          ? '화면을 드래그해 기울여 보세요 · 무료 체험 1회'
-          : '마우스를 움직여 기울여 보세요 · 키보드 입력 지원';
+          ? '드래그해서 돌려보세요 · 뒷면에 LAB'
+          : '드래그해서 돌려보세요 · F키로 뒤집기';
+
+        // spin.y is the live Y rotation in degrees; goal drives the snap-back.
+        const spin = { y: 0, vel: 0, goal: 0 };
+        const drag = { active: false, id: null, x: 0, y: 0, t: 0, moved: 0 };
+        let suppressClick = false; // a drag must not also fire the key under it
+        const look = { rx: 0, ry: 0, trx: 0, try_: 0 };
+        let showingBack = false;
+
+        const isBackFacing = () => {
+          const a = ((spin.y % 360) + 360) % 360;
+          return a > 90 && a < 270;
+        };
+
+        function setFaceState(back) {
+          showingBack = back;
+          faceFront.setAttribute('aria-hidden', String(back));
+          faceBack.setAttribute('aria-hidden', String(!back));
+          faceFront.querySelectorAll('button, input').forEach((el) => {
+            el.tabIndex = back ? -1 : 0;
+          });
+          faceBack.querySelectorAll('button, input').forEach((el) => {
+            el.tabIndex = back ? 0 : -1;
+          });
+          if (back) refreshLab();
+        }
+
+        function flip() {
+          audio.ensure();
+          audio.thock();
+          spin.vel = 0;
+          spin.goal = Math.round(spin.y / 180) * 180 + 180;
+          bump(0.6);
+        }
+
+        calcEl.addEventListener('pointerdown', (e) => {
+          if (checkout.classList.contains('is-open')) return;
+          drag.active = true;
+          drag.id = e.pointerId;
+          drag.x = e.clientX;
+          drag.y = e.clientY;
+          drag.t = performance.now();
+          drag.moved = 0;
+          suppressClick = false;
+          spin.vel = 0;
+          spin.goal = null;
+          calcEl.classList.add('is-dragging');
+        });
+
+        const endDrag = (e) => {
+          if (!drag.active || (e && e.pointerId !== drag.id)) return;
+          drag.active = false;
+          calcEl.classList.remove('is-dragging');
+          // The click lands right after pointerup, so clear one task later —
+          // otherwise a keyboard-activated click would stay suppressed.
+          if (suppressClick) window.setTimeout(() => (suppressClick = false), 0);
+        };
+        window.addEventListener('pointerup', endDrag);
+        window.addEventListener('pointercancel', endDrag);
+
+        const wasDragged = () => suppressClick;
 
         window.addEventListener('pointermove', (e) => {
+          if (drag.active && e.pointerId === drag.id) {
+            const dx = e.clientX - drag.x;
+            const dy = e.clientY - drag.y;
+            drag.moved += Math.abs(dx) + Math.abs(dy);
+            if (drag.moved > 10) suppressClick = true;
+            const now = performance.now();
+            const dt = Math.max(1, now - drag.t);
+            spin.y += dx * 0.5;
+            spin.vel = ((dx * 0.5) / dt) * 16;
+            drag.x = e.clientX;
+            drag.y = e.clientY;
+            drag.t = now;
+            return;
+          }
+          if (drag.active) return;
           const nx = e.clientX / window.innerWidth - 0.5;
           const ny = e.clientY / window.innerHeight - 0.5;
-          tilt.try_ = nx * 20;
-          tilt.trx = -ny * 13;
+          look.try_ = nx * 9;
+          look.trx = -ny * 11;
           shaderState.tmx = nx;
           shaderState.tmy = -ny;
         });
-        window.addEventListener('pointerleave', () => {
-          tilt.try_ = 0;
-          tilt.trx = 0;
-          shaderState.tmx = 0;
-          shaderState.tmy = 0;
-        });
 
-        // Frame-time watchdog. Re-measures for ~0.7s after each step down, so a
-        // weak GPU walks down the ladder in a couple of seconds instead of
-        // grinding at 5fps: three resolution steps, then half-rate, then off.
-        const QUALITY_SCALES = [0.58, 0.42, 0.30];
+        /* quality watchdog */
+        const QUALITY_SCALES = [0.58, 0.42, 0.3];
         const quality = { ema: 16, frames: 0, elapsed: 0, level: 0 };
-
         function watchQuality(dt) {
-          if (!gfx || quality.level > 3 || dt > 500) return; // skip tab-switch hitches
+          if (!gfx || quality.level > 3 || dt > 500) return;
           quality.ema = quality.ema * 0.88 + dt * 0.12;
           quality.frames++;
           quality.elapsed += dt;
           if (quality.frames < 10 || quality.elapsed < 700) return;
-
           if (quality.level < 3 && quality.ema > 32) {
             gfx.setScale(QUALITY_SCALES[quality.level]);
-            quality.level++;          // level 3 also halves the backdrop's rate
+            quality.level++;
           } else if (quality.level === 3 && quality.ema > 90) {
-            gfx.disable();            // hopeless: keep the CSS gradient instead
+            gfx.disable();
             quality.level = 4;
           }
           quality.frames = 0;
@@ -1496,26 +2159,44 @@
         const start = performance.now();
         let last = start;
         let frame = 0;
+
         function loop(now) {
           const tSec = (now - start) / 1000;
           watchQuality(now - last);
           last = now;
           frame++;
 
-          tilt.rx += (tilt.trx - tilt.rx) * 0.08;
-          tilt.ry += (tilt.try_ - tilt.ry) * 0.08;
-          const float = reduced ? 0 : Math.sin(tSec * 1.15) * 5;
-          calcEl.style.setProperty('--rx', tilt.rx.toFixed(2) + 'deg');
-          calcEl.style.setProperty('--ry', tilt.ry.toFixed(2) + 'deg');
-          calcEl.style.setProperty('--fy', float.toFixed(2) + 'px');
+          if (!drag.active) {
+            if (spin.goal !== null) {
+              spin.y += (spin.goal - spin.y) * 0.16;
+              if (Math.abs(spin.goal - spin.y) < 0.15) {
+                spin.y = spin.goal;
+                spin.goal = null;
+              }
+            } else if (Math.abs(spin.vel) > 0.35) {
+              spin.y += spin.vel;
+              spin.vel *= 0.94;
+            } else {
+              spin.vel = 0;
+              spin.goal = Math.round(spin.y / 180) * 180;
+            }
+          }
+
+          if (isBackFacing() !== showingBack) setFaceState(!showingBack);
+
+          look.rx += (look.trx - look.rx) * 0.08;
+          look.ry += (look.try_ - look.ry) * 0.08;
+          const floatY = reduced ? 0 : Math.sin(tSec * 1.15) * 5;
+          calcEl.style.setProperty('--rx', look.rx.toFixed(2) + 'deg');
+          calcEl.style.setProperty('--ry', (spin.y + look.ry).toFixed(2) + 'deg');
+          calcEl.style.setProperty('--fy', floatY.toFixed(2) + 'px');
 
           shaderState.mx += (shaderState.tmx - shaderState.mx) * 0.05;
           shaderState.my += (shaderState.tmy - shaderState.my) * 0.05;
           shaderState.pulse *= 0.92;
           shaderState.lock += ((state.locked() ? 1 : 0) - shaderState.lock) * 0.05;
-          shaderState.gold += ((goldTarget - shaderState.gold) * 0.06);
+          shaderState.gold += (goldTarget - shaderState.gold) * 0.06;
 
-          // At the lowest quality step the backdrop runs at half rate.
           if (gfx && quality.level < 4 && (quality.level < 3 || (frame & 1) === 0)) {
             gfx.draw(tSec);
           }
@@ -1524,19 +2205,19 @@
         }
 
         /* ═══════════════════════════════════════════════════════════
-           3. Extruded side wall for the calculator body
+           3. Slab between the two faces
            ═══════════════════════════════════════════════════════════ */
         const depth = document.getElementById('depth');
-        for (let i = 1; i <= 16; i++) {
+        for (let i = 0; i <= 15; i++) {
           const layer = document.createElement('i');
-          const shade = Math.max(0, 26 - i * 1.4);
-          layer.style.transform = 'translateZ(' + -i * 2.4 + 'px)';
+          const shade = Math.max(4, 24 - Math.abs(7.5 - i) * 2);
+          layer.style.transform = 'translateZ(' + (15 - i * 2) + 'px)';
           layer.style.background = 'rgb(' + shade + ',' + (shade + 2) + ',' + (shade + 12) + ')';
           depth.appendChild(layer);
         }
 
         /* ═══════════════════════════════════════════════════════════
-           4. Tiny synth (clicks / buzz / cha-ching)
+           4. Tiny synth
            ═══════════════════════════════════════════════════════════ */
         let actx = null;
         const audio = {
@@ -1550,17 +2231,21 @@
           },
           tone(freq, dur, type, gain, delay) {
             if (!actx) return;
-            const t0 = actx.currentTime + (delay || 0);
-            const osc = actx.createOscillator();
-            const g = actx.createGain();
-            osc.type = type || 'sine';
-            osc.frequency.setValueAtTime(freq, t0);
-            g.gain.setValueAtTime(0.0001, t0);
-            g.gain.exponentialRampToValueAtTime(gain || 0.08, t0 + 0.012);
-            g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-            osc.connect(g).connect(actx.destination);
-            osc.start(t0);
-            osc.stop(t0 + dur + 0.02);
+            try {
+              const t0 = actx.currentTime + (delay || 0);
+              const osc = actx.createOscillator();
+              const g = actx.createGain();
+              osc.type = type || 'sine';
+              osc.frequency.setValueAtTime(freq, t0);
+              g.gain.setValueAtTime(0.0001, t0);
+              g.gain.exponentialRampToValueAtTime(gain || 0.08, t0 + 0.012);
+              g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+              osc.connect(g).connect(actx.destination);
+              osc.start(t0);
+              osc.stop(t0 + dur + 0.02);
+            } catch (_) {
+              /* ignore */
+            }
           },
           click() {
             this.tone(620 + Math.random() * 90, 0.07, 'triangle', 0.05);
@@ -1574,16 +2259,19 @@
             this.tone(105, 0.26, 'sawtooth', 0.06, 0.09);
           },
           chaching() {
-            [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-              this.tone(f, 0.5, 'triangle', 0.07, i * 0.09);
-            });
+            [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
+              this.tone(f, 0.5, 'triangle', 0.07, i * 0.09)
+            );
             this.tone(1318.5, 0.9, 'sine', 0.05, 0.4);
           },
         };
 
         /* ═══════════════════════════════════════════════════════════
-           5. Expression engine (no eval — hand-rolled parser)
+           5. Expression engine (hand-rolled parser, no eval)
            ═══════════════════════════════════════════════════════════ */
+        const PI_S = '3.141592653589793';
+        const E_S = '2.718281828459045';
+
         function tokenize(src) {
           const out = [];
           let i = 0;
@@ -1592,6 +2280,12 @@
             if (/[\d.]/.test(c)) {
               let j = i;
               while (j < src.length && /[\d.]/.test(src[j])) j++;
+              // exponent form, e.g. 1.2e+21 — only ever right after digits
+              if ((src[j] === 'e' || src[j] === 'E') && /[+\-\d]/.test(src[j + 1] || '')) {
+                j++;
+                if (src[j] === '+' || src[j] === '-') j++;
+                while (/\d/.test(src[j] || '')) j++;
+              }
               const v = parseFloat(src.slice(i, j));
               if (isNaN(v)) throw new Error('SYNTAX');
               out.push({ t: 'num', v });
@@ -1602,7 +2296,7 @@
               }
               continue;
             }
-            if ('+-*/'.indexOf(c) >= 0) {
+            if ('+-*/^'.indexOf(c) >= 0) {
               out.push({ t: 'op', v: c });
               i++;
               continue;
@@ -1612,7 +2306,7 @@
               i++;
               continue;
             }
-            i++; // ignore anything else
+            i++; // ignore stray characters
           }
           return out;
         }
@@ -1637,6 +2331,14 @@
             }
             throw new Error('SYNTAX');
           }
+          function power() {
+            const base = atom();
+            if (peek() && peek().t === 'op' && peek().v === '^') {
+              p++;
+              return Math.pow(base, unary()); // right-associative
+            }
+            return base;
+          }
           function unary() {
             const t = peek();
             if (t && t.t === 'op' && (t.v === '-' || t.v === '+')) {
@@ -1644,7 +2346,7 @@
               const v = unary();
               return t.v === '-' ? -v : v;
             }
-            return atom();
+            return power();
           }
           function term() {
             let v = unary();
@@ -1676,11 +2378,8 @@
           if (!isFinite(n)) return '∞';
           const abs = Math.abs(n);
           let s;
-          if (abs !== 0 && (abs >= 1e12 || abs < 1e-9)) {
-            s = n.toExponential(6);
-          } else {
-            s = String(parseFloat(n.toPrecision(12)));
-          }
+          if (abs !== 0 && (abs >= 1e12 || abs < 1e-9)) s = n.toExponential(6);
+          else s = String(parseFloat(n.toPrecision(12)));
           if (s.indexOf('e') >= 0) return s;
           const parts = s.split('.');
           parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -1688,13 +2387,23 @@
         }
 
         const pretty = (s) =>
-          s.replace(/\*/g, ' × ').replace(/\//g, ' ÷ ').replace(/\+/g, ' + ').replace(/-/g, ' − ');
+          s
+            .split(PI_S)
+            .join('π')
+            .split(E_S)
+            .join('e')
+            .replace(/\*/g, ' × ')
+            .replace(/\//g, ' ÷ ')
+            .replace(/\+/g, ' + ')
+            .replace(/-/g, ' − ')
+            .replace(/\^/g, ' ^ ');
 
         /* ═══════════════════════════════════════════════════════════
-           6. License state — free tier is exactly one calculation
+           6. Licence state — the free tier is exactly one calculation
            ═══════════════════════════════════════════════════════════ */
         const STORE = 'nexuscalc.license.v1';
-        const PRICE = 1299;
+        const TAPE_STORE = 'nexuscalc.tape.v1';
+        const PRICE_TEXT = '$1,299.00';
 
         const state = {
           pro: false,
@@ -1715,7 +2424,7 @@
             try {
               localStorage.setItem(
                 STORE,
-                JSON.stringify({ pro: this.pro, usedFree: this.usedFree, price: PRICE })
+                JSON.stringify({ pro: this.pro, usedFree: this.usedFree, price: 1299 })
               );
             } catch (_) {
               /* ignore */
@@ -1730,13 +2439,14 @@
         let goldTarget = 0;
 
         /* ═══════════════════════════════════════════════════════════
-           7. Calculator UI
+           7. Front face
            ═══════════════════════════════════════════════════════════ */
         const exprEl = document.getElementById('expr');
         const resultEl = document.getElementById('result');
         const displayEl = document.getElementById('display');
         const badgeEl = document.getElementById('badge');
         const hintEl = document.getElementById('hint');
+        const keysEl = document.getElementById('keys');
 
         let raw = '';
         let shownResult = '0';
@@ -1746,35 +2456,36 @@
           const o = opts || {};
           resultEl.className = 'result' + (o.error ? ' is-error' : '');
           resultEl.innerHTML = '';
-          const chars = String(text).split('');
-          chars.forEach((ch, i) => {
-            const s = document.createElement('span');
-            s.textContent = ch === ' ' ? ' ' : ch;
-            s.style.animationDelay = Math.min(i * 22, 420) + 'ms';
-            resultEl.appendChild(s);
-          });
+          String(text)
+            .split('')
+            .forEach((ch, i) => {
+              const s = document.createElement('span');
+              s.textContent = ch === ' ' ? ' ' : ch;
+              s.style.animationDelay = Math.min(i * 22, 420) + 'ms';
+              resultEl.appendChild(s);
+            });
           shownResult = text;
+          refreshLab();
         }
 
         function render() {
           exprEl.textContent = raw ? pretty(raw) : ' ';
+          refreshLab();
         }
 
         function refreshChrome() {
           document.body.classList.toggle('is-locked-ui', state.locked());
           document.body.classList.toggle('is-pro-ui', state.pro);
-          calcEl.classList.toggle('is-locked-ui', state.locked());
-          calcEl.classList.toggle('is-pro-ui', state.pro);
 
           if (state.pro) {
             badgeEl.className = 'badge is-pro';
             badgeEl.textContent = 'PRO · 평생';
-            hintEl.textContent = 'PRO 활성화됨 · = 무제한';
+            hintEl.textContent = 'PRO 활성화됨 · 뒷면 LAB 사용 가능';
             goldTarget = 1;
           } else if (state.locked()) {
             badgeEl.className = 'badge is-locked';
             badgeEl.textContent = 'LOCKED · $1,299';
-            hintEl.textContent = '무료 체험 종료 — = 를 누르면 결제 화면이 열립니다';
+            hintEl.textContent = '무료 체험 종료 — = 를 누르면 결제창이 열립니다';
             goldTarget = 0;
           } else {
             badgeEl.className = 'badge is-trial';
@@ -1782,29 +2493,28 @@
             hintEl.textContent = IDLE_HINT;
             goldTarget = 0;
           }
+          veil.hidden = state.pro;
+          labBadge.className = 'badge' + (state.pro ? ' is-pro' : '');
+          labBadge.textContent = state.pro ? 'PRO 활성' : 'PRO 전용';
         }
 
         function bump(strength) {
           shaderState.pulse = Math.min(1.2, shaderState.pulse + (strength || 0.35));
         }
-
         function shake(el) {
           el.classList.remove('shake');
           void el.offsetWidth;
           el.classList.add('shake');
         }
 
-        const isOp = (c) => '+-*/'.indexOf(c) >= 0;
+        const isOp = (c) => '+-*/^'.indexOf(c) >= 0;
 
         function input(k) {
           if (justEvaluated) {
-            // `raw` already holds the previous result, so an operator chains off
-            // it; a fresh digit starts a brand-new expression instead.
             if (/[\d.]/.test(k)) raw = '';
             justEvaluated = false;
             resultEl.classList.remove('is-redacted');
           }
-
           if (/[\d.]/.test(k)) {
             if (k === '.') {
               const tail = raw.match(/(\d*\.?\d*)$/)[1];
@@ -1826,9 +2536,8 @@
             raw += '%';
           } else if (k === 'neg') {
             const wrapped = raw.match(/\(-(\d*\.?\d*)\)$/);
-            if (wrapped) {
-              raw = raw.slice(0, wrapped.index) + wrapped[1];
-            } else {
+            if (wrapped) raw = raw.slice(0, wrapped.index) + wrapped[1];
+            else {
               const m = raw.match(/(\d*\.?\d*)$/);
               if (m && m[1]) raw = raw.slice(0, m.index) + '(-' + m[1] + ')';
             }
@@ -1861,34 +2570,12 @@
           return evaluate(src);
         }
 
-        function onEquals() {
-          // Already paid → normal calculator forever.
-          if (state.pro) {
-            runCalculation();
-            return;
-          }
-          // Free calculation already spent → straight to the paywall.
-          if (state.usedFree) {
-            audio.buzz();
-            shake(displayEl);
-            bump(0.8);
-            openPaywall();
-            return;
-          }
-          // The one and only free calculation.
-          const ok = runCalculation();
-          if (!ok) return;
-
-          state.usedFree = true;
-          state.save();
-
-          window.setTimeout(() => {
-            resultEl.classList.add('is-redacted');
-            audio.buzz();
-            refreshChrome();
-            bump(1.0);
-            window.setTimeout(openPaywall, 520);
-          }, 1150);
+        function errorText(code) {
+          if (code === 'DIV0') return '0으로 나눌 수 없습니다';
+          if (code === 'OVERFLOW') return '계산 범위를 초과했습니다';
+          if (code === 'EMPTY') return '식을 입력하세요';
+          if (code === 'DOMAIN') return '정의되지 않은 입력입니다';
+          return '식을 확인해 주세요';
         }
 
         function runCalculation() {
@@ -1896,27 +2583,46 @@
           try {
             value = compute();
           } catch (err) {
-            const msg =
-              err.message === 'DIV0'
-                ? '0으로 나눌 수 없습니다'
-                : err.message === 'OVERFLOW'
-                  ? '계산 범위를 초과했습니다'
-                  : err.message === 'EMPTY'
-                    ? '식을 입력하세요'
-                    : '식을 확인해 주세요';
-            paintResult(msg, { error: true });
+            paintResult(errorText(err.message), { error: true });
             audio.buzz();
             shake(displayEl);
             return false;
           }
+          const shownExpr = pretty(raw.replace(/[+\-*/^]$/, ''));
           paintResult(format(value));
-          exprEl.textContent = pretty(raw.replace(/[+\-*/]$/, '')) + ' =';
+          exprEl.textContent = shownExpr + ' =';
+          pushTape(shownExpr, value);
           raw = String(value);
           justEvaluated = true;
           audio.thock();
           bump(0.9);
-          burst(28, ['#3fd8ff', '#8b5cff', '#ffffff']);
+          burst(26, ['#3fd8ff', '#8b5cff', '#ffffff']);
           return true;
+        }
+
+        function onEquals() {
+          if (state.pro) {
+            runCalculation();
+            return;
+          }
+          if (state.usedFree) {
+            audio.buzz();
+            shake(displayEl);
+            bump(0.8);
+            openCheckout();
+            return;
+          }
+          if (!runCalculation()) return;
+
+          state.usedFree = true;
+          state.save();
+          window.setTimeout(() => {
+            resultEl.classList.add('is-redacted');
+            audio.buzz();
+            refreshChrome();
+            bump(1);
+            window.setTimeout(openCheckout, 520);
+          }, 1150);
         }
 
         function press(k) {
@@ -1942,12 +2648,218 @@
           }
         }
 
-        const keysEl = document.getElementById('keys');
         keysEl.addEventListener('click', (e) => {
           const btn = e.target.closest('.key');
-          if (btn) press(btn.dataset.k);
+          if (!btn || wasDragged()) return;
+          press(btn.dataset.k);
         });
 
+        /* ═══════════════════════════════════════════════════════════
+           8. Back face — NEXUS LAB (PRO only)
+           ═══════════════════════════════════════════════════════════ */
+        const labValue = document.getElementById('labValue');
+        const labBadge = document.getElementById('labBadge');
+        const angleBtn = document.getElementById('angleBtn');
+        const sciKeys = document.getElementById('sciKeys');
+        const tapeEl = document.getElementById('tape');
+        const tapeClear = document.getElementById('tapeClear');
+        const veil = document.getElementById('veil');
+
+        let degrees = true;
+        let tape = [];
+        try {
+          tape = JSON.parse(localStorage.getItem(TAPE_STORE) || '[]');
+          if (!Array.isArray(tape)) tape = [];
+        } catch (_) {
+          tape = [];
+        }
+
+        function saveTape() {
+          try {
+            localStorage.setItem(TAPE_STORE, JSON.stringify(tape.slice(0, 40)));
+          } catch (_) {
+            /* ignore */
+          }
+        }
+
+        function pushTape(expr, value) {
+          tape.unshift({ e: expr, v: value });
+          if (tape.length > 40) tape.pop();
+          saveTape();
+          renderTape();
+        }
+
+        function renderTape() {
+          tapeEl.innerHTML = '';
+          if (!tape.length) {
+            const p = document.createElement('p');
+            p.className = 'tape__empty';
+            p.textContent = '아직 계산 기록이 없습니다';
+            tapeEl.appendChild(p);
+            return;
+          }
+          tape.slice(0, 40).forEach((row) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'tape__row';
+            b.tabIndex = showingBack ? 0 : -1;
+            const e = document.createElement('span');
+            e.className = 'tape__expr';
+            e.textContent = row.e;
+            const v = document.createElement('span');
+            v.className = 'tape__val';
+            v.textContent = format(row.v);
+            b.append(e, v);
+            b.addEventListener('click', () => {
+              if (wasDragged() || !state.pro) return;
+              audio.ensure();
+              audio.click();
+              raw = String(row.v);
+              justEvaluated = true;
+              render();
+              paintResult(format(row.v));
+              flip();
+            });
+            tapeEl.appendChild(b);
+          });
+        }
+
+        function currentValue() {
+          try {
+            return compute();
+          } catch (_) {
+            return 0;
+          }
+        }
+
+        function refreshLab() {
+          if (!labValue) return;
+          const v = currentValue();
+          labValue.textContent = isFinite(v) ? format(v) : '—';
+        }
+
+        const factorial = (n) => {
+          if (n < 0 || Math.floor(n) !== n || n > 170) throw new Error('DOMAIN');
+          let out = 1;
+          for (let i = 2; i <= n; i++) out *= i;
+          return out;
+        };
+
+        const SCI = {
+          sqrt: { label: '√', fn: (v) => (v < 0 ? NaN : Math.sqrt(v)) },
+          sqr: { label: 'sqr', fn: (v) => v * v },
+          inv: { label: '1/', fn: (v) => (v === 0 ? NaN : 1 / v) },
+          sin: { label: 'sin', fn: (v) => Math.sin(degrees ? (v * Math.PI) / 180 : v) },
+          cos: { label: 'cos', fn: (v) => Math.cos(degrees ? (v * Math.PI) / 180 : v) },
+          tan: { label: 'tan', fn: (v) => Math.tan(degrees ? (v * Math.PI) / 180 : v) },
+          log: { label: 'log', fn: (v) => (v <= 0 ? NaN : Math.log10(v)) },
+          ln: { label: 'ln', fn: (v) => (v <= 0 ? NaN : Math.log(v)) },
+          fact: { label: '!', fn: factorial },
+        };
+
+        function applySci(key) {
+          audio.ensure();
+          if (!state.pro) {
+            audio.buzz();
+            shake(veil);
+            return;
+          }
+          // constants and the power operator just extend the expression
+          if (key === 'pi' || key === 'e') {
+            if (justEvaluated) {
+              raw = '';
+              justEvaluated = false;
+            }
+            if (raw && /[\d.)]$/.test(raw)) raw += '*';
+            raw += key === 'pi' ? PI_S : E_S;
+            render();
+            audio.click();
+            bump(0.3);
+            return;
+          }
+          if (key === 'pow') {
+            if (justEvaluated) justEvaluated = false;
+            if (!raw) return;
+            if (isOp(raw[raw.length - 1])) raw = raw.slice(0, -1);
+            raw += '^';
+            render();
+            audio.click();
+            bump(0.3);
+            return;
+          }
+
+          const def = SCI[key];
+          if (!def) return;
+          const v = currentValue();
+          let out;
+          try {
+            out = def.fn(v);
+          } catch (err) {
+            paintResult(errorText(err.message), { error: true });
+            audio.buzz();
+            shake(labValue);
+            return;
+          }
+          if (!isFinite(out)) {
+            paintResult(errorText('DOMAIN'), { error: true });
+            audio.buzz();
+            shake(labValue);
+            return;
+          }
+          const shownExpr = def.label + '(' + format(v) + ')';
+          pushTape(shownExpr, out);
+          raw = String(out);
+          justEvaluated = true;
+          exprEl.textContent = shownExpr + ' =';
+          paintResult(format(out));
+          audio.thock();
+          bump(0.8);
+          burst(18, ['#8b5cff', '#3fd8ff']);
+        }
+
+        sciKeys.addEventListener('click', (e) => {
+          const btn = e.target.closest('.skey');
+          if (!btn || wasDragged()) return;
+          applySci(btn.dataset.s);
+        });
+
+        angleBtn.addEventListener('click', () => {
+          if (wasDragged()) return;
+          if (!state.pro) return;
+          degrees = !degrees;
+          angleBtn.textContent = degrees ? 'DEG' : 'RAD';
+          audio.ensure();
+          audio.click();
+        });
+
+        tapeClear.addEventListener('click', () => {
+          if (wasDragged() || !state.pro) return;
+          tape = [];
+          saveTape();
+          renderTape();
+          audio.ensure();
+          audio.click();
+        });
+
+        document.getElementById('flipFront').addEventListener('click', () => {
+          if (!wasDragged()) flip();
+        });
+        document.getElementById('flipBack').addEventListener('click', () => {
+          if (!wasDragged()) flip();
+        });
+        document.getElementById('flipVeil').addEventListener('click', () => {
+          if (!wasDragged()) flip();
+        });
+        document.getElementById('veilCta').addEventListener('click', () => {
+          if (wasDragged()) return;
+          audio.ensure();
+          audio.click();
+          openCheckout();
+        });
+
+        /* ═══════════════════════════════════════════════════════════
+           9. Keyboard
+           ═══════════════════════════════════════════════════════════ */
         const KEYMAP = {
           Enter: '=',
           '=': '=',
@@ -1962,16 +2874,22 @@
           N: 'neg',
         };
         window.addEventListener('keydown', (e) => {
-          if (paywall.classList.contains('is-open')) return;
-          if (e.target && e.target.tagName === 'INPUT') return;
+          if (checkout.classList.contains('is-open')) return;
+          if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
+          if (e.key === 'f' || e.key === 'F') {
+            e.preventDefault();
+            flip();
+            return;
+          }
+          if (showingBack) return;
           let k = null;
           if (/^[0-9]$/.test(e.key)) k = e.key;
-          else if ('+-*/.%'.indexOf(e.key) >= 0 && e.key.length === 1) k = e.key;
+          else if ('+-*/.%^'.indexOf(e.key) >= 0 && e.key.length === 1) k = e.key;
           else if (KEYMAP[e.key]) k = KEYMAP[e.key];
           if (!k) return;
           e.preventDefault();
           press(k);
-          const btn = keysEl.querySelector('[data-k="' + (k === '*' ? '*' : k) + '"]');
+          const btn = keysEl.querySelector('[data-k="' + k + '"]');
           if (btn) {
             btn.classList.add('is-down');
             window.setTimeout(() => btn.classList.remove('is-down'), 120);
@@ -1979,137 +2897,308 @@
         });
 
         /* ═══════════════════════════════════════════════════════════
-           8. Paywall flow (demo only — nothing is sent anywhere)
+           10. Checkout — test-mode card sheet
            ═══════════════════════════════════════════════════════════ */
-        const paywall = document.getElementById('paywall');
-        const sheet = document.getElementById('sheet');
-        const pwBuy = document.getElementById('pwBuy');
-        const pwSuccess = document.getElementById('pwSuccess');
-        const pwStep1 = document.getElementById('pwStep1');
-        const pwStep2 = document.getElementById('pwStep2');
-        const toPayBtn = document.getElementById('toPayBtn');
-        const backBtn = document.getElementById('backBtn');
+        const checkout = document.getElementById('checkout');
+        const coGrid = document.getElementById('coGrid');
+        const coVeil = document.getElementById('coVeil');
+        const coStep = document.getElementById('coStep');
+        const coFill = document.getElementById('coFill');
+        const coErr = document.getElementById('coErr');
+        const receipt = document.getElementById('receipt');
         const payBtn = document.getElementById('payBtn');
-        const laterBtn = document.getElementById('laterBtn');
-        const doneBtn = document.getElementById('doneBtn');
-        const progress = document.getElementById('progress');
-        const progressFill = document.getElementById('progressFill');
-        const progressLabel = document.getElementById('progressLabel');
-        const formErr = document.getElementById('formErr');
-
-        function showStep(n) {
-          pwStep1.hidden = n !== 1;
-          pwStep2.hidden = n !== 2;
-          sheet.scrollIntoView({ block: 'nearest' });
-        }
-
-        function openPaywall() {
-          paywall.classList.add('is-open');
-          pwBuy.style.display = '';
-          pwSuccess.classList.remove('is-on');
-          progress.classList.remove('is-on');
-          progressFill.style.width = '0%';
-          payBtn.disabled = false;
-          laterBtn.disabled = false;
-          payBtn.textContent = '$1,299.00 결제하고 잠금 해제';
-          formErr.textContent = '';
-          showStep(1);
-        }
-
-        toPayBtn.addEventListener('click', () => {
-          audio.ensure();
-          audio.click();
-          showStep(2);
-        });
-        backBtn.addEventListener('click', () => {
-          audio.click();
-          showStep(1);
-        });
-        function closePaywall() {
-          paywall.classList.remove('is-open');
-        }
-
-        function dismissPaywall() {
-          audio.click();
-          closePaywall();
-          refreshChrome();
-          shake(displayEl);
-        }
-        laterBtn.addEventListener('click', dismissPaywall);
-        paywall.addEventListener('click', (e) => {
-          if (e.target === paywall && !payBtn.disabled) dismissPaywall();
-        });
-        window.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && paywall.classList.contains('is-open') && !payBtn.disabled) {
-            dismissPaywall();
-          }
-        });
-
-        /* ── card form ↔ 3D card mirror ── */
-        const fName = document.getElementById('fName');
+        const coClose = document.getElementById('coClose');
+        const fEmail = document.getElementById('fEmail');
         const fNum = document.getElementById('fNum');
         const fExp = document.getElementById('fExp');
         const fCvc = document.getElementById('fCvc');
-        const card3d = document.getElementById('card3d');
-        const cardNum = document.getElementById('cardNum');
-        const cardName = document.getElementById('cardName');
-        const cardExp = document.getElementById('cardExp');
-        const cardCvc = document.getElementById('cardCvc');
+        const fName = document.getElementById('fName');
+        const fZip = document.getElementById('fZip');
+        const cardGroup = document.getElementById('cardGroup');
+        const cardIcon = document.getElementById('cardIcon');
 
-        const groups = (digits) => (digits.match(/.{1,4}/g) || []).join(' ');
+        function openCheckout() {
+          checkout.classList.add('is-open');
+          document.body.classList.add('is-checkout');
+          coGrid.style.display = '';
+          receipt.classList.remove('is-on');
+          coVeil.classList.remove('is-on');
+          coFill.style.width = '0%';
+          coErr.textContent = '';
+          payBtn.disabled = !hvState.verified;
+          payBtn.textContent = PRICE_TEXT + ' 결제하기';
+          coClose.hidden = false;
+        }
+        function closeCheckout() {
+          checkout.classList.remove('is-open');
+          document.body.classList.remove('is-checkout');
+        }
+
+        coClose.addEventListener('click', () => {
+          audio.ensure();
+          audio.click();
+          closeCheckout();
+          refreshChrome();
+          if (!state.pro) shake(displayEl);
+        });
+        checkout.addEventListener('click', (e) => {
+          if (e.target === checkout && !coVeil.classList.contains('is-on')) coClose.click();
+        });
+        window.addEventListener('keydown', (e) => {
+          if (e.key !== 'Escape' || !checkout.classList.contains('is-open')) return;
+          if (!hvModal.hidden) {
+            hvModal.hidden = true; // the challenge closes first
+            return;
+          }
+          if (!coVeil.classList.contains('is-on') && !receipt.classList.contains('is-on')) {
+            coClose.click();
+          }
+        });
+
+        /* ── field formatting ── */
+        const groups = (d) => (d.match(/.{1,4}/g) || []).join(' ');
 
         fNum.addEventListener('input', () => {
           const digits = fNum.value.replace(/\D/g, '').slice(0, 16);
           fNum.value = groups(digits);
-          cardNum.textContent = groups(digits.padEnd(16, '•'));
-        });
-        fName.addEventListener('input', () => {
-          cardName.textContent = fName.value.toUpperCase() || 'YOUR NAME';
+          cardIcon.classList.toggle('is-known', digits.length >= 2);
         });
         fExp.addEventListener('input', () => {
           const d = fExp.value.replace(/\D/g, '').slice(0, 4);
-          fExp.value = d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d;
-          cardExp.textContent = fExp.value || 'MM/YY';
+          fExp.value = d.length > 2 ? d.slice(0, 2) + ' / ' + d.slice(2) : d;
         });
         fCvc.addEventListener('input', () => {
           fCvc.value = fCvc.value.replace(/\D/g, '').slice(0, 4);
-          cardCvc.textContent = fCvc.value || '•••';
         });
-        fCvc.addEventListener('focus', () => card3d.classList.add('is-flipped'));
-        fCvc.addEventListener('blur', () => card3d.classList.remove('is-flipped'));
+        cardGroup.addEventListener('focusin', () => cardGroup.classList.add('is-focus'));
+        cardGroup.addEventListener('focusout', () => cardGroup.classList.remove('is-focus'));
+
+        document.getElementById('testFill').addEventListener('click', () => {
+          fNum.value = '4242 4242 4242 4242';
+          fExp.value = '12 / 34';
+          fCvc.value = '424';
+          if (!fName.value) fName.value = 'HONG GILDONG';
+          if (!fEmail.value) fEmail.value = 'test@nexus.dev';
+          if (!fZip.value) fZip.value = '06236';
+          cardIcon.classList.add('is-known');
+          coErr.textContent = '';
+          cardGroup.classList.remove('is-bad');
+          audio.ensure();
+          audio.click();
+        });
+
+        function luhn(digits) {
+          let sum = 0;
+          let alt = false;
+          for (let i = digits.length - 1; i >= 0; i--) {
+            let d = digits.charCodeAt(i) - 48;
+            if (alt) {
+              d *= 2;
+              if (d > 9) d -= 9;
+            }
+            sum += d;
+            alt = !alt;
+          }
+          return digits.length > 0 && sum % 10 === 0;
+        }
 
         function validate() {
-          if (fName.value.trim().length < 2) return '이름을 입력해 주세요 (데모라 아무거나 괜찮습니다).';
-          if (fNum.value.replace(/\D/g, '').length !== 16) return '카드번호 16자리를 채워 주세요.';
-          if (!/^\d{2}\/\d{2}$/.test(fExp.value)) return '유효기간을 MM/YY 형식으로 입력해 주세요.';
-          const mm = parseInt(fExp.value.slice(0, 2), 10);
-          if (!(mm >= 1 && mm <= 12)) return '유효기간의 월은 01~12 사이여야 합니다.';
-          if (fCvc.value.length < 3) return 'CVC를 3자리 이상 입력해 주세요.';
+          cardGroup.classList.remove('is-bad');
+          document.querySelectorAll('.f').forEach((f) => f.classList.remove('is-bad'));
+
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fEmail.value.trim())) {
+            document.getElementById('fEmailWrap').classList.add('is-bad');
+            return { msg: '올바른 이메일 주소를 입력해 주세요.', el: fEmail };
+          }
+          const digits = fNum.value.replace(/\D/g, '');
+          if (digits.length !== 16 || !luhn(digits)) {
+            cardGroup.classList.add('is-bad');
+            return { msg: '카드번호가 올바르지 않습니다.', el: fNum };
+          }
+          const em = fExp.value.replace(/\D/g, '');
+          if (em.length !== 4) {
+            cardGroup.classList.add('is-bad');
+            return { msg: '유효기간을 MM/YY 형식으로 입력해 주세요.', el: fExp };
+          }
+          const mm = parseInt(em.slice(0, 2), 10);
+          const yy = parseInt(em.slice(2), 10);
+          if (mm < 1 || mm > 12) {
+            cardGroup.classList.add('is-bad');
+            return { msg: '유효기간의 월은 01~12 사이여야 합니다.', el: fExp };
+          }
+          const now = new Date();
+          const expiry = new Date(2000 + yy, mm, 0, 23, 59, 59);
+          if (expiry < now) {
+            cardGroup.classList.add('is-bad');
+            return { msg: '만료된 카드입니다.', el: fExp };
+          }
+          if (fCvc.value.length < 3) {
+            cardGroup.classList.add('is-bad');
+            return { msg: 'CVC를 입력해 주세요.', el: fCvc };
+          }
+          if (fName.value.trim().length < 2) {
+            document.getElementById('fNameWrap').classList.add('is-bad');
+            return { msg: '카드 소유자 이름을 입력해 주세요.', el: fName };
+          }
+          if (!fZip.value.trim()) {
+            document.getElementById('fZipWrap').classList.add('is-bad');
+            return { msg: '우편번호를 입력해 주세요.', el: fZip };
+          }
+          if (!hvState.verified) {
+            return { msg: '사람인지 확인해 주세요.', el: null };
+          }
           return null;
         }
 
+        /* ═══════════════════════════════════════════════════════════
+           11. Human verification
+           ═══════════════════════════════════════════════════════════ */
+        const hv = document.getElementById('hv');
+        const hvBox = document.getElementById('hvBox');
+        const hvCheck = document.getElementById('hvCheck');
+        const hvLabel = document.getElementById('hvLabel');
+        const hvModal = document.getElementById('hvModal');
+        const hvPanel = document.getElementById('hvPanel');
+        const hvPrompt = document.getElementById('hvPrompt');
+        const hvTiles = document.getElementById('hvTiles');
+        const hvMsg = document.getElementById('hvMsg');
+        const hvReload = document.getElementById('hvReload');
+        const hvVerify = document.getElementById('hvVerify');
+
+        const hvState = { verified: false, target: '7', answer: [], picked: new Set(), tries: 0 };
+        const TARGETS = ['7', 'π', '√', '×', '3', '∞', '∑'];
+        const NOISE = ['4', '9', '1', '8', '2', '5', '6', '0', '+', '−', '÷', '%', '≈', '∆', 'Ω', 'µ'];
+
+        function newChallenge() {
+          const target = TARGETS[Math.floor(Math.random() * TARGETS.length)];
+          const count = 2 + Math.floor(Math.random() * 3); // 2–4 correct tiles
+          const slots = [0, 1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5);
+          const answer = slots.slice(0, count).sort((a, b) => a - b);
+
+          hvState.target = target;
+          hvState.answer = answer;
+          hvState.picked = new Set();
+
+          const pool = NOISE.concat(TARGETS.filter((g) => g !== target));
+          hvPrompt.innerHTML = '';
+          hvPrompt.append(
+            document.createTextNode('아래에서 '),
+            Object.assign(document.createElement('b'), { textContent: target }),
+            document.createTextNode(' 이(가) 보이는 타일을 모두 선택하세요')
+          );
+
+          hvTiles.innerHTML = '';
+          for (let i = 0; i < 9; i++) {
+            const glyph = answer.indexOf(i) >= 0 ? target : pool[Math.floor(Math.random() * pool.length)];
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'tile';
+            b.dataset.i = String(i);
+            const g = document.createElement('span');
+            g.className = 'tile__g';
+            g.textContent = glyph;
+            g.style.fontSize = 22 + Math.random() * 16 + 'px';
+            g.style.transform =
+              'rotate(' + (Math.random() * 34 - 17).toFixed(1) + 'deg) skewX(' +
+              (Math.random() * 16 - 8).toFixed(1) + 'deg)';
+            g.style.opacity = (0.72 + Math.random() * 0.28).toFixed(2);
+            b.appendChild(g);
+            b.addEventListener('click', () => {
+              const idx = Number(b.dataset.i);
+              if (hvState.picked.has(idx)) hvState.picked.delete(idx);
+              else hvState.picked.add(idx);
+              b.classList.toggle('is-on', hvState.picked.has(idx));
+              audio.ensure();
+              audio.click();
+            });
+            hvTiles.appendChild(b);
+          }
+          hvMsg.textContent = '';
+        }
+
+        function setVerified(ok) {
+          hvState.verified = ok;
+          hv.classList.toggle('is-done', ok);
+          hv.classList.remove('is-checking');
+          hvCheck.setAttribute('aria-checked', String(ok));
+          hvLabel.textContent = ok ? '확인되었습니다' : '저는 로봇이 아닙니다';
+          hvBox.classList.remove('is-bad');
+          payBtn.disabled = !ok;
+        }
+
+        hvCheck.addEventListener('click', () => {
+          if (hvState.verified || hv.classList.contains('is-checking')) return;
+          audio.ensure();
+          audio.click();
+          hv.classList.add('is-checking');
+          hvLabel.textContent = '확인 중…';
+          window.setTimeout(() => {
+            hv.classList.remove('is-checking');
+            hvLabel.textContent = '저는 로봇이 아닙니다';
+            newChallenge();
+            hvModal.hidden = false;
+          }, 850);
+        });
+
+        hvModal.addEventListener('click', (e) => {
+          if (e.target === hvModal) hvModal.hidden = true;
+        });
+
+        hvReload.addEventListener('click', () => {
+          newChallenge();
+          audio.ensure();
+          audio.click();
+        });
+
+        hvVerify.addEventListener('click', () => {
+          audio.ensure();
+          const picked = Array.from(hvState.picked).sort((a, b) => a - b);
+          const ok =
+            picked.length === hvState.answer.length &&
+            picked.every((v, i) => v === hvState.answer[i]);
+          if (ok) {
+            hvModal.hidden = true;
+            setVerified(true);
+            audio.tone(880, 0.16, 'triangle', 0.06);
+            audio.tone(1320, 0.22, 'sine', 0.05, 0.08);
+          } else {
+            hvState.tries++;
+            audio.buzz();
+            shake(hvPanel);
+            hvMsg.textContent = '틀렸습니다. 다시 시도해 주세요.';
+            window.setTimeout(() => {
+              newChallenge();
+              hvMsg.textContent = '틀렸습니다. 다시 시도해 주세요.';
+            }, 420);
+          }
+        });
+
+        /* ═══════════════════════════════════════════════════════════
+           12. Pay (simulated) + receipt
+           ═══════════════════════════════════════════════════════════ */
         const STEPS = [
-          ['카드 확인 중…', 18, 520],
-          ['3D Secure 데모 인증…', 42, 620],
-          ['발급사 승인 요청 ($1,299.00)…', 72, 760],
-          ['라이선스 발급 중…', 92, 520],
-          ['완료', 100, 360],
+          ['카드 정보 확인 중…', 20, 620],
+          ['3D Secure 인증 (테스트)…', 45, 780],
+          ['발급사 승인 대기…', 74, 860],
+          ['라이선스 발급 중…', 93, 560],
+          ['완료', 100, 420],
         ];
 
         payBtn.addEventListener('click', () => {
           audio.ensure();
-          const err = validate();
-          if (err) {
-            formErr.textContent = err;
+          const bad = validate();
+          if (bad) {
+            coErr.textContent = bad.msg;
+            if (!hvState.verified) hvBox.classList.add('is-bad');
             audio.buzz();
-            shake(sheet);
+            shake(document.getElementById('co'));
+            if (bad.el) bad.el.focus();
             return;
           }
-          formErr.textContent = '';
+          coErr.textContent = '';
           payBtn.disabled = true;
-          backBtn.disabled = true;
-          payBtn.textContent = '처리 중…';
-          progress.classList.add('is-on');
+          coClose.hidden = true;
+          coVeil.classList.add('is-on');
 
           let i = 0;
           const step = () => {
@@ -2117,11 +3206,11 @@
               completePurchase();
               return;
             }
-            const [label, pct, wait] = STEPS[i++];
-            progressLabel.textContent = label;
-            progressFill.style.width = pct + '%';
+            const row = STEPS[i++];
+            coStep.textContent = row[0];
+            coFill.style.width = row[1] + '%';
             audio.tone(420 + i * 90, 0.08, 'triangle', 0.04);
-            window.setTimeout(step, wait);
+            window.setTimeout(step, row[2]);
           };
           step();
         });
@@ -2131,40 +3220,49 @@
           state.save();
           refreshChrome();
 
-          pwBuy.style.display = 'none';
-          pwSuccess.classList.add('is-on');
-          backBtn.disabled = false;
+          const last4 = fNum.value.replace(/\D/g, '').slice(-4) || '4242';
+          const now = new Date();
+          document.getElementById('rcCard').textContent = '•••• ' + last4;
+          document.getElementById('rcOrder').textContent =
+            'NX-' + Math.random().toString(36).slice(2, 10).toUpperCase();
+          document.getElementById('rcDate').textContent = now.toLocaleString('ko-KR');
+
+          coVeil.classList.remove('is-on');
+          coGrid.style.display = 'none';
+          receipt.classList.add('is-on');
           audio.chaching();
           bump(1.2);
-          burst(180, ['#ffcf5c', '#fff6d8', '#3fd8ff', '#8b5cff']);
+          burst(90, ['#ffcf5c', '#fff6d8', '#3fd8ff']);
 
           resultEl.classList.remove('is-redacted');
-          // Nothing about the card ever leaves the page — clear it anyway.
-          fCvc.value = '';
-          cardCvc.textContent = '•••';
+          fCvc.value = ''; // nothing ever left the page — clear it anyway
         }
 
-        doneBtn.addEventListener('click', () => {
+        document.getElementById('rcDone').addEventListener('click', () => {
+          audio.ensure();
           audio.click();
-          closePaywall();
-          burst(80, ['#ffcf5c', '#fff6d8']);
+          closeCheckout();
           clearAll();
+          burst(50, ['#ffcf5c', '#fff6d8']);
+          if (!showingBack) window.setTimeout(flip, 320); // show off the LAB
         });
 
         document.getElementById('resetBtn').addEventListener('click', () => {
           state.pro = false;
           state.usedFree = false;
           state.save();
-          closePaywall();
+          closeCheckout();
           refreshChrome();
           clearAll();
+          setVerified(false);
+          hvModal.hidden = true;
           shaderState.gold = 0;
           audio.ensure();
           audio.click();
         });
 
         /* ═══════════════════════════════════════════════════════════
-           9. Confetti / particle burst (pseudo-3D projection)
+           13. Confetti
            ═══════════════════════════════════════════════════════════ */
         const fx = document.getElementById('fx');
         const fxc = fx.getContext('2d');
@@ -2180,7 +3278,7 @@
         window.addEventListener('resize', sizeFx);
 
         function burst(count, palette) {
-          if (reduced) count = Math.min(count, 24);
+          if (reduced) count = Math.min(count, 20);
           const cx = window.innerWidth / 2;
           const cy = window.innerHeight * 0.45;
           for (let i = 0; i < count; i++) {
@@ -2200,12 +3298,11 @@
               color: palette[(Math.random() * palette.length) | 0],
             });
           }
-          if (parts.length > 900) parts = parts.slice(-900);
+          if (parts.length > 600) parts = parts.slice(-600);
         }
 
         function drawConfetti() {
           fxc.clearRect(0, 0, window.innerWidth, window.innerHeight);
-          if (!parts.length) return;
           for (let i = parts.length - 1; i >= 0; i--) {
             const p = parts[i];
             p.vy += 0.34;
@@ -2219,31 +3316,30 @@
               parts.splice(i, 1);
               continue;
             }
-            const scale = 1 / (1 + Math.max(-0.7, p.z));
-            const s = p.size * scale;
+            const sc = 1 / (1 + Math.max(-0.7, p.z));
+            const s = p.size * sc;
             fxc.save();
             fxc.globalAlpha = Math.max(0, Math.min(1, p.life)) * 0.95;
             fxc.translate(p.x, p.y);
             fxc.rotate(p.rot);
             fxc.fillStyle = p.color;
             fxc.shadowColor = p.color;
-            fxc.shadowBlur = 12 * scale;
+            fxc.shadowBlur = 12 * sc;
             fxc.fillRect(-s / 2, -s / 4, s, s / 2);
             fxc.restore();
           }
         }
 
         /* ═══════════════════════════════════════════════════════════
-           10. Boot
+           14. Boot
            ═══════════════════════════════════════════════════════════ */
+        setFaceState(false);
         refreshChrome();
+        renderTape();
         render();
         paintResult('0');
+        setVerified(false);
         requestAnimationFrame(loop);
-
-        if (state.locked()) {
-          hintEl.textContent = '무료 체험 종료 — = 를 누르면 결제 화면이 열립니다';
-        }
       })();
     </script>
   </body>
