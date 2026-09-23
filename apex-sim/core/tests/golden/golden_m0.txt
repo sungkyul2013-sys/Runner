@@ -1,0 +1,5 @@
+# golden state hashes for scene 'golden_m0' (sbc-cli golden golden_m0 --seconds 2 --every-steps 1000)
+1000 6b2babf60eea57fe
+2000 a9bb29d30c742d84
+3000 3b8c323ea5dabe20
+4000 b8843028a27cdd79
