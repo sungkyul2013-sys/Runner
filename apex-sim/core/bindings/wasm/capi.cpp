@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "sbc/builder.h"
+#include "sbc/proto_car.h"
 #include "sbc/sbc.h"
 #include "sbc/scenes.h"
 #include "sbc/stability.h"
@@ -19,6 +20,7 @@ struct sbc_world {
 namespace {
 
 bool validBody(sbc_world* w, int body) { return w && body >= 0 && body < w->world.bodyCount(); }
+bool validVehicle(sbc_world* w, int v) { return w && v >= 0 && v < w->world.vehicleCount(); }
 
 template <typename F>
 int guarded(F&& f) {
@@ -216,6 +218,91 @@ void sbc_body_check_stability(sbc_world* w, int b, double safety, double* out) {
   out[0] = r.minCriticalDt;
   out[1] = r.beamViolations;
   out[2] = r.nodeViolations;
+}
+
+int sbc_world_spawn_proto_car(sbc_world* w, double x, double y, double z, double yaw, float speed) {
+  if (!w) return -1;
+  return guarded([&] {
+    sbc::ProtoCarOptions o;
+    o.position = {x, y, z};
+    o.yaw = yaw;
+    o.speed = speed;
+    const sbc::VehicleBuild car = sbc::makeProtoCar(o);
+    const int body = w->world.addBody(car.body);
+    return w->world.addVehicle(body, car.vehicle);
+  });
+}
+
+int sbc_world_vehicle_count(sbc_world* w) { return w ? w->world.vehicleCount() : 0; }
+int sbc_vehicle_body(sbc_world* w, int v) { return validVehicle(w, v) ? w->world.vehicleBody(v) : -1; }
+int sbc_vehicle_wheel_count(sbc_world* w, int v) {
+  return validVehicle(w, v) ? static_cast<int>(w->world.vehicleDesc(v).wheels.size()) : 0;
+}
+
+int sbc_vehicle_set_input(sbc_world* w, int v, float throttle, float brake, float steer, float handbrake, int mode,
+                          int shift, int aids) {
+  if (!validVehicle(w, v)) return -1;
+  sbc::VehicleInput in;
+  in.throttle = throttle;
+  in.brake = brake;
+  in.steer = steer;
+  in.handbrake = handbrake;
+  in.mode = mode >= 0 && mode <= 3 ? static_cast<sbc::GearMode>(mode) : sbc::GearMode::kDrive;
+  in.shiftRequest = static_cast<int8_t>(shift > 0 ? 1 : (shift < 0 ? -1 : 0));
+  in.abs = (aids & 1) != 0;
+  in.tcs = (aids & 2) != 0;
+  w->world.setVehicleInput(v, in);
+  return 0;
+}
+
+int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
+  if (!validVehicle(w, v) || !out) return -1;
+  const sbc::VehicleTelemetry& t = w->world.vehicleTelemetry(v);
+  const sbc::VehicleDesc& d = w->world.vehicleDesc(v);
+  const int wheels = static_cast<int>(t.wheels.size());
+  const int needed = SBC_VT_HEADER + SBC_VT_WHEEL * wheels;
+  if (capacity < needed) return -needed;
+  for (int i = 0; i < needed; ++i) out[i] = 0.0f;
+  auto put3 = [out](int at, sbc::Vec3 v3) { out[at] = v3.x; out[at + 1] = v3.y; out[at + 2] = v3.z; };
+  out[0] = static_cast<float>(t.time);
+  out[1] = t.speed;
+  out[2] = t.engineRpm;
+  out[3] = t.engineTorque;
+  out[4] = t.clutchTorque;
+  out[5] = static_cast<float>(t.gear);
+  out[6] = static_cast<float>((t.shifting ? 1 : 0) | (t.engineRunning ? 2 : 0) | (t.tcsActive ? 4 : 0));
+  out[7] = t.throttle;
+  out[8] = t.brake;
+  out[9] = t.steer;
+  out[10] = t.clutch;
+  out[11] = t.accelLong;
+  out[12] = t.accelLat;
+  out[13] = t.odometer;
+  put3(14, t.position);
+  put3(17, t.forward);
+  put3(20, t.up);
+  put3(23, t.left);
+  put3(26, d.refCenterModel);
+  out[29] = static_cast<float>(wheels);
+  for (int i = 0; i < wheels; ++i) {
+    const sbc::WheelTelemetry& wt = t.wheels[static_cast<size_t>(i)];
+    float* o = out + SBC_VT_HEADER + SBC_VT_WHEEL * i;
+    o[0] = wt.spin;
+    o[1] = wt.angle;
+    o[2] = wt.load;
+    o[3] = wt.slipRatio;
+    o[4] = wt.slipAngle;
+    o[5] = wt.forceX;
+    o[6] = wt.forceY;
+    o[7] = wt.brakeTorque;
+    o[8] = wt.driveTorque;
+    o[9] = wt.loadedRadius;
+    o[10] = static_cast<float>((wt.contact ? 1 : 0) | (wt.absActive ? 2 : 0));
+    o[11] = wt.center.x; o[12] = wt.center.y; o[13] = wt.center.z;
+    o[14] = wt.axis.x; o[15] = wt.axis.y; o[16] = wt.axis.z;
+    o[17] = d.wheels[static_cast<size_t>(i)].tyre.radius;
+  }
+  return needed;
 }
 
 }  // extern "C"

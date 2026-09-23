@@ -1,6 +1,7 @@
 #include "sbc/scenes.h"
 
 #include "sbc/builder.h"
+#include "sbc/proto_car.h"
 
 namespace sbc {
 namespace {
@@ -63,11 +64,55 @@ void applyDefaultContactPairs(World& w) {
   steelSteel.staticFriction = 0.7f;
   steelSteel.kineticFriction = 0.5f;
   w.setContactPair(material::kSteel, material::kSteel, steelSteel);
+  // Tyre tread pairs (§11.1 reference summer tyre). For kTread nodes only the normal law, staticFriction (the
+  // surface µ scale of the tyre model), rollingResistance and treadShare are used. The contact spring is the tyre's
+  // vertical rate: 0.2 kg tread nodes at 110 Hz → ≈ 96 kN/m each, ≈ 200 kN/m secant at the 1.5 cm static
+  // deflection of a 3 kN wheel load. A tenth of it acts on the tread node (carcass deformation), the rest on the
+  // wheel (A§4.7). The discrete tread still adds ≈ 0.005 (10 m/s) … 0.010 (40 m/s) of speed-dependent rolling loss
+  // on top of rollingResistance (see KNOWN_ISSUES P10), so the pair's own Crr is set to the low end of §11.1.
+  ContactPairParams rubberAsphalt;
+  rubberAsphalt.staticFriction = 1.0f;
+  rubberAsphalt.kineticFriction = 0.8f;
+  rubberAsphalt.normalFrequencyHz = 110.0f;
+  rubberAsphalt.normalDampingRatio = 0.05f;
+  rubberAsphalt.rollingResistance = 0.010f;
+  rubberAsphalt.treadShare = 0.1f;
+  w.setContactPair(material::kRubber, material::kAsphalt, rubberAsphalt);
+  ContactPairParams rubberConcrete = rubberAsphalt;
+  rubberConcrete.staticFriction = 0.95f;
+  rubberConcrete.kineticFriction = 0.75f;
+  rubberConcrete.rollingResistance = 0.009f;
+  w.setContactPair(material::kRubber, material::kConcrete, rubberConcrete);
+  ContactPairParams rubberSteel = rubberAsphalt;
+  rubberSteel.staticFriction = 0.7f;
+  rubberSteel.kineticFriction = 0.6f;
+  w.setContactPair(material::kRubber, material::kSteel, rubberSteel);
+  w.setContactPair(material::kRubber, material::kRubber, rubberAsphalt);
+  ContactPairParams steelAsphalt;  // rim or body scraping the road
+  steelAsphalt.staticFriction = 0.55f;
+  steelAsphalt.kineticFriction = 0.45f;
+  w.setContactPair(material::kSteel, material::kAsphalt, steelAsphalt);
 }
 
-std::vector<std::string> sceneNames() { return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0"}; }
+std::vector<std::string> sceneNames() {
+  return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0", "proto_drive"};
+}
 
 std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o) {
+  if (name == "proto_drive") {
+    // Driving ground (M1): asphalt plane, the APEX Proto car at the origin facing +Z, a few obstacles to hit.
+    WorldParams wp;
+    wp.threadCount = o.threads;
+    wp.trackEnergy = o.trackEnergy;
+    auto w = std::make_unique<World>(wp);
+    applyDefaultContactPairs(*w);
+    w->addGroundPlane(0.0, material::kAsphalt);
+    w->addStaticBox({-12.0, 1.0, 60.0}, {6.0f, 1.0f, 0.5f}, 0.0, material::kConcrete);  // wall across a side lane
+    w->addStaticBox({15.0, 0.5, 30.0}, {0.4f, 0.5f, 0.4f}, 0.0, material::kConcrete);   // bollard
+    const VehicleBuild car = makeProtoCar();
+    w->addVehicle(w->addBody(car.body), car.vehicle);
+    return w;
+  }
   if (name == "sandbox") {
     // Empty test ground for the web sandbox: a concrete wall 20 m down +x, a 6 m ramp to −x and a pillar.
     auto w = baseWorld(o);

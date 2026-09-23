@@ -29,6 +29,9 @@ inline constexpr int kBeamTypeCount = 6;
 namespace node_flag {
 inline constexpr uint8_t kCollide = 1u << 0;  // takes part in collisions
 inline constexpr uint8_t kFixed = 1u << 1;    // immovable anchor (infinite mass)
+// Tyre tread node (§6 hybrid tyre): static contacts give it only the normal (penalty) force and report that force
+// in Body::patch*; the tangential force comes from the owning vehicle's slip-based tyre model instead of node friction.
+inline constexpr uint8_t kTread = 1u << 2;
 }  // namespace node_flag
 
 struct NodeDesc {
@@ -130,12 +133,19 @@ struct Body {
   std::vector<float> fdBeamX, fdBeamY, fdBeamZ;
   std::vector<float> fdContactX, fdContactY, fdContactZ;
   std::vector<float> fdFrictionX, fdFrictionY, fdFrictionZ;
+  std::vector<float> fdExternalX, fdExternalY, fdExternalZ;  // actuator forces (engine, aero): work → losses.external
 
   // Static friction ("stick anchor") of each node's primary static contact, stored as the tangential spring
   // displacement δ = x − anchor, integrated as δ += v·dt. Keeping δ itself (rather than an absolute anchor point)
   // preserves full precision when the node's float position can no longer resolve sub-ulp motion.
   std::vector<float> stickX, stickY, stickZ;
   std::vector<int32_t> anchorContact;  // id of the surface the anchor lives on, −1 = none
+
+  // Static contact result of kTread nodes for the current step (other nodes: 0): Σ contact spring force magnitude
+  // [N] (node share + wheel share, no damping), force-weighted normal Σ F·n [N], and the deepest surface's material.
+  std::vector<float> patchForce;
+  std::vector<float> patchNx, patchNy, patchNz;
+  std::vector<uint16_t> patchMaterial;
 
   // ---- beams (sorted by type) ----
   std::vector<int32_t> beamA, beamB;

@@ -9,6 +9,7 @@
 #include "internal.h"
 #include "sbc/det_math.h"
 #include "sbc/job_system.h"
+#include "vehicle_impl.h"
 
 namespace sbc {
 namespace {
@@ -158,6 +159,7 @@ int World::addBody(const BodyDesc& desc) {
   bodies_.push_back(std::move(b));
   bodyStats_.emplace_back();
   scratch_.emplace_back();
+  bodyVehicles_.emplace_back();
   bodies_.back().losses.external += own + ContactSolver::contactPotential(*this) - contactBefore;
   return static_cast<int>(bodies_.size()) - 1;
 }
@@ -170,6 +172,34 @@ void World::addBodyVelocity(int bodyIndex, Vec3 dv) {
     b.vx[i] += dv.x; b.vy[i] += dv.y; b.vz[i] += dv.z;
   }
   b.losses.external += kineticEnergy(b) - before;
+}
+
+int World::addVehicle(int body, const VehicleDesc& desc) {
+  if (body < 0 || body >= bodyCount()) throw std::out_of_range("addVehicle: body index");
+  vehicles_.push_back(std::make_unique<Vehicle>(desc, body, bodies_[static_cast<size_t>(body)]));
+  const int id = static_cast<int>(vehicles_.size()) - 1;
+  bodyVehicles_[static_cast<size_t>(body)].push_back(id);
+  return id;
+}
+
+int World::vehicleBody(int v) const { return vehicles_.at(static_cast<size_t>(v))->bodyIndex(); }
+const VehicleDesc& World::vehicleDesc(int v) const { return vehicles_.at(static_cast<size_t>(v))->desc(); }
+const VehicleInput& World::vehicleInput(int v) const { return vehicles_.at(static_cast<size_t>(v))->input(); }
+const VehicleTelemetry& World::vehicleTelemetry(int v) const {
+  return vehicles_.at(static_cast<size_t>(v))->telemetry();
+}
+
+void World::setVehicleInput(int v, const VehicleInput& in) {
+  VehicleInput& dst = vehicles_.at(static_cast<size_t>(v))->input();
+  auto finite = [](float x, float lo, float hi) { return std::isfinite(x) ? std::min(std::max(x, lo), hi) : 0.0f; };
+  dst.throttle = finite(in.throttle, 0.0f, 1.0f);
+  dst.brake = finite(in.brake, 0.0f, 1.0f);
+  dst.steer = finite(in.steer, -1.0f, 1.0f);
+  dst.handbrake = finite(in.handbrake, 0.0f, 1.0f);
+  dst.mode = in.mode;
+  dst.abs = in.abs;
+  dst.tcs = in.tcs;
+  if (in.shiftRequest != 0) dst.shiftRequest = in.shiftRequest > 0 ? 1 : -1;
 }
 
 void World::step(int count) {
@@ -210,18 +240,20 @@ void World::computeInternalForces(int bi) {
   }
   if (params_.trackEnergy) {
     for (auto* a : {&b.fdBeamX, &b.fdBeamY, &b.fdBeamZ, &b.fdContactX, &b.fdContactY, &b.fdContactZ, &b.fdFrictionX,
-                    &b.fdFrictionY, &b.fdFrictionZ}) {
+                    &b.fdFrictionY, &b.fdFrictionZ, &b.fdExternalX, &b.fdExternalY, &b.fdExternalZ}) {
       std::fill(a->begin(), a->end(), 0.0f);
     }
     detail::updateHydros(b, params_.dt);
     st.beamsBroken = detail::accumulateBeamForces<true>(b);
     detail::accumulateConstraintForces<true>(b);
     st.staticContacts = ContactSolver::staticContacts<true>(*this, bi);
+    for (const int v : bodyVehicles_[static_cast<size_t>(bi)]) vehicles_[static_cast<size_t>(v)]->step(*this, b, true);
   } else {
     detail::updateHydros(b, params_.dt);
     st.beamsBroken = detail::accumulateBeamForces<false>(b);
     detail::accumulateConstraintForces<false>(b);
     st.staticContacts = ContactSolver::staticContacts<false>(*this, bi);
+    for (const int v : bodyVehicles_[static_cast<size_t>(bi)]) vehicles_[static_cast<size_t>(v)]->step(*this, b, false);
   }
 }
 
@@ -232,7 +264,7 @@ void World::integrateBody(int bi) {
   if (params_.trackEnergy) {
     // Work of dissipative forces over the step, W = F·v_mid·dt with v_mid = v_n + ½a·dt, which matches the
     // kinetic-energy change of symplectic Euler exactly (ΔKE = F·v_mid·dt).
-    double wBeam = 0.0, wContact = 0.0, wFriction = 0.0;
+    double wBeam = 0.0, wContact = 0.0, wFriction = 0.0, wExternal = 0.0;
     for (int i = 0; i < n; ++i) {
       const float im = b.invMass[i];
       if (im == 0.0f) continue;
@@ -242,10 +274,12 @@ void World::integrateBody(int bi) {
       wBeam += b.fdBeamX[i] * mx + b.fdBeamY[i] * my + b.fdBeamZ[i] * mz;
       wContact += b.fdContactX[i] * mx + b.fdContactY[i] * my + b.fdContactZ[i] * mz;
       wFriction += b.fdFrictionX[i] * mx + b.fdFrictionY[i] * my + b.fdFrictionZ[i] * mz;
+      wExternal += b.fdExternalX[i] * mx + b.fdExternalY[i] * my + b.fdExternalZ[i] * mz;
     }
     b.losses.beamDamping -= wBeam * dt;
     b.losses.contactDamping -= wContact * dt;
     b.losses.friction -= wFriction * dt;
+    b.losses.external += wExternal * dt;
   }
   // Symplectic (semi-implicit) Euler, §4.2: v ← v + (F/m)·dt, then x ← x + v·dt.
   for (int i = 0; i < n; ++i) {
@@ -323,7 +357,9 @@ uint64_t World::stateHash() const {
     h.vec(b.vx); h.vec(b.vy); h.vec(b.vz);
     h.vec(b.stickX); h.vec(b.stickY); h.vec(b.stickZ); h.vec(b.anchorContact);
     h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.broken);
+    h.vec(b.hydroInputs);
   }
+  for (const auto& v : vehicles_) v->hashState(h);
   return h.h;
 }
 

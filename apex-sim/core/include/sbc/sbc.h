@@ -72,6 +72,29 @@ void sbc_body_beam_strain(sbc_world* w, int body, float* out);
 /* Stability check (§4.2) at the world dt with safety s. Writes [min critical dt, beam violations, node violations]. */
 void sbc_body_check_stability(sbc_world* w, int body, double safety, double* out3);
 
+/* ---- vehicles (§6–§10) ---- */
+/* Spawns the procedural APEX Proto car (sbc/proto_car.h) with its model origin at (x, y, z), heading yaw [rad] about
+   +Y and forward speed [m/s]. Returns the vehicle id, or −1. */
+int sbc_world_spawn_proto_car(sbc_world* w, double x, double y, double z, double yaw, float speed);
+int sbc_world_vehicle_count(sbc_world* w);
+int sbc_vehicle_body(sbc_world* w, int vehicle);
+int sbc_vehicle_wheel_count(sbc_world* w, int vehicle);
+/* mode: 0 drive, 1 reverse, 2 neutral, 3 manual; shift: +1 / −1 manual shift request; aids: bit 0 ABS, bit 1 TCS. */
+int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake, float steer, float handbrake,
+                          int mode, int shift, int aids);
+/* Packed telemetry: SBC_VT_HEADER floats, then SBC_VT_WHEEL floats per wheel (layout below). Returns the number of
+   floats written, or −(floats needed) when capacity is too small. Positions are body-local (add sbc_body_origin). */
+#define SBC_VT_HEADER 32
+#define SBC_VT_WHEEL 20
+/* header: 0 time, 1 speed [m/s], 2 engine rpm, 3 engine torque [N·m], 4 clutch torque, 5 gear (−1 R, 0 N),
+   6 flags (1 shifting, 2 engine running, 4 TCS active), 7 throttle, 8 brake, 9 steer, 10 clutch, 11 accel long,
+   12 accel lat [m/s²], 13 odometer [m], 14–16 chassis position, 17–19 forward, 20–22 up, 23–25 left,
+   26–28 refCenter in the model frame, 29 wheel count, 30–31 reserved
+   wheel: 0 spin [rad/s], 1 spin angle [rad], 2 load [N], 3 slip ratio, 4 slip angle [rad], 5 Fx, 6 Fy [N],
+   7 brake torque, 8 drive torque [N·m], 9 loaded radius [m], 10 flags (1 contact, 2 ABS active), 11–13 centre,
+   14–16 axis (points left), 17 tyre radius [m], 18–19 reserved */
+int sbc_vehicle_telemetry(sbc_world* w, int vehicle, float* out, int capacity);
+
 #ifdef __cplusplus
 }
 #endif

@@ -31,5 +31,11 @@ _sbc_body_beam_a
 _sbc_body_beam_b
 _sbc_body_beam_strain
 _sbc_body_check_stability
+_sbc_world_spawn_proto_car
+_sbc_world_vehicle_count
+_sbc_vehicle_body
+_sbc_vehicle_wheel_count
+_sbc_vehicle_set_input
+_sbc_vehicle_telemetry
 _malloc
 _free

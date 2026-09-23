@@ -29,7 +29,8 @@ Body buildBody(const BodyDesc& desc) {
   auto resizeNodes = [n](auto&... arrays) { (arrays.assign(n, {}), ...); };
   resizeNodes(b.px, b.py, b.pz, b.vx, b.vy, b.vz, b.fx, b.fy, b.fz, b.mass, b.invMass, b.radius, b.material,
               b.flags, b.fdBeamX, b.fdBeamY, b.fdBeamZ, b.fdContactX, b.fdContactY, b.fdContactZ, b.fdFrictionX,
-              b.fdFrictionY, b.fdFrictionZ, b.stickX, b.stickY, b.stickZ);
+              b.fdFrictionY, b.fdFrictionZ, b.fdExternalX, b.fdExternalY, b.fdExternalZ, b.stickX, b.stickY, b.stickZ,
+              b.patchForce, b.patchNx, b.patchNy, b.patchNz, b.patchMaterial);
   b.anchorContact.assign(n, -1);
 
   for (size_t i = 0; i < n; ++i) {

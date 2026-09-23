@@ -1,6 +1,9 @@
 #include "sbc/builder.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <utility>
 #include <stdexcept>
 
 #include "sbc/det_math.h"
@@ -89,6 +92,147 @@ BodyDesc makeLattice(const LatticeParams& p) {
     }
   }
   return d;
+}
+
+PressureWheelNodes addPressureWheel(BodyDesc& d, const PressureWheelParams& p) {
+  const int nNodes = static_cast<int>(d.nodes.size());
+  if (p.axleRight < 0 || p.axleRight >= nNodes || p.axleLeft < 0 || p.axleLeft >= nNodes || p.axleRight == p.axleLeft) {
+    throw std::invalid_argument("addPressureWheel: axle node index");
+  }
+  if (p.segments < 8 || !(p.tyreRadius > p.rimRadius) || !(p.rimRadius > 0.0f)) {
+    throw std::invalid_argument("addPressureWheel: geometry");
+  }
+  const DVec3 axleR = toDouble(d.nodes[static_cast<size_t>(p.axleRight)].position);
+  const DVec3 axleL = toDouble(d.nodes[static_cast<size_t>(p.axleLeft)].position);
+  auto unit = [](DVec3 v) {
+    const double l = std::sqrt(dot(v, v));
+    return v * (1.0 / l);
+  };
+  const DVec3 axis = unit(axleL - axleR);
+  DVec3 hint = toDouble(p.upHint);
+  if (std::fabs(dot(hint, axis)) > 0.9) hint = {0.0, 0.0, 1.0};
+  const DVec3 u = unit(hint - axis * dot(hint, axis));
+  const DVec3 w = cross(axis, u);
+  const DVec3 c = toDouble(p.center);
+  const int n = p.segments;
+  constexpr double kTwoPi = 6.283185307179586;
+
+  PressureWheelNodes out;
+  // Node order per segment j: tread A (right, −axis), tread B (left, +axis), rim A, rim B.
+  const int base = nNodes;
+  auto treadA = [&](int j) { return base + 4 * (((j % n) + n) % n); };
+  auto treadB = [&](int j) { return treadA(j) + 1; };
+  auto rimA = [&](int j) { return treadA(j) + 2; };
+  auto rimB = [&](int j) { return treadA(j) + 3; };
+  const double treadR = p.tyreRadius - p.treadNodeRadius;
+  for (int j = 0; j < n; ++j) {
+    // Row B sits half a segment ahead of row A: the two rows meet the road alternately, which halves the
+    // "polygon" ripple of the contact force as the wheel rolls.
+    const double thA = kTwoPi * j / n, thB = kTwoPi * (j + 0.5) / n;
+    auto node = [&](double side, double halfWidth, double radius, float mass, float nodeRadius, uint16_t material,
+                    uint8_t flags) {
+      const double th = side < 0.0 ? thA : thB;
+      const DVec3 radial = u * det::cos(th) + w * det::sin(th);
+      NodeDesc nd;
+      nd.position = toFloat(c + axis * (side * halfWidth) + radial * radius);
+      nd.mass = mass;
+      nd.radius = nodeRadius;
+      nd.material = material;
+      nd.flags = flags;
+      d.nodes.push_back(nd);
+    };
+    const uint8_t treadFlags = node_flag::kCollide | node_flag::kTread;
+    node(-1.0, 0.5 * p.treadWidth, treadR, p.treadNodeMass, p.treadNodeRadius, p.treadMaterial, treadFlags);
+    node(+1.0, 0.5 * p.treadWidth, treadR, p.treadNodeMass, p.treadNodeRadius, p.treadMaterial, treadFlags);
+    node(-1.0, 0.5 * p.rimWidth, p.rimRadius, p.rimNodeMass, p.rimNodeRadius, p.rimMaterial, node_flag::kCollide);
+    node(+1.0, 0.5 * p.rimWidth, p.rimRadius, p.rimNodeMass, p.rimNodeRadius, p.rimMaterial, node_flag::kCollide);
+    out.tread.push_back(treadA(j));
+    out.tread.push_back(treadB(j));
+    out.rim.push_back(rimA(j));
+    out.rim.push_back(rimB(j));
+  }
+  for (int j = 0; j < 4 * n; ++j) out.all.push_back(base + j);
+
+  auto position = [&](int i) { return toDouble(d.nodes[static_cast<size_t>(i)].position); };
+  auto massOf = [&](int i) { return d.nodes[static_cast<size_t>(i)].mass; };
+  auto beam = [&](int a, int b, float k, float zeta, float restShrink = 0.0f) {
+    BeamDesc bd;
+    bd.a = a;
+    bd.b = b;
+    bd.stiffness = k;
+    const float ma = massOf(a), mb = massOf(b);
+    const float mr = ma * mb / (ma + mb);
+    bd.damping = 2.0f * zeta * std::sqrt(k * mr);
+    if (restShrink > 0.0f) {
+      const DVec3 dv = position(b) - position(a);
+      bd.restLength = static_cast<float>(std::sqrt(dot(dv, dv))) - restShrink;
+    }
+    d.beams.push_back(bd);
+  };
+  // Hoop tension of one belt ring under the structural gauge: T = p·(w/2)·R. Pre-shrink the circumferential beams
+  // by T/k so the inflated belt sits at its design radius.
+  const float hoop = p.structuralPressure * 0.5f * p.treadWidth * p.tyreRadius;
+  const float shrink = p.structuralPressure > 0.0f ? hoop / p.treadStiffness : 0.0f;
+  for (int j = 0; j < n; ++j) {
+    // rim: rings, across, diagonals, spokes to both axle nodes
+    beam(rimA(j), rimA(j + 1), p.rimStiffness, p.rimDampingRatio);
+    beam(rimB(j), rimB(j + 1), p.rimStiffness, p.rimDampingRatio);
+    beam(rimA(j), rimB(j), p.rimStiffness, p.rimDampingRatio);      // zig-zag across the staggered rows
+    beam(rimB(j), rimA(j + 1), p.rimStiffness, p.rimDampingRatio);
+    beam(rimA(j), p.axleRight, p.rimStiffness, p.rimDampingRatio);
+    beam(rimA(j), p.axleLeft, p.rimStiffness, p.rimDampingRatio);
+    beam(rimB(j), p.axleRight, p.rimStiffness, p.rimDampingRatio);
+    beam(rimB(j), p.axleLeft, p.rimStiffness, p.rimDampingRatio);
+    // belt
+    beam(treadA(j), treadA(j + 1), p.treadStiffness, p.treadDampingRatio, shrink);
+    beam(treadB(j), treadB(j + 1), p.treadStiffness, p.treadDampingRatio, shrink);
+    beam(treadA(j), treadB(j), p.treadStiffness, p.treadDampingRatio);
+    beam(treadB(j), treadA(j + 1), p.treadStiffness, p.treadDampingRatio);
+    beam(treadA(j), treadA(j + 2), p.treadBendStiffness, p.treadDampingRatio);
+    beam(treadB(j), treadB(j + 2), p.treadBendStiffness, p.treadDampingRatio);
+    // sidewalls
+    for (const auto& [t, r] : {std::pair<int, int>{treadA(j), rimA(j)}, std::pair<int, int>{treadB(j), rimB(j)}}) {
+      beam(t, r, std::max(p.sidewallTensionStiffness, p.sidewallStiffness), p.sidewallDampingRatio);
+      d.beams.back().type = BeamType::kAnisotropic;
+      d.beams.back().compressionStiffness = p.sidewallStiffness;
+    }
+    beam(treadA(j), rimA(j + 1), p.sidewallShearStiffness, p.sidewallDampingRatio);
+    beam(treadA(j), rimA(j - 1), p.sidewallShearStiffness, p.sidewallDampingRatio);
+    beam(treadB(j), rimB(j + 1), p.sidewallShearStiffness, p.sidewallDampingRatio);
+    beam(treadB(j), rimB(j - 1), p.sidewallShearStiffness, p.sidewallDampingRatio);
+    // cross (lateral carcass stiffness): each tread node to both staggered neighbours on the other rim ring
+    const float cross = 0.5f * p.sidewallCrossStiffness;
+    beam(treadA(j), rimB(j), cross, p.sidewallDampingRatio);
+    beam(treadA(j), rimB(j - 1), cross, p.sidewallDampingRatio);
+    beam(treadB(j), rimA(j), cross, p.sidewallDampingRatio);
+    beam(treadB(j), rimA(j + 1), cross, p.sidewallDampingRatio);
+  }
+
+  if (p.structuralPressure > 0.0f) {
+    PressureGroupDesc g;
+    g.gaugePressure = p.structuralPressure;
+    // Outward (from the air cavity) winding: `sign` = +1 radially out, −1 radially in, or 0 with an axial outward.
+    auto tri = [&](int a, int b, int cc, double sign, DVec3 axial) {
+      const std::array<int32_t, 3> t{a, b, cc};
+      const DVec3 centroid = (position(a) + position(b) + position(cc)) * (1.0 / 3.0) - c;
+      const DVec3 radial = centroid - axis * dot(centroid, axis);
+      const DVec3 outward = sign != 0.0 ? radial * sign : axial;
+      const DVec3 nrm = cross(position(b) - position(a), position(cc) - position(a));
+      g.triangles.push_back(dot(nrm, outward) >= 0.0 ? t : std::array<int32_t, 3>{a, cc, b});
+    };
+    for (int j = 0; j < n; ++j) {
+      tri(treadA(j), treadA(j + 1), treadB(j), 1.0, {});          // belt (strip over the staggered rows)
+      tri(treadB(j), treadA(j + 1), treadB(j + 1), 1.0, {});
+      tri(rimA(j), rimA(j + 1), rimB(j), -1.0, {});               // rim bed
+      tri(rimB(j), rimA(j + 1), rimB(j + 1), -1.0, {});
+      tri(rimA(j), rimA(j + 1), treadA(j + 1), 0.0, axis * -1.0); // right sidewall
+      tri(rimA(j), treadA(j + 1), treadA(j), 0.0, axis * -1.0);
+      tri(rimB(j), rimB(j + 1), treadB(j + 1), 0.0, axis);        // left sidewall
+      tri(rimB(j), treadB(j + 1), treadB(j), 0.0, axis);
+    }
+    d.pressureGroups.push_back(std::move(g));
+  }
+  return out;
 }
 
 }  // namespace sbc

@@ -32,6 +32,8 @@ add_library(sbc STATIC
   src/stability.cpp
   src/job_system.cpp
   src/scenes.cpp
+  src/vehicle.cpp
+  src/proto_car.cpp
 )
 target_include_directories(sbc PUBLIC include)
 target_compile_options(sbc PRIVATE ${SBC_FP_FLAGS} -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion)
@@ -102,6 +104,7 @@ if(SBC_BUILD_TESTS)
     tests/test_beams.cpp
     tests/test_contact.cpp
     tests/test_elements.cpp
+    tests/test_vehicle.cpp
   )
   target_link_libraries(sbc_tests PRIVATE sbc Catch2::Catch2WithMain)
   target_compile_options(sbc_tests PRIVATE ${SBC_FP_FLAGS})

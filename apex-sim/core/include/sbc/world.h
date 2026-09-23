@@ -8,10 +8,12 @@
 
 #include "sbc/body.h"
 #include "sbc/math.h"
+#include "sbc/vehicle.h"
 
 namespace sbc {
 
 class JobSystem;
+class Vehicle;
 struct ContactScratch;
 
 inline constexpr float kDefaultDt = 0.0005f;  // [s] §4.2 fixed step, 2000 Hz
@@ -35,6 +37,11 @@ struct ContactPairParams {
   float normalDampingRatio = 0.7f;    // ζ [-]; restitution e = exp(−ζπ/√(1−ζ²)) ≈ 0.05
   float tangentFrequencyHz = 150.0f;  // stick-anchor spring frequency [Hz]
   float tangentDampingRatio = 1.0f;   // [-] critically damped stick spring
+  float rollingResistance = 0.012f;   // Crr [-] of a tyre (kTread nodes) rolling on this pair (§11.1 table)
+  // kTread nodes only: share of the contact spring force applied to the tread node itself. The rest (1 − share) is
+  // reported in Body::patch* and applied by the owning vehicle to the wheel as a rigid body, so the discrete tread
+  // does not hit the road node by node at speed (A§4.7). 1 = plain node contact.
+  float treadShare = 1.0f;
 };
 
 struct EnergyReport {
@@ -98,6 +105,17 @@ class World {
   // Adds `dv` to every non-fixed node; the kinetic-energy change is booked as external work.
   void addBodyVelocity(int body, Vec3 dv);
 
+  // ---- vehicles (§6–§10) ----
+  // Attaches a vehicle controller to body `body` (node indices in `desc` refer to that body). Returns its id.
+  int addVehicle(int body, const VehicleDesc& desc);
+  int vehicleCount() const { return static_cast<int>(vehicles_.size()); }
+  int vehicleBody(int vehicle) const;
+  const VehicleDesc& vehicleDesc(int vehicle) const;
+  // Driver input, applied from the next step on (recorded per step by the caller for replays, A§4.5).
+  void setVehicleInput(int vehicle, const VehicleInput& input);
+  const VehicleInput& vehicleInput(int vehicle) const;
+  const VehicleTelemetry& vehicleTelemetry(int vehicle) const;
+
   // ---- stepping ----
   void step(int count = 1);
   uint64_t stepIndex() const { return stepIndex_; }
@@ -138,6 +156,8 @@ class World {
   StepStats stats_;
   std::vector<StepStats> bodyStats_;
   std::vector<ContactScratch> scratch_;  // one per body
+  std::vector<std::unique_ptr<Vehicle>> vehicles_;
+  std::vector<std::vector<int>> bodyVehicles_;  // vehicle ids per body
 
   friend struct ContactSolver;
 };

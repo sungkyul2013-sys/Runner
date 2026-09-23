@@ -164,6 +164,7 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
   Body& b = w.bodies_[bodyIndex];
   ContactScratch& s = w.scratch_[bodyIndex];
   gatherStaticCandidates(w, b, s);
+  std::fill(b.patchForce.begin(), b.patchForce.end(), 0.0f);
   if (s.tris.empty() && s.planes.empty()) {
     std::fill(b.anchorContact.begin(), b.anchorContact.end(), -1);
     return 0;
@@ -176,6 +177,38 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
     const int n = collectStaticContacts(s, x, b.radius[i], contacts);
     if (n == 0) { b.anchorContact[i] = -1; continue; }
     const float m = b.mass[i];
+    if (b.flags[i] & node_flag::kTread) {
+      // Tyre tread: normal force only; the vehicle's tyre model supplies the tangential force (§6 hybrid). The node
+      // takes `treadShare` of the spring (with its own damping); the full spring force is reported for the vehicle,
+      // which applies the remaining share to the wheel.
+      Vec3 force{}, dissipativeNormal{}, weightedNormal{};
+      float total = 0.0f;
+      for (int k = 0; k < n; ++k) {
+        const Contact& c = contacts[k];
+        const ContactPairParams& pp = w.contactPair(b.material[i], c.material);
+        const float omega = kTwoPi * pp.normalFrequencyHz;
+        const float spring = m * omega * omega * c.penetration;
+        const float share = pp.treadShare;
+        const float nodeSpring = share * spring;
+        const float damping = 2.0f * pp.normalDampingRatio * m * omega * std::sqrt(share);
+        const float fn = std::max(nodeSpring - damping * dot(v, c.normal), 0.0f);
+        force += c.normal * fn;
+        weightedNormal += c.normal * spring;
+        total += spring;
+        if constexpr (kTrack) dissipativeNormal += c.normal * (fn - nodeSpring);
+        ++count;
+      }
+      b.anchorContact[i] = -1;
+      b.patchForce[i] = total;
+      b.patchNx[i] = weightedNormal.x; b.patchNy[i] = weightedNormal.y; b.patchNz[i] = weightedNormal.z;
+      b.patchMaterial[i] = contacts[0].material;
+      b.fx[i] += force.x; b.fy[i] += force.y; b.fz[i] += force.z;
+      if constexpr (kTrack) {
+        b.fdContactX[i] += dissipativeNormal.x; b.fdContactY[i] += dissipativeNormal.y;
+        b.fdContactZ[i] += dissipativeNormal.z;
+      }
+      continue;
+    }
     Vec3 force{}, dissipativeNormal{}, friction{};
     for (int k = 0; k < n; ++k) {
       const Contact& c = contacts[k];
@@ -446,9 +479,14 @@ double ContactSolver::contactPotential(const World& w) {
     for (int i = 0; i < b.nodeCount(); ++i) {
       if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) continue;
       const int n = collectStaticContacts(s, b.nodePosition(i), b.radius[i], contacts);
+      // A tread node's wheel share is not a node spring: its work is booked by the vehicle (A§4.7).
+      const bool tread = (b.flags[i] & node_flag::kTread) != 0;
       for (int k = 0; k < n; ++k) {
-        const float omega = kTwoPi * w.contactPair(b.material[i], contacts[k].material).normalFrequencyHz;
-        e += 0.5 * static_cast<double>(b.mass[i]) * omega * omega * contacts[k].penetration * contacts[k].penetration;
+        const ContactPairParams& pp = w.contactPair(b.material[i], contacts[k].material);
+        const float omega = kTwoPi * pp.normalFrequencyHz;
+        const double share = tread ? pp.treadShare : 1.0;
+        e += 0.5 * share * static_cast<double>(b.mass[i]) * omega * omega * contacts[k].penetration *
+             contacts[k].penetration;
       }
     }
   }
