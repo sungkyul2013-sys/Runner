@@ -8,11 +8,19 @@ import {
   SLOT_BYTES,
   slotViews,
   TripleBufferReader,
+  VT_STRIDE,
   type EnergyField,
   type SlotViews,
 } from './layout';
-import type { BodyTopology, FromWorker, ToWorker } from './messages';
+import type { BodyTopology, FromWorker, ToWorker, VehicleInput, VehiclePose, VehicleSource } from './messages';
 import { packLattice, type LatticeParams } from './sbc';
+import { blendVehicle, decodeVehicle, VT, type VehicleState } from './telemetry';
+
+export interface SpawnedVehicle {
+  vehicle: number;
+  body: number;
+  wheels: number;
+}
 
 export interface FrameStats {
   simTime: number;
@@ -44,6 +52,7 @@ interface Frame {
   beamCount: Int32Array;
   positions: Float32Array; // world − renderOrigin, xyz
   strain: Float32Array;
+  vehicles: VehicleState[];
 }
 
 export interface RenderFrame {
@@ -54,6 +63,7 @@ export interface RenderFrame {
   beamCount: Int32Array;
   positions: Float32Array; // interpolated
   strain: Float32Array;
+  vehicles: VehicleState[]; // interpolated poses
 }
 
 type Listener<T> = (value: T) => void;
@@ -78,6 +88,8 @@ export class PhysicsClient {
     error: [] as Listener<string>[],
   };
   private pending = new Map<string, (msg: FromWorker) => void>();
+  private vehicleRequests = new Map<number, { resolve: (v: SpawnedVehicle) => void; reject: (e: Error) => void }>();
+  private nextRequest = 1;
 
   static isSupported(): boolean {
     return typeof SharedArrayBuffer !== 'undefined' && globalThis.crossOriginIsolated === true;
@@ -108,6 +120,17 @@ export class PhysicsClient {
   }
   spawnLattice(params: LatticeParams, label: string): void {
     this.send({ type: 'spawnLattice', params: packLattice(params), label });
+  }
+  /** Spawns a vehicle; resolves once the core accepted it (its body arrives through the topology listener). */
+  spawnVehicle(source: VehicleSource, pose: VehiclePose, label: string): Promise<SpawnedVehicle> {
+    const request = this.nextRequest++;
+    return new Promise((resolve, reject) => {
+      this.vehicleRequests.set(request, { resolve, reject });
+      this.send({ type: 'spawnVehicle', request, source, pose, label });
+    });
+  }
+  setVehicleInput(vehicle: number, input: VehicleInput): void {
+    this.send({ type: 'vehicleInput', vehicle, input });
   }
   setPaused(paused: boolean): void { this.send({ type: 'setPaused', paused }); }
   setTimeScale(scale: number): void { this.send({ type: 'setTimeScale', scale }); }
@@ -147,6 +170,7 @@ export class PhysicsClient {
     r.beamOffset = cur.beamOffset;
     r.beamCount = cur.beamCount;
     r.strain = cur.strain;
+    r.vehicles = cur.vehicles;
     // Present the physics state one frame interval late so every displayed position is a blend of two real
     // simulation states (no extrapolation → no overshoot through walls).
     let alpha = 1;
@@ -161,6 +185,7 @@ export class PhysicsClient {
       const a = prev.positions, c = cur.positions, out = r.positions;
       const prevLen = prev.nodeOffset.length ? prev.positions.length : 0;
       for (let i = 0; i < n; i++) out[i] = i < prevLen ? a[i] + (c[i] - a[i]) * alpha : c[i];
+      r.vehicles = cur.vehicles.map((v, i) => (i < prev.vehicles.length && prev.vehicles[i].body === v.body ? blendVehicle(prev.vehicles[i], v, alpha) : v));
     }
     return r;
   }
@@ -186,6 +211,7 @@ export class PhysicsClient {
             beamCount: new Int32Array(count),
             positions: new Float32Array(totalNodes * 3),
             strain: new Float32Array(totalBeams),
+            vehicles: [],
           };
     f.arrival = now;
     f.simTime = s.header[H.simTime];
@@ -210,6 +236,14 @@ export class PhysicsClient {
       }
     }
     f.strain.set(s.strain.subarray(0, totalBeams));
+    f.vehicles = [];
+    for (let v = 0, n = s.header[H.vehicleCount] || 0; v < n; v++) {
+      const record = s.vehicles.subarray(v * VT_STRIDE, (v + 1) * VT_STRIDE);
+      const body = Math.round(record[VT.body]);
+      if (body < 0 || body >= count) continue;
+      const row = body * BODY_STRIDE_F64;
+      f.vehicles.push(decodeVehicle(record, [s.bodies[row + B.originX] - rx, s.bodies[row + B.originY] - ry, s.bodies[row + B.originZ] - rz]));
+    }
     return f;
   }
 
@@ -254,6 +288,18 @@ export class PhysicsClient {
       case 'error':
         this.listeners.error.forEach((l) => l(msg.message));
         break;
+      case 'vehicle': {
+        const r = this.vehicleRequests.get(msg.request);
+        this.vehicleRequests.delete(msg.request);
+        r?.resolve({ vehicle: msg.vehicle, body: msg.body, wheels: msg.wheels });
+        break;
+      }
+      case 'vehicleFailed': {
+        const r = this.vehicleRequests.get(msg.request);
+        this.vehicleRequests.delete(msg.request);
+        r?.reject(new Error(msg.message));
+        break;
+      }
       default:
         break;
     }

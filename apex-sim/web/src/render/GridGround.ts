@@ -27,6 +27,11 @@ export class GridGround {
   private labelGroup = new THREE.Group();
   private lastCenter = new THREE.Vector2(Number.NaN, Number.NaN);
 
+  /** Distance markers on/off (off for close-up model checks and screenshots). */
+  set labelsVisible(on: boolean) {
+    this.labelGroup.visible = on;
+  }
+
   constructor(scene: THREE.Scene) {
     const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 });
     const p = positionWorld.xz;

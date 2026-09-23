@@ -1,5 +1,5 @@
 // M0 sandbox control panel (debug UI; the product UI follows the M5 style guide).
-import { SCENES, SPAWNS, type SpawnPreset } from '../app/presets';
+import { DRIVE_VEHICLES, SCENES, SPAWNS, type SpawnPreset } from '../app/presets';
 import { t, tl } from './i18n';
 
 export interface PanelActions {
@@ -10,6 +10,7 @@ export interface PanelActions {
   setTimeScale(scale: number): void;
   setShowNodes(on: boolean): void;
   setShowBeams(on: boolean): void;
+  drive(vehicleId: string): void;
 }
 
 export const TIME_SCALES = [1, 0.5, 0.2, 0.1, 0.05, 0.01] as const; // §20: 슬로모션 1/2 ~ 1/100
@@ -62,10 +63,16 @@ export class SandboxPanel {
       actions.setShowBeams(beamsToggle.classList.contains('active'));
     };
 
+    const vehicleSelect = el('select', { ariaLabel: t('drive') });
+    for (const v of DRIVE_VEHICLES) vehicleSelect.append(el('option', { value: v.id }, tl(v.label)));
+    const driveButton = el('button', { className: 'primary' }, t('startDrive'));
+    driveButton.onclick = () => actions.drive(vehicleSelect.value);
+
     this.root = el(
       'aside',
       { className: 'panel' },
       el('div', { className: 'brand' }, el('b', {}, 'APEX_SIM'), el('span', {}, t('subtitle'))),
+      el('div', { className: 'section' }, el('h2', {}, t('drive')), vehicleSelect, driveButton),
       el('div', { className: 'section' }, el('h2', {}, t('scene')), this.sceneSelect),
       el('div', { className: 'section' }, el('h2', {}, t('spawn')), ...spawnButtons),
       el('div', { className: 'section' }, el('h2', {}, t('time')), el('div', { className: 'row' }, this.pauseButton, stepButton, resetButton), this.speedSelect),

@@ -2,9 +2,12 @@
 // Physics worker: owns the SoftBodyCore WASM instance, runs the fixed 2000 Hz loop and publishes frames through the
 // triple buffer (A§2). Overload policy (§21.2, §25): never skip a step — let simulated time fall behind wall time
 // and report the real-time factor instead.
-import { B, BODY_STRIDE_F64, ENERGY_FIELDS, H, MAX_BEAMS, MAX_BODIES, MAX_NODES, slotViews, TripleBufferWriter, type SlotViews } from './layout';
-import type { BodyTopology, FromWorker, ToWorker } from './messages';
-import { LATTICE_PARAM_COUNT, type Ptr, type SbcFactory, type SbcModule } from './sbc';
+import {
+  B, BODY_STRIDE_F64, ENERGY_FIELDS, H, MAX_BEAMS, MAX_BODIES, MAX_NODES, MAX_VEHICLES, slotViews, TripleBufferWriter,
+  VT_HEADER, VT_MAX_WHEELS, VT_STRIDE, VT_WHEEL, type SlotViews,
+} from './layout';
+import type { BodyTopology, FromWorker, ToWorker, VehicleInput } from './messages';
+import { LATTICE_PARAM_COUNT, readCString, type Ptr, type SbcFactory, type SbcModule } from './sbc';
 
 const ITERATION_PERIOD_MS = 4; // target loop period (≈ 250 Hz publishing)
 const STEP_BUDGET_MS = 10; // wall time we may spend stepping per iteration before slowing sim time down
@@ -112,6 +115,58 @@ function loadScene(name: string, bodies = 16): void {
   publish();
 }
 
+async function spawnVehicle(msg: Extract<ToWorker, { type: 'spawnVehicle' }>): Promise<void> {
+  const fail = (message: string) => post({ type: 'vehicleFailed', request: msg.request, message });
+  if (!world) return fail('no world');
+  const { position: [x, y, z], yaw, speed } = msg.pose;
+  let vehicle: number;
+  if (msg.source.kind === 'proto') {
+    vehicle = sbc._sbc_world_spawn_proto_car(world, x, y, z, yaw, speed);
+  } else {
+    const response = await fetch(msg.source.url);
+    if (!response.ok) return fail(`${msg.source.url}: HTTP ${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!world) return fail('no world');
+    const ptr = sbc._malloc(bytes.length + 1);
+    new Uint8Array(heap(), ptr, bytes.length).set(bytes);
+    vehicle = sbc._sbc_world_spawn_vehicle_json(world, ptr, bytes.length, x, y, z, yaw, speed);
+    sbc._free(ptr);
+  }
+  if (vehicle < 0) return fail(readCString(heap(), sbc._sbc_last_error()) || 'vehicle rejected by the core');
+  post({
+    type: 'vehicle',
+    request: msg.request,
+    vehicle,
+    body: sbc._sbc_vehicle_body(world, vehicle),
+    wheels: sbc._sbc_vehicle_wheel_count(world, vehicle),
+    label: msg.label,
+  });
+  announceNewBodies(false, msg.label);
+}
+
+function setVehicleInput(vehicle: number, i: VehicleInput): void {
+  if (!world || vehicle < 0 || vehicle >= sbc._sbc_world_vehicle_count(world)) return;
+  sbc._sbc_vehicle_set_input(world, vehicle, i.throttle, i.brake, i.steer, i.handbrake, i.mode, i.shift, (i.abs ? 1 : 0) | (i.tcs ? 2 : 0));
+}
+
+/** Copies every vehicle's packed telemetry into the slot (body index in the header's reserved field 30). */
+function publishVehicles(s: SlotViews): number {
+  const count = Math.min(sbc._sbc_world_vehicle_count(world), MAX_VEHICLES);
+  const capacity = VT_HEADER + VT_WHEEL * VT_MAX_WHEELS;
+  const ptr = ensureScratch(capacity * 4);
+  for (let v = 0; v < count; v++) {
+    const written = sbc._sbc_vehicle_telemetry(world, v, ptr, capacity);
+    const record = s.vehicles.subarray(v * VT_STRIDE, (v + 1) * VT_STRIDE);
+    if (written <= 0) {
+      record.fill(0);
+      continue;
+    }
+    record.set(new Float32Array(heap(), ptr, written));
+    record[30] = sbc._sbc_vehicle_body(world, v);
+  }
+  return count;
+}
+
 function publish(): void {
   const s = slots[writer.slot];
   const h = s.header;
@@ -170,6 +225,7 @@ function publish(): void {
   h[H.wasmMemoryMB] = heap().byteLength / (1024 * 1024);
   h[H.hashHi] = sbc._sbc_world_state_hash_hi(world);
   h[H.hashLo] = sbc._sbc_world_state_hash_lo(world);
+  h[H.vehicleCount] = publishVehicles(s);
   h[H.publishSeq] = ++publishSeq;
   writer.publish();
 }
@@ -252,6 +308,12 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
         for (let left = msg.steps; left > 0; left -= 1000) stepTimed(Math.min(1000, left));
         publish();
         post({ type: 'stepped', stepIndex: sbc._sbc_world_step_index(world) });
+        return;
+      case 'spawnVehicle':
+        spawnVehicle(msg).catch((err) => post({ type: 'vehicleFailed', request: msg.request, message: String(err?.stack ?? err) }));
+        return;
+      case 'vehicleInput':
+        setVehicleInput(msg.vehicle, msg.input);
         return;
       case 'hash': {
         const hi = sbc._sbc_world_state_hash_hi(world) >>> 0;

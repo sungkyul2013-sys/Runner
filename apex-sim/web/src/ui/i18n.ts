@@ -3,7 +3,20 @@ export type Lang = 'ko' | 'en';
 export type Localized = Record<Lang, string>;
 
 const STRINGS = {
-  subtitle: { ko: 'M0 물리 샌드박스', en: 'M0 physics sandbox' },
+  subtitle: { ko: 'M1 물리 샌드박스 · 주행', en: 'M1 physics sandbox · driving' },
+  drive: { ko: '주행', en: 'Drive' },
+  startDrive: { ko: '주행장에서 운전', en: 'Drive on the test ground' },
+  driveHelp: {
+    ko: 'W/↑ 가속 · S/↓ 브레이크(정지 후 길게: 후진) · A/D 조향 · Space 핸드브레이크 · E/Q 변속 · M 수동 · T TCS · B ABS · C 카메라 · V 골격 · R 재시작',
+    en: 'W/↑ throttle · S/↓ brake (hold at rest: reverse) · A/D steer · Space handbrake · E/Q shift · M manual · T TCS · B ABS · C camera · V x-ray · R restart',
+  },
+  cameraChase: { ko: '추적', en: 'Chase' },
+  cameraOrbit: { ko: '궤도', en: 'Orbit' },
+  loadingVehicle: { ko: '차량 불러오는 중…', en: 'Loading vehicle…' },
+  vehicleFailed: { ko: '차량을 불러오지 못했습니다', en: 'Vehicle failed to load' },
+  backToSandbox: { ko: '샌드박스로', en: 'Sandbox' },
+  restart: { ko: '재시작', en: 'Restart' },
+  hideUi: { ko: 'H 화면 정보 숨기기', en: 'H hide overlays' },
   scene: { ko: '씬', en: 'Scene' },
   spawn: { ko: '스폰', en: 'Spawn' },
   time: { ko: '시간 제어', en: 'Time' },

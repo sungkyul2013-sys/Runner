@@ -32,6 +32,7 @@ export const H = {
   hashHi: 28,
   hashLo: 29,
   publishSeq: 30,
+  vehicleCount: 31,
 } as const;
 
 export const ENERGY_FIELDS = [
@@ -62,17 +63,26 @@ export const B = {
   topologyVersion: 7,
 } as const;
 
+/** Vehicle telemetry records (core sbc.h SBC_VT_HEADER / SBC_VT_WHEEL), one per vehicle, fixed stride. */
+export const MAX_VEHICLES = 16;
+export const VT_HEADER = 32;
+export const VT_WHEEL = 20;
+export const VT_MAX_WHEELS = 8;
+export const VT_STRIDE = VT_HEADER + VT_WHEEL * VT_MAX_WHEELS;
+
 const HEADER_BYTES = HEADER_F64 * 8;
 const BODY_TABLE_BYTES = MAX_BODIES * BODY_STRIDE_F64 * 8;
 const POSITIONS_BYTES = MAX_NODES * 3 * 4;
 const STRAIN_BYTES = MAX_BEAMS * 4;
-export const SLOT_BYTES = HEADER_BYTES + BODY_TABLE_BYTES + POSITIONS_BYTES + STRAIN_BYTES;
+const VEHICLE_BYTES = MAX_VEHICLES * VT_STRIDE * 4;
+export const SLOT_BYTES = HEADER_BYTES + BODY_TABLE_BYTES + POSITIONS_BYTES + STRAIN_BYTES + VEHICLE_BYTES;
 
 export interface SlotViews {
   header: Float64Array;
   bodies: Float64Array;
   positions: Float32Array; // local xyz per node, bodies packed back to back
   strain: Float32Array; // (L − L0)/L0 per beam, NaN = broken
+  vehicles: Float32Array; // VT_STRIDE floats per vehicle (telemetry.ts)
 }
 
 export function slotViews(buffer: ArrayBufferLike): SlotViews {
@@ -84,7 +94,9 @@ export function slotViews(buffer: ArrayBufferLike): SlotViews {
   const positions = new Float32Array(buffer, offset, MAX_NODES * 3);
   offset += POSITIONS_BYTES;
   const strain = new Float32Array(buffer, offset, MAX_BEAMS);
-  return { header, bodies, positions, strain };
+  offset += STRAIN_BYTES;
+  const vehicles = new Float32Array(buffer, offset, MAX_VEHICLES * VT_STRIDE);
+  return { header, bodies, positions, strain, vehicles };
 }
 
 // ---- triple-buffer control word ------------------------------------------------------------------------------

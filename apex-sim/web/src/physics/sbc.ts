@@ -40,6 +40,25 @@ export interface SbcModule {
   _sbc_body_beam_b(w: Ptr, body: number): Ptr;
   _sbc_body_beam_strain(w: Ptr, body: number, out: Ptr): void;
   _sbc_body_check_stability(w: Ptr, body: number, safety: number, out3: Ptr): void;
+  // vehicles (§6–§10)
+  _sbc_world_spawn_proto_car(w: Ptr, x: number, y: number, z: number, yaw: number, speed: number): number;
+  _sbc_world_spawn_vehicle_json(w: Ptr, json: Ptr, length: number, x: number, y: number, z: number, yaw: number, speed: number): number;
+  _sbc_last_error(): Ptr;
+  _sbc_world_vehicle_count(w: Ptr): number;
+  _sbc_vehicle_body(w: Ptr, vehicle: number): number;
+  _sbc_vehicle_wheel_count(w: Ptr, vehicle: number): number;
+  _sbc_vehicle_set_input(
+    w: Ptr, vehicle: number, throttle: number, brake: number, steer: number, handbrake: number, mode: number, shift: number, aids: number,
+  ): number;
+  _sbc_vehicle_telemetry(w: Ptr, vehicle: number, out: Ptr, capacity: number): number;
+}
+
+/** Reads a NUL-terminated UTF-8 string out of WASM memory. */
+export function readCString(memory: ArrayBufferLike, ptr: Ptr, max = 4096): string {
+  if (!ptr) return '';
+  const bytes = new Uint8Array(memory, ptr, Math.min(max, memory.byteLength - ptr));
+  const end = bytes.indexOf(0);
+  return new TextDecoder().decode(bytes.slice(0, end < 0 ? bytes.length : end));
 }
 
 export type SbcFactory = (options?: { locateFile?: (path: string) => string }) => Promise<SbcModule>;

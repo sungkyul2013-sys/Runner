@@ -1,5 +1,6 @@
 // Spawn presets and scene list from data/structures/presets.json (§1.4 데이터 드리븐).
 import presetData from '../../../data/structures/presets.json';
+import type { VehicleSource } from '../physics/messages';
 import type { LatticeParams } from '../physics/sbc';
 import type { Localized } from '../ui/i18n';
 
@@ -19,7 +20,16 @@ export interface SpawnPreset {
   lattice: Omit<LatticeParams, 'center'>;
 }
 
+export interface VehiclePreset {
+  id: string;
+  label: Localized;
+  source: VehicleSource;
+  model: string | null; // GLB visual (null: the node-beam debug view is the visual)
+  redlineRpm: number;
+}
+
 export const SCENES = presetData.scenes as ScenePreset[];
+export const DRIVE_VEHICLES = presetData.vehicles as VehiclePreset[];
 export const SPAWNS = presetData.presets as unknown as SpawnPreset[];
 
 /** Resolves a preset into core lattice parameters at a concrete world position. */

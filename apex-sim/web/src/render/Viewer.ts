@@ -13,6 +13,8 @@ export class Viewer {
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.05, 5000);
   readonly controls: OrbitControls;
   backend = 'unknown';
+  /** WASD/QE pan the orbit target (off while driving: the keys belong to the car). */
+  freeMove = true;
   private sun = new THREE.DirectionalLight(0xfff4e6, 2.6);
   private keys = new Set<string>();
 
@@ -84,12 +86,12 @@ export class Viewer {
     if (this.keys.has('KeyA')) move.sub(right);
     if (this.keys.has('KeyE')) move.y += 1;
     if (this.keys.has('KeyQ')) move.y -= 1;
-    if (move.lengthSq() > 0) {
+    if (move.lengthSq() > 0 && this.freeMove) {
       move.normalize().multiplyScalar(speed);
       this.controls.target.add(move);
       this.camera.position.add(move);
     }
-    this.controls.update();
+    if (this.controls.enabled) this.controls.update();
     const t = this.controls.target;
     this.sun.target.position.set(t.x, 0, t.z);
     this.sun.position.set(t.x - 18, 30, t.z + 14);

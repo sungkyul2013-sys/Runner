@@ -13,6 +13,7 @@
 // Attributes use KHR_mesh_quantization (int16 positions, int8 normals, uint8 colours).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { deflateSync } from 'node:zlib';
 
 const CARS = [
   {
@@ -30,6 +31,15 @@ const CARS = [
     realLength: 5.399, // [m] 1st-generation Ghost
     source: '"Rolls-Royce Ghost" by Black Snow — https://sketchfab.com/3d-models/rolls-royce-ghost-4a590f4afa094fa8b407a14db77a63a8',
     license: 'CC-BY-4.0',
+    // The body carries its own (static) wheels, tyres and brakes: they are cut out and replaced by a spinning
+    // procedural 20" twin-spoke wheel sized and placed from the wheel arches (fitWheels).
+    fitWheels: {
+      gap: 0.03, // [m] tyre top → arch lip at design ride height
+      style: 'ghost',
+      front: { radius: 0.369, width: 0.255, rimRadius: 0.254 }, // 255/45 R20
+      rear: { radius: 0.368, width: 0.285, rimRadius: 0.254 },  // 285/40 R20
+      maxScale: 1.06,
+    },
   },
   {
     key: 'maybach',
@@ -38,9 +48,41 @@ const CARS = [
     realLength: 5.205, // [m] Mercedes-Maybach GLS 600
     source: 'User-provided FBX (Mercedes-Benz GLS 580), baked in Crash Lab — original source/licence not recorded',
     license: 'unknown (user-provided)',
-    // The bake has no separate wheel mesh; rim fragments are baked into the body at the detected wheel centres.
-    // They are cut out and replaced by a procedural 23" wheel: 275/40 R23 → outer radius 0.402 m, rim 0.292 m.
-    proceduralWheel: { outerRadius: 0.402, width: 0.275, rimRadius: 0.292, cutRadius: 0.43, cutHalfWidth: 0.2 },
+    // The bake has no separate wheel mesh; rim fragments are baked into the body. They are cut out and replaced by a
+    // procedural 23" multi-spoke wheel (the GLS 580's, as the user's design spec has it), placed in the wheel arches;
+    // the body comes down onto the wheels until the arch gap is an SUV's (the user's Crash Lab spec also lowered this
+    // model: its stance was too high on 23" wheels).
+    fitWheels: {
+      gap: 0.055,
+      style: 'maybach',
+      front: { radius: 0.406, width: 0.285, rimRadius: 0.292 }, // 285/40 R23
+      rear: { radius: 0.406, width: 0.285, rimRadius: 0.292 },
+      maxScale: 1.0,
+    },
+    // Wheel centres detected in the bake before fitting (the fit below replaces them). The baked rim fragments sit
+    // there, off the arch centres: cut them out around those centres too.
+    bakeWheelRadius: 0.402,
+    cutBakeWheels: { radius: 0.335 },
+    // The bake marks no lamps: head- and tail-lamp lenses came through as dark glass over empty housings. Glass at
+    // lamp height near either end becomes a self-lit lamp (white front, red rear), keeping its shading.
+    // The bake lost the windscreen, the panoramic roof panes and the rear window, and has nothing behind the grille
+    // and intakes: fill them (boxes relative to the body: x/z about its centre, y above its bottom).
+    fill: [
+      { view: 'top', box: { x: [-0.75, 0.75], z: [-1.3, 1.38] }, threshold: 0.15, role: 'glass', color: [20, 26, 32], flatRole: 'tint', flatBelowDeg: 16 },
+      { view: 'rear', box: { x: [-0.62, 0.62], y: [1.22, 1.56] }, threshold: 0.15, role: 'glass', color: [20, 26, 32], enclosed: false },
+      { view: 'front', box: { x: [-0.92, 0.92], y: [0.16, 0.92] }, threshold: 0.3, role: 'trim', color: [2, 2, 3], inset: 0.05, grow: false },
+      // The headlamps are open on top: through the slot between the bonnet and the lens one sees the ground. Close it
+      // with a dark backing (only see-through cells: threshold ∞).
+      { view: 'top', box: { ax: [0.42, 1.0], z: [1.9, 2.62] }, threshold: Infinity, role: 'trim', color: [2, 2, 3], inset: 0.03, grow: false },
+    ],
+    lamps: {
+      // front: the lower lens band is the daytime-running strip; the dark upper half (open-topped housing in the
+      // bake) becomes the dark-chrome housing of the user's Crash Lab design
+      front: { depth: 0.5, maxHeight: 1.0, minAbsX: 0.46, color: [200, 225, 255], trim: { maxLum: 0.025, role: 'chrome' } },
+      // colours linear (glTF vertex colours): ≈ sRGB 205,24,32; the smoked upper half ≈ sRGB 120,10,14; maxLum is
+      // linear too (≈ sRGB 0.16)
+      rear: { depth: 0.45, minHeight: 0.74, maxHeight: 1.07, minAbsX: 0.28, color: [150, 3, 6], trim: { maxLum: 0.025, factor: 0.32 } },
+    },
   },
 ];
 
@@ -51,8 +93,15 @@ function b64(s, T) {
   return new T(buf.buffer, buf.byteOffset, buf.byteLength / T.BYTES_PER_ELEMENT);
 }
 
+// The bake's vertex colours are sRGB (Crash Lab displayed them as stored); glTF COLOR_0 is linear.
+const SRGB_TO_LINEAR = Uint8Array.from({ length: 256 }, (_, i) => {
+  const c = i / 255;
+  return Math.round(255 * (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+});
+
 function decode(e) {
-  const P = b64(e.p, Int16Array), N = b64(e.n, Int8Array), C = b64(e.c, Uint8Array);
+  const P = b64(e.p, Int16Array), N = b64(e.n, Int8Array);
+  const C = Uint8Array.from(b64(e.c, Uint8Array), (c) => SRGB_TO_LINEAR[c]);
   const M = e.m ? b64(e.m, Uint8Array) : null;
   const n = e.v, bb = e.bb;
   const pos = new Float64Array(n * 3), nor = new Float64Array(n * 3);
@@ -124,6 +173,19 @@ function split(g, classify) {
     out.push({ key, n: vs.length, pos, nor, col, idx: ii });
   }
   return out;
+}
+
+/** Concatenates two split parts of the same role. */
+function mergeParts(a, b) {
+  const n = a.n + b.n;
+  const pos = new Float64Array(n * 3), nor = new Float64Array(n * 3), col = new Uint8Array(n * 3);
+  pos.set(a.pos); pos.set(b.pos, a.n * 3);
+  nor.set(a.nor); nor.set(b.nor, a.n * 3);
+  col.set(a.col); col.set(b.col, a.n * 3);
+  const idx = new Uint32Array(a.idx.length + b.idx.length);
+  idx.set(a.idx);
+  for (let k = 0; k < b.idx.length; k++) idx[a.idx.length + k] = b.idx[k] + a.n;
+  return { key: a.key, n, pos, nor, col, idx };
 }
 
 // ---- GLB writer (KHR_mesh_quantization) --------------------------------------------------------------------------
@@ -237,11 +299,15 @@ const MATERIALS = {
   glass: { pbrMetallicRoughness: { baseColorFactor: [0.75, 0.8, 0.85, 0.35], metallicFactor: 0, roughnessFactor: 0.05 }, alphaMode: 'BLEND', doubleSided: true, extras: { apexRole: 'glass' } },
   lamp: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 0.9], metallicFactor: 0, roughnessFactor: 0.15 }, alphaMode: 'BLEND', extras: { apexRole: 'lamp' } },
   trim: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0.1, roughnessFactor: 0.6 }, extras: { apexRole: 'trim' } },
+  tint: { pbrMetallicRoughness: { baseColorFactor: [0.05, 0.06, 0.08, 0.9], metallicFactor: 0, roughnessFactor: 0.05 }, alphaMode: 'BLEND', doubleSided: true, extras: { apexRole: 'tint' } },
+  chrome: { pbrMetallicRoughness: { baseColorFactor: [0.026, 0.031, 0.037, 1], metallicFactor: 0.7, roughnessFactor: 0.2 }, extras: { apexRole: 'chrome' } },
   tire: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.9 }, extras: { apexRole: 'tire' } },
   rim: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0.8, roughnessFactor: 0.3 }, extras: { apexRole: 'rim' } },
   caliper: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0.3, roughnessFactor: 0.5 }, extras: { apexRole: 'caliper' } },
 };
-const MASK_ROLE = (m) => (m & 4 ? 'lamp' : m & 2 ? 'glass' : m & 1 ? 'paint' : 'trim');
+const MASK_ROLE = (m) => (m & 8 ? 'tint' : m & 4 ? 'lamp' : m & 2 ? 'glass' : m & 1 ? 'paint' : 'trim');
+const MASK = { paint: 1, glass: 2, lamp: 4, tint: 8, trim: 0 };
+// Roles the importer assigns itself (not from the bake's mask): 'chrome' (dark-chrome headlamp housings).
 
 function quantFrame(parts) {
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
@@ -252,6 +318,394 @@ function quantFrame(parts) {
   const center = lo.map((l, a) => (l + hi[a]) / 2);
   const half = lo.map((l, a) => Math.max((hi[a] - l) / 2, 1e-6));
   return { center, half, lo, hi };
+}
+
+// ---- hole fill ----------------------------------------------------------------------------------------------------
+// Some bakes lost parts of their shell (the Maybach's windscreen, panoramic roof panes and rear window are missing, and
+// nothing sits behind its grille), so one looks straight into — or through — an empty body. Seen along one axis
+// (from above, the front or the rear), a hole is a cell whose first surface lies far behind the surfaces around it (or
+// that has none). Holes that are enclosed by the body (not reachable from the raster border through other holes) and lie
+// in the configured box get a new surface: a membrane (harmonic interpolation) through the surrounding surfaces, so a
+// windscreen runs from the cowl to the roof header and a roof pane from rail to rail. Cells that were not holes but lie
+// below the membrane (a dashboard seen through the missing windscreen) are covered too.
+const FILL_CELL = 0.03; // [m]
+const FILL_VIEWS = {
+  top: { u: 0, v: 2, d: 1, sign: 1 }, // looking down: depth = +y
+  front: { u: 0, v: 1, d: 2, sign: 1 }, // looking back from the front: depth = +z
+  rear: { u: 0, v: 1, d: 2, sign: -1 }, // looking forward from the rear: depth = −z
+};
+
+function fillRaster(g, view, box) {
+  const V = FILL_VIEWS[view], C = FILL_CELL;
+  const u0 = box.lo[V.u], v0 = box.lo[V.v];
+  const nu = Math.ceil((box.hi[V.u] - u0) / C) + 1, nv = Math.ceil((box.hi[V.v] - v0) / C) + 1;
+  const depth = new Float64Array(nu * nv).fill(-Infinity);
+  const P = (i, a) => g.pos[i * 3 + a];
+  for (let t = 0; t < g.idx.length; t += 3) {
+    const a = g.idx[t], b = g.idx[t + 1], c = g.idx[t + 2];
+    const edge = Math.max(
+      Math.hypot(P(a, V.u) - P(b, V.u), P(a, V.v) - P(b, V.v)),
+      Math.hypot(P(b, V.u) - P(c, V.u), P(b, V.v) - P(c, V.v)),
+      Math.hypot(P(c, V.u) - P(a, V.u), P(c, V.v) - P(a, V.v)));
+    const n = Math.min(64, Math.max(2, Math.ceil(edge / (C * 0.5))));
+    for (let i = 0; i <= n; i++) {
+      for (let j = 0; j <= n - i; j++) {
+        const wa = i / n, wb = j / n, wc = 1 - wa - wb;
+        const pu = wa * P(a, V.u) + wb * P(b, V.u) + wc * P(c, V.u);
+        const pv = wa * P(a, V.v) + wb * P(b, V.v) + wc * P(c, V.v);
+        const pd = V.sign * (wa * P(a, V.d) + wb * P(b, V.d) + wc * P(c, V.d));
+        const k = Math.floor((pv - v0) / C) * nu + Math.floor((pu - u0) / C);
+        if (pd > depth[k]) depth[k] = pd;
+      }
+    }
+  }
+  return { V, nu, nv, u0, v0, depth };
+}
+
+function fillHoles(g, fills) {
+  const box = bounds(g.pos, g.n);
+  const mid = box.lo.map((l, a) => (l + box.hi[a]) / 2);
+  const add = { pos: [], nor: [], col: [], mask: [], idx: [] };
+  for (const f of fills) {
+    const { V, nu, nv, u0, v0, depth } = fillRaster(g, f.view, box);
+    const C = FILL_CELL, N = nu * nv, R = Math.round(0.16 / C);
+    // Envelope: the nearest surface within ±16 cm.
+    const env = new Float64Array(N).fill(-Infinity);
+    for (let v = 0; v < nv; v++) {
+      for (let u = 0; u < nu; u++) {
+        let m = -Infinity;
+        for (let dv = -R; dv <= R; dv++) {
+          const vv = v + dv;
+          if (vv < 0 || vv >= nv) continue;
+          for (let du = -R; du <= R; du++) {
+            const uu = u + du;
+            if (uu >= 0 && uu < nu) m = Math.max(m, depth[vv * nu + uu]);
+          }
+        }
+        env[v * nu + u] = m;
+      }
+    }
+    const hole = new Uint8Array(N);
+    for (let k = 0; k < N; k++) hole[k] = depth[k] === -Infinity || env[k] - depth[k] > f.threshold ? 1 : 0;
+    // Exterior holes: reachable from the raster border through holes.
+    const outside = new Uint8Array(N);
+    const stack = [];
+    for (let k = 0; k < N; k++) {
+      const u = k % nu, v = (k / nu) | 0;
+      if ((u === 0 || v === 0 || u === nu - 1 || v === nv - 1) && hole[k]) { outside[k] = 1; stack.push(k); }
+    }
+    const nbr = (k) => {
+      const u = k % nu, v = (k / nu) | 0, out = [];
+      if (u > 0) out.push(k - 1);
+      if (u < nu - 1) out.push(k + 1);
+      if (v > 0) out.push(k - nu);
+      if (v < nv - 1) out.push(k + nu);
+      return out;
+    };
+    while (stack.length) {
+      for (const q of nbr(stack.pop())) if (hole[q] && !outside[q]) { outside[q] = 1; stack.push(q); }
+    }
+    // The box (relative: u/v across the body's centre in x and z, above its bottom in y).
+    const rel = [(x) => x - mid[0], (y) => y - box.lo[1], (z) => z - mid[2]];
+    const inBox = (k) => {
+      const pu = rel[V.u](u0 + (k % nu + 0.5) * C), pv = rel[V.v](v0 + (((k / nu) | 0) + 0.5) * C);
+      const bv = f.box['xyz'[V.v]];
+      if (pv < bv[0] || pv > bv[1]) return false;
+      if (f.box.ax) return Math.abs(pu) >= f.box.ax[0] && Math.abs(pu) <= f.box.ax[1]; // both sides (|x|)
+      const bu = f.box['xyz'[V.u]];
+      return pu >= bu[0] && pu <= bu[1];
+    };
+    // `enclosed: false` (a frame with a gap in it): every hole in the box is filled; holes outside it are free edges.
+    if (f.enclosed === false) for (let k = 0; k < N; k++) outside[k] = hole[k] && !inBox(k) ? 1 : 0;
+    const unknown = new Uint8Array(N);
+    for (let k = 0; k < N; k++) unknown[k] = hole[k] && !outside[k] ? 1 : 0;
+    // Membrane: SOR on the unknown cells; exterior holes are free edges (not averaged in).
+    const surf = Float64Array.from(depth, (d, k) => (unknown[k] ? NaN : d));
+    const solve = () => {
+      for (let k = 0; k < N; k++) {
+        if (!unknown[k] || !Number.isNaN(surf[k])) continue;
+        let sum = 0, n = 0;
+        for (let r = 1; r < Math.max(nu, nv) && !n; r++) {
+          for (const q of [k - r, k + r, k - r * nu, k + r * nu]) {
+            if (q < 0 || q >= N || unknown[q] || outside[q] || depth[q] === -Infinity) continue;
+            sum += depth[q]; n++;
+          }
+        }
+        surf[k] = n ? sum / n : env[k];
+      }
+      const cells = [], links = [];
+      for (let k = 0; k < N; k++) {
+        if (!unknown[k]) continue;
+        const q = nbr(k).filter((j) => !outside[j] && (unknown[j] || depth[j] !== -Infinity));
+        if (q.length) { cells.push(k); links.push(q); }
+      }
+      for (let it = 0; it < 6000; it++) {
+        let change = 0;
+        for (let c = 0; c < cells.length; c++) {
+          const k = cells[c], q = links[c];
+          let sum = 0;
+          for (let j = 0; j < q.length; j++) sum += surf[q[j]];
+          const d = 1.9 * (sum / q.length - surf[k]);
+          surf[k] += d;
+          if (Math.abs(d) > change) change = Math.abs(d);
+        }
+        if (change < 1e-5) break;
+      }
+    };
+    solve();
+    // Known cells in the box sunk below the membrane (interior seen through the hole) are covered too.
+    for (let pass = 0; pass < (f.grow === false ? 0 : 6); pass++) {
+      let grew = 0;
+      for (let k = 0; k < N; k++) {
+        if (unknown[k] || outside[k] || depth[k] === -Infinity || !inBox(k)) continue;
+        const around = nbr(k).filter((q) => unknown[q]);
+        if (around.length < 2) continue;
+        const m = around.reduce((a, q) => a + surf[q], 0) / around.length;
+        if (depth[k] < m - 0.04) { unknown[k] = 1; surf[k] = m; grew++; }
+      }
+      if (!grew) break;
+      solve();
+    }
+    // Emit one quad per filled cell in the box; corners average the surrounding surface values.
+    // A recessed backing reaches one cell under its frame, so no sliver of the hole shows at the stepped edge.
+    const edge = new Uint8Array(N);
+    if (f.inset) {
+      for (let k = 0; k < N; k++) {
+        if (!unknown[k] || !inBox(k)) continue;
+        for (const q of nbr(k)) if (!unknown[q] && !outside[q] && depth[q] !== -Infinity) edge[q] = 1;
+      }
+    }
+    const emit = (k) => (unknown[k] || edge[k]) && inBox(k);
+    if (process.env.APEX_FILL_DEBUG === f.view) {
+      for (let v = nv - 1; v >= 0; v--) {
+        let row = '';
+        for (let u = 0; u < nu; u++) {
+          const k = v * nu + u;
+          row += emit(k) ? '@' : unknown[k] ? 'u' : outside[k] ? (depth[k] === -Infinity ? ' ' : 'o') : inBox(k) ? ':' : '.';
+        }
+        console.log(rel[V.v](v0 + (v + 0.5) * C).toFixed(2).padStart(6), row);
+      }
+    }
+    const corner = new Map();
+    const inset = f.inset ?? 0;
+    const vertex = (cu, cv) => {
+      const key = cv * (nu + 1) + cu;
+      if (corner.has(key)) return corner.get(key);
+      let sum = 0, n = 0;
+      for (const [du, dv] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+        const u = cu + du, v = cv + dv;
+        if (u < 0 || v < 0 || u >= nu || v >= nv) continue;
+        const k = v * nu + u;
+        if (outside[k] || (!unknown[k] && depth[k] === -Infinity)) continue;
+        if (!unknown[k] && !emit(k) && f.inset) continue; // a recessed backing does not climb onto its frame
+        if (!unknown[k] && !f.inset) continue; // a pane meets its frame at the frame's own depth (below)
+        sum += unknown[k] ? surf[k] : depth[k]; n++;
+      }
+      if (!n) {
+        for (const [du, dv] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+          const u = cu + du, v = cv + dv;
+          if (u < 0 || v < 0 || u >= nu || v >= nv) continue;
+          const k = v * nu + u;
+          if (!outside[k] && depth[k] !== -Infinity) { sum += depth[k]; n++; }
+        }
+      }
+      const p = [0, 0, 0];
+      p[V.u] = u0 + cu * C;
+      p[V.v] = v0 + cv * C;
+      p[V.d] = V.sign * (sum / n - inset);
+      const id = g.n + add.pos.length / 3;
+      add.pos.push(...p);
+      add.nor.push(0, 0, 0);
+      add.col.push(...f.color);
+      add.mask.push(MASK[f.role]);
+      corner.set(key, id);
+      return id;
+    };
+    let cells = 0, tinted = 0;
+    for (let k = 0; k < N; k++) {
+      if (!emit(k)) continue;
+      const u = k % nu, v = (k / nu) | 0;
+      const a = vertex(u, v), b = vertex(u + 1, v), c = vertex(u + 1, v + 1), d = vertex(u, v + 1);
+      add.idx.push(a, b, c, a, c, d);
+      cells++;
+    }
+    // Winding and normals face the viewer of this raster (outward): a double-sided material flips the normal of a
+    // back-facing triangle, and a normal that disagrees with the winding lights the pane from behind. Flat roof panes
+    // become tinted glass.
+    const base = g.n;
+    const at = (i, a) => add.pos[(i - base) * 3 + a];
+    for (let t = add.idx.length - cells * 6; t < add.idx.length; t += 3) {
+      let [a, b, c] = [add.idx[t], add.idx[t + 1], add.idx[t + 2]];
+      const e1 = [0, 1, 2].map((q) => at(b, q) - at(a, q)), e2 = [0, 1, 2].map((q) => at(c, q) - at(a, q));
+      const nrm = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+      const l = Math.hypot(...nrm) || 1;
+      if (nrm[V.d] * V.sign < 0) {
+        [b, c] = [c, b];
+        add.idx[t + 1] = b;
+        add.idx[t + 2] = c;
+        for (let q = 0; q < 3; q++) nrm[q] = -nrm[q];
+      }
+      for (const i of [a, b, c]) for (let q = 0; q < 3; q++) add.nor[(i - base) * 3 + q] += nrm[q] / l;
+      if (f.flatRole && Math.abs(nrm[1]) / l > Math.cos((f.flatBelowDeg * Math.PI) / 180)) {
+        for (const i of [a, b, c]) add.mask[i - base] = MASK[f.flatRole];
+      }
+    }
+    for (let t = add.idx.length - cells * 6; t < add.idx.length; t++) if (add.mask[add.idx[t] - base] === MASK[f.flatRole]) tinted++;
+    console.log(`  fill ${f.view}: ${cells} cells (${(cells * C * C).toFixed(2)} m²)${f.flatRole ? `, ${Math.round(tinted / 3)} tris ${f.flatRole}` : ''}`);
+  }
+  // A shared corner can end up with both roles; the split classifies a triangle by OR-ing its vertex masks, so resolve
+  // each fill triangle to the role of its first vertex by giving vertices one role only (already the case per corner).
+  const n = add.pos.length / 3;
+  for (let i = 0; i < n; i++) {
+    const l = Math.hypot(add.nor[i * 3], add.nor[i * 3 + 1], add.nor[i * 3 + 2]) || 1;
+    for (let q = 0; q < 3; q++) add.nor[i * 3 + q] /= l;
+  }
+  const grow = (A, extra, T) => { const o = new T(A.length + extra.length); o.set(A); o.set(extra, A.length); return o; };
+  g.pos = grow(g.pos, add.pos, Float64Array);
+  g.nor = grow(g.nor, add.nor, Float64Array);
+  g.col = grow(g.col, add.col, Uint8Array);
+  g.mask = grow(g.mask, add.mask, Uint8Array);
+  g.idx = grow(g.idx, add.idx, Uint32Array);
+  g.n += n;
+}
+
+// ---- wheel arches → wheels ----------------------------------------------------------------------------------------
+// A wheel is fitted to the body it sits in: seen from the side, the arch lip is where the body's outer skin ends above
+// the wheel (the depth of the outermost surface drops into the wheel well in one step; bumper corners curve inward
+// smoothly and show no such step). The arch centre gives the wheel's longitudinal position, the lip height its size
+// (tyre top one `gap` below the lip), the skin's outer |x| its track (tyre face 15 mm inboard of the fender).
+
+const ARCH_CELL = 0.01; // [m] side-view raster
+
+/** Side-view depth raster of one side of the body: max |x| of the surface per (z, y) cell. */
+function sideRaster(g, side, z0, z1, y0, y1) {
+  const nz = Math.ceil((z1 - z0) / ARCH_CELL), ny = Math.ceil((y1 - y0) / ARCH_CELL);
+  const depth = new Float32Array(nz * ny).fill(-1);
+  const P = g.pos;
+  for (let t = 0; t < g.idx.length; t += 3) {
+    const a = g.idx[t] * 3, b = g.idx[t + 1] * 3, c = g.idx[t + 2] * 3;
+    const xs = [P[a] * side, P[b] * side, P[c] * side];
+    if (xs[0] < 0 && xs[1] < 0 && xs[2] < 0) continue;
+    const zs = [P[a + 2], P[b + 2], P[c + 2]], ys = [P[a + 1], P[b + 1], P[c + 1]];
+    const zmin = Math.min(...zs), zmax = Math.max(...zs), ymin = Math.min(...ys), ymax = Math.max(...ys);
+    if (zmax < z0 || zmin > z1 || ymax < y0 || ymin > y1) continue;
+    const i0 = Math.max(0, Math.floor((zmin - z0) / ARCH_CELL)), i1 = Math.min(nz - 1, Math.floor((zmax - z0) / ARCH_CELL));
+    const j0 = Math.max(0, Math.floor((ymin - y0) / ARCH_CELL)), j1 = Math.min(ny - 1, Math.floor((ymax - y0) / ARCH_CELL));
+    const d = (zs[1] - zs[0]) * (ys[2] - ys[0]) - (zs[2] - zs[0]) * (ys[1] - ys[0]);
+    for (let i = i0; i <= i1; i++) {
+      for (let j = j0; j <= j1; j++) {
+        const pz = z0 + (i + 0.5) * ARCH_CELL, py = y0 + (j + 0.5) * ARCH_CELL;
+        let x;
+        if (Math.abs(d) < 1e-12) {
+          x = Math.max(...xs); // edge-on in the side view
+        } else {
+          const u = ((pz - zs[0]) * (ys[2] - ys[0]) - (zs[2] - zs[0]) * (py - ys[0])) / d;
+          const v = ((zs[1] - zs[0]) * (py - ys[0]) - (pz - zs[0]) * (ys[1] - ys[0])) / d;
+          if (u < -0.02 || v < -0.02 || u + v > 1.02) continue;
+          x = xs[0] + u * (xs[1] - xs[0]) + v * (xs[2] - xs[0]);
+        }
+        const k = i * ny + j;
+        if (x > depth[k]) depth[k] = x;
+      }
+    }
+  }
+  return { depth, nz, ny, z0, y0 };
+}
+
+/** Arch lip around a nominal wheel centre (x0, y0, z0): { zc, top, skin, points }. */
+function findArch(g, [x0, y0, z0], nominalRadius) {
+  const side = Math.sign(x0);
+  const yMax = 2 * nominalRadius + 0.3; // above: shoulders, beltlines, spoilers
+  const r = sideRaster(g, side, z0 - 0.9, z0 + 0.9, 0, yMax);
+  const at = (i, j) => r.depth[i * r.ny + j];
+  const points = [];
+  let skin = 0;
+  for (let i = 0; i < r.nz; i++) {
+    const z = r.z0 + (i + 0.5) * ARCH_CELL;
+    if (Math.abs(z - z0) > 0.75) continue;
+    for (let j = r.ny - 1; j >= 3; j--) {
+      if (at(i, j) < 0) continue;
+      let up = -1;
+      for (let k = j; k < Math.min(r.ny, j + 5); k++) up = Math.max(up, at(i, k));
+      const down = Math.max(at(i, j - 1), at(i, j - 2), at(i, j - 3));
+      const y = r.y0 + j * ARCH_CELL;
+      if (y < y0 - 0.05) break;
+      if (up > 0.7 * Math.abs(x0) && up - down > 0.04) {
+        points.push([z, y]);
+        skin = Math.max(skin, up);
+        break;
+      }
+    }
+  }
+  // Keep the contiguous lip through the wheel (the arch), not stray steps on bumpers or door shut lines.
+  points.sort((a, b) => a[0] - b[0]);
+  let seed = 0;
+  points.forEach(([z], k) => { if (Math.abs(z - z0) < Math.abs(points[seed][0] - z0)) seed = k; });
+  const connected = (a, b) => Math.abs(b[0] - a[0]) <= 0.035 && Math.abs(b[1] - a[1]) <= 0.06;
+  let lo = seed, hi = seed;
+  while (lo > 0 && connected(points[lo - 1], points[lo])) lo--;
+  while (hi < points.length - 1 && connected(points[hi], points[hi + 1])) hi++;
+  points.splice(hi + 1);
+  points.splice(0, lo);
+  if (points.length < 10) throw new Error(`no wheel arch found around z = ${z0.toFixed(2)}`);
+  // Centre: middle of the arch's upper part (it is symmetric there); top: lip height at the centre.
+  let zc = z0, top = 0;
+  for (let it = 0; it < 3; it++) {
+    const near = points.filter(([z]) => Math.abs(z - zc) < 0.12).map(([, y]) => y).sort((a, b) => a - b);
+    top = near[Math.floor(near.length * 0.5)];
+    const upper = points.filter(([, y]) => y > top - 0.22);
+    zc = (Math.min(...upper.map(([z]) => z)) + Math.max(...upper.map(([z]) => z))) / 2;
+  }
+  if (process.env.APEX_ARCH_PNG) archPng(r, points, { zc, top }, [x0, y0, z0]);
+  return { zc, top, skin, points };
+}
+
+/** Debug view (APEX_ARCH_PNG=dir): side depth raster, lip points (green), arch centre/top (red). */
+function archPng(r, points, arch, [x0, , z0]) {
+  const W = r.nz, H = r.ny, img = Buffer.alloc(W * H * 3);
+  const put = (i, j, c) => {
+    if (i < 0 || j < 0 || i >= W || j >= H) return;
+    const o = ((H - 1 - j) * W + i) * 3;
+    img[o] = c[0]; img[o + 1] = c[1]; img[o + 2] = c[2];
+  };
+  for (let i = 0; i < W; i++) {
+    for (let j = 0; j < H; j++) {
+      const d = r.depth[i * H + j];
+      const g = d < 0 ? 0 : Math.max(0, Math.min(255, Math.round(((d - 0.3) / (Math.abs(x0) + 0.25 - 0.3)) * 255)));
+      put(i, j, [g, g, g]);
+    }
+  }
+  for (const [z, y] of points) put(Math.floor((z - r.z0) / ARCH_CELL), Math.floor((y - r.y0) / ARCH_CELL), [60, 255, 60]);
+  const ci = Math.floor((arch.zc - r.z0) / ARCH_CELL);
+  for (let j = 0; j < H; j++) put(ci, j, [255, 80, 40]);
+  for (let i = 0; i < W; i++) put(i, Math.floor((arch.top - r.y0) / ARCH_CELL), [255, 80, 40]);
+  const crcT = new Int32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c; });
+  const crc = (b) => { let c = -1; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+  const chunk = (tag, d) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(d.length);
+    const td = Buffer.concat([Buffer.from(tag), d]);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const raw = Buffer.alloc((W * 3 + 1) * H);
+  for (let y = 0; y < H; y++) img.copy(raw, y * (W * 3 + 1) + 1, y * W * 3, (y + 1) * W * 3);
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 2;
+  mkdirSync(process.env.APEX_ARCH_PNG, { recursive: true });
+  writeFileSync(join(process.env.APEX_ARCH_PNG, `arch_${x0 > 0 ? 'L' : 'R'}${z0 > 0 ? 'F' : 'R'}_${archPng.car}.png`),
+    Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+}
+
+/** Removes body triangles inside the fitted wheels (wheels, tyres, brakes baked into the body). */
+function insideWheel(g, tri, wheels) {
+  let cx = 0, cy = 0, cz = 0;
+  for (let k = 0; k < 3; k++) {
+    const v = g.idx[tri + k];
+    cx += g.pos[v * 3] / 3;
+    cy += g.pos[v * 3 + 1] / 3;
+    cz += g.pos[v * 3 + 2] / 3;
+  }
+  return wheels.some(({ position: [wx, wy, wz], radius, width }) =>
+    Math.abs(cx - wx) < width / 2 + 0.06 && (cy - wy) ** 2 + (cz - wz) ** 2 < (radius + 0.012) ** 2);
 }
 
 // ---- main -------------------------------------------------------------------------------------------------------
@@ -276,43 +730,136 @@ for (const car of CARS) {
   const midZ = (front.reduce((a, p) => a + p[2], 0) / front.length + rear.reduce((a, p) => a + p[2], 0) / rear.length) / 2;
   const midX = w.reduce((a, p) => a + p[0], 0) / w.length;
   const wheelBox = e.wheel && e.wheel.v > 0 ? e.wheel.bb : null;
-  const radius = car.proceduralWheel
-    ? car.proceduralWheel.outerRadius
-    : wheelBox ? Math.max(wheelBox[4] - wheelBox[1], wheelBox[5] - wheelBox[2]) / 2 * s : null;
+  const radius = car.bakeWheelRadius ?? (wheelBox ? Math.max(wheelBox[4] - wheelBox[1], wheelBox[5] - wheelBox[2]) / 2 * s : null);
   const axleY = w.reduce((a, p) => a + p[1], 0) / w.length;
   const groundY = radius ? axleY - radius : rawBox.lo[1] * s;
   const t = [-midX, -groundY, -midZ];
   transform(body, s, t);
-  const wheels = w.map(([x, y, z]) => ({
+  if (car.fill) {
+    console.log(`${car.id}: filling holes`);
+    fillHoles(body, car.fill);
+  }
+  let wheels = w.map(([x, y, z]) => ({
     position: [x + t[0], y + t[1], z + t[2]],
     side: x + t[0] > 0 ? 'left' : 'right',
     axle: z + t[2] > 0 ? 'front' : 'rear',
   }));
 
+  const bakeWheels = wheels.map((wh) => wh.position);
+  let lowered = 0;
+  let skins = wheels.map(() => Infinity);
+  if (car.fitWheels) {
+    archPng.car = car.id;
+    // Fit every wheel to its arch; one tyre size per axle, one body height for the car.
+    const fw = car.fitWheels;
+    const arches = wheels.map((wh) => findArch(body, wh.position, radius));
+    skins = arches.map((a) => a.skin);
+    const tyreFor = (axle) => fw[axle];
+    // Tyre radius from the lip (average per axle), capped at maxScale × spec; the rest of the gap lowers the body.
+    const radiusOf = {};
+    let lower = 0;
+    for (const axle of ['front', 'rear']) {
+      const idx = wheels.map((wh, k) => (wh.axle === axle ? k : -1)).filter((k) => k >= 0);
+      const top = idx.reduce((a, k) => a + arches[k].top, 0) / idx.length;
+      const spec = tyreFor(axle).radius;
+      const wanted = (top - fw.gap) / 2;
+      radiusOf[axle] = Math.min(Math.max(wanted, spec), spec * fw.maxScale);
+      lower = Math.max(lower, top - fw.gap - 2 * radiusOf[axle]);
+    }
+    for (let i = 0; i < body.n; i++) body.pos[i * 3 + 1] -= lower;
+    lowered = lower;
+    wheels = wheels.map((wh, k) => {
+      const tyre = tyreFor(wh.axle);
+      const R = radiusOf[wh.axle];
+      const sign = wh.side === 'left' ? 1 : -1;
+      const x = sign * (arches[k].skin - tyre.width / 2 - 0.015);
+      return {
+        position: [x, R, arches[k].zc],
+        side: wh.side,
+        axle: wh.axle,
+        radius: R,
+        width: tyre.width,
+        rimRadius: tyre.rimRadius + (R - tyre.radius), // a bigger arch gets a bigger rim, same sidewall
+      };
+    });
+    console.log(`${car.id}: body lowered ${(lower * 1000).toFixed(0)} mm; wheels`, wheels.map((wh) =>
+      `${wh.axle[0]}${wh.side[0]} x ${wh.position[0].toFixed(3)} z ${wh.position[2].toFixed(3)} R ${wh.radius.toFixed(3)} W ${wh.width}`).join(' | '));
+  }
+
   const glb = new Glb();
-  // Triangles to drop: rim fragments baked into the body (procedural-wheel cars only).
+  // Triangles to drop: wheels, tyres and brakes baked into the body (fitted-wheel cars only).
   const cut = (tri) => {
-    const pw = car.proceduralWheel;
-    if (!pw) return false;
+    if (!car.fitWheels) return false;
+    if (insideWheel(body, tri, wheels)) return true;
+    // Rim fragments around the bake's wheel centres: inside the rim radius and behind the outer skin (the fender
+    // and bumper around the arch stay).
+    const cb = car.cutBakeWheels;
+    if (!cb) return false;
     let cx = 0, cy = 0, cz = 0;
     for (let k = 0; k < 3; k++) {
       const v = body.idx[tri + k];
       cx += body.pos[v * 3] / 3; cy += body.pos[v * 3 + 1] / 3; cz += body.pos[v * 3 + 2] / 3;
     }
-    return wheels.some(({ position: [wx, wy, wz] }) =>
-      Math.abs(cx - wx) < pw.cutHalfWidth && (cy - wy) ** 2 + (cz - wz) ** 2 < pw.cutRadius ** 2);
+    return bakeWheels.some((p, k) => Math.abs(cx) < skins[k] - 0.04 && Math.sign(cx) === Math.sign(p[0]) &&
+      (cy - (p[1] - lowered)) ** 2 + (cz - p[2]) ** 2 < cb.radius ** 2);
   };
   let removed = 0;
+  const lampBox = bounds(body.pos, body.n);
+  // Lamp zones: near an end, within a height band and outboard of the grille / number plate. Glass there is the lens;
+  // with `trim` set, dark trim there (the upper, smoked half of the tail lamps) belongs to the lamp as well.
+  const lampEnd = (tri, role) => {
+    const L = car.lamps;
+    if (!L) return null;
+    let cx = 0, cy = 0, cz = 0, lum = 0;
+    for (let k = 0; k < 3; k++) {
+      const v = body.idx[tri + k];
+      cx += body.pos[v * 3] / 3; cy += body.pos[v * 3 + 1] / 3; cz += body.pos[v * 3 + 2] / 3;
+      lum += (body.col[v * 3] + body.col[v * 3 + 1] + body.col[v * 3 + 2]) / (9 * 255);
+    }
+    const h = cy - lampBox.lo[1], ax = Math.abs(cx - (lampBox.lo[0] + lampBox.hi[0]) / 2);
+    for (const end of ['front', 'rear']) {
+      const Z = L[end];
+      const near = end === 'front' ? cz > lampBox.hi[2] - Z.depth : cz < lampBox.lo[2] + Z.depth;
+      if (!near || h > Z.maxHeight || h < (Z.minHeight ?? 0) || ax < (Z.minAbsX ?? 0)) continue;
+      if (role === 'glass') return `lamp_${end}`;
+      if (role === 'trim' && Z.trim && lum < Z.trim.maxLum) return Z.trim.role ?? `lamp_${end}_trim`;
+    }
+    return null;
+  };
+  let relit = 0;
   const parts = split(body, (tri) => {
     if (cut(tri)) { removed++; return null; }
-    return body.mask ? MASK_ROLE(body.mask[body.idx[tri]] | body.mask[body.idx[tri + 1]] | body.mask[body.idx[tri + 2]]) : 'trim';
+    const role = body.mask ? MASK_ROLE(body.mask[body.idx[tri]] | body.mask[body.idx[tri + 1]] | body.mask[body.idx[tri + 2]]) : 'trim';
+    const lamp = role === 'glass' || role === 'trim' ? lampEnd(tri, role) : null;
+    if (lamp) { relit++; return lamp; }
+    return role;
   });
-  if (removed) console.log(`${car.id}: removed ${removed} baked rim triangles`);
+  // Relit lenses: lamp colour, shaded by the lens's own brightness (smoked trim darker); merged into the lamp
+  // primitive. Colours are linear (glTF vertex colours).
+  for (const p of parts) {
+    if (!p.key.startsWith('lamp_')) continue;
+    const [, end, trim] = p.key.split('_');
+    const Z = car.lamps[end];
+    for (let i = 0; i < p.n; i++) {
+      const lum = (p.col[i * 3] + p.col[i * 3 + 1] + p.col[i * 3 + 2]) / (3 * 255);
+      const f = trim ? Z.trim.factor : 0.72 + 0.28 * Math.min(1, lum * 2.5);
+      for (let a = 0; a < 3; a++) p.col[i * 3 + a] = Math.round(Z.color[a] * f);
+    }
+    p.key = 'lamp';
+  }
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const first = parts.findIndex((q) => q.key === parts[i].key);
+    if (first === i) continue;
+    parts[first] = mergeParts(parts[first], parts[i]);
+    parts.splice(i, 1);
+  }
+  if (relit) console.log(`${car.id}: ${relit} lamp triangles relit`);
+  if (removed) console.log(`${car.id}: removed ${removed} body triangles inside the wheels`);
   const bodyFrame = quantFrame(parts);
   glb.mesh('body', parts.map((p) => glb.primitive(p, bodyFrame.center, bodyFrame.half, p.key, MATERIALS[p.key])), bodyFrame.center, bodyFrame.half);
 
   let wheelInfo = null;
-  if (e.wheel && e.wheel.v > 0 && e.wheel.p) {
+  if (!car.fitWheels && e.wheel && e.wheel.v > 0 && e.wheel.p) {
     const wg = decode(e.wheel);
     transform(wg, s, [0, 0, 0]);
     const total = wg.idx.length;
@@ -350,10 +897,11 @@ for (const car of CARS) {
       scaleFromBake: s,
       dimensions: { length: box.hi[2] - box.lo[2], width: box.hi[0] - box.lo[0], height: box.hi[1] - box.lo[1] },
       bounds: { min: box.lo, max: box.hi },
-      wheelbase: front[0][2] - rear[0][2],
+      wheelbase: (wheels.filter((wh) => wh.axle === 'front').reduce((a, wh) => a + wh.position[2], 0) -
+        wheels.filter((wh) => wh.axle === 'rear').reduce((a, wh) => a + wh.position[2], 0)) / (wheels.length / 2),
       wheels,
-      wheel: car.proceduralWheel
-        ? { radius: car.proceduralWheel.outerRadius, width: car.proceduralWheel.width, rimRadius: car.proceduralWheel.rimRadius, meshSide: null, procedural: true }
+      wheel: car.fitWheels
+        ? { ...wheels[0], position: undefined, side: undefined, axle: undefined, meshSide: null, procedural: true, style: car.fitWheels.style }
         : wheelInfo,
       source: car.source,
       license: car.license,

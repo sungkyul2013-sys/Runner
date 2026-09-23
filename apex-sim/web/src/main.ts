@@ -5,7 +5,8 @@
 import './ui/styles.css';
 import * as THREE from 'three/webgpu';
 import goldenText from '../../core/tests/golden/golden_m0.txt?raw';
-import { resolveSpawn, SCENES, SPAWNS } from './app/presets';
+import { DRIVE_VEHICLES, resolveSpawn, SCENES, SPAWNS } from './app/presets';
+import { DriveSession } from './drive/DriveSession';
 import { PhysicsClient } from './physics/PhysicsClient';
 import { DebugBodies } from './render/DebugBodies';
 import { GridGround } from './render/GridGround';
@@ -19,7 +20,7 @@ import { loadVehicleModel, VEHICLES } from './vehicles/VehicleModel';
 
 declare global {
   interface Window {
-    __apex?: { bench?: unknown; golden?: unknown; garage?: unknown; ready?: boolean; errors: string[] };
+    __apex?: { bench?: unknown; golden?: unknown; garage?: unknown; drive?: DriveSession; ready?: boolean; errors: string[] };
   }
 }
 window.__apex = { errors: [] };
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
   const physics = new PhysicsClient(WASM_URL, threads);
   physics.onError(fail);
   const grid = new GridGround(viewer.scene);
+  if (params.get('labels') === '0' || params.has('cam')) grid.labelsVisible = false;
   const statics = new StaticGeometry(viewer.scene);
   const debug = new DebugBodies(viewer.scene, physics.topology);
   physics.onTopology(() => {
@@ -104,13 +106,47 @@ async function main(): Promise<void> {
     },
     setShowNodes: (on) => (debug.showNodes = on),
     setShowBeams: (on) => (debug.showBeams = on),
+    drive: (id) => {
+      params.delete('scene');
+      params.delete('view');
+      params.set('drive', id);
+      location.search = params.toString();
+    },
   });
   const hud = new Hud();
   const hint = Object.assign(document.createElement('div'), { className: 'hint' });
   hint.append(Object.assign(document.createElement('span'), { textContent: t('hintOrbit') }), Object.assign(document.createElement('span'), { textContent: t('hintTime') }));
   document.body.append(panel.root, hud.root, hint);
 
+  // ---- driving (?drive=<vehicle id>) ----
+  const driveVehicle = params.has('drive') ? DRIVE_VEHICLES.find((v) => v.id === params.get('drive')) ?? DRIVE_VEHICLES[0] : null;
+  const drive = driveVehicle ? new DriveSession(physics, viewer, debug, driveVehicle, fail, () => setPaused(!paused)) : null;
+  if (drive) {
+    window.__apex!.drive = drive;
+    panel.root.hidden = true;
+    hint.hidden = true;
+    const bar = Object.assign(document.createElement('div'), { className: 'drivebar' });
+    const title = Object.assign(document.createElement('b'), { textContent: 'APEX_SIM' });
+    const name = Object.assign(document.createElement('span'), { textContent: tl(drive.vehicle.label) });
+    const restart = Object.assign(document.createElement('button'), { textContent: t('restart') });
+    restart.onclick = () => void drive.restart();
+    const back = Object.assign(document.createElement('button'), { textContent: t('backToSandbox') });
+    back.onclick = () => {
+      params.delete('drive');
+      location.search = params.toString();
+    };
+    bar.append(title, name, restart, back);
+    document.body.append(bar, drive.dashboard.root);
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyH' || e.repeat) return;
+      const hide = !hud.root.hidden;
+      hud.root.hidden = hide;
+      bar.hidden = hide;
+    });
+  }
+
   window.addEventListener('keydown', (e) => {
+    if (drive) return; // the keys belong to the car (DriveInput)
     if (e.target instanceof HTMLSelectElement || e.repeat && e.code === 'Space') return;
     const preset = SPAWNS.find((p) => p.key === e.key);
     if (preset) physics.spawnLattice(resolveSpawn(preset, target()), tl(preset.label));
@@ -137,7 +173,8 @@ async function main(): Promise<void> {
   const initialScene = mode === 'bench' ? 'pile' : mode === 'golden' ? 'golden_m0' : params.get('scene') ?? 'sandbox';
   const sceneInfo = SCENES.find((s) => s.id === initialScene);
   if (mode === 'golden') setPaused(true); // must not advance before the hash comparison starts
-  if (mode !== 'garage') loadScene(initialScene, sceneInfo?.bodies);
+  if (drive) await drive.start();
+  else if (mode !== 'garage') loadScene(initialScene, sceneInfo?.bodies);
   else await showGarage(viewer);
   if (mode === 'sandbox' && (initialScene === 'wall_crash' || initialScene === 'sandbox')) viewer.focus(new THREE.Vector3(6, 1, 0), 16);
 
@@ -155,6 +192,7 @@ async function main(): Promise<void> {
     viewer.update(dt);
     grid.update(viewer.controls.target);
     const frame = physics.update(now);
+    drive?.update(dt, frame);
     debug.update(frame);
     viewer.render();
     const stats = physics.latestStats();
@@ -184,10 +222,20 @@ async function showGarage(viewer: Viewer): Promise<void> {
     viewer.scene.add(m.root);
     x -= m.meta.dimensions.width / 2 + gap;
   }
-  if (params.get('cam') === 'side' && models.length === 1) {
-    // Orthogonal side check (wheel/arch alignment): camera on +X looking at the car's left side.
+  const cam = params.get('cam');
+  if ((cam === 'side' || cam === 'front') && models.length === 1) {
+    // Near-orthographic checks (wheel/arch fit): a narrow lens far away on +X (left side) or +Z (front).
     models[0].root.rotation.y = 0;
-    viewer.camera.position.set(7, 0.8, 0);
+    viewer.camera.fov = 7;
+    viewer.camera.updateProjectionMatrix();
+    const d = 52;
+    viewer.camera.position.set(cam === 'side' ? d : 0, 0.75, cam === 'side' ? 0 : d);
+    viewer.controls.target.set(0, 0.75, 0);
+  } else if (cam && /^-?[\d.]+(:-?[\d.]+){2}$/.test(cam) && models.length === 1) {
+    // Close-up check from a given point ("x:y:z", metres), looking at the car's centre.
+    models[0].root.rotation.y = 0;
+    const [cx, cy, cz] = cam.split(':').map(Number);
+    viewer.camera.position.set(cx, cy, cz);
     viewer.controls.target.set(0, 0.8, 0);
   } else {
     viewer.focus(new THREE.Vector3(0, 0.8, 0), 11);
