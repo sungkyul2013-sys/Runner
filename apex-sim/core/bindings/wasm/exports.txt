@@ -1,4 +1,5 @@
 _sbc_world_create
+_sbc_world_create_scene
 _sbc_world_destroy
 _sbc_world_set_gravity
 _sbc_world_set_contact_pair

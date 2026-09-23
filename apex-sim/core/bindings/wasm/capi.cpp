@@ -2,15 +2,18 @@
 #include <cmath>
 #include <exception>
 #include <limits>
+#include <memory>
 
 #include "sbc/builder.h"
 #include "sbc/sbc.h"
+#include "sbc/scenes.h"
 #include "sbc/stability.h"
 #include "sbc/world.h"
 
 struct sbc_world {
-  sbc::World world;
-  explicit sbc_world(const sbc::WorldParams& p) : world(p) {}
+  std::unique_ptr<sbc::World> owned;
+  sbc::World& world;
+  explicit sbc_world(std::unique_ptr<sbc::World> w) : owned(std::move(w)), world(*owned) {}
 };
 
 namespace {
@@ -35,7 +38,20 @@ sbc_world* sbc_world_create(int thread_count, int track_energy) {
     sbc::WorldParams p;
     p.threadCount = thread_count < 1 ? 1 : thread_count;
     p.trackEnergy = track_energy != 0;
-    return new sbc_world(p);
+    return new sbc_world(std::make_unique<sbc::World>(p));
+  } catch (const std::exception&) {
+    return nullptr;
+  }
+}
+
+sbc_world* sbc_world_create_scene(const char* name, int thread_count, int track_energy, int bodies) {
+  try {
+    sbc::SceneOptions o;
+    o.threads = thread_count < 1 ? 1 : thread_count;
+    o.trackEnergy = track_energy != 0;
+    o.bodies = bodies;
+    auto w = sbc::makeScene(name ? name : "", o);
+    return w ? new sbc_world(std::move(w)) : nullptr;
   } catch (const std::exception&) {
     return nullptr;
   }

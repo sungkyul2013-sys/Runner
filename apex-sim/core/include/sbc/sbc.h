@@ -14,6 +14,9 @@ typedef struct sbc_world sbc_world;
 
 /* ---- world ---- */
 sbc_world* sbc_world_create(int thread_count, int track_energy);
+/* One of the reference scenes of sbc/scenes.h (cube_drop, tower, wall_crash, pile, golden_m0); NULL if unknown.
+ * `bodies` is used by "pile" only. */
+sbc_world* sbc_world_create_scene(const char* name, int thread_count, int track_energy, int bodies);
 void sbc_world_destroy(sbc_world* w);
 void sbc_world_set_gravity(sbc_world* w, float gx, float gy, float gz);
 /* friction µs/µk [-], penalty frequency [Hz], damping ratio [-] for a material pair */

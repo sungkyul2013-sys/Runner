@@ -65,9 +65,20 @@ void applyDefaultContactPairs(World& w) {
   w.setContactPair(material::kSteel, material::kSteel, steelSteel);
 }
 
-std::vector<std::string> sceneNames() { return {"cube_drop", "tower", "wall_crash", "pile", "golden_m0"}; }
+std::vector<std::string> sceneNames() { return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0"}; }
 
 std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o) {
+  if (name == "sandbox") {
+    // Empty test ground for the web sandbox: a concrete wall 20 m down +x, a 6 m ramp to −x and a pillar.
+    auto w = baseWorld(o);
+    w->addStaticBox({20.0, 1.5, 0.0}, {0.5f, 1.5f, 5.0f}, 0.0, material::kConcrete);
+    w->addStaticBox({8.0, 1.0, 8.0}, {0.3f, 1.0f, 0.3f}, 0.0, material::kConcrete);
+    // Wedge: slope rises from x = −14 (ground) to x = −8 (1.2 m), 4 m wide; closed and outward-facing.
+    const std::vector<float> v = {-14, 0, -2, -14, 0, 2, -8, 0, -2, -8, 0, 2, -8, 1.2f, -2, -8, 1.2f, 2};
+    const std::vector<int32_t> idx = {0, 1, 5, 0, 5, 4, 2, 4, 5, 2, 5, 3, 0, 4, 2, 1, 3, 5, 0, 2, 3, 0, 3, 1};
+    w->addStaticMesh({}, v, idx, material::kConcrete);
+    return w;
+  }
   if (name == "cube_drop") {
     auto w = baseWorld(o);
     w->addBody(makeLattice(cube({0.0, 3.0, 0.0})));

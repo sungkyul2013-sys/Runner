@@ -63,7 +63,7 @@ if(SBC_IS_WASM)
     -sMAXIMUM_MEMORY=2GB
     -sSTACK_SIZE=1MB
     "-sPTHREAD_POOL_SIZE=Math.max(1,Math.min(((globalThis.navigator&&navigator.hardwareConcurrency)||4)-1,8))"
-    -sEXPORTED_RUNTIME_METHODS=HEAPF32,HEAPF64,HEAP32,HEAPU8,HEAPU32
+    -sEXPORTED_RUNTIME_METHODS=wasmMemory
     "-sEXPORTED_FUNCTIONS=@${CMAKE_CURRENT_SOURCE_DIR}/bindings/wasm/exports.txt"
   )
 endif()
