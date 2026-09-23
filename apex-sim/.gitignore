@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+dist-artifact/
 .cache/
 .emsdk/
 web/public/wasm/

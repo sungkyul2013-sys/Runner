@@ -71,9 +71,10 @@ const CARS = [
       { view: 'top', box: { x: [-0.75, 0.75], z: [-1.3, 1.38] }, threshold: 0.15, role: 'glass', color: [20, 26, 32], flatRole: 'tint', flatBelowDeg: 16 },
       { view: 'rear', box: { x: [-0.62, 0.62], y: [1.22, 1.56] }, threshold: 0.15, role: 'glass', color: [20, 26, 32], enclosed: false },
       { view: 'front', box: { x: [-0.92, 0.92], y: [0.16, 0.92] }, threshold: 0.3, role: 'trim', color: [2, 2, 3], inset: 0.05, grow: false },
-      // The headlamps are open on top: through the slot between the bonnet and the lens one sees the ground. Close it
-      // with a dark backing (only see-through cells: threshold ∞).
-      { view: 'top', box: { ax: [0.42, 1.0], z: [1.9, 2.62] }, threshold: Infinity, role: 'trim', color: [2, 2, 3], inset: 0.03, grow: false },
+      // The headlamps are open on top: through the slot between the bonnet and the lens one sees into the empty
+      // housing and down to the ground. Close it flush with lens glass (only see-through cells: threshold ∞); in the
+      // lamp zone it is relit with the rest of the lens.
+      { view: 'top', box: { ax: [0.42, 1.0], z: [1.9, 2.62] }, threshold: Infinity, role: 'glass', color: [60, 70, 80], grow: false },
     ],
     lamps: {
       // front: the lower lens band is the daytime-running strip; the dark upper half (open-topped housing in the

@@ -192,8 +192,10 @@ function proceduralWheel(rimRadius: number, outerRadius: number, width: number, 
 
 const loader = new GLTFLoader();
 
-export async function loadVehicleModel(url: string): Promise<VehicleModel> {
-  const gltf = await loader.loadAsync(url);
+/** Loads from a URL, or parses GLB bytes already in memory (the garage Artifact, whose host serves no .glb). */
+export async function loadVehicleModel(source: string | ArrayBuffer): Promise<VehicleModel> {
+  const url = typeof source === 'string' ? source : 'GLB';
+  const gltf = typeof source === 'string' ? await loader.loadAsync(source) : await loader.parseAsync(source, '');
   const meta = gltf.scene.userData.apex as VehicleMeta;
   const root = new THREE.Group();
   root.name = meta.id;
