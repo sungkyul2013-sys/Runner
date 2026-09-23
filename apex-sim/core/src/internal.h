@@ -14,6 +14,21 @@ int accumulateBeamForces(Body& body);
 // Σ ½k·(active extension)² over intact beams [J].
 double beamPotentialEnergy(const Body& body);
 
+// Hydro beams: move rest lengths toward their input-channel targets (rate limited). Call once per step before
+// accumulateBeamForces.
+void updateHydros(Body& body, float dt);
+
+// Sliders, pressure groups and torsion bars (§4.1, §7). kTrack also books damping into body.fdBeam*.
+template <bool kTrack>
+void accumulateConstraintForces(Body& body);
+
+// Enclosed volume of pressure group g (divergence theorem, Σ a·(b×c)/6) [m³].
+double pressureGroupVolume(const Body& body, int group);
+// Current twist angle of torsion bar i about its pivot axis [rad] (deterministic atan2).
+double torsionBarAngle(const Body& body, int bar);
+// Σ of slider, gas and torsion-bar potential energy [J].
+double constraintPotentialEnergy(const Body& body);
+
 // Breaks every intact beam whose breakGroup was triggered this step. Returns beams broken.
 int applyPendingBreakGroups(Body& body);
 

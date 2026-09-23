@@ -10,5 +10,7 @@ namespace sbc::det {
 // Taylor polynomials on [−π/4, π/4]).
 double sin(double x);
 double cos(double x);
+// atan2(y, x) in (−π, π]. Absolute error < 1e-15. atan2(0, 0) = 0.
+double atan2(double y, double x);
 
 }  // namespace sbc::det

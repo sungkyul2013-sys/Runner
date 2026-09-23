@@ -25,6 +25,7 @@ add_library(sbc STATIC
   src/det_math.cpp
   src/body.cpp
   src/beams.cpp
+  src/constraints.cpp
   src/contact.cpp
   src/world.cpp
   src/builder.cpp
@@ -100,6 +101,7 @@ if(SBC_BUILD_TESTS)
     tests/test_energy.cpp
     tests/test_beams.cpp
     tests/test_contact.cpp
+    tests/test_elements.cpp
   )
   target_link_libraries(sbc_tests PRIVATE sbc Catch2::Catch2WithMain)
   target_compile_options(sbc_tests PRIVATE ${SBC_FP_FLAGS})

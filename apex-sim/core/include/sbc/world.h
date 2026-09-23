@@ -40,7 +40,7 @@ struct ContactPairParams {
 struct EnergyReport {
   double kinetic = 0.0;          // Σ ½mv²
   double gravityPotential = 0.0; // Σ −m g·x (world frame)
-  double beamPotential = 0.0;    // Σ ½k·(active extension)²
+  double beamPotential = 0.0;    // elastic energy: beams, sliders, torsion bars + gas energy of pressure groups
   double contactPotential = 0.0; // Σ ½k_n·p² of active penalty springs
   EnergyLosses losses;           // cumulative, all bodies + inter-body contacts
   double mechanical() const { return kinetic + gravityPotential + beamPotential + contactPotential; }

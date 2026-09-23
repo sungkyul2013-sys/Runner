@@ -153,7 +153,8 @@ int World::addBody(const BodyDesc& desc) {
   // energy if it spawns overlapping something): book it as external work so the energy balance (§5.3)
   // stays zero-based.
   const double contactBefore = ContactSolver::contactPotential(*this);
-  const double own = kineticEnergy(b) + gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b);
+  const double own = kineticEnergy(b) + gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b) +
+                     detail::constraintPotentialEnergy(b);
   bodies_.push_back(std::move(b));
   bodyStats_.emplace_back();
   scratch_.emplace_back();
@@ -212,10 +213,14 @@ void World::computeInternalForces(int bi) {
                     &b.fdFrictionY, &b.fdFrictionZ}) {
       std::fill(a->begin(), a->end(), 0.0f);
     }
+    detail::updateHydros(b, params_.dt);
     st.beamsBroken = detail::accumulateBeamForces<true>(b);
+    detail::accumulateConstraintForces<true>(b);
     st.staticContacts = ContactSolver::staticContacts<true>(*this, bi);
   } else {
+    detail::updateHydros(b, params_.dt);
     st.beamsBroken = detail::accumulateBeamForces<false>(b);
+    detail::accumulateConstraintForces<false>(b);
     st.staticContacts = ContactSolver::staticContacts<false>(*this, bi);
   }
 }
@@ -283,7 +288,7 @@ EnergyReport World::measureEnergy() const {
   for (const Body& b : bodies_) {
     r.kinetic += kineticEnergy(b);
     r.gravityPotential += gravityPotential(b, params_.gravity);
-    r.beamPotential += detail::beamPotentialEnergy(b);
+    r.beamPotential += detail::beamPotentialEnergy(b) + detail::constraintPotentialEnergy(b);
     r.losses.beamDamping += b.losses.beamDamping;
     r.losses.contactDamping += b.losses.contactDamping;
     r.losses.friction += b.losses.friction;

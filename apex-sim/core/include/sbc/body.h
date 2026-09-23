@@ -15,15 +15,16 @@ namespace sbc {
 
 inline constexpr float kInfiniteForce = std::numeric_limits<float>::infinity();
 
-// §4.1 beam kinds implemented so far. Beams are stored sorted by type so every kernel runs
-// branch-free over a contiguous range. Anisotropic and hydro beams arrive in M1.
+// §4.1 beam kinds. Beams are stored sorted by type so every kernel runs branch-free over a contiguous range.
 enum class BeamType : uint8_t {
-  kNormal = 0,   // spring-damper in tension and compression
-  kSupport = 1,  // resists compression only (panel anti-interpenetration)
-  kBounded = 2,  // acts only outside [minLength, maxLength] (travel limits, bump stops)
-  kRope = 3,     // resists tension only (tow rope, straps)
+  kNormal = 0,       // spring-damper in tension and compression
+  kSupport = 1,      // resists compression only (panel anti-interpenetration)
+  kBounded = 2,      // acts only outside [minLength, maxLength] (travel limits, bump stops)
+  kRope = 3,         // resists tension only (tow rope, straps)
+  kAnisotropic = 4,  // different stiffness in compression (compressionStiffness) and tension (stiffness)
+  kHydro = 5,        // rest length follows an input channel: L0 = L0,init · (1 + hydroFactor · input) (steering rack)
 };
-inline constexpr int kBeamTypeCount = 4;
+inline constexpr int kBeamTypeCount = 6;
 
 namespace node_flag {
 inline constexpr uint8_t kCollide = 1u << 0;  // takes part in collisions
@@ -52,6 +53,35 @@ struct BeamDesc {
   float minLength = 0.0f;              // [m] kBounded only
   float maxLength = 0.0f;              // [m] kBounded only
   int32_t breakGroup = -1;             // beams sharing a group break together (§4.3)
+  float compressionStiffness = -1.0f;  // [N/m] kAnisotropic: k while compressed (≤ 0 → same as stiffness)
+  int32_t hydroChannel = -1;           // kHydro: index into Body::hydroInputs
+  float hydroFactor = 0.0f;            // kHydro: relative rest-length change per unit input [-]
+  float hydroSpeed = 0.0f;             // kHydro: max relative rest-length change per second [1/s] (≤ 0 → instant)
+};
+
+// Node constrained to the line through two other nodes (prismatic joint: MacPherson strut telescope, §7).
+// Penalty force toward the line: F = −k·d⊥ − c·ḋ⊥ on the node, reaction split over the rail nodes by the projection
+// parameter so linear and angular momentum are conserved.
+struct SliderDesc {
+  int32_t node = -1, railA = -1, railB = -1;
+  float stiffness = 0.0f;  // [N/m]
+  float damping = 0.0f;    // [N·s/m]
+};
+
+// Closed triangle surface with internal gas pressure (§4.1 압력 삼각형·압력 휠). Triangles wind counter-clockwise when
+// seen from outside. Isothermal ideal gas: p_abs·V = const.
+struct PressureGroupDesc {
+  std::vector<std::array<int32_t, 3>> triangles;
+  float gaugePressure = 0.0f;         // [Pa] at the initial volume (e.g. 2.5 bar = 250 kPa)
+  float ambientPressure = 101325.0f;  // [Pa]
+};
+
+// Torsion bar between two lever arms (anti-roll bar, §7): nodes arm1 → pivot1 ═ pivot2 ← arm2. Resists relative
+// twist of the two levers about the pivot axis: τ = −k·Δθ − c·Δθ̇.
+struct TorsionBarDesc {
+  int32_t arm1 = -1, pivot1 = -1, pivot2 = -1, arm2 = -1;
+  float stiffness = 0.0f;  // [N·m/rad]
+  float damping = 0.0f;    // [N·m·s/rad]
 };
 
 struct BodyDesc {
@@ -59,6 +89,10 @@ struct BodyDesc {
   DVec3 origin;  // [m] world position of the local frame
   std::vector<NodeDesc> nodes;
   std::vector<BeamDesc> beams;
+  std::vector<SliderDesc> sliders;
+  std::vector<PressureGroupDesc> pressureGroups;
+  std::vector<TorsionBarDesc> torsionBars;
+  int hydroChannels = 0;
 };
 
 // Cumulative dissipated / injected energy of one body [J] (§5.3 energy bookkeeping).
@@ -114,7 +148,28 @@ struct Body {
   std::vector<float> minLength, maxLength;
   std::vector<int32_t> breakGroup;
   std::vector<uint8_t> broken;
+  std::vector<float> compressionStiffness;  // kAnisotropic
+  std::vector<int32_t> hydroChannel;        // kHydro
+  std::vector<float> hydroFactor, hydroSpeed;
   std::array<int32_t, kBeamTypeCount + 1> typeBegin{};  // beams of type t: [typeBegin[t], typeBegin[t+1])
+  std::vector<float> hydroInputs;           // per channel, set by the owner (vehicle) before each step
+
+  // ---- sliders ----
+  std::vector<int32_t> sliderNode, sliderA, sliderB;
+  std::vector<float> sliderStiffness, sliderDamping;
+
+  // ---- pressure groups (triangles flattened, groupTriBegin[g]..groupTriBegin[g+1]) ----
+  std::vector<int32_t> pressureTri;           // 3 node indices per triangle
+  std::vector<int32_t> groupTriBegin;         // size groups + 1
+  std::vector<double> groupInitialVolume;     // [m³]
+  std::vector<float> groupGaugePressure;      // [Pa] at the initial volume
+  std::vector<float> groupAmbientPressure;    // [Pa]
+  std::vector<float> groupCurrentGauge;       // [Pa] last evaluated (telemetry)
+
+  // ---- torsion bars ----
+  std::vector<int32_t> torsionArm1, torsionPivot1, torsionPivot2, torsionArm2;
+  std::vector<float> torsionStiffness, torsionDamping;
+  std::vector<double> torsionRestAngle;       // [rad]
 
   // ---- bookkeeping ----
   EnergyLosses losses;
@@ -124,6 +179,9 @@ struct Body {
 
   int nodeCount() const { return static_cast<int>(px.size()); }
   int beamCount() const { return static_cast<int>(beamA.size()); }
+  int sliderCount() const { return static_cast<int>(sliderNode.size()); }
+  int pressureGroupCount() const { return static_cast<int>(groupInitialVolume.size()); }
+  int torsionBarCount() const { return static_cast<int>(torsionArm1.size()); }
   Vec3 nodePosition(int i) const { return {px[i], py[i], pz[i]}; }
   Vec3 nodeVelocity(int i) const { return {vx[i], vy[i], vz[i]}; }
   DVec3 nodeWorldPosition(int i) const { return origin + toDouble(nodePosition(i)); }

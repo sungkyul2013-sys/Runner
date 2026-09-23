@@ -48,8 +48,7 @@ inline void applyBeamForce(Body& b, int a, int c, const Geometry& g, float force
 //   trial force  f = k(L − L0); if |f| > F_y: Δλ = (|f| − F_y)/(k + H), L0 += sign(f)·Δλ
 // Plastic work ΔW = (F_y + ½HΔλ)·Δλ is booked as absorbed energy (§4.3, §5.3).
 // Returns the corrected elastic force; sets `broke` when a break criterion is met.
-inline float plasticReturn(Body& b, int i, float length, bool& broke) {
-  const float k = b.stiffness[i];
+inline float plasticReturn(Body& b, int i, float length, bool& broke, float k) {
   float fe = k * (length - b.restLength[i]);
   const float fy0 = b.plasticForce[i];
   if (fy0 < kInfiniteForce) {
@@ -97,7 +96,7 @@ int accumulateBeamForces(Body& b) {
     const int a = b.beamA[i], c = b.beamB[i];
     if (!beamGeometry(b, a, c, g)) continue;
     bool broke = false;
-    const float fe = plasticReturn(b, i, g.length, broke);
+    const float fe = plasticReturn(b, i, g.length, broke, b.stiffness[i]);
     if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
     const float fd = b.damping[i] * g.lengthRate;
     applyBeamForce<kTrack>(b, a, c, g, fe + fd, fd);
@@ -110,7 +109,7 @@ int accumulateBeamForces(Body& b) {
     if (!beamGeometry(b, a, c, g)) continue;
     if (g.length >= b.restLength[i]) continue;
     bool broke = false;
-    const float fe = plasticReturn(b, i, g.length, broke);
+    const float fe = plasticReturn(b, i, g.length, broke, b.stiffness[i]);
     if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
     const float f = std::min(fe + b.damping[i] * g.lengthRate, 0.0f);
     applyBeamForce<kTrack>(b, a, c, g, f, f - fe);
@@ -142,12 +141,55 @@ int accumulateBeamForces(Body& b) {
     if (!beamGeometry(b, a, c, g)) continue;
     if (g.length <= b.restLength[i]) continue;
     bool broke = false;
-    const float fe = plasticReturn(b, i, g.length, broke);
+    const float fe = plasticReturn(b, i, g.length, broke, b.stiffness[i]);
     if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
     const float f = std::max(fe + b.damping[i] * g.lengthRate, 0.0f);
     applyBeamForce<kTrack>(b, a, c, g, f, f - fe);
   }
+  // kAnisotropic: compressionStiffness while L < L0, stiffness while L ≥ L0.
+  for (int i = b.typeBegin[4]; i < b.typeBegin[5]; ++i) {
+    if (b.broken[i]) continue;
+    const int a = b.beamA[i], c = b.beamB[i];
+    if (!beamGeometry(b, a, c, g)) continue;
+    const float k = g.length < b.restLength[i] ? b.compressionStiffness[i] : b.stiffness[i];
+    bool broke = false;
+    const float fe = plasticReturn(b, i, g.length, broke, k);
+    if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
+    const float fd = b.damping[i] * g.lengthRate;
+    applyBeamForce<kTrack>(b, a, c, g, fe + fd, fd);
+  }
+
+  // kHydro: plain spring-damper around the actuated rest length (no plasticity).
+  for (int i = b.typeBegin[5]; i < b.typeBegin[6]; ++i) {
+    if (b.broken[i]) continue;
+    const int a = b.beamA[i], c = b.beamB[i];
+    if (!beamGeometry(b, a, c, g)) continue;
+    const float fe = b.stiffness[i] * (g.length - b.restLength[i]);
+    if (std::fabs(fe) > b.breakForce[i]) { breakBeam(b, i, fe); ++newlyBroken; continue; }
+    const float fd = b.damping[i] * g.lengthRate;
+    applyBeamForce<kTrack>(b, a, c, g, fe + fd, fd);
+  }
   return newlyBroken;
+}
+
+void updateHydros(Body& b, float dt) {
+  for (int i = b.typeBegin[5]; i < b.typeBegin[6]; ++i) {
+    if (b.broken[i]) continue;
+    const float initial = b.initialRestLength[i];
+    const float target = initial * (1.0f + b.hydroFactor[i] * b.hydroInputs[b.hydroChannel[i]]);
+    float next = target;
+    if (b.hydroSpeed[i] > 0.0f) {
+      const float maxStep = b.hydroSpeed[i] * initial * dt;
+      next = b.restLength[i] + std::clamp(target - b.restLength[i], -maxStep, maxStep);
+    }
+    if (next == b.restLength[i]) continue;
+    // The actuator does work on the beam: book the change of its elastic energy as external work (§5.3).
+    const float len = length(b.nodePosition(b.beamB[i]) - b.nodePosition(b.beamA[i]));
+    const double before = static_cast<double>(len - b.restLength[i]);
+    const double after = static_cast<double>(len - next);
+    b.losses.external += 0.5 * b.stiffness[i] * (after * after - before * before);
+    b.restLength[i] = next;
+  }
 }
 
 template int accumulateBeamForces<true>(Body&);
@@ -171,8 +213,13 @@ double beamPotentialEnergy(const Body& b) {
         if (len < b.minLength[i]) ext = len - b.minLength[i];
         else if (len > b.maxLength[i]) ext = len - b.maxLength[i];
         break;
+      case BeamType::kAnisotropic:
+      case BeamType::kHydro: ext = len - b.restLength[i]; break;
     }
-    e += 0.5 * b.stiffness[i] * ext * ext;
+    const double k = (static_cast<BeamType>(b.beamType[i]) == BeamType::kAnisotropic && ext < 0.0)
+                         ? b.compressionStiffness[i]
+                         : b.stiffness[i];
+    e += 0.5 * k * ext * ext;
   }
   return e;
 }
@@ -183,7 +230,10 @@ float activeElasticForce(const Body& b, int i) {
   const float len = length(b.nodePosition(b.beamB[i]) - b.nodePosition(b.beamA[i]));
   const float k = b.stiffness[i];
   switch (static_cast<BeamType>(b.beamType[i])) {
-    case BeamType::kNormal: return k * (len - b.restLength[i]);
+    case BeamType::kNormal:
+    case BeamType::kHydro: return k * (len - b.restLength[i]);
+    case BeamType::kAnisotropic:
+      return (len < b.restLength[i] ? b.compressionStiffness[i] : k) * (len - b.restLength[i]);
     case BeamType::kSupport: return k * std::min(0.0f, len - b.restLength[i]);
     case BeamType::kRope: return k * std::max(0.0f, len - b.restLength[i]);
     case BeamType::kBounded:

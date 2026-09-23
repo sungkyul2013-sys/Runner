@@ -19,3 +19,16 @@ TEST_CASE("det::sin/cos exact quadrant identities", "[det_math]") {
   CHECK(std::fabs(sbc::det::sin(1.5707963267948966) - 1.0) < 1e-16);
   CHECK(std::fabs(sbc::det::cos(3.141592653589793) + 1.0) < 1e-16);
 }
+
+TEST_CASE("det::atan2 matches libm to 1e-14 in all quadrants", "[det_math]") {
+  double worst = 0.0;
+  for (int i = -400; i <= 400; ++i) {
+    for (int j = -400; j <= 400; j += 7) {
+      const double y = i * 0.0137, x = j * 0.0211;
+      worst = std::max(worst, std::fabs(sbc::det::atan2(y, x) - std::atan2(y, x)));
+    }
+  }
+  CHECK(worst < 1e-14);
+  CHECK(sbc::det::atan2(0.0, 0.0) == 0.0);
+  CHECK(std::fabs(sbc::det::atan2(1.0, 0.0) - 1.5707963267948966) < 1e-15);
+}

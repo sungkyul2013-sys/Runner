@@ -48,6 +48,19 @@ int reduce(double x, double& r) {
   return static_cast<int>(q);
 }
 
+// atan(t) for |t| ≤ tan(π/12) ≈ 0.268 by its Taylor series t·Σ (−1)^k t^(2k)/(2k+1), k = 0..15
+// (the first omitted term is < 1e-19).
+double atanSmall(double t) {
+  const double t2 = t * t;
+  double p = 0.0;
+  for (int k = 15; k >= 0; --k) p = ((k % 2 == 0) ? 1.0 : -1.0) / (2 * k + 1) + t2 * p;
+  return t * p;
+}
+
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kSqrt3 = 1.73205080756887729353;
+constexpr double kTanPi12 = 0.26794919243112270647;  // 2 − √3
+
 }  // namespace
 
 double sin(double x) {
@@ -58,6 +71,22 @@ double sin(double x) {
     case 2: return -sinPoly(r);
     default: return -cosPoly(r);
   }
+}
+
+double atan2(double y, double x) {
+  const double ax = std::fabs(x), ay = std::fabs(y);
+  if (ax == 0.0 && ay == 0.0) return 0.0;
+  const bool swap = ay > ax;
+  const double t = swap ? ax / ay : ay / ax;  // t ∈ [0, 1]
+  double a;
+  if (t > kTanPi12) {
+    a = kPi / 6.0 + atanSmall((t * kSqrt3 - 1.0) / (t + kSqrt3));  // atan t = π/6 + atan((t − 1/√3)/(1 + t/√3))
+  } else {
+    a = atanSmall(t);
+  }
+  if (swap) a = kPi / 2.0 - a;
+  if (x < 0.0) a = kPi - a;
+  return y < 0.0 ? -a : a;
 }
 
 double cos(double x) {
