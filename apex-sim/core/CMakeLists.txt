@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(SoftBodyCore VERSION 0.1.0 LANGUAGES CXX)
+project(SoftBodyCore VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,8 +34,19 @@ add_library(sbc STATIC
   src/scenes.cpp
   src/vehicle.cpp
   src/proto_car.cpp
+  src/vehicle_build.cpp
+  src/vehicle_json.cpp
 )
 target_include_directories(sbc PUBLIC include)
+
+# JSON parser for vehicle data (A§4.11): yyjson, MIT licence.
+include(FetchContent)
+FetchContent_Declare(yyjson
+  GIT_REPOSITORY https://github.com/ibireme/yyjson.git
+  GIT_TAG 0.13.0
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(yyjson)
+target_link_libraries(sbc PRIVATE yyjson)
 target_compile_options(sbc PRIVATE ${SBC_FP_FLAGS} -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion)
 target_compile_options(sbc INTERFACE ${SBC_FP_FLAGS})
 
@@ -85,7 +96,6 @@ endif()
 
 # ---- Tests -------------------------------------------------------------------------
 if(SBC_BUILD_TESTS)
-  include(FetchContent)
   FetchContent_Declare(Catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG v3.16.0
@@ -105,10 +115,12 @@ if(SBC_BUILD_TESTS)
     tests/test_contact.cpp
     tests/test_elements.cpp
     tests/test_vehicle.cpp
+    tests/test_vehicle_json.cpp
   )
   target_link_libraries(sbc_tests PRIVATE sbc Catch2::Catch2WithMain)
   target_compile_options(sbc_tests PRIVATE ${SBC_FP_FLAGS})
-  target_compile_definitions(sbc_tests PRIVATE SBC_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
+  target_compile_definitions(sbc_tests PRIVATE SBC_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden"
+                                                SBC_VEHICLE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../web/public/vehicles")
   if(SBC_IS_WASM)
     set_target_properties(sbc_tests PROPERTIES SUFFIX ".cjs")
     target_link_options(sbc_tests PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1 -sPTHREAD_POOL_SIZE=4 -sEXIT_RUNTIME=1 -sNODERAWFS=1 -sSTACK_SIZE=2MB)

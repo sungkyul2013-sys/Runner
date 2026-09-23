@@ -15,7 +15,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "node tools/e2e.mjs",
-    "bench": "npm run core:build && ./build/native-release/sbc-cli bench --bodies 16 --seconds 5 --threads 4"
+    "bench": "npm run core:build && ./build/native-release/sbc-cli bench --bodies 16 --seconds 5 --threads 4",
+    "vehicles:gen": "node tools/vehicle-gen/porsche_911_turbo_991.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",

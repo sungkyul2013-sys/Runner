@@ -37,5 +37,7 @@ _sbc_vehicle_body
 _sbc_vehicle_wheel_count
 _sbc_vehicle_set_input
 _sbc_vehicle_telemetry
+_sbc_world_spawn_vehicle_json
+_sbc_last_error
 _malloc
 _free

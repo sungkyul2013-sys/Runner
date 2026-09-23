@@ -4,15 +4,19 @@
 //   sbc-cli bench [--bodies N] [--seconds S] [--threads T] [--out file.json]
 //   sbc-cli stability <scene>
 //   sbc-cli golden <scene> [--seconds S] [--every-steps N] [--threads T]
+//   sbc-cli vehicle <vehicle.json> [--seconds S]   (load, stability check, settle on asphalt, report)
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 #include "sbc/scenes.h"
 #include "sbc/stability.h"
+#include "sbc/vehicle_json.h"
 #include "sbc/world.h"
 
 namespace {
@@ -33,7 +37,8 @@ bool parse(int argc, char** argv, Args& a) {
   if (argc < 2) return false;
   a.command = argv[1];
   int i = 2;
-  if ((a.command == "run" || a.command == "stability" || a.command == "golden") && i < argc && argv[i][0] != '-') {
+  if ((a.command == "run" || a.command == "stability" || a.command == "golden" || a.command == "vehicle") && i < argc &&
+      argv[i][0] != '-') {
     a.scene = argv[i++];
   }
   for (; i < argc; ++i) {
@@ -159,6 +164,73 @@ int cmdGolden(const Args& a) {
 
 }  // namespace
 
+int cmdVehicle(const Args& a) {
+  std::ifstream file(a.scene, std::ios::binary);
+  if (!file) {
+    std::fprintf(stderr, "cannot read %s\n", a.scene.c_str());
+    return 1;
+  }
+  std::stringstream text;
+  text << file.rdbuf();
+  sbc::LoadedVehicle car;
+  try {
+    car = sbc::loadVehicleJson(text.str());
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "%s\n", e.what());
+    return 1;
+  }
+  sbc::WorldParams wp;
+  wp.threadCount = a.threads;
+  sbc::World w(wp);
+  sbc::applyDefaultContactPairs(w);
+  w.addGroundPlane(0.0, sbc::material::kAsphalt);
+  const int body = w.addBody(car.build.body);
+  const int v = w.addVehicle(body, car.build.vehicle);
+  const sbc::Body& b = w.body(body);
+  double mass = 0.0;
+  for (int i = 0; i < b.nodeCount(); ++i) mass += b.mass[i];
+  const auto st = sbc::checkStability(b, wp.dt);
+  std::printf("%s: %d nodes, %d beams, %d sliders, %d torsion bars, %d pressure groups, mass %.1f kg\n", car.id.c_str(),
+              b.nodeCount(), b.beamCount(), b.sliderCount(), b.torsionBarCount(), b.pressureGroupCount(), mass);
+  std::printf("stability: %s, min critical dt %.3f ms, %d beam / %d node violations\n", st.ok() ? "ok" : "VIOLATED",
+              st.minCriticalDt * 1000.0, st.beamViolations, st.nodeViolations);
+  int shown = 0;
+  for (const auto& is : st.worst) {
+    if (shown++ >= 6 || is.criticalDt * sbc::kDefaultStabilitySafety >= wp.dt) break;
+    const int n = is.isNode ? is.index : b.beamA[is.index];
+    const int m = is.isNode ? -1 : b.beamB[is.index];
+    auto name = [&](int i) { return i >= 0 && i < static_cast<int>(car.nodeIds.size()) && !car.nodeIds[i].empty() ? car.nodeIds[i] : "#" + std::to_string(i); };
+    std::printf("  %s %s%s%s: critical %.3f ms\n", is.isNode ? "node" : "beam", name(n).c_str(), is.isNode ? "" : "–",
+                is.isNode ? "" : name(m).c_str(), is.criticalDt * 1000.0);
+  }
+  const auto t0 = Clock::now();
+  w.step(static_cast<int>(a.seconds / wp.dt));
+  const double wall = std::chrono::duration<double>(Clock::now() - t0).count();
+  const auto& t = w.vehicleTelemetry(v);
+  double front = 0.0, total = 0.0;
+  for (size_t i = 0; i < t.wheels.size(); ++i) {
+    total += t.wheels[i].load;
+    if (i < 2) front += t.wheels[i].load;
+  }
+  std::printf("after %.1f s (%.1f× real time): ref height %.4f m (model %.4f), speed %.4f m/s, front load %.1f %%\n",
+              a.seconds, a.seconds / wall, t.position.y + b.origin.y, car.build.vehicle.refCenterModel.y, t.speed,
+              100.0 * front / total);
+  for (size_t i = 0; i < t.wheels.size(); ++i) {
+    const auto& wt = t.wheels[i];
+    const sbc::WheelDesc& wd = car.build.vehicle.wheels[i];
+    // Suspension sag: axle point height relative to the chassis reference, versus the model design pose.
+    const sbc::Vec3 design = (car.build.body.nodes[static_cast<size_t>(wd.axleLeft)].position +
+                              car.build.body.nodes[static_cast<size_t>(wd.axleRight)].position) * 0.5f;
+    const float designRel = design.y - car.build.vehicle.refCenterModel.y;
+    const float nowRel = wt.center.y - t.position.y;
+    const float side = wt.center.x > t.position.x ? 1.0f : -1.0f;  // + left
+    std::printf("  %s: load %6.0f N, loaded radius %.4f m, suspension compressed %+.1f mm, camber %+.2f°, toe %+.2f°\n",
+                wd.name.c_str(), wt.load, wt.loadedRadius, 1000.0f * (nowRel - designRel), -side * wt.axis.y * 57.2958f,
+                side * wt.axis.z * 57.2958f);
+  }
+  return 0;
+}
+
 int main(int argc, char** argv) {
   Args a;
   if (!parse(argc, argv, a)) {
@@ -173,6 +245,7 @@ int main(int argc, char** argv) {
   if (a.command == "bench") return cmdBench(a);
   if (a.command == "stability") return cmdStability(a);
   if (a.command == "golden") return cmdGolden(a);
+  if (a.command == "vehicle") return cmdVehicle(a);
   std::fprintf(stderr, "unknown command %s\n", a.command.c_str());
   return 2;
 }

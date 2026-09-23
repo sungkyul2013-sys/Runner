@@ -76,6 +76,12 @@ void sbc_body_check_stability(sbc_world* w, int body, double safety, double* out
 /* Spawns the procedural APEX Proto car (sbc/proto_car.h) with its model origin at (x, y, z), heading yaw [rad] about
    +Y and forward speed [m/s]. Returns the vehicle id, or −1. */
 int sbc_world_spawn_proto_car(sbc_world* w, double x, double y, double z, double yaw, float speed);
+/* Spawns a vehicle from "apex-vehicle" JSON text (docs/VEHICLE_FORMAT.md). Returns the vehicle id, or −1 on a parse /
+   validation error (the message is available from sbc_last_error). */
+int sbc_world_spawn_vehicle_json(sbc_world* w, const char* json, int length, double x, double y, double z, double yaw,
+                                 float speed);
+/* Message of the last failed call on this thread ("" if none). */
+const char* sbc_last_error(void);
 int sbc_world_vehicle_count(sbc_world* w);
 int sbc_vehicle_body(sbc_world* w, int vehicle);
 int sbc_vehicle_wheel_count(sbc_world* w, int vehicle);

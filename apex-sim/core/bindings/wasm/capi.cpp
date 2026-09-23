@@ -3,12 +3,14 @@
 #include <exception>
 #include <limits>
 #include <memory>
+#include <string>
 
 #include "sbc/builder.h"
 #include "sbc/proto_car.h"
 #include "sbc/sbc.h"
 #include "sbc/scenes.h"
 #include "sbc/stability.h"
+#include "sbc/vehicle_json.h"
 #include "sbc/world.h"
 
 struct sbc_world {
@@ -22,11 +24,15 @@ namespace {
 bool validBody(sbc_world* w, int body) { return w && body >= 0 && body < w->world.bodyCount(); }
 bool validVehicle(sbc_world* w, int v) { return w && v >= 0 && v < w->world.vehicleCount(); }
 
+thread_local std::string lastError;
+
 template <typename F>
 int guarded(F&& f) {
   try {
+    lastError.clear();
     return f();
-  } catch (const std::exception&) {
+  } catch (const std::exception& e) {
+    lastError = e.what();
     return -1;
   }
 }
@@ -232,6 +238,19 @@ int sbc_world_spawn_proto_car(sbc_world* w, double x, double y, double z, double
     return w->world.addVehicle(body, car.vehicle);
   });
 }
+
+int sbc_world_spawn_vehicle_json(sbc_world* w, const char* json, int length, double x, double y, double z, double yaw,
+                                 float speed) {
+  if (!w || !json || length < 0) return -1;
+  return guarded([&] {
+    const sbc::LoadedVehicle car =
+        sbc::loadVehicleJson(std::string_view(json, static_cast<size_t>(length)), {{x, y, z}, yaw, speed});
+    const int body = w->world.addBody(car.build.body);
+    return car.build.vehicle.wheels.empty() ? -2 : w->world.addVehicle(body, car.build.vehicle);
+  });
+}
+
+const char* sbc_last_error(void) { return lastError.c_str(); }
 
 int sbc_world_vehicle_count(sbc_world* w) { return w ? w->world.vehicleCount() : 0; }
 int sbc_vehicle_body(sbc_world* w, int v) { return validVehicle(w, v) ? w->world.vehicleBody(v) : -1; }

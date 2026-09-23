@@ -269,29 +269,8 @@ VehicleBuild makeProtoCar(const ProtoCarOptions& o) {
   v.steeringChannel = kSteering;
   v.steeringRate = 2.5f;
 
-  // Spawn pose: yaw about +Y, forward speed with the wheels spinning to match.
-  const double c = det::cos(o.yaw), s = det::sin(o.yaw);
-  auto rotate = [c, s](Vec3 p) {
-    return Vec3{static_cast<float>(c * p.x + s * p.z), p.y, static_cast<float>(-s * p.x + c * p.z)};
-  };
-  if (o.speed != 0.0f) {
-    for (NodeDesc& n : b.d.nodes) n.velocity = {0.0f, 0.0f, o.speed};
-    const double omega = o.speed / kTyreRadius;
-    for (int i = 0; i < 4; ++i) {
-      const DVec3 center{specs[i].side * kTrackHalf, kTyreRadius, specs[i].axleZ};
-      for (const int32_t n : corners[i].wheel.all) {
-        const DVec3 r = toDouble(b.d.nodes[static_cast<size_t>(n)].position) - center;
-        const DVec3 spin = cross(DVec3{omega, 0.0, 0.0}, r);  // axis +X (left)
-        b.d.nodes[static_cast<size_t>(n)].velocity = toFloat(DVec3{0.0, 0.0, o.speed} + spin);
-      }
-    }
-  }
-  for (NodeDesc& n : b.d.nodes) {
-    n.position = rotate(n.position);
-    n.velocity = rotate(n.velocity);
-  }
-  b.d.origin = o.position;
   out.body = std::move(b.d);
+  placeVehicle(out, {o.position, o.yaw, o.speed});
   return out;
 }
 

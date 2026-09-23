@@ -8,6 +8,7 @@
 #include "sbc/builder.h"
 #include "sbc/math.h"
 #include "sbc/vehicle.h"
+#include "sbc/vehicle_build.h"
 
 namespace sbc {
 
@@ -20,11 +21,6 @@ struct ProtoCarOptions {
   float speed = 0.0f;  // [m/s] initial forward speed (wheels spun up to match)
   bool abs = true;
   PressureWheelParams tyre = protoTyre();
-};
-
-struct VehicleBuild {
-  BodyDesc body;
-  VehicleDesc vehicle;
 };
 
 VehicleBuild makeProtoCar(const ProtoCarOptions& options = {});
