@@ -110,3 +110,29 @@ TEST_CASE("static friction holds, kinetic friction decelerates at mu_k*g", "[con
   w.step(4000);  // comes to rest and stays
   CHECK(std::fabs(w.body(0).vx[0]) < 1e-4);
 }
+
+TEST_CASE("a node pressed onto the ground keeps sliding when CCD clamps it", "[contact][ccd]") {
+  // A soft, frictionless ground contact (2 Hz: 0.16 g at full penetration) cannot hold the node against gravity,
+  // so every step ends a hair below the ground and CCD clamps it — as for a tyre tread node, which carries only a
+  // share of the road contact. The clamp must remove only the penetration: rewinding to the impact point also undid
+  // the tangential step, the node froze in place while its velocity kept its 5 m/s (a crashed car's tread node did
+  // exactly this, and its beams pumped megajoules into the car).
+  WorldParams p;
+  auto w = std::make_unique<World>(p);
+  ContactPairParams soft;
+  soft.staticFriction = soft.kineticFriction = 0.0f;
+  soft.normalFrequencyHz = 2.0f;
+  w->setContactPair(0, material::kConcrete, soft);
+  w->addGroundPlane(0.0, material::kConcrete);
+  w->addBody(test::singleNode({0.0f, 0.0f, 0.0f}, 1.0f, {5.0f, 0.0f, 0.0f}));
+  int clamps = 0;
+  for (int s = 0; s < 200; ++s) {
+    w->step();
+    clamps += w->lastStepStats().ccdClamps;
+  }
+  const DVec3 x = w->body(0).nodeWorldPosition(0);
+  INFO("x " << x.x << " y " << x.y << " clamps " << clamps);
+  CHECK(clamps > 0);
+  CHECK(x.x > 0.45);  // 5 m/s × 0.1 s
+  CHECK(x.y > -1e-3);
+}

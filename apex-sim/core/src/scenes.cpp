@@ -95,7 +95,7 @@ void applyDefaultContactPairs(World& w) {
 }
 
 std::vector<std::string> sceneNames() {
-  return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0", "proto_drive"};
+  return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0", "proto_drive", "drive"};
 }
 
 std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o) {
@@ -113,14 +113,52 @@ std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o)
     w->addVehicle(w->addBody(car.body), car.vehicle);
     return w;
   }
+  if (name == "drive") {
+    // Driving ground (M1e, web): asphalt, no car (the client spawns one from its vehicle JSON at the origin facing
+    // +Z). The straight lane (x ≈ 0) is free for 300 m up to a concrete wall. To the right (−X): a slalom of light
+    // knock-over cones (3 kg rubber lattices — rigid posts narrower than a car's node pitch slip between its nodes
+    // until node↔triangle contact arrives in M2, KNOWN_ISSUES P1). To the left (+X): three 5 cm speed bumps and a
+    // 1.2 m jump ramp.
+    WorldParams wp;
+    wp.threadCount = o.threads;
+    wp.trackEnergy = o.trackEnergy;
+    auto w = std::make_unique<World>(wp);
+    applyDefaultContactPairs(*w);
+    w->addGroundPlane(0.0, material::kAsphalt);
+    for (int i = 0; i < 6; ++i) {
+      LatticeParams cone;
+      cone.center = {-12.0, 0.41, 30.0 + 18.0 * i};  // bottom nodes (r 0.1) rest on the ground
+      cone.size = {0.34f, 0.6f, 0.34f};
+      cone.nx = 2; cone.ny = 3; cone.nz = 2;
+      cone.totalMass = 3.0f;
+      cone.nodeRadius = 0.1f;
+      cone.axialStiffness = 1.5e4f;
+      cone.dampingRatio = 0.2f;
+      cone.material = material::kRubber;
+      w->addBody(makeLattice(cone));
+    }
+    for (int i = 0; i < 3; ++i) {
+      w->addStaticBox({9.0, 0.0, 25.0 + 12.0 * i}, {3.0f, 0.05f, 0.25f}, 0.0, material::kAsphalt);
+    }
+    // Wedge: rises along +Z from z = 20 (ground) to z = 32 (1.2 m), x ∈ [19, 25]; outward-facing, open below.
+    const std::vector<float> v = {25, 0, 20, 19, 0, 20, 25, 0, 32, 19, 0, 32, 25, 1.2f, 32, 19, 1.2f, 32};
+    // No bottom face: it would lie in the ground plane, and a one-sided triangle grabs nodes within one radius
+    // behind it too (tread nodes rolling past would be pushed down into the road).
+    const std::vector<int32_t> idx = {0, 1, 5, 0, 5, 4, 2, 4, 5, 2, 5, 3, 0, 4, 2, 1, 3, 5};
+    w->addStaticMesh({}, v, idx, material::kConcrete);
+    w->addStaticBox({0.0, 1.5, 300.0}, {15.0f, 1.5f, 0.5f}, 0.0, material::kConcrete);
+    return w;
+  }
   if (name == "sandbox") {
     // Empty test ground for the web sandbox: a concrete wall 20 m down +x, a 6 m ramp to −x and a pillar.
     auto w = baseWorld(o);
     w->addStaticBox({20.0, 1.5, 0.0}, {0.5f, 1.5f, 5.0f}, 0.0, material::kConcrete);
     w->addStaticBox({8.0, 1.0, 8.0}, {0.3f, 1.0f, 0.3f}, 0.0, material::kConcrete);
-    // Wedge: slope rises from x = −14 (ground) to x = −8 (1.2 m), 4 m wide; closed and outward-facing.
+    // Wedge: slope rises from x = −14 (ground) to x = −8 (1.2 m), 4 m wide; outward-facing, open below.
     const std::vector<float> v = {-14, 0, -2, -14, 0, 2, -8, 0, -2, -8, 0, 2, -8, 1.2f, -2, -8, 1.2f, 2};
-    const std::vector<int32_t> idx = {0, 1, 5, 0, 5, 4, 2, 4, 5, 2, 5, 3, 0, 4, 2, 1, 3, 5, 0, 2, 3, 0, 3, 1};
+    // No bottom face: it would lie in the ground plane, and a one-sided triangle grabs nodes within one radius
+    // behind it too (tread nodes rolling past would be pushed down into the road).
+    const std::vector<int32_t> idx = {0, 1, 5, 0, 5, 4, 2, 4, 5, 2, 5, 3, 0, 4, 2, 1, 3, 5};
     w->addStaticMesh({}, v, idx, material::kConcrete);
     return w;
   }

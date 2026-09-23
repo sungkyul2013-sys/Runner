@@ -40,12 +40,26 @@ npm run bench              # 네이티브 물리 벤치 (큐브 16개)
 ./build/native-release/sbc-cli run wall_crash --seconds 1.5 --energy   # 에너지 수지 출력
 ```
 
-URL 옵션: `?scene=sandbox|cube_drop|tower|wall_crash|pile|golden_m0`, `?golden=1`(브라우저 결정론 자가 검사), `?bench=1`(벤치 JSON), `?backend=webgl2`(WebGL2 강제), `?lang=en`.
+URL 옵션: `?drive=porsche_911_turbo_991`(주행), `?view=garage[&car=<id>]`(차고), `?scene=sandbox|cube_drop|tower|wall_crash|pile|golden_m0|drive`, `?golden=1`(브라우저 결정론 자가 검사), `?bench=1`(벤치 JSON), `?backend=webgl2`(WebGL2 강제), `?lang=en`.
 
 ### 배포
 
-WASM 스레드와 트리플 버퍼는 `SharedArrayBuffer`를 쓰므로 페이지가 교차 출처 격리 상태여야 한다.
-`dist/_headers`는 Cloudflare Pages·Netlify용 COOP/COEP 설정이다. `file://`로 열면 동작하지 않는다.
+WASM 스레드와 트리플 버퍼는 `SharedArrayBuffer`를 쓰므로 페이지가 교차 출처 격리 상태일 때 가장 빠르다.
+`dist/_headers`는 Cloudflare Pages·Netlify용 COOP/COEP 설정이다. 격리가 없는 호스트에서는 단일 스레드 WASM과
+메시지 전송으로 자동 전환한다(무거운 장면은 느려질 수 있음). `file://`로 열면 동작하지 않는다(워커·WASM 로딩).
+Claude 아티팩트용 패키지: `node tools/artifact/package-app.mjs <출력 폴더>`(해시 경로 #drive·#garage·#sandbox).
+
+## 조작 (주행, `?drive=`)
+
+| 동작 | 키보드 | 게임패드 |
+|---|---|---|
+| 가속 / 브레이크 | W ↑ / S ↓ (정지 중 S를 0.35초 누르면 후진) | RT / LT |
+| 조향 | A D ← → | 왼쪽 스틱 |
+| 핸드브레이크 | Space | B |
+| 변속(수동) / 자동·수동 전환 | E Q / M | RB LB / Back |
+| TCS / ABS | T / B | |
+| 카메라(추적·궤도) / 재시작 / 엑스레이 | C / R / V | X / Y |
+| 화면 정보 숨기기 | H | |
 
 ## 조작 (M0 샌드박스)
 

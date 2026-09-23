@@ -44,9 +44,9 @@ const STRINGS = {
   drawCalls: { ko: '드로우콜', en: 'Draw calls' },
   overloaded: { ko: '물리 과부하 — 시간 감속 중', en: 'Physics overloaded — time slowed' },
   stabilityWarn: { ko: '안정성 경고', en: 'Stability warning' },
-  noIsolation: {
-    ko: '이 페이지는 교차 출처 격리(COOP/COEP)가 필요합니다. 제공된 개발 서버나 _headers 설정이 있는 호스팅에서 여십시오.',
-    en: 'This page needs cross-origin isolation (COOP/COEP). Open it from the dev server or a host with the _headers file.',
+  singleThread: {
+    ko: '교차 출처 격리(COOP/COEP)가 없는 페이지라 물리를 단일 스레드로 돌립니다. 무거운 장면은 느려질 수 있습니다.',
+    en: 'No cross-origin isolation (COOP/COEP) on this page: physics runs single-threaded, heavy scenes may slow down.',
   },
   hintOrbit: { ko: '드래그 회전 · 휠 줌 · WASD 이동 · Q/E 높이', en: 'Drag orbit · wheel zoom · WASD move · Q/E height' },
   hintTime: { ko: 'Space 일시정지 · . 한 스텝 · [ ] 속도 · R 초기화 · F 포커스', en: 'Space pause · . step · [ ] speed · R reset · F focus' },

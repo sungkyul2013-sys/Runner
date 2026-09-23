@@ -1,6 +1,7 @@
 // End-to-end check in headless Chromium (§23.4, §2.2 screenshots):
 //   1. golden_m0 in the browser worker must reproduce the native golden hashes (§23.1 결정론, native = WASM)
 //   2. sandbox screenshots (docs/screenshots/)
+//   2b. driving (§17, M1e): the Porsche launches, steers and brakes under keyboard input; drive screenshots
 //   3. short benchmark run → bench/results/ (GPU-less CI machines render on SwiftShader: frame times there are
 //      NOT representative of real hardware; physics timings are)
 // Usage: npm run build && node tools/e2e.mjs [--no-bench] [--chromium /path/to/chrome]
@@ -94,6 +95,45 @@ async function main() {
       if (errors.length || consoleErrors.length) failures.push(`errors (sandbox): ${[...errors, ...consoleErrors].join(' | ')}`);
       await page.close();
       console.log('screenshots → docs/screenshots/');
+    }
+    // 2b. driving: keyboard in, telemetry out (the car is the physics vehicle; the view is its GLB bound to it)
+    {
+      const dir = join(root, 'docs', 'screenshots');
+      const { page, consoleErrors } = await openPage(browser, '?drive=porsche_911_turbo_991');
+      await page.waitForFunction(() => window.__apex?.drive?.latest != null, null, { timeout: 120000 });
+      const tel = () =>
+        page.evaluate(() => {
+          const s = window.__apex.drive.latest;
+          return { kmh: s.speed * 3.6, gear: s.gear, up: s.up[1], fwd: [s.forward[0], s.forward[2]], pos: s.position };
+        });
+      await page.waitForTimeout(2000);
+      const rest = await tel();
+      await page.keyboard.down('KeyW');
+      await page.waitForTimeout(5000);
+      const launched = await tel();
+      await page.screenshot({ path: join(dir, 'M1-drive-launch.png') });
+      await page.keyboard.down('KeyA');
+      await page.waitForTimeout(1500);
+      await page.keyboard.up('KeyA');
+      await page.keyboard.up('KeyW');
+      const turned = await tel();
+      await page.screenshot({ path: join(dir, 'M1-drive-turn.png') });
+      await page.keyboard.down('KeyS');
+      await page.waitForTimeout(5000);
+      await page.keyboard.up('KeyS');
+      const stopped = await tel();
+      const heading = (f) => Math.atan2(f[0], f[1]);
+      const turn = Math.abs(heading(turned.fwd) - heading(launched.fwd));
+      console.log('drive:', JSON.stringify({ rest: rest.kmh, launched: launched.kmh, gear: launched.gear, turnRad: turn, stopped: stopped.kmh }));
+      if (Math.abs(rest.kmh) > 2) failures.push(`drive: the car creeps at rest (${rest.kmh.toFixed(1)} km/h)`);
+      if (launched.kmh < 40) failures.push(`drive: only ${launched.kmh.toFixed(1)} km/h after 5 s of throttle`);
+      if (launched.gear < 2) failures.push('drive: the automatic did not upshift');
+      if (turn < 0.1) failures.push(`drive: steering left turned the car by only ${turn.toFixed(3)} rad`);
+      if (Math.abs(stopped.kmh) > 3) failures.push(`drive: still ${stopped.kmh.toFixed(1)} km/h after 5 s of braking`);
+      if (Math.min(rest.up, launched.up, turned.up, stopped.up) < 0.9) failures.push('drive: the car tipped over');
+      const errors = await page.evaluate(() => window.__apex.errors);
+      if (errors.length || consoleErrors.length) failures.push(`errors (drive): ${[...errors, ...consoleErrors].join(' | ')}`);
+      await page.close();
     }
     // 3. benchmark
     if (runBench) {

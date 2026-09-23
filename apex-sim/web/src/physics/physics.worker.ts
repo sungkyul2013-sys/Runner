@@ -1,12 +1,12 @@
 /// <reference lib="webworker" />
 // Physics worker: owns the SoftBodyCore WASM instance, runs the fixed 2000 Hz loop and publishes frames through the
-// triple buffer (A§2). Overload policy (§21.2, §25): never skip a step — let simulated time fall behind wall time
+// triple buffer (A§2), or by transferring slot buffers when the page has no SharedArrayBuffer (message transport). Overload policy (§21.2, §25): never skip a step — let simulated time fall behind wall time
 // and report the real-time factor instead.
 import {
-  B, BODY_STRIDE_F64, ENERGY_FIELDS, H, MAX_BEAMS, MAX_BODIES, MAX_NODES, MAX_VEHICLES, slotViews, TripleBufferWriter,
+  B, BODY_STRIDE_F64, ENERGY_FIELDS, H, MAX_BEAMS, MAX_BODIES, MAX_NODES, MAX_VEHICLES, SLOT_BYTES, slotViews, TripleBufferWriter,
   VT_HEADER, VT_MAX_WHEELS, VT_STRIDE, VT_WHEEL, type SlotViews,
 } from './layout';
-import type { BodyTopology, FromWorker, ToWorker, VehicleInput } from './messages';
+import type { BodyTopology, FromWorker, ToWorker, Transport, VehicleInput } from './messages';
 import { LATTICE_PARAM_COUNT, readCString, type Ptr, type SbcFactory, type SbcModule } from './sbc';
 
 const ITERATION_PERIOD_MS = 4; // target loop period (≈ 250 Hz publishing)
@@ -19,8 +19,31 @@ let sbc: SbcModule;
 let world: Ptr = 0;
 let threads = 1;
 let dt = 0.0005;
+let transport: Transport = 'shared';
 let writer: TripleBufferWriter;
 let slots: SlotViews[] = [];
+// Message transport: the slot being filled, and returned slots ready for reuse (at most MESSAGE_SLOTS exist).
+const MESSAGE_SLOTS = 4;
+let back: SlotViews | null = null;
+const spare: ArrayBuffer[] = [];
+let allocatedSlots = 0;
+
+/** The slot to fill now, or null when every message slot is still in flight (that publish is skipped). */
+function backSlot(): SlotViews | null {
+  if (transport === 'shared') return slots[writer.slot];
+  if (!back) {
+    const buffer = spare.pop() ?? (allocatedSlots < MESSAGE_SLOTS ? (allocatedSlots++, new ArrayBuffer(SLOT_BYTES)) : null);
+    back = buffer ? slotViews(buffer) : null;
+  }
+  return back;
+}
+
+function commit(): void {
+  if (transport === 'shared') return writer.publish();
+  const buffer = back!.header.buffer as ArrayBuffer;
+  back = null;
+  post({ type: 'frame', buffer }, [buffer]);
+}
 
 let paused = false;
 let timeScale = 1;
@@ -168,7 +191,8 @@ function publishVehicles(s: SlotViews): number {
 }
 
 function publish(): void {
-  const s = slots[writer.slot];
+  const s = backSlot();
+  if (!s) return;
   const h = s.header;
   const count = Math.min(sbc._sbc_world_body_count(world), MAX_BODIES);
   let nodeOffset = 0;
@@ -227,7 +251,7 @@ function publish(): void {
   h[H.hashLo] = sbc._sbc_world_state_hash_lo(world);
   h[H.vehicleCount] = publishVehicles(s);
   h[H.publishSeq] = ++publishSeq;
-  writer.publish();
+  commit();
 }
 
 function stepTimed(steps: number): number {
@@ -269,9 +293,15 @@ async function init(msg: Extract<ToWorker, { type: 'init' }>): Promise<void> {
   const factory = (await import(/* @vite-ignore */ msg.wasmUrl)).default as SbcFactory;
   const base = msg.wasmUrl.slice(0, msg.wasmUrl.lastIndexOf('/') + 1);
   sbc = await factory({ locateFile: (p) => base + p });
-  threads = Math.max(1, msg.threads);
-  writer = new TripleBufferWriter(new Int32Array(msg.ctrl));
-  slots = msg.slots.map((b) => slotViews(b));
+  transport = msg.transport;
+  threads = transport === 'shared' ? Math.max(1, msg.threads) : 1;
+  if (transport === 'shared') {
+    writer = new TripleBufferWriter(new Int32Array(msg.ctrl!));
+    slots = msg.slots.map((b) => slotViews(b));
+  } else {
+    spare.push(...(msg.slots as ArrayBuffer[]));
+    allocatedSlots = spare.length;
+  }
   post({ type: 'ready', threads });
   lastWall = performance.now();
   iterate();
@@ -286,6 +316,9 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
         return;
       case 'scene':
         loadScene(msg.name, msg.bodies);
+        return;
+      case 'returnSlot':
+        if (msg.buffer.byteLength === SLOT_BYTES) spare.push(msg.buffer);
         return;
       case 'spawnLattice': {
         if (!world) return;

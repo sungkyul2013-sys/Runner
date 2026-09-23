@@ -192,9 +192,22 @@ function proceduralWheel(rimRadius: number, outerRadius: number, width: number, 
 
 const loader = new GLTFLoader();
 
+// Builds for hosts that serve no .glb (Claude Artifacts): every model ships as `<name>.glb.txt`, base64.
+const GLB_AS_BASE64 = import.meta.env.VITE_APEX_GLB_BASE64 === '1';
+
+async function fetchBase64(url: string): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const text = atob((await res.text()).trim());
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+  return bytes.buffer;
+}
+
 /** Loads from a URL, or parses GLB bytes already in memory (the garage Artifact, whose host serves no .glb). */
 export async function loadVehicleModel(source: string | ArrayBuffer): Promise<VehicleModel> {
   const url = typeof source === 'string' ? source : 'GLB';
+  if (typeof source === 'string' && GLB_AS_BASE64) source = await fetchBase64(`${source}.txt`);
   const gltf = typeof source === 'string' ? await loader.loadAsync(source) : await loader.parseAsync(source, '');
   const meta = gltf.scene.userData.apex as VehicleMeta;
   const root = new THREE.Group();

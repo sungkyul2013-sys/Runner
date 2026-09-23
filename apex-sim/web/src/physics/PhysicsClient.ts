@@ -12,7 +12,7 @@ import {
   type EnergyField,
   type SlotViews,
 } from './layout';
-import type { BodyTopology, FromWorker, ToWorker, VehicleInput, VehiclePose, VehicleSource } from './messages';
+import type { BodyTopology, FromWorker, ToWorker, Transport, VehicleInput, VehiclePose, VehicleSource } from './messages';
 import { packLattice, type LatticeParams } from './sbc';
 import { blendVehicle, decodeVehicle, VT, type VehicleState } from './telemetry';
 
@@ -41,7 +41,7 @@ export interface FrameStats {
   hash: string;
 }
 
-/** One physics frame copied out of shared memory (world positions relative to the render origin). */
+/** One physics frame copied out of a published slot (world positions relative to the render origin). */
 interface Frame {
   arrival: number; // performance.now() when the main thread received it
   simTime: number;
@@ -75,9 +75,11 @@ export class PhysicsClient {
   /** Rendering is done relative to this world point (floating origin for large maps, M6). */
   renderOrigin: [number, number, number] = [0, 0, 0];
 
+  readonly transport: Transport;
   private worker: Worker;
-  private reader: TripleBufferReader;
-  private slots: SlotViews[];
+  private reader: TripleBufferReader | null = null;
+  private slots: SlotViews[] = [];
+  private arrived: ArrayBuffer | null = null; // message transport: newest frame not yet consumed
   private prev: Frame | null = null;
   private cur: Frame | null = null;
   private render: RenderFrame | null = null;
@@ -91,19 +93,32 @@ export class PhysicsClient {
   private vehicleRequests = new Map<number, { resolve: (v: SpawnedVehicle) => void; reject: (e: Error) => void }>();
   private nextRequest = 1;
 
+  /** True when the page may share memory with the worker (cross-origin isolated): threaded WASM + SAB frames. */
   static isSupported(): boolean {
     return typeof SharedArrayBuffer !== 'undefined' && globalThis.crossOriginIsolated === true;
   }
 
-  constructor(private readonly wasmUrl: string, threads: number) {
-    const ctrl = createControl(true);
-    const slotBuffers = [0, 1, 2].map(() => new SharedArrayBuffer(SLOT_BYTES));
-    this.slots = slotBuffers.map((b) => slotViews(b));
-    this.reader = new TripleBufferReader(ctrl);
+  static defaultTransport(): Transport {
+    return PhysicsClient.isSupported() ? 'shared' : 'message';
+  }
+
+  /** `wasmUrl` must match the transport: the threaded module for 'shared', the single-thread one for 'message'. */
+  constructor(private readonly wasmUrl: string, threads: number, transport: Transport = PhysicsClient.defaultTransport()) {
+    this.transport = transport;
     this.worker = new Worker(new URL('./physics.worker.ts', import.meta.url), { type: 'module', name: 'physics' });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data);
     this.worker.onerror = (e) => this.listeners.error.forEach((l) => l(e.message));
-    this.send({ type: 'init', ctrl: ctrl.buffer as SharedArrayBuffer, slots: slotBuffers, wasmUrl: this.wasmUrl, threads });
+    if (transport === 'shared') {
+      const ctrl = createControl(true);
+      const slotBuffers = [0, 1, 2].map(() => new SharedArrayBuffer(SLOT_BYTES));
+      this.slots = slotBuffers.map((b) => slotViews(b));
+      this.reader = new TripleBufferReader(ctrl);
+      this.send({ type: 'init', transport, ctrl: ctrl.buffer as SharedArrayBuffer, slots: slotBuffers, wasmUrl: this.wasmUrl, threads });
+    } else {
+      // Slots travel by transfer; the worker allocates more (up to a small cap) while these are in flight.
+      const slotBuffers = [0, 1].map(() => new ArrayBuffer(SLOT_BYTES));
+      this.send({ type: 'init', transport, ctrl: null, slots: slotBuffers, wasmUrl: this.wasmUrl, threads: 1 }, slotBuffers);
+    }
   }
 
   onTopology(l: Listener<{ reset: boolean; added: BodyTopology[] }>) { this.listeners.topology.push(l); }
@@ -151,11 +166,13 @@ export class PhysicsClient {
 
   /** Pulls the newest physics frame (if any) and returns positions interpolated for `now`. */
   update(now: number): RenderFrame | null {
-    if (this.reader.acquire()) {
-      const frame = this.copyFrame(this.slots[this.reader.slot], now, this.prev);
+    const fresh = this.acquire();
+    if (fresh) {
+      const frame = this.copyFrame(fresh, now, this.prev);
       this.prev = this.cur;
       this.cur = frame;
-      this.stats = this.readStats(this.slots[this.reader.slot]);
+      this.stats = this.readStats(fresh);
+      this.release();
     }
     const cur = this.cur;
     if (!cur) return null;
@@ -188,6 +205,20 @@ export class PhysicsClient {
       r.vehicles = cur.vehicles.map((v, i) => (i < prev.vehicles.length && prev.vehicles[i].body === v.body ? blendVehicle(prev.vehicles[i], v, alpha) : v));
     }
     return r;
+  }
+
+  /** The newest published slot, if one arrived since the last call. */
+  private acquire(): SlotViews | null {
+    if (this.reader) return this.reader.acquire() ? this.slots[this.reader.slot] : null;
+    return this.arrived ? slotViews(this.arrived) : null;
+  }
+
+  /** Message transport: hands the consumed slot back to the worker (shared slots need nothing). */
+  private release(): void {
+    if (!this.arrived) return;
+    const buffer = this.arrived;
+    this.arrived = null;
+    this.send({ type: 'returnSlot', buffer }, [buffer]);
   }
 
   latestStats(): FrameStats | null {
@@ -276,6 +307,11 @@ export class PhysicsClient {
       case 'ready':
         this.threads = msg.threads;
         break;
+      case 'frame':
+        // A newer frame supersedes an unconsumed one: that slot goes straight back.
+        if (this.arrived) this.release();
+        this.arrived = msg.buffer;
+        break;
       case 'topology':
         if (msg.reset) this.topology.length = 0;
         for (const t of msg.bodies) this.topology[t.index] = t;
@@ -310,7 +346,7 @@ export class PhysicsClient {
     }
   }
 
-  private send(msg: ToWorker): void {
-    this.worker.postMessage(msg);
+  private send(msg: ToWorker, transfer: Transferable[] = []): void {
+    this.worker.postMessage(msg, transfer);
   }
 }

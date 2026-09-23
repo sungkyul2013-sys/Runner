@@ -360,6 +360,10 @@ void Vehicle::step(const World& world, Body& b, bool track) {
       const double fn = b.patchForce[i];
       if (!(fn > 0.0)) continue;
       const DVec3 weighted{b.patchNx[i], b.patchNy[i], b.patchNz[i]};
+      // A road pushes the tread toward the hub. A contact pushing it away (the underside or back of a thin static
+      // face the node rolled past) is no road for the tyre model: its node spring still acts, but it must not flip
+      // the patch plane under the radial spring.
+      if (dot(weighted, f.axlePoint - pos(b, i)) <= 0.0) continue;
       const ContactPairParams& pp = world.contactPair(b.material[i], b.patchMaterial[i]);
       const double omegaN = 2.0 * kPi * pp.normalFrequencyHz;
       const double penetration = fn / (b.mass[i] * omegaN * omegaN);

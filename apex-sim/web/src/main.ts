@@ -26,7 +26,26 @@ declare global {
 window.__apex = { errors: [] };
 
 const params = new URLSearchParams(location.search);
+// Artifact build (VITE_APEX_ARTIFACT=1): the host passes no query string, only a bare #token — #drive (default,
+// #drive.<vehicle id> for another car), #garage or #sandbox — so modes switch by hash + reload.
+const HASH_ROUTES = import.meta.env.VITE_APEX_ARTIFACT === '1';
+if (HASH_ROUTES) {
+  const [route, arg] = (location.hash.slice(1) || 'drive').split('.');
+  if (route === 'drive') params.set('drive', arg || 'porsche_911_turbo_991');
+  else if (route === 'garage') params.set('view', 'garage');
+}
+/** Reloads the page in the mode `next` describes (query string, or hash route in the Artifact build). */
+function navigate(next: URLSearchParams): void {
+  if (!HASH_ROUTES) {
+    location.search = next.toString();
+    return;
+  }
+  location.hash = next.has('drive') ? `drive.${next.get('drive')}` : next.get('view') === 'garage' ? 'garage' : 'sandbox';
+  location.reload();
+}
+// Threaded module (SharedArrayBuffer, cross-origin isolated pages) and the single-thread fallback (KNOWN_ISSUES W8).
 const WASM_URL = new URL('wasm/sbc.mjs', document.baseURI).href;
+const WASM_ST_URL = new URL('wasm/sbc-st.mjs', document.baseURI).href;
 
 function toast(text: string, kind: '' | 'error' | 'ok' = ''): void {
   let box = document.querySelector<HTMLElement>('.toasts');
@@ -46,25 +65,26 @@ function fail(message: string): void {
 }
 
 async function main(): Promise<void> {
-  if (!PhysicsClient.isSupported()) {
-    document.body.append(Object.assign(document.createElement('div'), { className: 'overlay', innerHTML: `<div class="card">${t('noIsolation')}</div>` }));
-    return;
-  }
   const canvas = document.getElementById('view') as HTMLCanvasElement;
-  const viewer = new Viewer(canvas, params.get('backend') === 'webgl2');
+  // The Artifact build renders through WebGL2: an embedded frame may not get a WebGPU adapter, and a lost device
+  // could not switch backends there (no query string to carry the choice).
+  const viewer = new Viewer(canvas, HASH_ROUTES || params.get('backend') === 'webgl2');
   await viewer.init((message) => {
     // A lost WebGPU device cannot be recovered on the same canvas: reload once on the WebGL2 backend.
     fail(`WebGPU device lost (${message}) — switching to WebGL2`);
     if (params.get('backend') !== 'webgl2') {
       params.set('backend', 'webgl2');
-      setTimeout(() => location.replace(`${location.pathname}?${params}`), 1500);
+      setTimeout(() => (HASH_ROUTES ? location.reload() : location.replace(`${location.pathname}?${params}`)), 1500);
     }
   });
 
-  // Leave one core for the main thread and one for the browser; cap at 8 (A§12).
+  // Leave one core for the main thread and one for the browser; cap at 8 (A§12). Without cross-origin isolation the
+  // physics runs single-threaded and frames travel by message.
   const threads = Math.max(1, Math.min((navigator.hardwareConcurrency || 4) - 2, 8));
-  const physics = new PhysicsClient(WASM_URL, threads);
+  const shared = PhysicsClient.isSupported();
+  const physics = new PhysicsClient(shared ? WASM_URL : WASM_ST_URL, threads, shared ? 'shared' : 'message');
   physics.onError(fail);
+  if (!shared) toast(t('singleThread'));
   const grid = new GridGround(viewer.scene);
   if (params.get('labels') === '0' || params.has('cam')) grid.labelsVisible = false;
   const statics = new StaticGeometry(viewer.scene);
@@ -110,7 +130,7 @@ async function main(): Promise<void> {
       params.delete('scene');
       params.delete('view');
       params.set('drive', id);
-      location.search = params.toString();
+      navigate(params);
     },
   });
   const hud = new Hud();
@@ -133,7 +153,7 @@ async function main(): Promise<void> {
     const back = Object.assign(document.createElement('button'), { textContent: t('backToSandbox') });
     back.onclick = () => {
       params.delete('drive');
-      location.search = params.toString();
+      navigate(params);
     };
     bar.append(title, name, restart, back);
     document.body.append(bar, drive.dashboard.root);

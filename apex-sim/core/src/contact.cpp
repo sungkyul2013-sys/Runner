@@ -284,11 +284,12 @@ int ContactSolver::ccdStatic(World& w, int bodyIndex) {
     float bestT = 2.0f;
     Vec3 bestNormal{};
     float bestOffset = 0.0f;  // plane offset: d(p) = dot(p, n) − offset
+    const LocalTri* bestTri = nullptr;
     for (const LocalPlane& pl : s.planes) {
       const float d0 = x0.y - pl.height, d1 = x1.y - pl.height;
       if (d0 >= -kCcdSlop && d1 < 0.0f && d1 < d0) {
         const float t = std::max(0.0f, d0) / (d0 - d1);
-        if (t < bestT) { bestT = t; bestNormal = {0.0f, 1.0f, 0.0f}; bestOffset = pl.height; }
+        if (t < bestT) { bestT = t; bestNormal = {0.0f, 1.0f, 0.0f}; bestOffset = pl.height; bestTri = nullptr; }
       }
     }
     for (const LocalTri& t : s.tris) {
@@ -300,11 +301,20 @@ int ContactSolver::ccdStatic(World& w, int bodyIndex) {
       bestT = tt;
       bestNormal = t.normal;
       bestOffset = dot(t.v0, t.normal);
+      bestTri = &t;
     }
     if (bestT > 1.0f) continue;
-    Vec3 hit = x0 + (x1 - x0) * bestT;
-    const float behind = dot(hit, bestNormal) - bestOffset;
-    if (behind < 0.0f) hit = hit - bestNormal * behind;  // land on (not behind) the surface
+    // Land on the surface where the step ends: only the penetration is removed, the tangential part of the step is
+    // kept. (Rewinding to the time of impact also undid the tangential step: a node pressed onto the surface every
+    // step — a tyre tread node under a hard landing — stayed frozen in place while its tangential velocity kept
+    // growing under its beams, and beam damping pumped that into the whole vehicle.) The impact point is the
+    // fallback when the projected end point leaves the triangle.
+    Vec3 hit = x1 - bestNormal * (dot(x1, bestNormal) - bestOffset);
+    if (bestTri && !pointInTriangle(hit, *bestTri)) {
+      hit = x0 + (x1 - x0) * bestT;
+      const float behind = dot(hit, bestNormal) - bestOffset;
+      if (behind < 0.0f) hit = hit - bestNormal * behind;  // land on (not behind) the surface
+    }
     b.px[i] = hit.x; b.py[i] = hit.y; b.pz[i] = hit.z;
     const float vn = dot(v, bestNormal);
     if (vn < 0.0f) {

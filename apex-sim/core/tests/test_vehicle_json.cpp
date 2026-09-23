@@ -278,3 +278,29 @@ TEST_CASE("Porsche 911 Turbo: no wheel hop at 200+ km/h under full throttle", "[
     CHECK(hi[i] < 1.4 * 0.5 * (lo[i] + hi[i]));
   }
 }
+
+TEST_CASE("Porsche 911 Turbo: a wall crash in the drive scene keeps the energy books", "[vehicle_json][porsche][crash]") {
+  // The web drive scene: 90 km/h at full throttle into the end wall, bounce and landing. The car is elastic until
+  // the M2 crumple model, so it rebounds — but no energy may appear from nowhere. (A tread node pressed onto the
+  // ground once froze under the CCD clamp and pumped 23 MJ into the car within 0.1 s.)
+  SceneOptions so;
+  so.threads = 1;
+  so.trackEnergy = true;
+  auto w = makeScene("drive", so);
+  const LoadedVehicle car = loadVehicleJson(porscheJson(), {{0.0, 0.0, 250.0}, 0.0, 25.0f});
+  const int body = w->addBody(car.build.body);
+  const int v = w->addVehicle(body, car.build.vehicle);
+  VehicleInput in;
+  in.throttle = 1.0f;
+  w->setVehicleInput(v, in);
+  double worst = 0.0, peakKinetic = 0.0;
+  for (int k = 0; k < 24; ++k) {
+    w->step(500);
+    const EnergyReport e = w->measureEnergy();
+    worst = std::max(worst, std::abs(e.balance()));
+    peakKinetic = std::max(peakKinetic, e.kinetic);
+  }
+  INFO("worst |balance| " << worst / 1e3 << " kJ, peak kinetic " << peakKinetic / 1e3 << " kJ");
+  CHECK(w->vehicleTelemetry(v).speed < 5.0f);  // it did hit the wall
+  CHECK(worst < 0.03 * peakKinetic);
+}

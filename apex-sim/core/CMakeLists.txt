@@ -8,6 +8,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(SBC_BUILD_TESTS "Build the Catch2 test suite" ON)
 option(SBC_BUILD_CLI "Build the sbc-cli headless tool" ON)
 option(SBC_NATIVE_ARCH "Tune native builds for the host CPU (-march=native)" OFF)
+# WASM without pthreads: runs where SharedArrayBuffer is unavailable (no cross-origin isolation — KNOWN_ISSUES W8).
+option(SBC_WASM_THREADS "WASM build with pthreads (SharedArrayBuffer)" ON)
 
 # Determinism (ARCHITECTURE A§4.5): no FP contraction/reassociation, IEEE denormals kept.
 set(SBC_FP_FLAGS -ffp-contract=off -fno-fast-math)
@@ -17,8 +19,13 @@ if(EMSCRIPTEN)
   set(SBC_IS_WASM ON)
   # Every object (including Catch2) must share the threaded memory model; native wasm exception handling keeps
   # buildBody()'s validation errors catchable (Emscripten disables C++ exceptions by default).
-  add_compile_options(-pthread -fwasm-exceptions)
-  add_link_options(-pthread -fwasm-exceptions)
+  if(SBC_WASM_THREADS)
+    add_compile_options(-pthread -fwasm-exceptions)
+    add_link_options(-pthread -fwasm-exceptions)
+  else()
+    add_compile_options(-fwasm-exceptions)
+    add_link_options(-fwasm-exceptions)
+  endif()
 endif()
 
 add_library(sbc STATIC
@@ -52,8 +59,11 @@ target_compile_options(sbc INTERFACE ${SBC_FP_FLAGS})
 
 find_package(Threads REQUIRED)
 if(SBC_IS_WASM)
-  target_compile_options(sbc PUBLIC -pthread -msimd128)
-  target_link_options(sbc PUBLIC -pthread)
+  target_compile_options(sbc PUBLIC -msimd128)
+  if(SBC_WASM_THREADS)
+    target_compile_options(sbc PUBLIC -pthread)
+    target_link_options(sbc PUBLIC -pthread)
+  endif()
 else()
   target_link_libraries(sbc PUBLIC Threads::Threads)
   if(SBC_NATIVE_ARCH)
@@ -66,7 +76,6 @@ if(SBC_IS_WASM)
   add_executable(sbc_wasm bindings/wasm/capi.cpp)
   target_link_libraries(sbc_wasm PRIVATE sbc)
   target_compile_options(sbc_wasm PRIVATE ${SBC_FP_FLAGS})
-  set_target_properties(sbc_wasm PROPERTIES OUTPUT_NAME "sbc" SUFFIX ".mjs")
   target_link_options(sbc_wasm PRIVATE
     -sMODULARIZE=1
     -sEXPORT_ES6=1
@@ -76,10 +85,16 @@ if(SBC_IS_WASM)
     -sINITIAL_MEMORY=64MB
     -sMAXIMUM_MEMORY=2GB
     -sSTACK_SIZE=1MB
-    "-sPTHREAD_POOL_SIZE=Math.max(1,Math.min(((globalThis.navigator&&navigator.hardwareConcurrency)||4)-1,8))"
     -sEXPORTED_RUNTIME_METHODS=wasmMemory
     "-sEXPORTED_FUNCTIONS=@${CMAKE_CURRENT_SOURCE_DIR}/bindings/wasm/exports.txt"
   )
+  if(SBC_WASM_THREADS)
+    set_target_properties(sbc_wasm PROPERTIES OUTPUT_NAME "sbc" SUFFIX ".mjs")
+    target_link_options(sbc_wasm PRIVATE
+      "-sPTHREAD_POOL_SIZE=Math.max(1,Math.min(((globalThis.navigator&&navigator.hardwareConcurrency)||4)-1,8))")
+  else()
+    set_target_properties(sbc_wasm PROPERTIES OUTPUT_NAME "sbc-st" SUFFIX ".mjs")
+  endif()
 endif()
 
 # ---- Headless CLI ------------------------------------------------------------------

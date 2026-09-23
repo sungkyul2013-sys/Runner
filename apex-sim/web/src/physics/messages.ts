@@ -1,8 +1,13 @@
 // Non-real-time messages between the main thread and the physics worker. Real-time data (node positions, strain,
-// stats) travels through the SharedArrayBuffer triple buffer instead (layout.ts).
+// stats) travels through the SharedArrayBuffer triple buffer instead (layout.ts) — or, on a page without
+// cross-origin isolation, as transferred slot buffers ('frame' out, 'returnSlot' back: the message transport).
+
+/** 'shared': SAB triple buffer + threaded WASM. 'message': transferred slots + single-thread WASM (KNOWN_ISSUES W8). */
+export type Transport = 'shared' | 'message';
 
 export type ToWorker =
-  | { type: 'init'; ctrl: SharedArrayBuffer; slots: SharedArrayBuffer[]; wasmUrl: string; threads: number }
+  | { type: 'init'; transport: Transport; ctrl: SharedArrayBuffer | null; slots: ArrayBufferLike[]; wasmUrl: string; threads: number }
+  | { type: 'returnSlot'; buffer: ArrayBuffer }
   | { type: 'scene'; name: string; bodies?: number }
   | { type: 'spawnLattice'; params: Float64Array; label: string }
   | { type: 'setPaused'; paused: boolean }
@@ -45,6 +50,7 @@ export interface BodyTopology {
 
 export type FromWorker =
   | { type: 'ready'; threads: number }
+  | { type: 'frame'; buffer: ArrayBuffer }
   | { type: 'topology'; reset: boolean; bodies: BodyTopology[]; staticTriangles: Float32Array }
   | { type: 'stability'; body: number; label: string; minCriticalDtMs: number; beamViolations: number; nodeViolations: number }
   | { type: 'stepped'; stepIndex: number }
