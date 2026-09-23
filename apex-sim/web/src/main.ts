@@ -14,10 +14,12 @@ import { Viewer } from './render/Viewer';
 import { Hud } from './ui/Hud';
 import { t, tl } from './ui/i18n';
 import { SandboxPanel, TIME_SCALES } from './ui/SandboxPanel';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { loadVehicleModel, VEHICLES } from './vehicles/VehicleModel';
 
 declare global {
   interface Window {
-    __apex?: { bench?: unknown; golden?: unknown; ready?: boolean; errors: string[] };
+    __apex?: { bench?: unknown; golden?: unknown; garage?: unknown; ready?: boolean; errors: string[] };
   }
 }
 window.__apex = { errors: [] };
@@ -131,12 +133,13 @@ async function main(): Promise<void> {
     }
   });
 
-  const mode = params.has('golden') ? 'golden' : params.has('bench') ? 'bench' : 'sandbox';
+  const mode = params.has('golden') ? 'golden' : params.has('bench') ? 'bench' : params.get('view') === 'garage' ? 'garage' : 'sandbox';
   const initialScene = mode === 'bench' ? 'pile' : mode === 'golden' ? 'golden_m0' : params.get('scene') ?? 'sandbox';
   const sceneInfo = SCENES.find((s) => s.id === initialScene);
   if (mode === 'golden') setPaused(true); // must not advance before the hash comparison starts
-  loadScene(initialScene, sceneInfo?.bodies);
-  if (initialScene === 'wall_crash' || initialScene === 'sandbox') viewer.focus(new THREE.Vector3(6, 1, 0), 16);
+  if (mode !== 'garage') loadScene(initialScene, sceneInfo?.bodies);
+  else await showGarage(viewer);
+  if (mode === 'sandbox' && (initialScene === 'wall_crash' || initialScene === 'sandbox')) viewer.focus(new THREE.Vector3(6, 1, 0), 16);
 
   // ---- frame loop ----
   let last = performance.now();
@@ -162,6 +165,34 @@ async function main(): Promise<void> {
 
   if (mode === 'golden') await runGolden(physics);
   if (mode === 'bench') await runBench(physics, viewer, frameTimes, physicsSamples);
+}
+
+/** Garage preview (§18.3-3 early look): the user's car models side by side, visual only (no physics yet — M1). */
+async function showGarage(viewer: Viewer): Promise<void> {
+  const pmrem = new THREE.PMREMGenerator(viewer.renderer);
+  viewer.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const only = params.get('car');
+  const models = await Promise.all(VEHICLES.filter((v) => !only || v.id === only).map((v) => loadVehicleModel(v.url)));
+  let x = 0;
+  const gap = 1.2; // [m] between cars
+  const total = models.reduce((a, m) => a + m.meta.dimensions.width, 0) + gap * (models.length - 1);
+  x = total / 2;
+  for (const m of models) {
+    x -= m.meta.dimensions.width / 2;
+    m.root.position.set(x, 0, 0);
+    m.root.rotation.y = 0.35; // three-quarter view
+    viewer.scene.add(m.root);
+    x -= m.meta.dimensions.width / 2 + gap;
+  }
+  if (params.get('cam') === 'side' && models.length === 1) {
+    // Orthogonal side check (wheel/arch alignment): camera on +X looking at the car's left side.
+    models[0].root.rotation.y = 0;
+    viewer.camera.position.set(7, 0.8, 0);
+    viewer.controls.target.set(0, 0.8, 0);
+  } else {
+    viewer.focus(new THREE.Vector3(0, 0.8, 0), 11);
+  }
+  window.__apex!.garage = models.map((m) => m.meta);
 }
 
 async function runGolden(physics: PhysicsClient): Promise<void> {

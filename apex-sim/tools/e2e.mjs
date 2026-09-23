@@ -86,6 +86,10 @@ async function main() {
       await page.waitForFunction(() => window.__apex?.ready === true);
       await page.waitForTimeout(7000);
       await page.screenshot({ path: join(dir, 'M0-tower.png') });
+      await page.goto(`${base}?view=garage&backend=${BACKEND}`);
+      await page.waitForFunction(() => window.__apex?.garage !== undefined, null, { timeout: 120000 });
+      await page.waitForTimeout(4000);
+      await page.screenshot({ path: join(dir, 'M1-garage-user-cars.png') });
       const errors = await page.evaluate(() => window.__apex.errors);
       if (errors.length || consoleErrors.length) failures.push(`errors (sandbox): ${[...errors, ...consoleErrors].join(' | ')}`);
       await page.close();
