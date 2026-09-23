@@ -179,10 +179,11 @@ PressureWheelNodes addPressureWheel(BodyDesc& d, const PressureWheelParams& p) {
     beam(rimB(j), rimB(j + 1), p.rimStiffness, p.rimDampingRatio);
     beam(rimA(j), rimB(j), p.rimStiffness, p.rimDampingRatio);      // zig-zag across the staggered rows
     beam(rimB(j), rimA(j + 1), p.rimStiffness, p.rimDampingRatio);
-    beam(rimA(j), p.axleRight, p.rimStiffness, p.rimDampingRatio);
-    beam(rimA(j), p.axleLeft, p.rimStiffness, p.rimDampingRatio);
-    beam(rimB(j), p.axleRight, p.rimStiffness, p.rimDampingRatio);
-    beam(rimB(j), p.axleLeft, p.rimStiffness, p.rimDampingRatio);
+    const float spoke = p.spokeStiffness > 0.0f ? p.spokeStiffness : p.rimStiffness;
+    beam(rimA(j), p.axleRight, spoke, p.rimDampingRatio);
+    beam(rimA(j), p.axleLeft, spoke, p.rimDampingRatio);
+    beam(rimB(j), p.axleRight, spoke, p.rimDampingRatio);
+    beam(rimB(j), p.axleLeft, spoke, p.rimDampingRatio);
     // belt
     beam(treadA(j), treadA(j + 1), p.treadStiffness, p.treadDampingRatio, shrink);
     beam(treadB(j), treadB(j + 1), p.treadStiffness, p.treadDampingRatio, shrink);

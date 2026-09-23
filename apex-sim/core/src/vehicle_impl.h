@@ -40,7 +40,7 @@ class Vehicle {
     h.value(input_.throttle); h.value(input_.brake); h.value(input_.steer); h.value(input_.handbrake);
     h.value(input_.mode); h.value(input_.shiftRequest); h.value(input_.abs); h.value(input_.tcs);
     h.value(engineOmega_); h.value(windup_); h.value(clutch_); h.value(steer_); h.value(shiftTimer_);
-    h.value(sinceShift_); h.value(tcsFactor_); h.value(gear_); h.value(pendingGear_); h.value(running_); h.value(limiterCut_);
+    h.value(sinceShift_); h.value(tcsFactor_); h.value(frontShare_); h.value(gear_); h.value(pendingGear_); h.value(running_); h.value(limiterCut_);
     h.value(prevVelocity_.x); h.value(prevVelocity_.y); h.value(prevVelocity_.z);
     h.value(accelLong_); h.value(accelLat_); h.value(odometer_);
     for (const WheelState& w : wheels_) {
@@ -75,6 +75,8 @@ class Vehicle {
   double shiftTimer_ = 0.0;   // remaining torque interruption [s]
   double sinceShift_ = 10.0;  // [s]
   double tcsFactor_ = 1.0;    // traction-control torque factor [0, 1]
+  double frontShare_ = 0.0;   // active centre coupling: current front-axle share of the drive torque [-]
+  std::vector<double> shares_;  // current drive share per wheel
   int gear_ = 0, pendingGear_ = 0;
   bool running_ = true, limiterCut_ = false;
   DVec3 prevVelocity_;        // mass-centre velocity of the previous step [m/s]
@@ -86,8 +88,8 @@ class Vehicle {
     RigidFit wheel, carrier;
     DVec3 axis, axlePoint, xDir, yDir, normal, patch, contactPoint;
     double axialInertia = 0.0;  // rotating nodes about the axle line [kg·m²]
-    DVec3 shareForce, shareMoment;  // wheel share of the tread contact springs (moment about the wheel centre)
-    double radialStiffness = 0.0;   // Σ wheel-share contact stiffness of the tread nodes in contact [N/m]
+    double radialForce = 0.0;       // wheel share of the vertical load: radial tyre spring [N]
+    double radialDamping = 0.0;     // radial damper coefficient [N·s/m]
     double spinAbs = 0.0, spinRel = 0.0, spinDrive = 0.0, load = 0.0, mu = 1.0, crr = 0.0, loadedRadius = 0.0, rollRadius = 0.0;
     double vx = 0.0, slipVx = 0.0, slipVy = 0.0;
     double driveTorque = 0.0, brakeTorque = 0.0;

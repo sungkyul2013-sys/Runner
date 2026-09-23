@@ -53,7 +53,10 @@ struct PressureWheelParams {
   // Tread contact spheres must be larger than the tyre deflection (≈ 1.2 cm static, 3–4 cm on bumps): a node whose
   // centre reaches the road is clamped by CCD instead of being pushed by its contact spring.
   float treadNodeRadius = 0.04f, rimNodeRadius = 0.02f;  // [m]
-  float rimStiffness = 1.0e5f;   // rim rings and spokes [N/m]
+  float rimStiffness = 1.0e5f;   // rim rings [N/m]
+  // Spokes (rim nodes to both axle nodes) [N/m]; ≤ 0 → rimStiffness. They hold the rim's centrifugal load: at
+  // 250 km/h every rim node pulls outward with ≈ 3 kN, plus its tread node's pull through the sidewall.
+  float spokeStiffness = -1.0f;
   float treadStiffness = 1.0e5f; // belt (circumferential, across, diagonal) [N/m]
   float treadBendStiffness = 1.5e4f;  // skip-one belt beams [N/m]
   float sidewallStiffness = 4.0e4f;   // radial tread–rim in compression [N/m] (inflation stiffness: vertical rate)

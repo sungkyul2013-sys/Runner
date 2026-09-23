@@ -1,6 +1,8 @@
 // Vehicle JSON loader (A§4.11, docs/VEHICLE_FORMAT.md) and the generated Porsche 911 Turbo (991).
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <cmath>
+#include <memory>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -14,6 +16,8 @@
 using namespace sbc;
 
 namespace {
+
+constexpr double kPi = 3.14159265358979323846;
 
 std::string readFile(const std::string& path) {
   std::ifstream f(path, std::ios::binary);
@@ -34,6 +38,27 @@ double target(const LoadedVehicle& v, const std::string& key) {
   FAIL("missing target " << key);
   return 0.0;
 }
+
+// The generated Porsche on flat asphalt (native: one thread, like the headless runs).
+struct Porsche {
+  std::unique_ptr<World> world;
+  LoadedVehicle car;
+  int body = -1, vehicle = -1;
+  explicit Porsche(float speed, Vec3 gravity = {0.0f, -static_cast<float>(kStandardGravity), 0.0f}) {
+    WorldParams wp;
+    wp.gravity = gravity;
+    world = std::make_unique<World>(wp);
+    applyDefaultContactPairs(*world);
+    world->addGroundPlane(0.0, material::kAsphalt);
+    car = loadVehicleJson(porscheJson(), {{0.0, 0.0, 0.0}, 0.0, speed});
+    body = world->addBody(car.build.body);
+    vehicle = world->addVehicle(body, car.build.vehicle);
+  }
+  const VehicleTelemetry& tel() const { return world->vehicleTelemetry(vehicle); }
+  void input(const VehicleInput& in) { world->setVehicleInput(vehicle, in); }
+  DVec3 center() const { return world->body(body).nodeWorldPosition(car.build.vehicle.refCenter); }
+  double seconds(double s) { const int n = static_cast<int>(s / world->params().dt + 0.5); world->step(n); return n * world->params().dt; }
+};
 
 }  // namespace
 
@@ -117,5 +142,139 @@ TEST_CASE("vehicle json builds bit-identical bodies at the same spawn", "[vehicl
   for (size_t i = 0; i < a.build.body.nodes.size(); ++i) {
     CHECK(a.build.body.nodes[i].position.x == b.build.body.nodes[i].position.x);
     CHECK(a.build.body.nodes[i].velocity.z == b.build.body.nodes[i].velocity.z);
+  }
+}
+
+// ---- §23.2 vehicle tests on the generated Porsche 911 Turbo (targets in its vehicle.json, sources in "sources") ----
+
+TEST_CASE("Porsche 911 Turbo: ABS stop from 100 km/h within the §23.2 band", "[vehicle_json][porsche][23.2]") {
+  Porsche p(100.0f / 3.6f);
+  VehicleInput in;
+  in.mode = GearMode::kNeutral;
+  p.input(in);
+  p.seconds(0.5);
+  const double v0 = p.tel().speed, o0 = p.tel().odometer;
+  in.brake = 1.0f;
+  p.input(in);
+  double t = 0.0;
+  while (p.tel().speed > 0.05f && t < 8.0) t += p.seconds(0.0005);
+  const double distance = (p.tel().odometer - o0) * std::pow(27.7778 / v0, 2);  // scaled to exactly 100 km/h
+  INFO("100-0 " << distance << " m (target " << target(p.car, "braking100") << " m)");
+  CHECK(distance >= 35.0);
+  CHECK(distance <= 42.0);
+  CHECK(std::fabs(p.tel().forward.x) < 0.02);  // straight
+}
+
+TEST_CASE("Porsche 911 Turbo: 0-100 km/h within 5 % of the target", "[vehicle_json][porsche][23.2]") {
+  Porsche p(0.0f);
+  p.seconds(0.5);
+  VehicleInput in;
+  in.throttle = 1.0f;
+  p.input(in);
+  double t = 0.0;
+  while (p.tel().speed * 3.6 < 100.0 && t < 8.0) t += p.seconds(0.0005);
+  const double goal = target(p.car, "zeroTo100");
+  INFO("0-100 " << t << " s (target " << goal << " s)");
+  CHECK(std::fabs(t - goal) <= 0.05 * goal);
+}
+
+TEST_CASE("Porsche 911 Turbo: coastdown 99 to 80 km/h within 5 % of the road-load model", "[vehicle_json][porsche][23.2]") {
+  Porsche p(100.0f / 3.6f);
+  VehicleInput in;
+  in.mode = GearMode::kNeutral;
+  p.input(in);
+  p.seconds(0.1);
+  double t = 0.0, t99 = -1.0;
+  while (p.tel().speed * 3.6 > 80.0 && t < 40.0) {
+    t += p.seconds(0.0005);
+    if (t99 < 0.0 && p.tel().speed * 3.6 <= 99.0) t99 = t;
+  }
+  // m·dv/dt = −(Crr·m·g + ½ρ·CdA·v²) with a §11.1 summer tyre (Crr 0.012) and the car's drag area.
+  const double m = target(p.car, "mass"), cda = p.car.build.vehicle.aero.dragArea;
+  const double a = 0.012 * kStandardGravity, b = 0.5 * 1.225 * cda / m, k = std::sqrt(b / a);
+  const double model = (std::atan(99.0 / 3.6 * k) - std::atan(80.0 / 3.6 * k)) / std::sqrt(a * b);
+  INFO("coastdown " << t - t99 << " s, road-load model " << model << " s");
+  CHECK(std::fabs((t - t99) - model) <= 0.05 * model);
+}
+
+TEST_CASE("Porsche 911 Turbo: steady skidpad (R 30.5 m) grip of a sports car", "[vehicle_json][porsche][23.2]") {
+  // Constant radius, speed raised slowly: pure pursuit gives the curvature command, a curvature integrator (measured
+  // κ = yaw rate / v) turns it into steering, slow enough not to excite the yaw/roll lag.
+  const double R = 30.5;
+  Porsche p(15.0f);
+  const DVec3 centre{R, 0.0, 0.0};  // left of the start (the car faces +Z, +X is left)
+  VehicleInput in;
+  double steer = 0.3, vTarget = 15.0, kappa = 1.0 / R, prevYaw = 0.0, best = 0.0;
+  const double dt = p.world->params().dt;
+  for (int s = 0; s < 70000; ++s) {
+    const VehicleTelemetry& t = p.tel();
+    const DVec3 pos = p.center(), rel = pos - centre;
+    const double r = std::sqrt(rel.x * rel.x + rel.z * rel.z);
+    const double yaw = std::atan2(t.forward.x, t.forward.z);
+    double dyaw = s == 0 ? 0.0 : yaw - prevYaw;
+    if (dyaw > kPi) dyaw -= 2.0 * kPi;
+    if (dyaw < -kPi) dyaw += 2.0 * kPi;
+    prevYaw = yaw;
+    const double v = std::max(1.0, static_cast<double>(t.speed));
+    kappa += (dyaw / dt / v - kappa) * dt / 0.1;
+    const double lookahead = std::max(10.0, 1.2 * v);
+    const double th = std::atan2(rel.z, rel.x) - lookahead / R;  // travelling counter-clockwise seen from above
+    const double dx = centre.x + R * std::cos(th) - pos.x, dz = centre.z + R * std::sin(th) - pos.z;
+    const double alpha = std::atan2(t.forward.z * dx - t.forward.x * dz, t.forward.x * dx + t.forward.z * dz);
+    const double command = 2.0 * std::sin(alpha) / std::sqrt(dx * dx + dz * dz);
+    steer = std::clamp(steer + dt * 11.0 * (command - kappa), -1.0, 1.0);
+    in.steer = static_cast<float>(steer);
+    if (s % 3000 == 0 && s > 8000 && std::fabs(r - R) < 0.5) vTarget += 0.25;
+    const double ve = vTarget - t.speed;
+    in.throttle = static_cast<float>(std::clamp(0.3 * ve + 0.25, 0.0, 1.0));
+    in.brake = ve < -1.0 ? 0.2f : 0.0f;
+    p.input(in);
+    p.world->step();
+    if (s > 8000 && std::fabs(r - R) < 0.5) best = std::max(best, t.speed * t.speed / r / kStandardGravity);
+    if (s > 8000 && std::fabs(r - R) > 3.0) break;  // past the limit
+  }
+  INFO("max steady lateral acceleration " << best << " g (target " << target(p.car, "skidpadG") << " g)");
+  CHECK(best >= 0.95);
+  CHECK(best <= 1.1);
+}
+
+TEST_CASE("Porsche 911 Turbo: handbrake holds on a 30 % slope", "[vehicle_json][porsche][23.1]") {
+  const double angle = std::atan(0.3);
+  Porsche p(0.0f, {0.0f, static_cast<float>(-kStandardGravity * std::cos(angle)),
+                   static_cast<float>(-kStandardGravity * std::sin(angle))});
+  VehicleInput in;
+  in.handbrake = 1.0f;
+  in.mode = GearMode::kNeutral;
+  p.input(in);
+  p.seconds(3.0);
+  const DVec3 p0 = p.center();
+  p.seconds(5.0);
+  const DVec3 d = p.center() - p0;
+  INFO("creep " << std::sqrt(dot(d, d)) << " m");
+  CHECK(std::sqrt(dot(d, d)) < 5e-3);
+}
+
+TEST_CASE("Porsche 911 Turbo: no wheel hop at 200+ km/h under full throttle", "[vehicle_json][porsche]") {
+  // Guards the radial tyre spring on the hub and the rim stiffness (A§4.7): either fault shows up as a 10 Hz wheel
+  // hop above ≈ 200 km/h with the wheel loads swinging between zero and several times the static load.
+  Porsche p(55.0f);
+  VehicleInput in;
+  in.throttle = 1.0f;
+  p.input(in);
+  p.seconds(3.0);  // the rings take their centrifugal stretch after a spawn at speed
+  double lo[4] = {1e9, 1e9, 1e9, 1e9}, hi[4] = {0.0, 0.0, 0.0, 0.0};
+  for (int s = 0; s < 4000; ++s) {
+    p.world->step();
+    for (int i = 0; i < 4; ++i) {
+      lo[i] = std::min(lo[i], static_cast<double>(p.tel().wheels[i].load));
+      hi[i] = std::max(hi[i], static_cast<double>(p.tel().wheels[i].load));
+    }
+  }
+  INFO("speed " << p.tel().speed * 3.6 << " km/h");
+  CHECK(p.tel().speed * 3.6 > 200.0);
+  for (int i = 0; i < 4; ++i) {
+    INFO("wheel " << i << " load " << lo[i] << " … " << hi[i] << " N");
+    CHECK(lo[i] > 0.6 * 0.5 * (lo[i] + hi[i]));
+    CHECK(hi[i] < 1.4 * 0.5 * (lo[i] + hi[i]));
   }
 }

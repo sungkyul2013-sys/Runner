@@ -66,22 +66,22 @@ void applyDefaultContactPairs(World& w) {
   w.setContactPair(material::kSteel, material::kSteel, steelSteel);
   // Tyre tread pairs (§11.1 reference summer tyre). For kTread nodes only the normal law, staticFriction (the
   // surface µ scale of the tyre model), rollingResistance and treadShare are used. The contact spring is the tyre's
-  // vertical rate: 0.2 kg tread nodes at 110 Hz → ≈ 96 kN/m each, ≈ 200 kN/m secant at the 1.5 cm static
-  // deflection of a 3 kN wheel load. A tenth of it acts on the tread node (carcass deformation), the rest on the
-  // wheel (A§4.7). The discrete tread still adds ≈ 0.005 (10 m/s) … 0.010 (40 m/s) of speed-dependent rolling loss
-  // on top of rollingResistance (see KNOWN_ISSUES P10), so the pair's own Crr is set to the low end of §11.1.
+  // local contact rate; a tenth of it acts on the tread node (carcass deformation), the rest of the load is carried by
+  // the tyre's radial spring on the hub (TyreParams::verticalStiffness, A§4.7). The discrete tread and
+  // the carcass beams add their own speed-dependent rolling loss (≈ 0.0023 of the load at 25 m/s, see KNOWN_ISSUES
+  // P10), so the pair's explicit Crr is the remainder of a §11.1 summer tyre's ≈ 0.012.
   ContactPairParams rubberAsphalt;
   rubberAsphalt.staticFriction = 1.0f;
   rubberAsphalt.kineticFriction = 0.8f;
   rubberAsphalt.normalFrequencyHz = 110.0f;
   rubberAsphalt.normalDampingRatio = 0.05f;
-  rubberAsphalt.rollingResistance = 0.010f;
+  rubberAsphalt.rollingResistance = 0.0097f;
   rubberAsphalt.treadShare = 0.1f;
   w.setContactPair(material::kRubber, material::kAsphalt, rubberAsphalt);
   ContactPairParams rubberConcrete = rubberAsphalt;
   rubberConcrete.staticFriction = 0.95f;
   rubberConcrete.kineticFriction = 0.75f;
-  rubberConcrete.rollingResistance = 0.009f;
+  rubberConcrete.rollingResistance = 0.0092f;
   w.setContactPair(material::kRubber, material::kConcrete, rubberConcrete);
   ContactPairParams rubberSteel = rubberAsphalt;
   rubberSteel.staticFriction = 0.7f;

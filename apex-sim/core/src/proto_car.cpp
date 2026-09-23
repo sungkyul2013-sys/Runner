@@ -63,7 +63,7 @@ int hardpoint(Builder& b, DVec3 p, float mass) {
   const int j0 = cell(p.y, kBottom, kTop, kNy);
   const int k0 = cell(p.z, -kHalfLength, kHalfLength, kNz);
   for (int c = 0; c < 8; ++c) {
-    b.beam(h, latticeIndex(i0 + (c & 1), j0 + ((c >> 1) & 1), k0 + ((c >> 2) & 1)), 3.0e5f, 0.2f);
+    b.beam(h, latticeIndex(i0 + (c & 1), j0 + ((c >> 1) & 1), k0 + ((c >> 2) & 1)), 6.0e5f, 0.2f);
   }
   return h;
 }
@@ -108,11 +108,11 @@ Corner buildCorner(Builder& b, const CornerSpec& c, const PressureWheelParams& t
   for (int i = 0; i < 6; ++i)
     for (int j = i + 1; j < 6; ++j) b.beam(knuckle[i], knuckle[j], 2.0e6f, 0.1f);
   // chassis pickups
-  const int uaF = hardpoint(b, {s * 0.30, 0.56, z + 0.16}, 1.0f);
-  const int uaR = hardpoint(b, {s * 0.30, 0.56, z - 0.16}, 1.0f);
-  out.laFront = hardpoint(b, {s * 0.28, 0.12, z + 0.22}, 1.0f);
-  out.laRear = hardpoint(b, {s * 0.28, 0.12, z - 0.22}, 1.0f);
-  const int rack = hardpoint(b, {s * 0.2882, 0.30, z - 0.13}, 1.0f);
+  const int uaF = hardpoint(b, {s * 0.30, 0.56, z + 0.16}, 2.0f);
+  const int uaR = hardpoint(b, {s * 0.30, 0.56, z - 0.16}, 2.0f);
+  out.laFront = hardpoint(b, {s * 0.28, 0.12, z + 0.22}, 2.0f);
+  out.laRear = hardpoint(b, {s * 0.28, 0.12, z - 0.22}, 2.0f);
+  const int rack = hardpoint(b, {s * 0.2882, 0.30, z - 0.13}, 2.0f);
   const int top = hardpoint(b, {s * 0.58, 0.66, z}, 4.0f);
   out.pivot = hardpoint(b, {s * 0.40, 0.12, z + arbSide * 0.30}, 1.0f);
   // wishbones

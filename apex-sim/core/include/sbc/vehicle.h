@@ -37,7 +37,8 @@ struct TyreParams {
   float pneumaticTrail = 0.035f;    // t0 [m]: self-aligning moment Mz = −t·Fy, t fades to 0 at the peak slip
   float camberStiffness = 0.8f;     // camber thrust Fyγ = −cγ·sin γ·Fz [-]
   float lowSpeed = 2.5f;            // [m/s] below this the contact deflection is extra damped (standstill stability)
-  float radialDamping = 0.15f;      // ζ of the tyre's vertical (radial) damper on the wheel's share of the contact
+  float verticalStiffness = 2.5e5f; // radial tyre rate [N/m]: from the hub height above the road, acts on the hub
+  float radialDamping = 0.15f;      // ζ of the tyre's radial damper (against the wheel mass)
 };
 
 // ---- wheel ------------------------------------------------------------------------------------------------------
@@ -88,6 +89,17 @@ struct TransmissionDesc {
   float launchRpm = 3200.0f;      // automatic clutch: engine speed at full engagement from standstill, full throttle
 };
 
+// Active centre coupling (AWD with a controlled multi-plate clutch, e.g. a PTM / Haldex-type unit) instead of the
+// wheels' fixed driveShare: the gearbox drives the rear axle; the clutch passes up to frontShare·|torque| to the front
+// axle, from the faster to the slower side. frontShare follows the axles' vertical loads (traction-optimal split),
+// limited to [minFront, maxFront] and moving at most `rate` per second. Within an axle the split stays open (+ LSD).
+struct CentreCouplingDesc {
+  bool active = false;
+  int32_t frontAxle = -1, rearAxle = -1;  // indices into VehicleDesc::axles
+  float minFront = 0.1f, maxFront = 0.5f; // [-]
+  float rate = 4.0f;                       // [1/s]
+};
+
 struct BrakeDesc {
   float stiffness = 1.0e5f;       // stick-phase torsional stiffness between wheel and carrier [N·m/rad]
   float damping = 40.0f;          // [N·m·s/rad]
@@ -116,6 +128,7 @@ struct VehicleDesc {
   std::vector<WheelDesc> wheels;
   std::vector<AxleDesc> axles;
   std::vector<int32_t> driveReactionNodes;  // chassis nodes carrying the drive-torque reaction (≥ 3, not collinear)
+  CentreCouplingDesc centre;
   EngineDesc engine;
   TransmissionDesc transmission;
   BrakeDesc brakes;

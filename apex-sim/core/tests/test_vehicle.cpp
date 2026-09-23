@@ -89,7 +89,7 @@ TEST_CASE("handbrake holds the proto car facing up a 30 % slope", "[vehicle][23.
   in.handbrake = 1.0f;
   in.mode = GearMode::kNeutral;
   car.input(in);
-  car.seconds(2.0);
+  car.seconds(4.0);  // the landing on the tilted ground rocks the car on its brake wind-up for ≈ 3 s
   const DVec3 p0 = car.center();
   car.seconds(5.0);
   INFO("creep " << test::norm(car.center() - p0) << " m");

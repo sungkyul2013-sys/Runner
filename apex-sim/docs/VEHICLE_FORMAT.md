@@ -81,7 +81,7 @@
   "treadNodeMass": 0.20, "rimNodeMass": 0.25, "treadMaterial": "rubber", "rimMaterial": "steel" }
 ```
 
-코어의 `addPressureWheel`이 림 2열과 트레드 2열(반 세그먼트 엇갈림), 스포크, 사이드월, 벨트, 공동 압력 그룹을 만든다. 나머지 키(`sidewallStiffness`, `sidewallTensionStiffness`, `treadStiffness`, `structuralPressure`, 감쇠비 …)의 기본값은 `core/include/sbc/builder.h`의 `PressureWheelParams`를 따른다. 스핀 축은 `axleLeft − axleRight`이고 차량 왼쪽을 향한다.
+코어의 `addPressureWheel`이 림 2열과 트레드 2열(반 세그먼트 엇갈림), 스포크, 사이드월, 벨트, 공동 압력 그룹을 만든다. 나머지 키(`rimStiffness`, `spokeStiffness`, `sidewallStiffness`, `sidewallTensionStiffness`, `treadStiffness`, `treadNodeRadius`, `structuralPressure`, 감쇠비 …)의 기본값은 `core/include/sbc/builder.h`의 `PressureWheelParams`를 따른다. 스핀 축은 `axleLeft − axleRight`이고 차량 왼쪽을 향한다.
 
 ## 차량 (`vehicle`)
 
@@ -94,6 +94,7 @@
                "brakeTorque": 3000, "handbrakeTorque": 0, "driveShare": 0.15 }],
   "axles": [{ "left": "RL", "right": "RR", "lsdPreload": 80, "lsdLockDrive": 0.3, "lsdLockCoast": 0.25 }],
   "driveReaction": ["FL_laf", …],
+  "centreCoupling": { "active": true, "frontAxle": 0, "rearAxle": 1, "minFront": 0.1, "maxFront": 0.45, "rate": 4 },
   "engine": { "torqueCurve": [[1000, 380], …], "idleRpm": 850, "redlineRpm": 7200, "limiterRpm": 7300,
               "stallRpm": 400, "inertia": 0.25, "frictionTorque": 15, "frictionPerRpm": 0.009 },
   "transmission": { "ratios": [3.91, …], "reverseRatio": 3.55, "finalDrive": 3.44, "efficiency": 0.92,
@@ -106,8 +107,9 @@
 ```
 
 - `carrier`: 너클(업라이트) 노드. 3개 이상이고 한 직선 위에 있으면 안 된다. 브레이크 반력, 휠 상대 회전, 축 밖 모멘트를 여기에 건다.
-- `tyre`: `TyreParams`(`core/include/sbc/vehicle.h`). Magic Formula 계수 `Bx Cx Ex By Cy Ey`, `loadSensitivity`, `relaxationX/Y`, `rollingResistance`, `pneumaticTrail`, `camberStiffness`, `lowSpeed`, `radialDamping`.
+- `tyre`: `TyreParams`(`core/include/sbc/vehicle.h`). Magic Formula 계수 `Bx Cx Ex By Cy Ey`, `mu`, `loadSensitivity`, `nominalLoad`, `relaxationX/Y`, `rollingResistance`(노면 쌍 Crr에 곱하는 배수), `pneumaticTrail`, `camberStiffness`, `lowSpeed`, `verticalStiffness`(반경 스프링 [N/m]: 트레드 노드가 지지 않는 하중을 허브에서 받는다), `radialDamping`(감쇠비).
 - `driveShare`: 변속기 출력 토크 중 이 휠의 몫이다(합 ≤ 1, 오픈 디퍼렌셜). `axles`의 LSD가 좌우 차이를 옮긴다.
+- `centreCoupling`(선택): 능동 센터 커플링(PTM/할덱스형 다판 클러치). 켜면 `driveShare` 대신 변속기가 `rearAxle`을 직접 돌리고, 클러치가 frontShare·|토크|까지를 `frontAxle`로 넘긴다(빠른 쪽 → 느린 쪽으로만). frontShare는 두 축의 하중 비율을 따라 [minFront, maxFront] 안에서 초당 `rate`까지 움직인다. `frontAxle`·`rearAxle`은 `axles` 배열의 번호다.
 - `driveReaction`: 구동 토크 반력을 받는 차체 노드(3개 이상, 한 직선 위에 있으면 안 됨).
 
 ## 생성기

@@ -189,6 +189,20 @@ Vehicle::Vehicle(const VehicleDesc& desc, int bodyIndex, const Body& body) : des
   require(nodes(desc.aero.frontNodes, 0) && nodes(desc.aero.rearNodes, 0), "aero nodes");
   require(desc.steeringChannel < static_cast<int>(body.hydroInputs.size()), "steering channel out of range");
 
+  if (desc.centre.active) {
+    const int na = static_cast<int>(desc.axles.size());
+    require(desc.centre.frontAxle >= 0 && desc.centre.frontAxle < na && desc.centre.rearAxle >= 0 &&
+                desc.centre.rearAxle < na && desc.centre.frontAxle != desc.centre.rearAxle,
+            "centre coupling axles");
+    require(desc.centre.minFront >= 0.0f && desc.centre.maxFront <= 1.0f && desc.centre.minFront <= desc.centre.maxFront,
+            "centre coupling limits");
+  }
+  shares_.resize(desc.wheels.size());
+  for (size_t i = 0; i < shares_.size(); ++i) shares_[i] = desc.wheels[i].driveShare;
+  if (desc.centre.active) {
+    const AxleDesc& f = desc.axles[static_cast<size_t>(desc.centre.frontAxle)];
+    frontShare_ = desc.wheels[static_cast<size_t>(f.leftWheel)].driveShare + desc.wheels[static_cast<size_t>(f.rightWheel)].driveShare;
+  }
   wheels_.resize(desc.wheels.size());
   frames_.resize(desc.wheels.size());
   telemetry_.wheels.resize(desc.wheels.size());
@@ -334,39 +348,32 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     }
     f.spinRel = f.spinAbs - dot(f.carrier.omega, f.axis);
     f.spinDrive = reactionFit.valid ? f.spinAbs - dot(reactionFit.omega, f.axis) : f.spinRel;
-    driveOmega += wd.driveShare * f.spinDrive;
+    driveOmega += shares_[w] * f.spinDrive;
     f.driveTorque = 0.0;
     f.brakeTorque = 0.0;
 
-    double load = 0.0, mu = 0.0, crr = 0.0, gap = 0.0;  // gap: Σ F·(node radius − penetration), centre → road
-    DVec3 normal, patch;
-    f.shareForce = {};
-    f.shareMoment = {};
-    f.radialStiffness = 0.0;
+    // Tread contacts: Σ spring force, force-weighted normal and road point (node centre minus its sphere radius
+    // plus the penetration), and the part of the spring the tread nodes carry themselves.
+    double load = 0.0, mu = 0.0, crr = 0.0, nodeShare = 0.0;
+    DVec3 normal, road;
     for (const int32_t i : wd.treadNodes) {
       const double fn = b.patchForce[i];
       if (!(fn > 0.0)) continue;
       const DVec3 weighted{b.patchNx[i], b.patchNy[i], b.patchNz[i]};
+      const ContactPairParams& pp = world.contactPair(b.material[i], b.patchMaterial[i]);
+      const double omegaN = 2.0 * kPi * pp.normalFrequencyHz;
+      const double penetration = fn / (b.mass[i] * omegaN * omegaN);
       load += fn;
       normal += weighted;
-      patch += pos(b, i) * fn;
-      const ContactPairParams& pp = world.contactPair(b.material[i], b.patchMaterial[i]);
+      road += (pos(b, i) - weighted * ((b.radius[i] - penetration) / fn)) * fn;
       mu += fn * pp.staticFriction;
       crr += fn * pp.rollingResistance;
-      const double omegaN = 2.0 * kPi * pp.normalFrequencyHz;
-      gap += fn * (b.radius[i] - fn / (b.mass[i] * omegaN * omegaN));
-      // Wheel share of this tread node's contact spring, applied to the wheel as a rigid body below.
-      const double wheelShare = 1.0 - pp.treadShare;
-      if (wheelShare > 0.0) {
-        const DVec3 force = weighted * wheelShare;
-        f.shareForce += force;
-        f.shareMoment += cross(pos(b, i) - f.wheel.center, force);
-        const double omega = 2.0 * kPi * pp.normalFrequencyHz;
-        f.radialStiffness += wheelShare * b.mass[i] * omega * omega;
-      }
+      nodeShare += fn * pp.treadShare;
     }
     f.contact = false;
-    f.load = load;
+    f.load = 0.0;
+    f.radialForce = 0.0;
+    f.radialDamping = 0.0;
     if (load > 1.0) {
       f.normal = normalized(normal);
       f.xDir = cross(f.axis, f.normal);
@@ -375,14 +382,26 @@ void Vehicle::step(const World& world, Body& b, bool track) {
         f.contact = true;
         f.xDir = f.xDir * (1.0 / sinAngle);
         f.yDir = cross(f.normal, f.xDir);
-        f.patch = patch * (1.0 / load);
         f.mu = mu / load;
         f.crr = crr / load;
         const double r0 = wd.tyre.radius;
+        // Radial tyre spring (A§4.7): the wheel's share of the vertical load comes from the hub's height above the
+        // local road plane and acts on the hub (axle nodes), so it can do no work on the spin. (Applying the tread
+        // nodes' own springs to the wheel instead couples the carcass lag into a spin torque.) Hub, not the ring's
+        // centroid: the tread flattening in the patch lifts the ring's centroid as the hub drops, and a spring on
+        // that height softens as it compresses — at speed the wheels hop in a 10 Hz limit cycle.
+        const DVec3 roadPoint = road * (1.0 / load);
+        const double height = dot(f.axlePoint - roadPoint, f.normal);
+        f.patch = f.axlePoint - f.normal * height;
+        const double deflection = r0 - height;
+        const double wheelShare = 1.0 - nodeShare / load;
+        const double k = wheelShare * wd.tyre.verticalStiffness;
+        f.radialForce = deflection > 0.0 ? k * deflection : 0.0;
+        f.radialDamping = 2.0 * wd.tyre.radialDamping * std::sqrt(k * f.wheel.mass);
+        f.load = f.radialForce + nodeShare;
+        f.loadedRadius = clampd(height, 0.3 * r0, r0);
         const DVec3 toPatch = f.patch - f.axlePoint;
         const DVec3 radial = toPatch - f.axis * dot(toPatch, f.axis);
-        // Loaded radius: axle line → road (tread node centres plus their sphere radius minus the penetration).
-        f.loadedRadius = clampd(std::sqrt(dot(radial, radial)) + gap / load, 0.3 * r0, r0);
         f.rollRadius = r0 - (r0 - f.loadedRadius) / 3.0;  // effective rolling radius of a radial tyre
         // Effective contact point: on the radial line to the patch, at the rolling radius. Forces act there so the
         // tyre's power is exactly F·v_slip (always dissipative, A§4.7).
@@ -402,6 +421,27 @@ void Vehicle::step(const World& world, Body& b, bool track) {
       s.rhoY = 0.0;
       s.kinematicSlip = 0.0;
     }
+  }
+
+  if (D.centre.active) {  // the gearbox output shaft turns with the rear (primary) axle
+    const AxleDesc& ra = D.axles[static_cast<size_t>(D.centre.rearAxle)];
+    driveOmega = 0.5 * (frames_[static_cast<size_t>(ra.leftWheel)].spinDrive + frames_[static_cast<size_t>(ra.rightWheel)].spinDrive);
+  }
+
+  // ---- active centre coupling: capacity follows the axle loads (applies from the next step) ----------------------
+  if (D.centre.active) {
+    const AxleDesc& fa = D.axles[static_cast<size_t>(D.centre.frontAxle)];
+    const AxleDesc& ra = D.axles[static_cast<size_t>(D.centre.rearAxle)];
+    const double front = frames_[static_cast<size_t>(fa.leftWheel)].load + frames_[static_cast<size_t>(fa.rightWheel)].load;
+    const double rear = frames_[static_cast<size_t>(ra.leftWheel)].load + frames_[static_cast<size_t>(ra.rightWheel)].load;
+    if (front + rear > 1.0) {
+      const double target = clampd(front / (front + rear), D.centre.minFront, D.centre.maxFront);
+      const double maxStep = D.centre.rate * dt;
+      frontShare_ += clampd(target - frontShare_, -maxStep, maxStep);
+    }
+    for (size_t w = 0; w < nw; ++w) shares_[w] = 0.0;
+    shares_[static_cast<size_t>(fa.leftWheel)] = shares_[static_cast<size_t>(fa.rightWheel)] = 0.5 * frontShare_;
+    shares_[static_cast<size_t>(ra.leftWheel)] = shares_[static_cast<size_t>(ra.rightWheel)] = 0.5 * (1.0 - frontShare_);
   }
 
   // ---- steering ------------------------------------------------------------------------------------------------
@@ -449,24 +489,37 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   // Traction control (§9): a feed-forward engine torque limit from the driven wheels' measured loads at a nominal
   // µ = 1 (what the car's sensors could estimate on dry asphalt), trimmed by integral feedback on the driven wheels'
   // slip so it also works on low-µ surfaces.
-  double driveSlip = 0.0, tractionTorque = 0.0;
+  // The feed-forward limit is the total wheel torque at which the first driven wheel reaches its grip (each wheel gets
+  // its fixed share of the total through the open differentials).
+  double driveSlip = 0.0, tractionTorque = std::numeric_limits<double>::infinity();
   for (size_t w = 0; w < nw; ++w) {
     const WheelFrame& f = frames_[w];
-    if (D.wheels[w].driveShare > 0.0f && f.contact) {
-      driveSlip = std::max(driveSlip, -f.slipVx / std::max(std::fabs(f.vx), 2.0));
-      tractionTorque += D.wheels[w].tyre.mu * f.load * f.rollRadius;
-    }
+    if (shares_[w] <= 0.0) continue;
+    const double capacity = f.contact ? D.wheels[w].tyre.mu * f.load * f.rollRadius : 0.0;
+    tractionTorque = std::min(tractionTorque, capacity / shares_[w]);
+    if (f.contact) driveSlip = std::max(driveSlip, -f.slipVx / std::max(std::fabs(f.vx), 2.0));
   }
+  if (!std::isfinite(tractionTorque)) tractionTorque = 0.0;
   const double gearNow = gearRatio(gear_);
   double tcsClutchLimit = std::numeric_limits<double>::infinity();
   if (D.electronics.tcs && input_.tcs && gear_ != 0 && gearNow != 0.0) {
+    // Integral trim on the feed-forward limit: cut ≈ 3×/s per 0.1 excess slip, raise ≤ 2/s while the slip is below the
+    // target. The feed-forward (µ·Fz at the weakest wheel) ignores load sensitivity, the slip curve and the engine's own
+    // inertia, so the trim may raise it up to 1.5× — but only while the limit actually binds (no wind-up otherwise).
     const double excess = driveSlip - D.electronics.tcsSlip;
-    // cut ≈ 3×/s per 0.1 excess slip, restore ≤ 2/s
-    tcsFactor_ = clampd(tcsFactor_ - dt * clampd(30.0 * excess, -2.0, 6.0), 0.2, 1.0);
-    const double limit = tcsFactor_ * tractionTorque / (std::fabs(gearNow) * T.efficiency);  // at the engine
     const double engineRpm = engineOmega_ * kRadToRpm;
     const double drag = engineRpm > 0.0 ? E.frictionTorque + E.frictionPerRpm * engineRpm : 0.0;
     const double full = engineTorque(engineRpm, 1.0) + drag;
+    const double limitThrottle = [&] {
+      const double limit = tcsFactor_ * tractionTorque / (std::fabs(gearNow) * T.efficiency);
+      return full > 0.0 ? clampd((limit + drag) / full, 0.0, 1.0) : 1.0;
+    }();
+    const bool binding = throttle > limitThrottle;
+    const double rate = clampd(30.0 * excess, -2.0, 6.0);
+    if (rate > 0.0 || binding) tcsFactor_ = clampd(tcsFactor_ - dt * rate, 0.2, 1.5);
+    else if (tcsFactor_ > 1.0) tcsFactor_ = std::max(1.0, tcsFactor_ - 2.0 * dt);
+    else tcsFactor_ = std::min(1.0, tcsFactor_ - dt * rate);
+    const double limit = tcsFactor_ * tractionTorque / (std::fabs(gearNow) * T.efficiency);  // at the engine
     if (full > 0.0) throttle = std::min(throttle, clampd((limit + drag) / full, 0.0, 1.0));
     // The clutch also slips at the limit, so re-engaging after a shift cannot dump the flywheel into the tyres.
     tcsClutchLimit = std::max(1.3 * limit, 30.0);
@@ -495,7 +548,25 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   if (G != 0.0) {
     const double power = clutchTorque * G * driveOmega;
     const double output = clutchTorque * G * (power >= 0.0 ? T.efficiency : 1.0 / T.efficiency);
-    for (size_t w = 0; w < nw; ++w) frames_[w].driveTorque = D.wheels[w].driveShare * output;
+    if (D.centre.active) {
+      // Multi-plate centre coupling (PTM / Haldex type): the gearbox drives the rear axle directly and the clutch
+      // passes up to frontShare·|output| to the front axle — always from the faster to the slower side, so it can
+      // never drive the front wheels faster than the rear ones (an unloaded front wheel does not keep its torque and
+      // spin up, which with fixed shares starts a power-hop limit cycle through the pitch mode at speed).
+      const AxleDesc& fa = D.axles[static_cast<size_t>(D.centre.frontAxle)];
+      const AxleDesc& ra = D.axles[static_cast<size_t>(D.centre.rearAxle)];
+      WheelFrame& fl = frames_[static_cast<size_t>(fa.leftWheel)];
+      WheelFrame& fr = frames_[static_cast<size_t>(fa.rightWheel)];
+      WheelFrame& rl = frames_[static_cast<size_t>(ra.leftWheel)];
+      WheelFrame& rr = frames_[static_cast<size_t>(ra.rightWheel)];
+      const double cap = frontShare_ * std::fabs(output);
+      const double c = std::min(cap / 0.3, 2000.0);  // full lock at 0.3 rad/s axle speed difference
+      const double coupling = clampd(c * (0.5 * (rl.spinDrive + rr.spinDrive - fl.spinDrive - fr.spinDrive)), -cap, cap);
+      fl.driveTorque = fr.driveTorque = 0.5 * coupling;
+      rl.driveTorque = rr.driveTorque = 0.5 * (output - coupling);
+    } else {
+      for (size_t w = 0; w < nw; ++w) frames_[w].driveTorque = shares_[w] * output;
+    }
     for (const AxleDesc& a : D.axles) {  // limited-slip coupling moves torque from the faster to the slower wheel
       WheelFrame& l = frames_[static_cast<size_t>(a.leftWheel)];
       WheelFrame& r = frames_[static_cast<size_t>(a.rightWheel)];
@@ -534,21 +605,21 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     f.brakeTorque = torque;
   }
 
-  // ---- wheel share of the tread contact + radial damping --------------------------------------------------------
-  // Applied as translation + spin torque on the wheel and the off-axis moment on the carrier (the same consistent
-  // split as the slip forces). The spring share is booked as external work (its energy is not a node potential),
-  // the radial damper as dissipation.
+  // ---- radial tyre spring-damper (wheel share of the vertical load) --------------------------------------------
+  // Spring: work booked as external (its energy is not a node potential); damper: dissipation.
   for (size_t w = 0; w < nw; ++w) {
     const WheelDesc& wd = D.wheels[w];
     const WheelFrame& f = frames_[w];
-    if (f.radialStiffness <= 0.0) continue;
-    applyAtWheel(b, wd, f.wheel, f.carrier, f.axis, f.axialInertia, f.shareForce, f.shareMoment, track, Ledger::kExternal);
-    if (f.contact) {
-      const double c = 2.0 * wd.tyre.radialDamping * std::sqrt(f.radialStiffness * f.wheel.mass);
-      const DVec3 damping = f.normal * (-c * dot(f.wheel.velocity, f.normal));
-      applyAtWheel(b, wd, f.wheel, f.carrier, f.axis, f.axialInertia, damping, cross(f.patch - f.wheel.center, damping),
-                   track, Ledger::kFriction);
-    }
+    if (!f.contact) continue;
+    // Split evenly over the two axle nodes: its power is then F·v of their midpoint, the point the height is
+    // measured at.
+    const double vn = dot((vel(b, wd.axleLeft) + vel(b, wd.axleRight)) * 0.5, f.normal);
+    const double damping = std::max(-f.radialDamping * vn, -f.radialForce);  // never pull the tyre down
+    const DVec3 spring = f.normal * (0.5 * f.radialForce), damper = f.normal * (0.5 * damping);
+    addForce(b, wd.axleLeft, spring, track, Ledger::kExternal);
+    addForce(b, wd.axleRight, spring, track, Ledger::kExternal);
+    addForce(b, wd.axleLeft, damper, track, Ledger::kFriction);
+    addForce(b, wd.axleRight, damper, track, Ledger::kFriction);
   }
 
   // ---- tyre forces -------------------------------------------------------------------------------------------
@@ -604,7 +675,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     applyAtWheel(b, wd, f.wheel, f.carrier, f.axis, f.axialInertia, force, cross(f.contactPoint - f.wheel.center, force),
                  track, Ledger::kFriction);
     // Rolling resistance acts as a moment against the spin (offset normal force), not as a patch force.
-    const double spinDir = clampd(f.spinAbs * f.rollRadius / 0.3, -1.0, 1.0);
+    const double spinDir = clampd(f.spinAbs * f.rollRadius / 0.05, -1.0, 1.0);
     const double rollingMoment = -t.rollingResistance * f.crr * f.load * f.loadedRadius * spinDir;
     // Self-aligning moment from the pneumatic trail (fades out towards the lateral peak).
     const double trail = t.pneumaticTrail * std::max(0.0, 1.0 - std::fabs(ny));

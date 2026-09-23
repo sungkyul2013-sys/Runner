@@ -45,18 +45,27 @@ const zMin = samples.reduce((m, p) => Math.min(m, p[2]), Infinity), zMax = sampl
 
 // ---- targets and parameters -------------------------------------------------------------------------------------
 const TARGET_MASS = 1595, TARGET_FRONT = 0.39;
-const tyreFront = { width: 0.20, rimWidth: 0.19, treadMass: 0.20, rimMass: 0.25 };   // 245/35 ZR20 on 8.5J
-const tyreRear = { width: 0.26, rimWidth: 0.25, treadMass: 0.24, rimMass: 0.29 };    // 305/30 ZR20 on 11J
+const tyreFront = { width: 0.20, rimWidth: 0.19, treadMass: 0.20, rimMass: 0.30 };   // 245/35 ZR20 on 8.5J
+const tyreRear = { width: 0.26, rimWidth: 0.25, treadMass: 0.24, rimMass: 0.30 };    // 305/30 ZR20 on 11J
+// Stiff spokes hold the rim against centrifugal growth up to top speed (1e5 N/m let it grow 2.6 cm at 300 km/h and
+// the tread ran into the road). They load the axle nodes (48 spokes each), hence the heavier hub nodes below.
+// (Diametral chords across the rim or tread instead couple the patch to the far side of the ring and start a 10 Hz
+// wheel hop above ≈ 210 km/h.)
+// Tread contact spheres of 5 cm: static deflection (≈ 1.2 cm) + centrifugal growth (≈ 2.5 cm at 280 km/h) must stay
+// inside the sphere, or CCD clamps the node.
+const wheelSpokes = { spokeStiffness: 2.5e5, treadNodeRadius: 0.05 };
+const hubNodeMass = 4.8;  // [kg] axle nodes: Σk ≈ 48 spokes + the knuckle beams
 const segments = 24;
 
 const b = new VehicleBuilder();
-b.group('chassis', { k: 4e5, zeta: 0.1 });                // per beam: k = EA / L, EA = 1.2e5 N
-b.group('hardpoint', { k: 3e5, zeta: 0.2 });
+b.group('chassis', { k: 6e5, zeta: 0.1 });                // per beam: k = EA / L, EA = 1.8e5 N
+b.group('hardpoint', { k: 8e5, zeta: 0.2 });
 b.group('knuckle', { k: 2e6, zeta: 0.1 });
 b.group('link', { k: 1.5e6, zeta: 0.1 });
 b.group('tierod', { type: 'hydro', k: 1.5e6, zeta: 0.1 });
 b.group('toelink', { k: 1.5e6, zeta: 0.1 });
 b.group('bumpstop', { type: 'bounded', k: 1.5e5, zeta: 0.05 });
+b.group('subframe', { k: 1.2e6, zeta: 0.1 });
 
 // ---- chassis lattice -------------------------------------------------------------------------------------------
 const xs = [-0.9, -0.675, -0.45, -0.225, 0, 0.225, 0.45, 0.675, 0.9];
@@ -75,7 +84,7 @@ const inside = (p) => {
   if (Math.abs(x) > halfWidthAt(Math.max(y, 0.3), z) - 0.06) return false;
   return !wheelEnvelope(p);
 };
-b.buildLattice({ xs, ys, zs, inside, axialStiffness: 1.2e5 });
+b.buildLattice({ xs, ys, zs, inside, axialStiffness: 1.8e5 });
 const latticeId = (x, y, z) => `c${xs.indexOf(x)}_${ys.indexOf(y)}_${zs.indexOf(z)}`;
 
 // ---- suspension ------------------------------------------------------------------------------------------------
@@ -84,7 +93,7 @@ const ride = { front: { freq: 1.8, zeta: 0.3 }, rear: { freq: 2.0, zeta: 0.3 } }
 const unsprung = { front: 21.5 + 20.6, rear: 25.4 + 17.3 };  // wheel+tyre, upright [kg]
 // Extra spring preload [m of spring length] that cancels the static sag of the links, hardpoint ties and lattice
 // (measured with `sbc-cli vehicle`: the car then settles at the model's design ride height minus tyre deflection).
-const preloadTrim = { front: 0.033 * 0.93, rear: 0.026 * 0.8 };
+const preloadTrim = { front: 0.0116, rear: -0.0055 };  // spring rest-length trims [m] (measured with sbc-cli vehicle)
 const sprungCorner = {
   front: (TARGET_FRONT * TARGET_MASS - 2 * unsprung.front) / 2,
   rear: ((1 - TARGET_FRONT) * TARGET_MASS - 2 * unsprung.rear) / 2,
@@ -100,7 +109,7 @@ function pressureWheel(name, W, s, axleRight, axleLeft, t) {
   b.pressureWheels.push({
     id: name, axleRight, axleLeft, center: W, segments,
     tyreRadius: R, treadWidth: t.width, rimRadius: 0.26, rimWidth: t.rimWidth,
-    treadNodeMass: t.treadMass, rimNodeMass: t.rimMass,
+    treadNodeMass: t.treadMass, rimNodeMass: t.rimMass, ...wheelSpokes,
     treadMaterial: 'rubber', rimMaterial: 'steel',
   });
 }
@@ -111,18 +120,23 @@ const at = (W, s) => (dx, y, dz) => [W[0] - s * dx, y, W[2] + dz];
 function macpherson(name, W, s) {
   const P = at(W, s);
   const n = (id, p, m) => b.node(`${name}_${id}`, p, m);
-  const Ai = n('ai', P(0.10, R, 0), 3.4), Ao = n('ao', P(-0.06, R, 0), 3.4);
-  const KL = n('kl', P(0.06, 0.13, 0.01), 3.5);
+  const Ai = n('ai', P(0.10, R, 0), hubNodeMass), Ao = n('ao', P(-0.06, R, 0), hubNodeMass);
+  // Lower ball joint deep in the wheel dish, top mount ≈ 11° KPI: kingpin offset ≈ 7 cm at the wheel centre (the
+  // drive force's lever about the steering axis), ≈ 0 scrub radius at the ground.
+  const KL = n('kl', P(0.03, 0.13, 0.01), 3.5);
   const K5 = n('k5', P(0.13, R + 0.16, -0.01), 2.6);
-  const T = P(0.22, 0.82, -0.05);                               // top mount (strut axis: ≈ 9° KPI, 7° caster)
+  const T = P(0.16, 0.82, -0.05);                               // top mount (steering axis KL–T: ≈ 11° KPI, 5° caster)
   const K6 = n('k6', add(b.pos(K5), scale(norm(sub(T, b.pos(K5))), 0.26)), 2.6);
   const KS = n('ks', P(0.12, 0.26, -0.14), 2.8);
   const KT = n('kt', P(-0.04, 0.20, -0.10), 2.5);
   const upright = [Ai, Ao, KL, K5, K6, KS, KT];
   upright.forEach((a, i) => upright.slice(i + 1).forEach((c) => b.beam(a, c, 'knuckle')));
-  const laF = b.hardpoint(`${name}_laf`, P(0.44, 0.20, 0.03), 1.0);
-  const laR = b.hardpoint(`${name}_lar`, P(0.40, 0.21, -0.30), 1.0);
-  const top = b.hardpoint(`${name}_top`, T, 4.0);
+  // Lower arm level with the ball joint at ride height. An arm drooping outward turns every lateral ball-joint load
+  // into a vertical one: the drive force's steering moment (reacted laterally at KL and the tie rod) then jacks the
+  // body up (≈ 0.5 N per N at 12° droop), and the unsteady front drive pumps a pitch/heave limit cycle at speed.
+  const laF = b.hardpoint(`${name}_laf`, P(0.44, 0.14, 0.03), 2.0);
+  const laR = b.hardpoint(`${name}_lar`, P(0.40, 0.14, -0.30), 2.0);
+  const top = b.hardpoint(`${name}_top`, T, 5.0);
   b.beam(laF, KL, 'link');
   b.beam(laR, KL, 'link');
   b.sliders.push({ node: top, railA: K5, railB: K6, k: 1.0e6, zeta: 0.3 });
@@ -134,7 +148,7 @@ function macpherson(name, W, s) {
     slider: { chassis: T, railA: b.pos(K5), railB: b.pos(K6) }, wheelCenter: W, axis: sub(b.pos(Ao), b.pos(Ai)),
   };
   const rackPoint = b.zeroBumpSteerPoint(knuckle, b.pos(KS), P(0.50, 0.26, -0.14));
-  const rack = b.hardpoint(`${name}_rack`, rackPoint, 1.0);
+  const rack = b.hardpoint(`${name}_rack`, rackPoint, 2.0);
   const factor = steeringFactor(b, { steerPoint: b.pos(KS), rack: rackPoint, axisA: b.pos(KL), axisB: T, lock: steeringLock });
   b.beam(rack, KS, 'tierod', { hydro: { channel: hydroChannel, factor: +factor.toFixed(6), speed: 0 } });
   const [axleRight, axleLeft] = s > 0 ? [Ai, Ao] : [Ao, Ai];
@@ -145,18 +159,24 @@ function macpherson(name, W, s) {
 function fiveLink(name, W, s) {
   const P = at(W, s);
   const n = (id, p, m) => b.node(`${name}_${id}`, p, m);
-  const Ai = n('ai', P(0.10, R, 0), 3.2), Ao = n('ao', P(-0.06, R, 0), 3.2);
-  const KU = n('ku', P(0.12, 0.58, 0), 2.6);
-  const KL = n('kl', P(0.08, 0.13, 0), 3.5);
-  const KS = n('ks', P(0.10, 0.25, 0.14), 2.6);
+  const Ai = n('ai', P(0.10, R, 0), hubNodeMass), Ao = n('ao', P(-0.06, R, 0), hubNodeMass);
+  // Ball joints 3 cm ahead of the axle: the virtual steering axis then leads the contact patch (positive trail), so
+  // tyre side force steers the wheel towards less slip (understeer compliance) instead of more — with the compliance
+  // of a node-beam suspension, zero or negative trail lets the rear toe flutter at speed.
+  const KU = n('ku', P(0.12, 0.58, 0.03), 2.6);
+  const KL = n('kl', P(0.08, 0.13, 0.03), 3.5);
+  // Toe link *behind* the axle: under side force the heavily loaded lower ball joint gives more than the lightly
+  // loaded toe link, so the outer wheel toes in (stable understeer compliance). A toe link ahead of the axle turns
+  // the same compliance into toe-out, and the rear axle flutters at speed.
+  const KS = n('ks', P(0.10, 0.25, -0.20), 2.8);
   const KT = n('kt', P(-0.04, 0.20, 0.10), 2.2);
   const upright = [Ai, Ao, KU, KL, KS, KT];
   upright.forEach((a, i) => upright.slice(i + 1).forEach((c) => b.beam(a, c, 'knuckle')));
-  const uaF = b.hardpoint(`${name}_uaf`, P(0.42, 0.58, 0.16), 1.0);
-  const uaR = b.hardpoint(`${name}_uar`, P(0.42, 0.58, -0.16), 1.0);
-  const laF = b.hardpoint(`${name}_laf`, P(0.46, 0.20, 0.24), 1.0);
-  const laR = b.hardpoint(`${name}_lar`, P(0.46, 0.20, -0.20), 1.0);
-  const top = b.hardpoint(`${name}_top`, P(0.25, 0.74, 0.0), 4.0);
+  const uaF = b.hardpoint(`${name}_uaf`, P(0.42, 0.58, 0.16), 2.0);
+  const uaR = b.hardpoint(`${name}_uar`, P(0.42, 0.58, -0.16), 2.0);
+  const laF = b.hardpoint(`${name}_laf`, P(0.46, 0.20, 0.25), 2.0);
+  const laR = b.hardpoint(`${name}_lar`, P(0.46, 0.20, -0.19), 2.0);
+  const top = b.hardpoint(`${name}_top`, P(0.25, 0.74, 0.0), 5.0);
   b.beam(uaF, KU, 'link');
   b.beam(uaR, KU, 'link');
   b.beam(laF, KL, 'link');
@@ -170,8 +190,8 @@ function fiveLink(name, W, s) {
       { chassis: b.pos(laF), point: b.pos(KL) }, { chassis: b.pos(laR), point: b.pos(KL) }],
     wheelCenter: W, axis: sub(b.pos(Ao), b.pos(Ai)),
   };
-  const toePoint = b.zeroBumpSteerPoint(knuckle, b.pos(KS), P(0.46, 0.25, 0.14));
-  const toe = b.hardpoint(`${name}_toe`, toePoint, 1.0);
+  const toePoint = b.zeroBumpSteerPoint(knuckle, b.pos(KS), P(0.46, 0.25, -0.20));
+  const toe = b.hardpoint(`${name}_toe`, toePoint, 2.0);
   b.beam(toe, KS, 'toelink');
   const [axleRight, axleLeft] = s > 0 ? [Ai, Ao] : [Ao, Ai];
   pressureWheel(name, W, s, axleRight, axleLeft, tyreRear);
@@ -187,10 +207,21 @@ const corners = {
   RR: fiveLink('RR', wheelsModel[3].position, -1),
 };
 
+// Subframes: every suspension pivot of an axle (both sides) is braced to every other one with stiff beams, like the
+// real cast/welded crossmember. The lattice alone is soft at this scale (a few 1e5 N/m between neighbouring pivots),
+// and relative pivot motion would turn into large compliance steer through the flat lower-arm triangles.
+function subframe(ids) {
+  ids.forEach((a, i) => ids.slice(i + 1).forEach((c) => b.beam(a, c, 'subframe')));
+  for (const id of ids) b.byId.get(id).mass = Math.max(b.byId.get(id).mass, 4.0);
+}
+subframe(['FL', 'FR'].flatMap((c) => [corners[c].laF, corners[c].laR, `${c}_rack`]));
+subframe(['RL', 'RR'].flatMap((c) => [`${c}_uaf`, `${c}_uar`, corners[c].laF, corners[c].laR, `${c}_toe`]));
+b.beam('FL_top', 'FR_top', 'subframe');  // strut brace
+
 // Anti-roll bars: levers are the lower ball joints, pivots on the chassis 0.3 m ahead of / behind the axle.
 function antiRollBar(l, r, dz, k) {
-  const pl = b.hardpoint(`${l.name}_arb`, [b.pos(l.KL)[0] * 0.55, 0.20, b.pos(l.KL)[2] + dz], 1.0);
-  const pr = b.hardpoint(`${r.name}_arb`, [b.pos(r.KL)[0] * 0.55, 0.20, b.pos(r.KL)[2] + dz], 1.0);
+  const pl = b.hardpoint(`${l.name}_arb`, [b.pos(l.KL)[0] * 0.55, 0.20, b.pos(l.KL)[2] + dz], 2.0);
+  const pr = b.hardpoint(`${r.name}_arb`, [b.pos(r.KL)[0] * 0.55, 0.20, b.pos(r.KL)[2] + dz], 2.0);
   b.torsionBars.push({ arm1: l.KL, pivot1: pl, pivot2: pr, arm2: r.KL, k, c: 8 });
 }
 antiRollBar(corners.FL, corners.FR, 0.30, 2600);   // [N·m/rad] ≈ 25 kN/m per wheel in roll (estimate)
@@ -203,7 +234,7 @@ for (const n of b.nodes) if (!b.lattice.includes(n.id)) fixedParts.push([n.mass,
 fixedParts.push([2 * wheelMass(tyreFront), zF], [2 * wheelMass(tyreRear), zR]);
 const fixedMass = fixedParts.reduce((s, [m]) => s + m, 0);
 // Mass per lattice layer (floor pan and sills heaviest; the roof layer still needs ≈ 1.5 kg per node for the 2 kHz step).
-const layerWeight = { 0.14: 1.0, 0.36: 1.0, 0.58: 0.8, 0.8: 0.6, 1.02: 0.5 };
+const layerWeight = { 0.14: 1.0, 0.36: 1.0, 0.58: 0.9, 0.8: 0.8, 1.02: 0.68 };
 const latticeNodes = b.lattice.map((lid) => b.byId.get(lid));
 const engineNodes = latticeNodes.filter((n) => n.p[2] < zR - 0.05 && n.p[1] < 0.7 && Math.abs(n.p[0]) < 0.6);
 function distribute(engineMass) {
@@ -229,23 +260,25 @@ cgY += (2 * wheelMass(tyreFront) + 2 * wheelMass(tyreRear)) * R;
 cgY /= total;
 
 // ---- vehicle section -------------------------------------------------------------------------------------------
-const tyre = (nominalLoad) => ({ radius: R, mu: 1.1, nominalLoad, relaxationX: 0.10, relaxationY: 0.28 });
-const wheel = (c, driveShare, brakeTorque, handbrakeTorque, nominalLoad) => ({
-  name: c.name, pressureWheel: c.name, carrier: c.upright, tyre: tyre(nominalLoad), brakeTorque, handbrakeTorque, driveShare,
+const tyre = (nominalLoad, verticalStiffness) => ({ radius: R, mu: 1.18, nominalLoad, verticalStiffness, relaxationX: 0.10, relaxationY: 0.28 });
+const wheel = (c, driveShare, brakeTorque, handbrakeTorque, nominalLoad, verticalStiffness) => ({
+  name: c.name, pressureWheel: c.name, carrier: c.upright, tyre: tyre(nominalLoad, verticalStiffness), brakeTorque, handbrakeTorque, driveShare,
 });
 const ref = latticeId(0, 0.36, 0);
 const vehicle = {
   refCenter: ref, refFront: latticeId(0, 0.36, 1.5), refLeft: latticeId(0.45, 0.36, 0),
   steering: { channel: hydroChannel, rate: 2.5 },
   wheels: [
-    wheel(corners.FL, 0.15, 3000, 0, 3300), wheel(corners.FR, 0.15, 3000, 0, 3300),
-    wheel(corners.RL, 0.35, 1800, 1500, 4600), wheel(corners.RR, 0.35, 1800, 1500, 4600),
+    wheel(corners.FL, 0.15, 3000, 0, 3300, 2.8e5), wheel(corners.FR, 0.15, 3000, 0, 3300, 2.8e5),     // 245/35 ZR20
+    wheel(corners.RL, 0.35, 1800, 1500, 4600, 3.2e5), wheel(corners.RR, 0.35, 1800, 1500, 4600, 3.2e5), // 305/30 ZR20
   ],
   axles: [
     { left: 'FL', right: 'FR' },
     { left: 'RL', right: 'RR', lsdPreload: 80, lsdLockDrive: 0.3, lsdLockCoast: 0.25 },
   ],
   driveReaction: ['FL', 'FR', 'RL', 'RR'].flatMap((c) => [corners[c].laF, corners[c].laR]),
+  // PTM (Porsche Traction Management): electronically controlled multi-plate front coupling, 0 … ≈ 50 % to the front
+  centreCoupling: { active: true, frontAxle: 0, rearAxle: 1, minFront: 0.1, maxFront: 0.45, rate: 4 },
   engine: {
     torqueCurve: [[1000, 380], [1500, 520], [1950, 660], [5000, 660], [5500, 640], [6000, 610], [6500, 562], [7000, 500], [7200, 470]],
     idleRpm: 850, redlineRpm: 7200, limiterRpm: 7300, stallRpm: 400, inertia: 0.25, frictionTorque: 15, frictionPerRpm: 0.009,

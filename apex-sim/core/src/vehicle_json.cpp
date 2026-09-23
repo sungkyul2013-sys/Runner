@@ -301,6 +301,7 @@ struct Loader {
       p.treadNodeRadius = floatOr(item, "treadNodeRadius", p.treadNodeRadius, path);
       p.rimNodeRadius = floatOr(item, "rimNodeRadius", p.rimNodeRadius, path);
       p.rimStiffness = floatOr(item, "rimStiffness", p.rimStiffness, path);
+      p.spokeStiffness = floatOr(item, "spokeStiffness", p.spokeStiffness, path);
       p.treadStiffness = floatOr(item, "treadStiffness", p.treadStiffness, path);
       p.treadBendStiffness = floatOr(item, "treadBendStiffness", p.treadBendStiffness, path);
       p.sidewallStiffness = floatOr(item, "sidewallStiffness", p.sidewallStiffness, path);
@@ -343,6 +344,7 @@ struct Loader {
     t.pneumaticTrail = floatOr(obj, "pneumaticTrail", t.pneumaticTrail, path);
     t.camberStiffness = floatOr(obj, "camberStiffness", t.camberStiffness, path);
     t.lowSpeed = floatOr(obj, "lowSpeed", t.lowSpeed, path);
+    t.verticalStiffness = floatOr(obj, "verticalStiffness", t.verticalStiffness, path);
     t.radialDamping = floatOr(obj, "radialDamping", t.radialDamping, path);
   }
 
@@ -408,6 +410,15 @@ struct Loader {
       }
     }
     if (const Val dr = member(obj, "driveReaction")) v.driveReactionNodes = nodeList(dr, "vehicle.driveReaction");
+    if (const Val c = member(obj, "centreCoupling")) {
+      const std::string path = "vehicle.centreCoupling";
+      v.centre.active = boolOr(c, "active", true, path);
+      v.centre.frontAxle = static_cast<int32_t>(numberOr(c, "frontAxle", 0.0, path));
+      v.centre.rearAxle = static_cast<int32_t>(numberOr(c, "rearAxle", 1.0, path));
+      v.centre.minFront = floatOr(c, "minFront", v.centre.minFront, path);
+      v.centre.maxFront = floatOr(c, "maxFront", v.centre.maxFront, path);
+      v.centre.rate = floatOr(c, "rate", v.centre.rate, path);
+    }
     if (const Val e = member(obj, "engine")) {
       const std::string path = "vehicle.engine";
       const Val curve = array(member(e, "torqueCurve"), path + ".torqueCurve");
