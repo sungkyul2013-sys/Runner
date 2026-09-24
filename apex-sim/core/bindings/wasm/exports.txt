@@ -10,6 +10,8 @@ _sbc_world_static_triangles
 _sbc_world_static_triangle_materials
 _sbc_world_spawn_lattice
 _sbc_world_add_body_velocity
+_sbc_world_set_wind
+_sbc_vehicle_set_wing_angle
 _sbc_world_add_tether
 _sbc_world_set_tether_anchor
 _sbc_world_set_tether_length

@@ -189,12 +189,37 @@ constexpr uint32_t kCoolantLeak = 1u << 0, kOverheat = 1u << 1, kOilLeak = 1u <<
                    kOverrev = 1u << 12, kEngineFailed = 1u << 13;
 }
 
+// §10 wing / spoiler / diffuser element: a quad of body nodes (leading left, leading right, trailing right, trailing
+// left; its normal (n3 − n0) × (n1 − n0) points to the side the air presses: up for a downforce wing). Thin-airfoil
+// lift C_L = a·(α + α0), a = 2π·AR/(AR + 2), stalling past `stallAngle` (C_L falls to 60 % of the peak), and drag
+// C_D0 + C_L²/(π·e·AR). α: the relative wind's angle onto the pressure side plus `angle` (adjustable).
+struct WingDesc {
+  std::string name;
+  int32_t nodes[4] = {-1, -1, -1, -1};
+  float area = 0.3f;          // [m²] planform
+  float aspectRatio = 4.0f;   // span² / area
+  float zeroLiftAngle = 0.05f;// α0 [rad]: camber (lift at zero angle)
+  float angle = 0.0f;         // [rad] set angle added to the geometric one (setVehicleWingAngle adds more)
+  float stallAngle = 0.26f;   // [rad]
+  float cd0 = 0.02f;          // profile drag
+  float oswald = 0.8f;        // span efficiency e
+};
+
 struct AeroDesc {
   float airDensity = 1.225f;      // ρ [kg/m³] (ISA sea level)
-  float dragArea = 0.7f;          // Cd·A [m²], acts at the mass centre
+  float dragArea = 0.7f;          // Cd·A [m²], acts at the mass centre (without surfaceGroups)
   float liftAreaFront = 0.0f;     // Cl·A [m²] (positive = downforce) on frontNodes
   float liftAreaRear = 0.0f;      // on rearNodes
   std::vector<int32_t> frontNodes, rearNodes;
+  // §10 surface aerodynamics: every body collision triangle of these self-collision groups takes the air on its own
+  // area and normal — windward pressure C_p·cos²θ, leeward (base) suction, skin friction — so the forces follow the
+  // car's attitude, yaw and damage (a crushed nose, a lost panel) and act where the surface is. Calibrated when the
+  // vehicle is created: the intact car straight ahead keeps dragArea, and liftAreaFront/Rear become the residual the
+  // surface and wings do not give (underbody and the flow a flat-panel model misses).
+  std::vector<int16_t> surfaceGroups;
+  float baseSuction = 0.25f;      // leeward C relative to the windward C_p = 1 [-]
+  float skinFriction = 0.004f;    // C_f [-]
+  std::vector<WingDesc> wings;
 };
 
 struct VehicleDesc {
@@ -244,7 +269,7 @@ struct WheelTelemetry {
   bool absActive = false;
   Vec3 center;              // body-local wheel centre [m]
   Vec3 axis;                // body-local unit spin axis (points left)
-  // §6 tyre damage
+  // §6 tyre damage (per wheel, WheelTelemetry)
   float pressure = 0.0f;    // [bar] gauge
   uint32_t tyreFlags = 0;   // tyre_flag:: bits
   float sparks = 0.0f;      // rim-on-ground spark intensity [0, 1] (contact force × sliding speed)
@@ -292,6 +317,11 @@ struct VehicleTelemetry {
   float eventSpeed = 0.0f;      // [m/s] cabin speed at its start
   DVec3 eventPosition;          // cabin (reference node) at its start, world frame [m]
   Vec3 eventVelocity;           // cabin velocity at its start [m/s]
+  // §10 aerodynamics this step (surface, wings and residual; panels not included)
+  float aeroDrag = 0.0f;               // [N] against the chassis forward direction
+  float aeroDownforceFront = 0.0f;     // [N] front axle share
+  float aeroDownforceRear = 0.0f;      // [N]
+  float airspeed = 0.0f;               // [m/s] forward speed through the air (wind and wakes included)
 };
 
 // Airbags (VehicleTelemetry::airbags): the front pair fires on a frontal velocity change over 25 km/h within 50 ms,

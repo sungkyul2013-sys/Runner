@@ -198,6 +198,17 @@ int sbc_world_tether_state(sbc_world* w, int id, double* out) {
   return SBC_TETHER_STATE;
 }
 
+void sbc_world_set_wind(sbc_world* w, float x, float y, float z) {
+  if (w) w->world.setWind({x, y, z});
+}
+
+int sbc_vehicle_set_wing_angle(sbc_world* w, int vehicle, int wing, float angle) {
+  if (!w || vehicle < 0 || vehicle >= w->world.vehicleCount()) return -1;
+  if (wing < 0 || static_cast<size_t>(wing) >= w->world.vehicleDesc(vehicle).aero.wings.size()) return -1;
+  w->world.setVehicleWingAngle(vehicle, wing, angle);
+  return 0;
+}
+
 void sbc_world_step(sbc_world* w, int steps) {
   if (w && steps > 0) w->world.step(steps);
 }
@@ -418,6 +429,10 @@ int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
   out[53] = static_cast<float>(t.eventPosition.y);
   out[54] = static_cast<float>(t.eventPosition.z);
   put3(55, t.eventVelocity);
+  out[58] = t.aeroDrag;
+  out[59] = t.aeroDownforceFront;
+  out[60] = t.aeroDownforceRear;
+  out[61] = t.airspeed;
   for (int i = 0; i < wheels; ++i) {
     const sbc::WheelTelemetry& wt = t.wheels[static_cast<size_t>(i)];
     float* o = out + SBC_VT_HEADER + SBC_VT_WHEEL * i;

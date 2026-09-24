@@ -309,6 +309,72 @@ void budgetContacts(std::vector<ContactRecord>& recs, BodyOf&& bodyOf, std::vect
   }
 }
 
+// Friction couple (§5.3 angular momentum): the friction pair acts at P (side a) and Q (side b), which lie a contact
+// distance apart along the normal, so the pair has a moment (P − Q) × f_t that a real contact — where both act at the
+// same point — does not have. It is cancelled by the opposite pure couple spread over the contact's nodes (a node
+// and a triangle, two edges) in proportion to their masses: zero net force, moment −(P − Q) × f_t. Two point nodes
+// alone (sphere contacts) cannot carry it (their inertia about the line joining them is nil) and keep the moment
+// (KNOWN_ISSUES). Its work goes to the friction ledger.
+template <bool kTrack>
+void frictionCouple(Body& A, const Side& a, Body& B, const Side& b, Vec3 ft) {
+  const DVec3 offset = B.origin - A.origin;  // B's local frame in A's
+  DVec3 pos[6];
+  double mass[6];
+  Body* body[6];
+  int node[6], n = 0;
+  DVec3 P, Q;
+  for (int k = 0; k < a.count; ++k) {
+    const int i = a.node[k];
+    pos[n] = toDouble(A.nodePosition(i));
+    P += pos[n] * a.w[k];
+    mass[n] = A.invMass[i] > 0.0f ? A.mass[i] : 0.0;
+    body[n] = &A;
+    node[n++] = i;
+  }
+  for (int k = 0; k < b.count; ++k) {
+    const int i = b.node[k];
+    pos[n] = toDouble(B.nodePosition(i)) + offset;
+    Q += pos[n] * b.w[k];
+    mass[n] = B.invMass[i] > 0.0f ? B.mass[i] : 0.0;
+    body[n] = &B;
+    node[n++] = i;
+  }
+  const DVec3 M = cross(toDouble(ft), P - Q);  // −(P − Q) × f_t
+  double m = 0.0;
+  DVec3 c;
+  for (int k = 0; k < n; ++k) { m += mass[k]; c += pos[k] * mass[k]; }
+  if (!(m > 0.0)) return;
+  c = c * (1.0 / m);
+  double xx = 0, yy = 0, zz = 0, xy = 0, xz = 0, yz = 0;
+  for (int k = 0; k < n; ++k) {
+    const DVec3 r = pos[k] - c;
+    xx += mass[k] * (r.y * r.y + r.z * r.z);
+    yy += mass[k] * (r.x * r.x + r.z * r.z);
+    zz += mass[k] * (r.x * r.x + r.y * r.y);
+    xy -= mass[k] * r.x * r.y;
+    xz -= mass[k] * r.x * r.z;
+    yz -= mass[k] * r.y * r.z;
+  }
+  const double c00 = yy * zz - yz * yz, c01 = xz * yz - xy * zz, c02 = xy * yz - yy * xz;
+  const double c11 = xx * zz - xz * xz, c12 = xy * xz - xx * yz, c22 = xx * yy - xy * xy;
+  const double det = xx * c00 + xy * c01 + xz * c02;
+  const double scale = (xx + yy + zz) / 3.0;
+  if (!(det > 1e-6 * scale * scale * scale)) return;  // (nearly) collinear points: no couple to carry it
+  const double inv = 1.0 / det;
+  const DVec3 alpha{(c00 * M.x + c01 * M.y + c02 * M.z) * inv, (c01 * M.x + c11 * M.y + c12 * M.z) * inv,
+                    (c02 * M.x + c12 * M.y + c22 * M.z) * inv};
+  for (int k = 0; k < n; ++k) {
+    if (!(mass[k] > 0.0)) continue;
+    const Vec3 g = toFloat(cross(alpha, pos[k] - c) * mass[k]);
+    Body& bb = *body[k];
+    const int i = node[k];
+    addNodeForce(bb, i, g);
+    if constexpr (kTrack) {
+      bb.fdFrictionX[i] += g.x; bb.fdFrictionY[i] += g.y; bb.fdFrictionZ[i] += g.z;
+    }
+  }
+}
+
 // Contact law between point P (side a of body A) and point Q (side b of body B) on mass m; `n` points from B's
 // surface toward A.
 template <bool kTrack>
@@ -327,6 +393,7 @@ bool applyContact(const World& w, Body& A, const Side& a, Body& B, const Side& b
   const float ct = 2.0f * pp.tangentDampingRatio * m * kTwoPi * pp.tangentFrequencyHz;
   const Vec3 ft = speed > kSlipEpsilon ? vt * (-std::min(ct, pp.kineticFriction * fn / speed)) : Vec3{};
   const Vec3 f = n * fn + ft;
+  if (dot(ft, ft) > 0.0f) frictionCouple<kTrack>(A, a, B, b, ft);
   for (int k = 0; k < a.count; ++k) {
     addNodeForce(A, a.node[k], f * a.w[k]);
     A.contactLoad[static_cast<size_t>(a.node[k])] += fn * a.w[k];

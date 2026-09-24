@@ -50,14 +50,31 @@ TEST_CASE("linear momentum is conserved through a body-body collision", "[physic
 }
 
 TEST_CASE("angular momentum is conserved through a frictionless body-body collision", "[physics][5.3]") {
-  // Point-mass nodes have no spin, so friction applied at node centres (one contact radius away from the true
-  // contact point) exerts a spurious couple — see KNOWN_ISSUES. Central (normal + beam) forces conserve L exactly.
+  // Central (normal + beam) forces alone conserve L exactly.
   WorldParams wp = test::zeroGravity();
   World w(wp);
   ContactPairParams frictionless;
   frictionless.staticFriction = 0.0f;
   frictionless.kineticFriction = 0.0f;
   w.setContactPair(0, 0, frictionless);
+  w.addBody(makeLattice(freeCube({-1.5, 0.0, 0.0}, {8.0f, 0.0f, 0.0f}, {0.3f, 0.2f, 0.1f})));
+  w.addBody(makeLattice(freeCube({1.5, 0.35, 0.2}, {-3.0f, 0.0f, 0.5f}, {-0.2f, 0.0f, 0.4f})));
+  const MomentumReport before = w.measureMomentum();
+  w.step(3000);
+  const MomentumReport after = w.measureMomentum();
+  const double dl = test::norm(after.angular - before.angular) / test::norm(before.angular);
+  INFO("angular rel err " << dl);
+  CHECK(dl < 0.01);
+  CHECK(test::norm(after.linear - before.linear) / test::norm(before.linear) < 0.01);
+}
+
+TEST_CASE("angular momentum is conserved through a body-body collision with friction", "[physics][5.3]") {
+  // §5.3 운동량·각운동량 보존: friction acts a contact distance off the contact point (node centres, the triangle's
+  // surface point); the counter-couple spread over the contact's nodes cancels the pair's spurious moment (steel on
+  // steel, µ 0.7: 20 % error without it).
+  WorldParams wp = test::zeroGravity();
+  World w(wp);
+  applyDefaultContactPairs(w);
   w.addBody(makeLattice(freeCube({-1.5, 0.0, 0.0}, {8.0f, 0.0f, 0.0f}, {0.3f, 0.2f, 0.1f})));
   w.addBody(makeLattice(freeCube({1.5, 0.35, 0.2}, {-3.0f, 0.0f, 0.5f}, {-0.2f, 0.0f, 0.4f})));
   const MomentumReport before = w.measureMomentum();

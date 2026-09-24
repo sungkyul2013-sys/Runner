@@ -50,6 +50,11 @@ export const VT = {
   eventSpeed: 51,
   eventPosition: 52, // world frame
   eventVelocity: 55,
+  // §10 aerodynamics
+  aeroDrag: 58,
+  downforceFront: 59,
+  downforceRear: 60,
+  airspeed: 61,
 } as const;
 
 /** Wheel field indices (Float32, relative to the wheel's record). */
@@ -157,6 +162,11 @@ export interface VehicleState {
   eventSpeed: number; // [m/s] at the start
   eventPosition: V3; // render space, at the start
   eventVelocity: V3; // [m/s] at the start
+  // §10 aerodynamics (surface, wings, residual lift)
+  aeroDrag: number; // [N]
+  downforceFront: number; // [N]
+  downforceRear: number; // [N]
+  airspeed: number; // [m/s] forward through the air (wind and slipstream included)
 }
 
 /** Core airbag bits (sbc/vehicle.h airbag::). */
@@ -253,6 +263,10 @@ export function decodeVehicle(r: Float32Array, origin: V3, renderOrigin: V3 = [0
     eventSpeed: r[VT.eventSpeed],
     eventPosition: [r[VT.eventPosition] - renderOrigin[0], r[VT.eventPosition + 1] - renderOrigin[1], r[VT.eventPosition + 2] - renderOrigin[2]],
     eventVelocity: v3(r, VT.eventVelocity),
+    aeroDrag: r[VT.aeroDrag],
+    downforceFront: r[VT.downforceFront],
+    downforceRear: r[VT.downforceRear],
+    airspeed: r[VT.airspeed],
     wheels,
   };
 }

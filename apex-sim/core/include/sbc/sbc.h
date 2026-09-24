@@ -39,6 +39,9 @@ int sbc_world_static_triangle_materials(sbc_world* w, int first, int count, int*
 #define SBC_LATTICE_PARAM_COUNT 24
 int sbc_world_spawn_lattice(sbc_world* w, const double* params, int count);
 int sbc_world_add_body_velocity(sbc_world* w, int body, float dvx, float dvy, float dvz);
+/* §10 steady wind [m/s] (world frame) and a vehicle wing's angle adjustment [rad]. */
+void sbc_world_set_wind(sbc_world* w, float x, float y, float z);
+int sbc_vehicle_set_wing_angle(sbc_world* w, int vehicle, int wing, float angle);
 
 /* §20 tethers — node grab, crane / winch, tow rope (World::addTether). anchorBody −1: the anchor is the world point
  * (x, y, z). rope 0: grab (pulls toward the point, saturating at maxForce); 1: rope/winch (pulls only, above its
@@ -115,7 +118,7 @@ int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake
                           int mode, int shift, int aids);
 /* Packed telemetry: SBC_VT_HEADER floats, then SBC_VT_WHEEL floats per wheel (layout below). Returns the number of
    floats written, or −(floats needed) when capacity is too small. Positions are body-local (add sbc_body_origin). */
-#define SBC_VT_HEADER 58
+#define SBC_VT_HEADER 62
 #define SBC_VT_WHEEL 26
 /* header: 0 time, 1 speed [m/s], 2 engine rpm, 3 engine torque [N·m], 4 clutch torque, 5 gear (−1 R, 0 N),
    6 flags (1 shifting, 2 engine running, 4 TCS active), 7 throttle, 8 brake, 9 steer, 10 clutch, 11 accel long,
@@ -124,7 +127,8 @@ int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake
    34 oil pressure [bar], 35 oil [L], 36 fuel [L], 37 engine wear [0, 1], 38 power available [0, 1], 39 fault bits,
    40 airbag bits, 41 crash time [s] (−1: none), 42 crash peak [g], 43 crash Δv [m/s]; crash events (§5.3 event
    log, the latest one): 44 count, 45 active, 46 start [s], 47 peak [g], 48 peak force [N], 49 Δv [m/s], 50 absorbed
-   [J], 51 speed at the start [m/s], 52–54 position at the start (world frame), 55–57 velocity at the start
+   [J], 51 speed at the start [m/s], 52–54 position at the start (world frame), 55–57 velocity at the start;
+   §10 aerodynamics: 58 drag [N], 59 downforce front [N], 60 downforce rear [N], 61 airspeed [m/s]
    wheel: 0 spin [rad/s], 1 spin angle [rad], 2 load [N], 3 slip ratio, 4 slip angle [rad], 5 Fx, 6 Fy [N],
    7 brake torque, 8 drive torque [N·m], 9 loaded radius [m], 10 flags (1 contact, 2 ABS active), 11–13 centre,
    14–16 axis (points left), 17 tyre radius [m], 18 tyre pressure [bar], 19 tyre flags (tyre_flag::), 20 rim sparks

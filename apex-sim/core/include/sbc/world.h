@@ -25,6 +25,17 @@ struct WorldParams {
   int threadCount = 1;                           // total threads incl. the caller
   bool trackEnergy = false;                      // per-category dissipation bookkeeping (§5.3)
   float airDensity = 1.225f;                     // ρ [kg/m³] acting on bodies' aero panels (ISA sea level; 0: no air)
+  Vec3 wind;                                     // [m/s] steady wind (§10 crosswind), world frame
+};
+
+// §10 slipstream: the wake a moving vehicle drags behind it (Jensen's top-hat wake with a soft edge). Behind the car
+// the air moves along with it at `deficit` of its speed, 2a·(D / (D + 2k·x))² at x behind its tail (a = 0.25,
+// k = 0.1), within the radius D/2 + k·x.
+struct VehicleWake {
+  int body = -1;
+  DVec3 center, velocity;   // world
+  double diameter = 1.8;    // [m] equivalent frontal diameter √(4·W·H/π)
+  double halfLength = 2.2;  // [m]
 };
 
 // Contact law for one material pair (§5.2): mass-scaled penalty spring-damper along the normal and
@@ -154,6 +165,12 @@ class World {
   void setVehicleInput(int vehicle, const VehicleInput& input);
   const VehicleInput& vehicleInput(int vehicle) const;
   const VehicleTelemetry& vehicleTelemetry(int vehicle) const;
+  // §10 wing angle adjustment [rad] (added to the wing's set angle of attack).
+  void setVehicleWingAngle(int vehicle, int wing, float angle);
+  // Air velocity at a world point: the wind plus the wakes of the vehicles other than `exceptBody` (§10).
+  DVec3 airVelocity(DVec3 point, int exceptBody = -1) const;
+  void setWind(Vec3 wind) { params_.wind = wind; }
+  bool hasWakes() const { return !wakes_.empty(); }
 
   // ---- tethers (§20 node grab, crane / winch, tow rope) ----
   int addTether(const TetherDesc& desc);  // returns its id (ids are never reused)
@@ -201,6 +218,7 @@ class World {
   void integrateBody(int bodyIndex);
   void finishBody(int bodyIndex);
   void applyTethers();
+  void updateWakes();
   void rebindTethers(int firstPart);
 
   WorldParams params_;
@@ -216,6 +234,7 @@ class World {
   std::vector<std::unique_ptr<Vehicle>> vehicles_;
   std::vector<std::vector<int>> bodyVehicles_;  // vehicle ids per body
   std::vector<Tether> tethers_;
+  std::vector<VehicleWake> wakes_;  // this step's (updated before the forces)
 
   friend struct ContactSolver;
 };

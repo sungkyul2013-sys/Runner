@@ -196,6 +196,13 @@ void Vehicle::updateTyres(const World& world, Body& b, double dt, double speed, 
     // ---- deflation ----
     t.inflation = std::max(0.0, t.inflation - t.leak * dt);
     if (t.inflation < kFlat) t.flags |= tyre_flag::kFlat;
+    // A flat tyre is open to the air through its hole: its cavity no longer holds a charge that crushing would
+    // compress (a sealed isothermal gas crushed to a sliver of its volume turns into a spring too stiff for its light
+    // tread and rim nodes). The gas group goes; what it held is released.
+    if ((t.flags & tyre_flag::kFlat) && t.group >= 0 && !b.groupBroken[static_cast<size_t>(t.group)]) {
+      if (track) b.losses.fracture += gasEnergy(b, t.group, b.groupGaugePressure[static_cast<size_t>(t.group)]);
+      b.groupBroken[static_cast<size_t>(t.group)] = 1;
+    }
     const double s = kCarcassShare + (1.0 - kCarcassShare) * t.inflation;
     if (std::fabs(s - t.applied) > 1e-4 || (t.inflation == 0.0 && t.applied != kCarcassShare)) {
       // Write the new air stiffness into the body; the energy that moves is the air's work.

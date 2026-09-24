@@ -209,6 +209,7 @@ void World::step(int count) {
 
 void World::stepOnce() {
   const int n = bodyCount();
+  updateWakes();
   jobs_->parallelFor(n, [this](int i) { computeInternalForces(i); });
   if (!tethers_.empty()) applyTethers();
   stats_ = {};
@@ -467,6 +468,44 @@ MomentumReport World::measureMomentum() const {
     }
   }
   return r;
+}
+
+void World::setVehicleWingAngle(int v, int wing, float angle) {
+  vehicles_.at(static_cast<size_t>(v))->setWingAngle(wing, angle);
+}
+
+// §10: the wakes of this step's vehicles (serial, before the forces read them in parallel).
+void World::updateWakes() {
+  wakes_.clear();
+  for (const auto& v : vehicles_) {
+    const Body& b = bodies_[static_cast<size_t>(v->bodyIndex())];
+    const VehicleWake w = v->wake(b);
+    if (dot(w.velocity, w.velocity) > 1.0) wakes_.push_back(w);  // under 1 m/s: no wake worth the name
+  }
+}
+
+DVec3 World::airVelocity(DVec3 p, int exceptBody) const {
+  const Vec3 wind = params_.wind;
+  DVec3 air{wind.x, wind.y, wind.z};
+  constexpr double kInduction = 0.25, kSpread = 0.1, kEdge = 0.5;  // Jensen a, k; soft edge [m]
+  for (const VehicleWake& w : wakes_) {
+    if (w.body == exceptBody) continue;
+    const double speed = std::sqrt(dot(w.velocity, w.velocity));
+    const DVec3 dir = w.velocity * (1.0 / speed);
+    const DVec3 rel = p - w.center;
+    const double along = -dot(rel, dir);    // behind the centre
+    const double x = along - w.halfLength;  // behind the tail
+    if (x <= 0.0) continue;
+    const DVec3 radial = rel + dir * along;
+    const double r = std::sqrt(dot(radial, radial));
+    const double radius = 0.5 * w.diameter + kSpread * x;
+    const double edge = r <= radius ? 1.0 : std::max(0.0, 1.0 - (r - radius) / kEdge);
+    if (edge <= 0.0) continue;
+    const double shrink = w.diameter / (w.diameter + 2.0 * kSpread * x);
+    const double deficit = std::min(0.6, 2.0 * kInduction * shrink * shrink) * edge;
+    air += w.velocity * deficit;
+  }
+  return air;
 }
 
 uint64_t World::stateHash() const {

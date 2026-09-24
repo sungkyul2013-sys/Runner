@@ -383,10 +383,10 @@ TEST_CASE("Porsche 911 Turbo: the wreck comes to rest after a wall crash and its
   // Was ≈ 950 J (190 W), then up to 8 kJ once the hinged lids and doors came in: a light lid node squeezed by more
   // contacts than symplectic Euler can carry (contact budget), a node over a crease whose second contact switched
   // on and off at depth (hit selection by normal direction), and depth lent by unrelated contacts of the same nodes
-  // (continuity per node pair within a body). What is left is a light node jammed at a concave crease of the crushed
-  // nose (the bent lid's edge, a tyre in its arch) chattering between two faces at ≈ 0.1 kW (KNOWN_ISSUES): measured
-  // ≈ 0 J without the panels and ≈ 580 J with them. Bounded so that anything larger shows.
-  CHECK(std::fabs(drift) < 1000.0);
+  // (continuity per node pair within a body). Then ≈ 580 J, and ≈ 1 kJ once the tyres could burst (M2k): a flat
+  // tyre crushed into its arch whose sealed isothermal gas became a spring too stiff for its light tread and rim nodes
+  // — a flat tyre now vents its cavity. Measured ≈ 0 J.
+  CHECK(std::fabs(drift) < 100.0);
   CHECK(maxKinetic < 5.0);
   CHECK(maxSpin < 0.1);            // no wheel turning by itself (was 0.19 rad/s)
 }

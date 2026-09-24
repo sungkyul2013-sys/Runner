@@ -1,11 +1,13 @@
 // SoftBodyCore — vehicle controller internals (see sbc/vehicle.h). Not part of the public API.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
 #include "sbc/body.h"
 #include "sbc/vehicle.h"
+#include "sbc/world.h"
 
 namespace sbc {
 
@@ -47,6 +49,7 @@ class Vehicle {
       h.value(w.rhoX); h.value(w.rhoY); h.value(w.brakeAngle); h.value(w.absFactor); h.value(w.angle);
     }
     for (const uint8_t lost : wheelLost_) h.value(lost);
+    for (const double a : wingExtra_) h.value(a);
     for (const TyreState& t : tyres_) {
       h.value(t.inflation); h.value(t.leak); h.value(t.flatRun); h.value(t.rimBend); h.value(t.bearing); h.value(t.applied); h.value(t.flags);
     }
@@ -80,6 +83,28 @@ class Vehicle {
   // deflation and its effects on the body (cavity gauge, sidewall stiffness; energy booked), shredding.
   void initTyres(const Body& body);
   void updateTyres(const World& world, Body& body, double dt, double speed, bool track);
+
+ public:
+  // §10 aerodynamics (vehicle_aero.cpp): surface, wings and residual lift, calibrated at creation; the wake this
+  // car drags (World::updateWakes, before the step's forces); wing angle adjustment.
+  VehicleWake wake(const Body& body) const;
+  void setWingAngle(int wing, double angle);
+
+ private:
+  struct AxleLine {
+    DVec3 rear, fwd;
+    double span = 0.0;  // front axle minus rear axle along fwd [m]
+    double frontShare(DVec3 p) const {
+      return span > 1e-6 ? std::clamp(dot(p - rear, fwd) / span, 0.0, 1.0) : 0.5;
+    }
+  };
+  void initAero(const Body& body);
+  AxleLine axleLine(const Body& body, DVec3 fwd) const;
+  void applyAero(const World& world, Body& body, bool track, DVec3 pc, DVec3 fwd, DVec3 up, DVec3 vcm);
+  std::vector<int> surfaceTris_;
+  std::vector<double> wingExtra_;
+  double aeroScale_ = 1.0, liftResidualFront_ = 0.0, liftResidualRear_ = 0.0;
+  double wakeDiameter_ = 1.8, wakeHalfLength_ = 2.2;
   double gearRatio(int gear) const;  // incl. final drive; negative in reverse
   void updateGearbox(double dt, double speed, double wheelSideOmega);
   double engineTorque(double rpm, double throttle) const;  // net brake torque [N·m]

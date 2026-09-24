@@ -233,6 +233,7 @@ Vehicle::Vehicle(const VehicleDesc& desc, int bodyIndex, const Body& body) : des
   }
   engineOmega_ = desc.engine.idleRpm / kRadToRpm;
   initTyres(body);
+  initAero(body);
 }
 
 double Vehicle::gearRatio(int gear) const {
@@ -856,26 +857,39 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   }
   if (!D.driveReactionNodes.empty()) applyCouple(b, D.driveReactionNodes, reactionFit, driveReaction, track, Ledger::kExternal);
 
-  // ---- aerodynamics (M1: body-level drag at the mass centre + axle downforce; per-triangle in M2) --------------
-  const AeroDesc& A = D.aero;
-  const double v2 = dot(vcm, vcm);
-  if (v2 > 0.0 && A.dragArea > 0.0f) {
-    const DVec3 dragAccel = vcm * (-0.5 * A.airDensity * A.dragArea * std::sqrt(v2) / totalMass);
-    for (int i = 0; i < b.nodeCount(); ++i) {
-      if (b.invMass[i] != 0.0f) addForce(b, i, dragAccel * static_cast<double>(b.mass[i]), track, Ledger::kExternal);
+  // ---- aerodynamics (§10) ---------------------------------------------------------------------------------------
+  if (!surfaceTris_.empty() || !D.aero.wings.empty()) {
+    applyAero(world, b, track, pc, fwd, up, vcm);
+  } else {
+    // Body-level drag at the mass centre and axle lift (M1 model; vehicles without surface groups or wings).
+    const AeroDesc& A = D.aero;
+    const DVec3 air = world.airVelocity(b.origin + pc, body_);
+    const DVec3 rel = vcm - air;
+    const double v2 = dot(rel, rel);
+    double drag = 0.0;
+    if (v2 > 0.0 && A.dragArea > 0.0f) {
+      const DVec3 dragAccel = rel * (-0.5 * A.airDensity * A.dragArea * std::sqrt(v2) / totalMass);
+      drag = -dot(dragAccel, fwd) * totalMass;
+      for (int i = 0; i < b.nodeCount(); ++i) {
+        if (b.invMass[i] != 0.0f) addForce(b, i, dragAccel * static_cast<double>(b.mass[i]), track, Ledger::kExternal);
+      }
     }
+    const double airspeed = dot(rel, fwd);
+    const double q = 0.5 * A.airDensity * airspeed * airspeed;
+    auto downforce = [&](const std::vector<int32_t>& nodes, double area) {
+      if (nodes.empty() || area == 0.0) return 0.0;
+      double m = 0.0;
+      for (const int32_t i : nodes) m += b.mass[i];
+      if (!(m > 0.0)) return 0.0;  // the whole axle end broke off
+      const DVec3 perKg = up * (-q * area / m);
+      for (const int32_t i : nodes) addForce(b, i, perKg * static_cast<double>(b.mass[i]), track, Ledger::kExternal);
+      return q * area;
+    };
+    telemetry_.aeroDownforceFront = static_cast<float>(downforce(A.frontNodes, A.liftAreaFront));
+    telemetry_.aeroDownforceRear = static_cast<float>(downforce(A.rearNodes, A.liftAreaRear));
+    telemetry_.aeroDrag = static_cast<float>(drag);
+    telemetry_.airspeed = static_cast<float>(airspeed);
   }
-  const double q = 0.5 * A.airDensity * speed * speed;
-  auto downforce = [&](const std::vector<int32_t>& nodes, double area) {
-    if (nodes.empty() || area == 0.0) return;
-    double m = 0.0;
-    for (const int32_t i : nodes) m += b.mass[i];
-    if (!(m > 0.0)) return;  // the whole axle end broke off
-    const DVec3 perKg = up * (-q * area / m);
-    for (const int32_t i : nodes) addForce(b, i, perKg * static_cast<double>(b.mass[i]), track, Ledger::kExternal);
-  };
-  downforce(A.frontNodes, A.liftAreaFront);
-  downforce(A.rearNodes, A.liftAreaRear);
 
   // ---- telemetry -----------------------------------------------------------------------------------------------
   telemetry_.time = world.time() + dt;

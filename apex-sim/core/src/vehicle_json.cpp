@@ -576,6 +576,39 @@ struct Loader {
       v.aero.liftAreaRear = floatOr(a, "liftAreaRear", v.aero.liftAreaRear, path);
       if (const Val f = member(a, "frontNodes")) v.aero.frontNodes = nodeList(f, path + ".frontNodes");
       if (const Val r = member(a, "rearNodes")) v.aero.rearNodes = nodeList(r, path + ".rearNodes");
+      if (const Val g = member(a, "surfaceGroups")) {
+        array(g, path + ".surfaceGroups");
+        size_t i, n;
+        Val item;
+        yyjson_arr_foreach(g, i, n, item) {
+          if (!yyjson_is_num(item)) fail(path + ".surfaceGroups[" + std::to_string(i) + "]", "expected a group number");
+          v.aero.surfaceGroups.push_back(static_cast<int16_t>(yyjson_get_num(item)));
+        }
+      }
+      v.aero.baseSuction = floatOr(a, "baseSuction", v.aero.baseSuction, path);
+      v.aero.skinFriction = floatOr(a, "skinFriction", v.aero.skinFriction, path);
+      if (const Val ws = member(a, "wings")) {
+        array(ws, path + ".wings");
+        size_t i, n;
+        Val item;
+        yyjson_arr_foreach(ws, i, n, item) {
+          const std::string wp = path + ".wings[" + std::to_string(i) + "]";
+          WingDesc w;
+          w.name = member(item, "name") ? string(member(item, "name"), wp + ".name") : "wing" + std::to_string(i);
+          const std::vector<int32_t> quad = nodeList(member(item, "nodes"), wp + ".nodes");
+          if (quad.size() != 4) fail(wp + ".nodes", "a wing needs 4 nodes (leading left, leading right, trailing right, trailing left)");
+          std::copy(quad.begin(), quad.end(), w.nodes);
+          w.area = floatOr(item, "area", w.area, wp);
+          w.aspectRatio = floatOr(item, "aspectRatio", w.aspectRatio, wp);
+          w.zeroLiftAngle = floatOr(item, "zeroLiftAngle", w.zeroLiftAngle, wp);
+          w.angle = floatOr(item, "angle", w.angle, wp);
+          w.stallAngle = floatOr(item, "stallAngle", w.stallAngle, wp);
+          w.cd0 = floatOr(item, "cd0", w.cd0, wp);
+          w.oswald = floatOr(item, "oswald", w.oswald, wp);
+          if (!(w.area > 0.0f) || !(w.aspectRatio > 0.0f)) fail(wp, "area and aspectRatio must be > 0");
+          v.aero.wings.push_back(w);
+        }
+      }
     }
     if (const Val f = member(obj, "fluids")) {
       const std::string path = "vehicle.fluids";

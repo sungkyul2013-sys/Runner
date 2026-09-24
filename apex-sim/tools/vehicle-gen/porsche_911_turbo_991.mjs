@@ -419,6 +419,16 @@ const vehicle = {
     dragArea: 0.65, liftAreaFront: +(0.03 - panelLift.front).toFixed(4), liftAreaRear: +(0.06 - panelLift.rear).toFixed(4),
     frontNodes: b.lattice.filter((lid) => b.pos(lid)[2] > zF + 0.2 && b.pos(lid)[1] < 0.6),
     rearNodes: b.lattice.filter((lid) => b.pos(lid)[2] < zR - 0.3 && b.pos(lid)[1] < 0.9),
+    // §10 surface aerodynamics on the lattice hull (group 0; the lids' and doors' skins carry their own panels), and
+    // the active rear spoiler: 1.08 m × 0.28 m (0.3 m², AR 3.9) deployed ≈ 6° to the flow, carried by the rear top of
+    // the chassis lattice (the engine lid it sits on in the model is a hinged panel that moves on its seals). The
+    // calibration keeps Cd·A and the axle lift totals above for the stock car; setVehicleWingAngle trims it.
+    surfaceGroups: [0],
+    wings: [{
+      name: 'rearSpoiler',
+      nodes: ['c6_3_1', 'c2_3_1', 'c2_3_0', 'c6_3_0'],
+      area: 0.3, aspectRatio: 3.9, zeroLiftAngle: 0.05, angle: 0.1, stallAngle: 0.26, cd0: 0.03, oswald: 0.8,
+    }],
   },
 };
 
@@ -451,7 +461,9 @@ const damage = {
   side: { strain: 0.02, impact: 2.0e4 },          // tempered
   quarter: { strain: 0.02, impact: 2.0e4 },
   rear: { strain: 0.025, impact: 2.0e4 },
-  mirror: { strain: 0.05, impact: 8.0e3 },
+  // The mirror's node is also the door's forward stop: in a 35 g frontal crash the door's own inertia presses on it
+  // with ≈ 7–9 kN, which is no strike on the mirror.
+  mirror: { strain: 0.05, impact: 1.5e4 },
   lamp: { strain: 1e9, impact: 8.0e3 },           // struck (or torn off) only
 };
 const damageGroups = new Map();
