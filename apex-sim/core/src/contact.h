@@ -171,6 +171,7 @@ struct ContactScratch {
   std::vector<int32_t> tri;                          // candidate triangles of one pass
   std::vector<std::pair<Vec3, Vec3>> boxes;          // their inflated boxes
   std::vector<std::pair<int32_t, int32_t>> pairs;    // (node, triangle) candidates
+  std::vector<std::pair<int32_t, bool>> edgeFeature; // edge sweep candidates of one body: (edge, feature edge)
   std::vector<SelfPairCache> selfCache;              // persists across steps
   std::vector<ContactRecord> records, selfRecords;  // this step's contacts (inter-body: scratch of body 0)
   std::vector<std::vector<float>> bodyLoad, selfLoad;       // per-node contact load (Σ w·m), kept zeroed
@@ -218,7 +219,9 @@ struct ContactSolver {
   // After integration: nodes whose centre crossed a moving triangle of another body during the step are put back on
   // it and lose their approaching normal velocity, with momentum-conserving corrections on both sides.
   static int ccdBodies(World& world);
-  static int ccdPass(World& world);
+  // One sweep over the body pairs; `active` (optional): only pairs with a body flagged there. Flags the bodies a
+  // correction moved in `moved`.
+  static int ccdPass(World& world, const std::vector<uint8_t>* active, std::vector<uint8_t>& moved);
   // Σ ½k_n·p² over all active penalty springs of the current state [J].
   // extendedBand: body springs continue behind the triangle mid-plane (only for the potential right before the
   // sweep corrections; forces and the ledger at step ends use the front-only band).

@@ -167,7 +167,7 @@ double constraintPotentialEnergy(const Body& b) {
     const double v = pressureGroupVolume(b, g), v0 = b.groupInitialVolume[g];
     const double ambient = b.groupAmbientPressure[g];
     const double absolute0 = static_cast<double>(b.groupGaugePressure[g]) + ambient;
-    if (v > 1e-9) e += -(absolute0 * v0 * std::log(v / v0) - ambient * (v - v0));
+    if (v > 1e-9) e += -(absolute0 * v0 * det::log(v / v0) - ambient * (v - v0));
   }
   for (int i = 0; i < b.torsionBarCount(); ++i) {
     if (b.torsionBroken[i]) continue;

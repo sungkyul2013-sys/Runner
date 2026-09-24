@@ -80,6 +80,9 @@ export const VW = {
   sparkPoint: 21,
   rimBend: 24,
   nominalPressure: 25,
+  // §4.4 alignment
+  camber: 26,
+  toe: 27,
 } as const;
 
 /** Core tyre_flag:: bits (sbc/vehicle.h). */
@@ -115,6 +118,8 @@ export interface WheelState {
   sparks: number; // rim-on-ground spark intensity [0, 1]
   sparkPoint: V3; // render space
   rimBend: number; // plastic strain of the rim [-]
+  camber: number; // [rad] relative to the chassis, negative = top inward (§4.4 bent suspension)
+  toe: number; // [rad] positive = toe-in (front wheels: steering included)
 }
 
 export interface VehicleState {
@@ -219,6 +224,8 @@ export function decodeVehicle(r: Float32Array, origin: V3, renderOrigin: V3 = [0
       sparks: r[o + VW.sparks],
       sparkPoint: [origin[0] + r[o + VW.sparkPoint], origin[1] + r[o + VW.sparkPoint + 1], origin[2] + r[o + VW.sparkPoint + 2]],
       rimBend: r[o + VW.rimBend],
+      camber: r[o + VW.camber],
+      toe: r[o + VW.toe],
     });
   }
   return {

@@ -2,6 +2,7 @@
 
 #include "sbc/builder.h"
 #include "sbc/proto_car.h"
+#include "sbc/vehicle_json.h"
 
 namespace sbc {
 namespace {
@@ -230,6 +231,18 @@ std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o)
     return w;
   }
   return nullptr;
+}
+
+std::unique_ptr<World> makeCrashGolden(std::string_view vehicleJson, const SceneOptions& options) {
+  auto w = makeScene("crash", options);
+  VehicleInput neutral;
+  neutral.mode = GearMode::kNeutral;
+  const float speed = 64.0f / 3.6f;
+  for (const auto& [at, yaw] : {std::pair<DVec3, double>{{40.0, 0.0, -8.0}, 0.0}, {{40.4, 0.0, 8.0}, 3.14159265358979323846}}) {
+    const LoadedVehicle car = loadVehicleJson(vehicleJson, {at, yaw, speed});
+    w->setVehicleInput(w->addVehicle(w->addBody(car.build.body), car.build.vehicle), neutral);
+  }
+  return w;
 }
 
 }  // namespace sbc

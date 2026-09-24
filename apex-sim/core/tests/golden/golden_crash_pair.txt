@@ -1,0 +1,5 @@
+# golden state hashes for scene 'crash_pair' (sbc-cli golden crash_pair --vehicle web/public/vehicles/porsche_911_turbo_991/vehicle.json --seconds 0.8 --every-steps 400)
+400 075d2b99dc6076fa
+800 bdbbf1add8f0553b
+1200 187ff1bdc002699a
+1600 17feb263441d7907

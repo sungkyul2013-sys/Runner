@@ -133,7 +133,7 @@ Body buildBody(const BodyDesc& desc) {
               b.plasticForce, b.hardening, b.breakForce, b.deformLimit, b.crushFloor, b.tearLength, b.plasticDeformation,
               b.fatigueLimit, b.fatigue, b.plasticSign, b.minLength,
               b.maxLength, b.breakGroup, b.broken, b.compressionStiffness, b.hydroChannel, b.hydroFactor,
-              b.hydroSpeed);
+              b.hydroSpeed, b.hydroOffset);
   require(desc.hydroChannels >= 0, "negative hydroChannels");
   b.hydroInputs.assign(static_cast<size_t>(desc.hydroChannels), 0.0f);
 

@@ -17,6 +17,20 @@ import { crashLaunch, type CrashSpec } from './scenario';
 
 export const CRASH_SCENE = 'crash';
 
+/** One wheel's alignment and tyre state (§4.4 bent suspension, §6 tyre damage) for the crash lab's table. */
+export interface WheelRow {
+  car: string;
+  wheel: string;
+  camber: number; // [°] relative to the chassis, negative = top inward
+  toe: number; // [°] positive = toe-in
+  pressure: number; // [bar]
+  flags: number; // TYRE bits
+  bent: boolean; // camber or toe moved more than 1° since the launch
+}
+
+const WHEEL_NAMES = ['FL', 'FR', 'RL', 'RR'];
+const DEG = 180 / Math.PI;
+
 const NEUTRAL: VehicleInput = { throttle: 0, brake: 0, steer: 0, handbrake: 0, mode: 2, shift: 0, abs: true, tcs: true };
 
 export class CrashLab {
@@ -43,6 +57,10 @@ export class CrashLab {
   follow = true;
   private logChanged = false;
   onLog: ((rows: CollisionRow[]) => void) | null = null;
+  onWheels: ((rows: WheelRow[]) => void) | null = null;
+  /** Alignment of each car's wheels at its first telemetry after the launch [°]. */
+  private wheelBase: Array<{ camber: number[]; toe: number[] } | undefined> = [];
+  private wheelTimer = 0;
   lastSpec: CrashSpec | null = null;
 
   constructor(
@@ -52,6 +70,27 @@ export class CrashLab {
     private readonly onError: (message: string) => void,
   ) {
     viewer.scene.add(this.glassDebris.group, this.lampDebris.group, this.sparks.group);
+  }
+
+  /** Camber, toe and tyre pressure of every wheel of the current run. */
+  wheelRows(): WheelRow[] {
+    const rows: WheelRow[] = [];
+    this.actors.forEach((a, i) => {
+      const v = a.state;
+      if (!v) return;
+      const camber = v.wheels.map((w) => w.camber * DEG), toe = v.wheels.map((w) => w.toe * DEG);
+      const base = (this.wheelBase[i] ??= { camber, toe });
+      v.wheels.forEach((w, k) => rows.push({
+        car: this.labels[i]?.split(' · ')[0] ?? String(i),
+        wheel: WHEEL_NAMES[k] ?? String(k),
+        camber: camber[k],
+        toe: toe[k],
+        pressure: w.pressure,
+        flags: w.tyreFlags,
+        bent: Math.abs(camber[k] - base.camber[k]) > 1 || Math.abs(toe[k] - base.toe[k]) > 1,
+      }));
+    });
+    return rows;
   }
 
   /** Vehicles of the current run (tests). */
@@ -71,6 +110,8 @@ export class CrashLab {
     this.physics.loadScene(CRASH_SCENE);
     this.log.clear();
     this.onLog?.([]);
+    this.wheelBase = [];
+    this.onWheels?.([]);
     this.energyGraph.clear();
     this.momentumGraph.clear();
     this.glassDebris.clear();
@@ -165,6 +206,11 @@ export class CrashLab {
     if (this.logChanged) {
       this.logChanged = false;
       this.onLog?.(this.log.rows());
+    }
+    this.wheelTimer += dt;
+    if (this.wheelTimer >= 0.25) {
+      this.wheelTimer = 0;
+      this.onWheels?.(this.wheelRows());
     }
   }
 }

@@ -9,7 +9,7 @@
 //   2d. crash lab (M2): a car-to-car run and an offset wall run from the launcher; event log and graphs
 //   2e. tools (§20): mouse grab lifts a cube, the crane reels it up
 //   2f. tyres (§6): the spike strip punctures all four tyres, they deflate, the pressure warning comes on
-// Usage: npm run build && node tools/e2e.mjs [--no-bench] [--only <steps>] [--chromium /path/to/chrome]
+// Usage: npm run build && node tools/e2e.mjs [--no-bench] [--only <steps>] [--bench-tag M2] [--chromium /path/to/chrome]
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -23,6 +23,8 @@ const chromiumPath =
     ? args[args.indexOf('--chromium') + 1]
     : process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const runBench = !args.includes('--no-bench');
+// Milestone the benchmark result is filed under (bench/results/<tag>-web-headless-swiftshader.json).
+const benchTag = args.includes('--bench-tag') ? args[args.indexOf('--bench-tag') + 1] : 'M2';
 // --only golden,sandbox,drive,crash,crashlab,tyres,tools,bench runs just those steps.
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1].split(',') : null;
 const want = (step) => !only || only.includes(step);
@@ -229,7 +231,9 @@ async function main() {
             rows: c.log.rows().map((r) => ({ t: r.time, cars: r.cars.length, kmh: r.relativeSpeed * 3.6, kN: r.peakForce / 1e3, kJ: r.absorbed / 1e3, g: r.peakG, active: r.active })),
             energySamples: c.energyGraph.samples,
             momentumSamples: c.momentumGraph.samples,
-            tableRows: document.querySelectorAll('.eventlog tbody tr:not(:has(.empty))').length,
+            tableRows: document.querySelectorAll('.eventlog:not(.wheels) tbody tr:not(:has(.empty))').length,
+            wheelRows: document.querySelectorAll('.eventlog.wheels tbody tr:not(:has(.empty))').length,
+            wheels: c.wheelRows().map((w) => ({ car: w.car, wheel: w.wheel, camber: +w.camber.toFixed(2), toe: +w.toe.toFixed(2), bar: +w.pressure.toFixed(2), bent: w.bent })),
             balance: e ? Math.abs(e.balance) / Math.max(Math.abs(e.external), 1) : 1,
             simTime: c.cars[0]?.physics.latestStats()?.simTime ?? 0,
           };
@@ -257,6 +261,8 @@ async function main() {
         if (hit.kN < 50 || hit.kJ < 5) failures.push(`crash lab: implausible impact ${hit.kN.toFixed(0)} kN / ${hit.kJ.toFixed(1)} kJ`);
       }
       if (pair.tableRows !== pair.rows.length) failures.push(`crash lab: table shows ${pair.tableRows} of ${pair.rows.length} rows`);
+      // §4.4 wheel alignment table: every wheel of both cars, with camber and toe.
+      if (pair.wheelRows !== 8 || pair.wheels.some((w) => !Number.isFinite(w.camber) || !Number.isFinite(w.toe))) failures.push(`crash lab: wheel table shows ${pair.wheelRows}/8 wheels`);
       // One sample per rendered frame; headless SwiftShader renders only a few frames per simulated second.
       if (pair.energySamples < 5 || pair.momentumSamples < 5) failures.push('crash lab: the energy / momentum graphs have no samples');
       if (pair.balance > 0.05) failures.push(`crash lab: energy balance error ${(100 * pair.balance).toFixed(2)} %`);
@@ -391,7 +397,7 @@ async function main() {
       const { page } = await openPage(browser, '?bench=1&warmup=3&seconds=12');
       await page.waitForFunction(() => window.__apex?.bench !== undefined, null, { timeout: 120000 });
       const bench = await page.evaluate(() => window.__apex.bench);
-      const out = join(root, 'bench', 'results', 'M0-web-headless-swiftshader.json');
+      const out = join(root, 'bench', 'results', `${benchTag}-web-headless-swiftshader.json`);
       mkdirSync(dirname(out), { recursive: true });
       writeFileSync(out, JSON.stringify({ note: 'Headless Chromium, SwiftShader CPU rendering (no GPU): frame times are not representative; physics timings are.', ...bench }, null, 2) + '\n');
       console.log('bench:', JSON.stringify(bench));

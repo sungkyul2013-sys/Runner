@@ -25,6 +25,7 @@
 #include <utility>
 
 #include "contact.h"
+#include "sbc/det_math.h"
 #include "sbc/world.h"
 
 namespace sbc {
@@ -32,7 +33,9 @@ namespace {
 
 constexpr float kTwoPi = 6.283185307179586f;
 constexpr int kMaxCandidates = 24;         // triangle contacts examined per node per body pair
-constexpr int kMaxContactsPerNode = 3;     // surface patches (not sharing a vertex) a node presses per body pair
+constexpr int kMaxContactsPerNode = 3;
+constexpr float kPatchSmoothing = 1e-3f;  // [m] τ of a patch's smooth-maximum depth (selectHits)
+constexpr float kMinPatchShare = 1e-4f;   // [-] hits with a smaller share σ of their patch are left out     // surface patches (not sharing a vertex) a node presses per body pair
 constexpr float kSlipEpsilon = 1e-6f;      // [m/s]
 constexpr float kEdgeEnd = 0.05f;          // [-] edge↔edge only between the inner 90 % of both edges (the ends are
                                            // nodes, handled by node↔triangle)
@@ -43,7 +46,8 @@ constexpr int kCcdBisections = 12;         // f(t) root to 2⁻¹² of the step
 constexpr float kCcdStandoff = 1e-3f;      // [m] a swept-back node or edge ends this far in front of the surface, not
                                            // exactly on it: an edge lying exactly in another body's face plane would
                                            // leave the side of every later crossing to rounding
-constexpr float kInsideTolerance = 1e-3f;  // [-] barycentric slack of the CCD inside test
+constexpr float kInsideTolerance = 1e-3f;
+constexpr float kCoplanarGap = 1e-4f;      // [m] a feature × flat edge sweep needs |f|/(|a||b|) above this at one end  // [-] barycentric slack of the CCD inside test
 constexpr float kPenetrationDepth = 0.3f;  // [m] PenetrationReport: deepest "behind the surface" still attributed to
                                            // a triangle (deeper nodes are inside the other body's volume and were
                                            // counted when they crossed)
@@ -129,7 +133,10 @@ constexpr float kFlatCos = 0.985f;  // [-] adjacent triangles within ~10° of ea
 // Feature edge: an active edge whose surface actually bends there (or ends there). A straight segment cannot cross a
 // flat face's interior edge without one of its end nodes crossing the face, which the node sweeps already catch;
 // treating the flat edges too made coplanar edges — a node resting on a face, its edge lying in the face — fight the
-// node sweep (the side of two coplanar edges is decided by rounding).
+// node sweep (the side of two coplanar edges is decided by rounding). A face bent slightly along its interior edge
+// (less than kFlatCos) can fold over a feature edge lying almost in its plane, though: the fold line crosses the
+// edge, which then pierces both triangles with both ends outside — so the sweeps also pair feature edges with flat
+// ones, but only for decisive crossings, clearly off coplanar at one end of the step (ccdEdge `mixed`).
 bool featureEdge(const Body& b, int e) {
   if (!edgeActive(b, e)) return false;
   const int t0 = b.edgeTri[static_cast<size_t>(e) * 2], t1 = b.edgeTri[static_cast<size_t>(e) * 2 + 1];
@@ -433,6 +440,7 @@ struct TriHit {
   Vec3 bary;
   Vec3 normal;
   float penetration;
+  float weight = 1.0f;  // share σ of the contact's effective mass within its patch (selectHits)
 };
 
 // Node sphere (x, r) against triangle abc of half thickness rt and unit normal n. Contact exists only in front of the
@@ -476,6 +484,13 @@ bool nodeTriangle(Vec3 x, float r, Vec3 a, Vec3 b, Vec3 c, Vec3 n, float rt, boo
 // neighbours), deepest first (ties by triangle id). Counting every face near a nearly flat crease once when the
 // node sits over its edge and twice when a dent puts it inside both prisms, or dropping a shallower hit whenever
 // its normal crosses a similarity threshold, would switch springs on and off at depth and pump energy.
+//   The deepest hit alone, though, puts a kink into the energy wherever two hits of a patch tie, and a node squeezed
+// between two faces of one patch that face each other — a chassis node inside a flat tyre's carcass folded onto
+// itself — sits at the bottom of that V: pushed to whichever side is deeper, it over-shoots by F·dt²/m and is pushed
+// back the next step (a 300 Hz limit cycle that pumped ≈ 140 W into a wreck at rest). So the patch's depth is the
+// smooth maximum of its hits, p = τ·ln Σ exp(pᵢ/τ) (τ = 1 mm), each hit acting with its share σᵢ = exp(pᵢ/τ)/Σ of
+// the contact's mass at depth p: ½k·p² stays a function of the depths alone (conservative, symmetric in which hit is
+// deepest), the V gets a round bottom, and away from ties it is the deepest hit (at a tie it lies τ·ln 2 deeper).
 template <typename TriNodesOf>
 int selectHits(TriHit* cand, int n, TriNodesOf&& triNodesOf) {
   auto before = [](const TriHit& a, const TriHit& b) {
@@ -487,16 +502,40 @@ int selectHits(TriHit* cand, int n, TriNodesOf&& triNodesOf) {
     while (j >= 0 && before(key, cand[j])) { cand[j + 1] = cand[j]; --j; }
     cand[j + 1] = key;
   }
-  int kept = 0;
-  for (int i = 0; i < n && kept < kMaxContactsPerNode; ++i) {
+  // Patches: each representative (the deepest hit not touching an earlier patch) with the hits sharing a vertex with
+  // it, in selection order; then the smooth maximum over each patch.
+  int patchOf[kMaxCandidates];
+  int reps[kMaxContactsPerNode];
+  int patches = 0;
+  for (int i = 0; i < n; ++i) {
     const int32_t* v = triNodesOf(cand[i].tri);
-    bool neighbour = false;
-    for (int k = 0; k < kept && !neighbour; ++k) {
-      const int32_t* u = triNodesOf(cand[k].tri);
-      for (int a = 0; a < 3 && !neighbour; ++a)
-        neighbour = v[a] == u[0] || v[a] == u[1] || v[a] == u[2];
+    patchOf[i] = -1;
+    for (int k = 0; k < patches && patchOf[i] < 0; ++k) {
+      const int32_t* u = triNodesOf(cand[reps[k]].tri);
+      for (int a = 0; a < 3 && patchOf[i] < 0; ++a)
+        if (v[a] == u[0] || v[a] == u[1] || v[a] == u[2]) patchOf[i] = k;
     }
-    if (!neighbour) cand[kept++] = cand[i];
+    if (patchOf[i] < 0 && patches < kMaxContactsPerNode) {
+      patchOf[i] = patches;
+      reps[patches++] = i;
+    }
+  }
+  float depth[kMaxContactsPerNode], sum[kMaxContactsPerNode];
+  for (int k = 0; k < patches; ++k) sum[k] = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    if (patchOf[i] < 0) continue;
+    cand[i].weight = static_cast<float>(det::exp((cand[i].penetration - cand[reps[patchOf[i]]].penetration) * (1.0f / kPatchSmoothing)));
+    sum[patchOf[i]] += cand[i].weight;
+  }
+  for (int k = 0; k < patches; ++k) depth[k] = cand[reps[k]].penetration + kPatchSmoothing * static_cast<float>(det::log(sum[k]));
+  int kept = 0;
+  for (int i = 0; i < n; ++i) {
+    if (patchOf[i] < 0) continue;
+    const int k = patchOf[i];
+    cand[i].weight /= sum[k];
+    if (!(cand[i].weight > kMinPatchShare)) continue;
+    cand[i].penetration = depth[k];
+    cand[kept++] = cand[i];
   }
   return kept;
 }
@@ -787,20 +826,20 @@ void gatherBodyContacts(Bodies& bodies, Scratch&& scratchOf, Surfaces&& surfaceO
     ContactScratch& s = scratchOf(ia);
     SurfaceCache& nA = surfaceOf(ia);
     SurfaceCache& nB = surfaceOf(ib);
-    auto add = [&](int bodyA, const Side& a, int bodyB, const Side& b, Vec3 n, float p) {
+    auto add = [&](int bodyA, const Side& a, int bodyB, const Side& b, Vec3 n, float p, float share = 1.0f) {
       const Body& X = bodies[bodyA];
       const Body& Y = bodies[bodyB];
-      const float m = contactMass(X, a, Y, b);
+      const float m = share * contactMass(X, a, Y, b);
       if (m > 0.0f && admissible(X, bodyA, a, Y, bodyB, b, n, p, dt)) out.push_back({bodyA, bodyB, a, b, n, p, m});
     };
     if (B.triangleCount() > 0) {
       forEachNodeTriangle(A, B, pr, nB, s, false, [&](int i, const TriHit& h) {
-        add(ia, nodeSide(i), ib, triSide(B, h.tri, h.bary), h.normal, h.penetration);
+        add(ia, nodeSide(i), ib, triSide(B, h.tri, h.bary), h.normal, h.penetration, h.weight);
       }, maxCollisionRadius(A), nullptr, nullptr, extendedBand);
     }
     if (A.triangleCount() > 0) {
       forEachNodeTriangle(B, A, reversed(pr), nA, s, false, [&](int j, const TriHit& h) {
-        add(ib, nodeSide(j), ia, triSide(A, h.tri, h.bary), h.normal, h.penetration);
+        add(ib, nodeSide(j), ia, triSide(A, h.tri, h.bary), h.normal, h.penetration, h.weight);
       }, maxCollisionRadius(B), nullptr, nullptr, extendedBand);
     }
     if (A.triangleCount() > 0 && B.triangleCount() > 0) {
@@ -944,7 +983,7 @@ int ContactSolver::selfContacts(World& w, int bodyIndex) {
   const float dt = w.params().dt;
   forEachSelfContact(b, s.surface, s, [&](int i, const TriHit& hit) {
     const Side a = nodeSide(i), t = triSide(b, hit.tri, hit.bary);
-    const float m = contactMass(b, a, b, t);
+    const float m = hit.weight * contactMass(b, a, b, t);
     if (m > 0.0f && admissible(b, bodyIndex, a, b, bodyIndex, t, hit.normal, hit.penetration, dt)) {
       recs.push_back({0, 0, a, t, hit.normal, hit.penetration, m});
     }
@@ -1055,7 +1094,7 @@ bool ccdNode(Body& A, int i, Body& B, const Pair& pr, const std::vector<int32_t>
 // actually meet (Ericson §5.1.9 closest points, both parameters inside). They are then put back apart along the
 // edges' common normal on the side they came from and lose their approaching velocity (same split by inverse mass
 // and same energy booking as the node case).
-bool ccdEdge(Body& A, int e, Body& B, int f, const Pair& pr) {
+bool ccdEdge(Body& A, int e, Body& B, int f, const Pair& pr, bool mixed) {
   const int ia0 = A.edgeNode[static_cast<size_t>(e) * 2], ia1 = A.edgeNode[static_cast<size_t>(e) * 2 + 1];
   const int ib0 = B.edgeNode[static_cast<size_t>(f) * 2], ib1 = B.edgeNode[static_cast<size_t>(f) * 2 + 1];
   const Vec3 a0 = A.nodePosition(ia0), a1 = A.nodePosition(ia1);
@@ -1073,6 +1112,9 @@ bool ccdEdge(Body& A, int e, Body& B, int f, const Pair& pr) {
   };
   const float f0 = volume(0.0f), f1 = volume(1.0f);
   if (!((f0 > 0.0f && f1 < 0.0f) || (f0 < 0.0f && f1 > 0.0f))) return false;
+  // A flat edge only for a decisive crossing, clearly off coplanar at one end of the step at least (edges lying in one
+  // plane at both ends: rounding decides the side there).
+  if (mixed && std::max(std::fabs(f0), std::fabs(f1)) < kCoplanarGap * length(a1 - a0) * length(b1 - b0)) return false;
   float lo = 0.0f, hi = 1.0f;
   for (int it = 0; it < kCcdBisections; ++it) {
     const float mid = 0.5f * (lo + hi);
@@ -1136,86 +1178,103 @@ bool ccdEdge(Body& A, int e, Body& B, int f, const Pair& pr) {
 
 int ContactSolver::ccdBodies(World& w) {
   // A correction can push something else across a surface, so the sweep repeats (from the true step start) until
-  // nothing crosses, at most kCcdIterations times.
+  // nothing crosses, at most kCcdIterations times. Only the bodies a correction moved can have new crossings, so a
+  // repeat sweeps just the pairs with one of them.
   constexpr int kCcdIterations = 4;
   int total = 0;
+  std::vector<uint8_t> moved(w.bodies_.size(), 0), active;
   for (int iteration = 0; iteration < kCcdIterations; ++iteration) {
-    const int clamps = ccdPass(w);
+    active.swap(moved);
+    moved.assign(w.bodies_.size(), 0);
+    const int clamps = ccdPass(w, iteration == 0 ? nullptr : &active, moved);
     total += clamps;
     if (clamps == 0) break;
   }
   return total;
 }
 
-int ContactSolver::ccdPass(World& w) {
+int ContactSolver::ccdPass(World& w, const std::vector<uint8_t>* active, std::vector<uint8_t>& moved) {
   int clamps = 0;
   const float dt = w.params().dt;
   forEachPair(w.bodies_, 2.0f * dt, [&](int ia, int ib, const Pair& pr) {
     Body& A = w.bodies_[ia];
     Body& B = w.bodies_[ib];
     if (A.family == B.family) return;  // a part and the body it broke off from: like self-contacts, no sweeps
-    ContactScratch& s = w.scratch_[ia];
-    for (int pass = 0; pass < 2; ++pass) {
-      Body& N = pass == 0 ? A : B;  // node body
-      Body& T = pass == 0 ? B : A;  // triangle body
-      if (T.triangleCount() == 0) continue;
-      const Pair p = pass == 0 ? pr : reversed(pr);
-      s.cells.clear();
-      Hash hash{s.cells, 1.0f / p.cell};
-      for (int t = 0; t < T.triangleCount(); ++t) {
-        if (T.triTorn[t]) continue;
-        Box box;
-        const int32_t* tn = triNodes(T, t);
-        for (int k = 0; k < 3; ++k) {
-          box.add(pos(T, tn[k], p.offset));
-          box.add(startPosition(T, tn[k], p.offset));
+    if (active && !(*active)[static_cast<size_t>(ia)] && !(*active)[static_cast<size_t>(ib)]) return;
+    const int before = clamps;
+    [&] {
+      ContactScratch& s = w.scratch_[ia];
+      for (int pass = 0; pass < 2; ++pass) {
+        Body& N = pass == 0 ? A : B;  // node body
+        Body& T = pass == 0 ? B : A;  // triangle body
+        if (T.triangleCount() == 0) continue;
+        const Pair p = pass == 0 ? pr : reversed(pr);
+        s.cells.clear();
+        Hash hash{s.cells, 1.0f / p.cell};
+        for (int t = 0; t < T.triangleCount(); ++t) {
+          if (T.triTorn[t]) continue;
+          Box box;
+          const int32_t* tn = triNodes(T, t);
+          for (int k = 0; k < 3; ++k) {
+            box.add(pos(T, tn[k], p.offset));
+            box.add(startPosition(T, tn[k], p.offset));
+          }
+          if (box.overlaps(p.region)) hash.insert(box, t);
         }
-        if (box.overlaps(p.region)) hash.insert(box, t);
+        if (s.cells.empty()) continue;
+        hash.finish();
+        std::vector<int32_t> cand;
+        for (int i = 0; i < N.nodeCount(); ++i) {
+          // Anchored nodes too: a moving triangle can sweep over them (the correction then moves only the triangle).
+          if (!(N.flags[i] & node_flag::kCollide)) continue;
+          const Vec3 x1 = N.nodePosition(i);
+          if (!p.region.contains(x1)) continue;
+          Box box;
+          box.add(x1);
+          box.add(startPosition(N, i, {}));
+          hash.query(box, cand);
+          if (!cand.empty() && ccdNode(N, i, T, p, cand)) ++clamps;
+        }
       }
-      if (s.cells.empty()) continue;
+      if (A.triangleCount() == 0 || B.triangleCount() == 0) return;
+      // Edges passing through each other between nodes.
+      auto sweptEdge = [](const Body& b, int e, Vec3 offset) {
+        Box box;
+        for (int k = 0; k < 2; ++k) {
+          const int i = b.edgeNode[static_cast<size_t>(e) * 2 + k];
+          box.add(pos(b, i, offset));
+          box.add(startPosition(b, i, offset));
+        }
+        return box;
+      };
+      s.cells.clear();
+      s.edgeFeature.clear();
+      Hash hash{s.cells, 1.0f / pr.cell};
+      for (int f = 0; f < B.edgeCount(); ++f) {
+        if (!edgeActive(B, f)) continue;
+        const Box box = sweptEdge(B, f, pr.offset);
+        if (box.overlaps(pr.region)) {
+          hash.insert(box, f);
+          s.edgeFeature.push_back({f, featureEdge(B, f)});  // ascending edge id
+        }
+      }
+      if (s.cells.empty()) return;
       hash.finish();
       std::vector<int32_t> cand;
-      for (int i = 0; i < N.nodeCount(); ++i) {
-        // Anchored nodes too: a moving triangle can sweep over them (the correction then moves only the triangle).
-        if (!(N.flags[i] & node_flag::kCollide)) continue;
-        const Vec3 x1 = N.nodePosition(i);
-        if (!p.region.contains(x1)) continue;
-        Box box;
-        box.add(x1);
-        box.add(startPosition(N, i, {}));
+      for (int e = 0; e < A.edgeCount(); ++e) {
+        if (!edgeActive(A, e)) continue;
+        const Box box = sweptEdge(A, e, {});
+        if (!box.overlaps(pr.region)) continue;
+        const bool featureA = featureEdge(A, e);
         hash.query(box, cand);
-        if (!cand.empty() && ccdNode(N, i, T, p, cand)) ++clamps;
+        for (const int32_t f : cand) {
+          const bool featureB = std::lower_bound(s.edgeFeature.begin(), s.edgeFeature.end(), std::pair<int32_t, bool>{f, false})->second;
+          if (!featureA && !featureB) continue;
+          if (ccdEdge(A, e, B, f, pr, !(featureA && featureB))) ++clamps;
+        }
       }
-    }
-    if (A.triangleCount() == 0 || B.triangleCount() == 0) return;
-    // Edges passing through each other between nodes.
-    auto sweptEdge = [](const Body& b, int e, Vec3 offset) {
-      Box box;
-      for (int k = 0; k < 2; ++k) {
-        const int i = b.edgeNode[static_cast<size_t>(e) * 2 + k];
-        box.add(pos(b, i, offset));
-        box.add(startPosition(b, i, offset));
-      }
-      return box;
-    };
-    s.cells.clear();
-    Hash hash{s.cells, 1.0f / pr.cell};
-    for (int f = 0; f < B.edgeCount(); ++f) {
-      if (!edgeActive(B, f)) continue;
-      const Box box = sweptEdge(B, f, pr.offset);
-      if (box.overlaps(pr.region) && featureEdge(B, f)) hash.insert(box, f);
-    }
-    if (s.cells.empty()) return;
-    hash.finish();
-    std::vector<int32_t> cand;
-    for (int e = 0; e < A.edgeCount(); ++e) {
-      if (!edgeActive(A, e)) continue;
-      const Box box = sweptEdge(A, e, {});
-      if (!box.overlaps(pr.region) || !featureEdge(A, e)) continue;
-      hash.query(box, cand);
-      for (const int32_t f : cand)
-        if (ccdEdge(A, e, B, f, pr)) ++clamps;
-    }
+    }();
+    if (clamps > before) moved[static_cast<size_t>(ia)] = moved[static_cast<size_t>(ib)] = 1;
   });
   return clamps;
 }
@@ -1238,7 +1297,7 @@ double ContactSolver::bodyContactPotential(const World& w, bool extendedBand, st
     recs.clear();
     forEachSelfContact(b, scratch[bi].surface, scratch[bi], [&](int i, const TriHit& hit) {
       const Side a = nodeSide(i), t = triSide(b, hit.tri, hit.bary);
-      const float m = contactMass(b, a, b, t);
+      const float m = hit.weight * contactMass(b, a, b, t);
       if (m > 0.0f && admissible(b, static_cast<int>(bi), a, b, static_cast<int>(bi), t, hit.normal, hit.penetration,
                                  w.params().dt)) {
         recs.push_back({static_cast<int32_t>(bi), static_cast<int32_t>(bi), a, t, hit.normal, hit.penetration, m});

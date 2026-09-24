@@ -87,6 +87,7 @@ Body extract(const Body& src, const std::vector<int32_t>& nodes, const std::vect
   pick(b.maxLength, src.maxLength, beams); pick(b.breakGroup, src.breakGroup, beams); pick(b.broken, src.broken, beams);
   pick(b.compressionStiffness, src.compressionStiffness, beams); pick(b.hydroChannel, src.hydroChannel, beams);
   pick(b.hydroFactor, src.hydroFactor, beams); pick(b.hydroSpeed, src.hydroSpeed, beams);
+  pick(b.hydroOffset, src.hydroOffset, beams);
   b.hydroInputs = src.hydroInputs;  // frozen where the controller left them
 
   for (int s = 0; s < src.sliderCount(); ++s) {

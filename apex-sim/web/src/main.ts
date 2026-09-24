@@ -225,6 +225,7 @@ async function main(): Promise<void> {
       vehicleB.id,
     );
     crash.onLog = (rows) => crashPanel.setLog(rows);
+    crash.onWheels = (rows) => crashPanel.setWheels(rows);
     crashLaunch = () => crashPanel.launch();
     document.body.append(crashPanel.root, crashPanel.graphs);
   }
@@ -389,7 +390,7 @@ async function runBench(
   const adapter = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<{ info?: Record<string, string> } | null> } }).gpu;
   const info = adapter ? (await adapter.requestAdapter())?.info : undefined;
   const result = {
-    milestone: 'M0',
+    milestone: 'M2', // the build's milestone (docs/reports/); the scene is the M0 pile
     date: new Date().toISOString(),
     scene: 'pile',
     userAgent: navigator.userAgent,

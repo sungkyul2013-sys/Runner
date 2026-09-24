@@ -17,6 +17,8 @@ constexpr double kRadToRpm = 60.0 / (2.0 * kPi);
 constexpr double kBearingDragTorque = 40.0;  // [N·m] drag of a fully damaged hub bearing (§6)
 
 double len(DVec3 v) { return std::sqrt(dot(v, v)); }
+// √(x² + y²) with the correctly rounded sqrt (std::hypot's last bit depends on the libm: native ≠ WASM).
+double length2d(double x, double y) { return std::sqrt(x * x + y * y); }
 DVec3 normalized(DVec3 v) {
   const double l = len(v);
   return l > 1e-12 ? v * (1.0 / l) : DVec3{};
@@ -383,9 +385,9 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     sensorFill_ = std::min(sensorFill_ + 1, n);
     if (sensorFill_ == n) {
       const double dvLong = sensorLong_[sensorAt_] - sensorLong_[oldest], dvLat = sensorLat_[sensorAt_] - sensorLat_[oldest];
-      const double g10 = std::hypot(sensorLong_[sensorAt_] - sensorLong_[recent], sensorLat_[sensorAt_] - sensorLat_[recent]) /
+      const double g10 = length2d(sensorLong_[sensorAt_] - sensorLong_[recent], sensorLat_[sensorAt_] - sensorLat_[recent]) /
                          (static_cast<double>(n / 5) * dt) / kStandardGravity;
-      const double dv = std::hypot(dvLong, dvLat);
+      const double dv = length2d(dvLong, dvLat);
       if (dv > 2.2 && crashTime_ < 0.0) crashTime_ = world.time();  // 8 km/h within 50 ms: a crash
       if (crashTime_ >= 0.0) {
         crashPeakG_ = std::max(crashPeakG_, g10);
@@ -960,6 +962,11 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     tel.sparks = static_cast<float>(ty.sparks);
     tel.sparkPoint = toFloat(ty.sparkPoint);
     tel.rimBend = static_cast<float>(ty.rimBend);
+    // Side from the wheel centre (+1 left, −1 right); the axis points left on both sides.
+    const double side = dot((pos(b, wd.axleLeft) + pos(b, wd.axleRight)) * 0.5 - pc, left) >= 0.0 ? 1.0 : -1.0;
+    const double al = dot(f.axis, left);
+    tel.camber = static_cast<float>(-side * det::atan2(dot(f.axis, up), al));
+    tel.toe = static_cast<float>(side * det::atan2(dot(f.axis, fwd), al));
   }
 }
 

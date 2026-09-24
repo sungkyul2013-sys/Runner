@@ -570,3 +570,156 @@ TEST_CASE("a small-overlap impact is logged at its approach speed", "[damage][po
   CHECK(std::fabs(t.eventSpeed * 3.6 - 56.0) < 4.0);
   CHECK(t.eventPosition.z < 0.0);
 }
+
+namespace {
+
+// Plastic deformation [m] summed over the suspension beams (arms, links, tie rods, uprights, subframes and the
+// pivots' body mounts: every beam with an end on a corner node FL_… / FR_… / RL_… / RR_…) of one side, or both.
+double suspensionPlastic(const Body& b, const LoadedVehicle& car, char side = 0) {
+  auto corner = [&](int32_t n) {
+    const std::string& id = car.nodeIds[static_cast<size_t>(n)];
+    return id.size() > 3 && (id[0] == 'F' || id[0] == 'R') && (id[1] == 'L' || id[1] == 'R') && id[2] == '_' &&
+           (side == 0 || id[1] == side);
+  };
+  double sum = 0.0;
+  for (int i = 0; i < b.beamCount(); ++i) {
+    const size_t k = static_cast<size_t>(i);
+    if (corner(b.beamA[k]) || corner(b.beamB[k])) sum += b.plasticDeformation[k];
+  }
+  return sum;
+}
+
+constexpr double kDeg = 180.0 / 3.14159265358979323846;
+
+}  // namespace
+
+TEST_CASE("Porsche 911 Turbo: kerb strikes bend the struck side's suspension, hard driving bends nothing",
+          "[damage][porsche][4.4]") {
+  // §4.4 bent suspension: the arms, toe links, tie rods, subframes and pivot mounts yield about twice above the loads of
+  // hard driving. The launch, the ABS stop, cornering and the speed bumps (the glass test) leave no plastic strain at
+  // all; the 1.2 m jump landing and the 12 cm square step at 60 km/h none in the suspension.
+  VehicleInput cruise;
+  cruise.throttle = 0.3f;
+  VehicleInput easy;
+  easy.throttle = 0.2f;
+  struct Case { const char* name; DVec3 at; float kmh; VehicleInput in; double seconds; };
+  for (const Case& c : {Case{"jump", {22.0, 0.0, 5.0}, 60.0f, cruise, 5.0}, Case{"step", {-24.0, 0.0, 150.0}, 60.0f, easy, 3.0}}) {
+    SceneOptions so;
+    so.threads = 1;
+    auto w = makeScene("drive", so);
+    const LoadedVehicle car = loadVehicleJson(porscheJson(), {c.at, 0.0, c.kmh / 3.6f});
+    const int body = w->addBody(car.build.body);
+    w->setVehicleInput(w->addVehicle(body, car.build.vehicle), c.in);
+    w->step(static_cast<int>(c.seconds / w->params().dt));
+    INFO(c.name);
+    CHECK(suspensionPlastic(w->body(body), car) == 0.0);
+  }
+
+  // Sliding sideways (to the right, −X) into a 15 cm square kerb: at 15 km/h the wheels take it; at 25 km/h the right
+  // side's arms, toe link and tie rod bend — camber and toe change there. The left side does not yield (its alignment
+  // moves a little only because the body now leans onto the right side's punctured tyres).
+  struct Slide { std::vector<WheelTelemetry> before, after; double plasticLeft = 0.0, plasticRight = 0.0; int broken = 0; };
+  auto slide = [](float kmh) {
+    WorldParams wp;
+    wp.threadCount = 1;
+    World w(wp);
+    applyDefaultContactPairs(w);
+    w.addGroundPlane(0.0, material::kAsphalt);
+    w.addStaticBox({-2.0, 0.075, 0.0}, {0.3f, 0.075f, 6.0f}, 0.0, material::kConcrete);
+    const LoadedVehicle car = loadVehicleJson(porscheJson(), {{0.0, 0.0, 0.0}, 0.0, 0.0f});
+    const int body = w.addBody(car.build.body);
+    const int v = w.addVehicle(body, car.build.vehicle);
+    VehicleInput hold;
+    hold.brake = 1.0f;
+    hold.mode = GearMode::kNeutral;
+    w.setVehicleInput(v, hold);
+    w.step(static_cast<int>(1.0 / w.params().dt));
+    Slide s;
+    s.before = w.vehicleTelemetry(v).wheels;
+    w.addBodyVelocity(body, {-kmh / 3.6f, 0.0f, 0.0f});
+    w.step(static_cast<int>(4.0 / w.params().dt));
+    s.after = w.vehicleTelemetry(v).wheels;
+    s.plasticLeft = suspensionPlastic(w.body(body), car, 'L');
+    s.plasticRight = suspensionPlastic(w.body(body), car, 'R');
+    s.broken = w.body(body).brokenBeamCount;
+    return s;
+  };
+  const Slide gentle = slide(15.0f);
+  CHECK(gentle.plasticLeft + gentle.plasticRight == 0.0);
+  const Slide hard = slide(25.0f);
+  const char* names[] = {"FL", "FR", "RL", "RR"};
+  for (int k = 0; k < 4; ++k) {
+    const double camber = (hard.after[k].camber - hard.before[k].camber) * kDeg;
+    const double toe = (hard.after[k].toe - hard.before[k].toe) * kDeg;
+    INFO(names[k] << ": camber " << hard.before[k].camber * kDeg << "° → Δ " << camber << "°, toe Δ " << toe << "°");
+    if (k == 1 || k == 3) {
+      CHECK(std::fabs(camber) > 1.5);  // struck (right) side
+    } else {
+      CHECK(std::fabs(camber) < 0.6);
+      CHECK(std::fabs(toe) < 0.3);
+    }
+  }
+  INFO("suspension plastic left " << hard.plasticLeft * 1e3 << " mm, right " << hard.plasticRight * 1e3 << " mm");
+  CHECK(hard.plasticRight > 0.05);
+  CHECK(hard.plasticLeft == 0.0);
+  CHECK(hard.broken == 0);  // bent, not torn off
+}
+
+TEST_CASE("a bent tie rod makes the car pull and moves the steering centre", "[damage][porsche][4.4]") {
+  // §4.4: the front left tie rod shortened 6 mm by yielding (its hydro offset, as a kerb strike leaves it). Hands off
+  // at 80 km/h the car drifts off its line; a driver holding the heading needs a steady steering input off centre.
+  struct Run { double drift = 0.0, meanSteer = 0.0, toe = 0.0; };
+  auto run = [](double bend, bool driver) {
+    WorldParams wp;
+    wp.threadCount = 1;
+    World w(wp);
+    applyDefaultContactPairs(w);
+    w.addGroundPlane(0.0, material::kAsphalt);
+    const LoadedVehicle car = loadVehicleJson(porscheJson(), {{0.0, 0.0, 0.0}, 0.0, 80.0f / 3.6f});
+    const int body = w.addBody(car.build.body);
+    const int v = w.addVehicle(body, car.build.vehicle);
+    if (bend != 0.0) {
+      Body& b = w.mutableBody(body);
+      const int rack = nodeIndex(car, "FL_rack"), arm = nodeIndex(car, "FL_ks");
+      for (int i = 0; i < b.beamCount(); ++i) {
+        const size_t k = static_cast<size_t>(i);
+        if ((b.beamA[k] == rack && b.beamB[k] == arm) || (b.beamA[k] == arm && b.beamB[k] == rack)) {
+          b.hydroOffset[k] += static_cast<float>(bend);
+          b.restLength[k] += static_cast<float>(bend);
+        }
+      }
+    }
+    Run r;
+    double sum = 0.0;
+    int samples = 0;
+    const DVec3 start = w.body(body).nodeWorldPosition(car.build.vehicle.refCenter);
+    const int every = static_cast<int>(0.01 / w.params().dt);
+    for (int s = 0; s < 600; ++s) {  // 6 s
+      const VehicleTelemetry& t = w.vehicleTelemetry(v);
+      VehicleInput in;
+      in.throttle = static_cast<float>(std::clamp(0.3 + 0.1 * (80.0 / 3.6 - t.speed), 0.0, 1.0));
+      if (driver) {  // hold heading 0 (+Z): positive steer turns left (+X)
+        const double heading = std::atan2(t.forward.x, t.forward.z);
+        in.steer = static_cast<float>(std::clamp(-4.0 * heading, -1.0, 1.0));
+        if (s >= 300) { sum += t.steer; ++samples; }
+      }
+      w.setVehicleInput(v, in);
+      w.step(every);
+    }
+    const DVec3 end = w.body(body).nodeWorldPosition(car.build.vehicle.refCenter);
+    r.drift = end.x - start.x;
+    r.meanSteer = samples > 0 ? sum / samples : 0.0;
+    r.toe = w.vehicleTelemetry(v).wheels[0].toe;
+    return r;
+  };
+  const Run straight = run(0.0, false), pulled = run(-0.006, false);
+  const Run held = run(0.0, true), offset = run(-0.006, true);
+  INFO("hands off: drift " << straight.drift << " m straight, " << pulled.drift << " m bent (FL toe "
+                           << straight.toe * kDeg << "° → " << pulled.toe * kDeg << "°); held: mean steer "
+                           << held.meanSteer << " straight, " << offset.meanSteer << " bent");
+  CHECK(std::fabs(straight.drift) < 0.5);
+  CHECK(std::fabs(pulled.drift) > 3.0);
+  CHECK(std::fabs(held.meanSteer) < 0.005);
+  CHECK(std::fabs(offset.meanSteer) > 0.02);
+  CHECK(offset.meanSteer * pulled.drift < 0.0);  // the driver steers against the pull
+}

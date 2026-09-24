@@ -119,7 +119,7 @@ int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake
 /* Packed telemetry: SBC_VT_HEADER floats, then SBC_VT_WHEEL floats per wheel (layout below). Returns the number of
    floats written, or −(floats needed) when capacity is too small. Positions are body-local (add sbc_body_origin). */
 #define SBC_VT_HEADER 62
-#define SBC_VT_WHEEL 26
+#define SBC_VT_WHEEL 28
 /* header: 0 time, 1 speed [m/s], 2 engine rpm, 3 engine torque [N·m], 4 clutch torque, 5 gear (−1 R, 0 N),
    6 flags (1 shifting, 2 engine running, 4 TCS active), 7 throttle, 8 brake, 9 steer, 10 clutch, 11 accel long,
    12 accel lat [m/s²], 13 odometer [m], 14–16 chassis position, 17–19 forward, 20–22 up, 23–25 left,
@@ -132,7 +132,8 @@ int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake
    wheel: 0 spin [rad/s], 1 spin angle [rad], 2 load [N], 3 slip ratio, 4 slip angle [rad], 5 Fx, 6 Fy [N],
    7 brake torque, 8 drive torque [N·m], 9 loaded radius [m], 10 flags (1 contact, 2 ABS active), 11–13 centre,
    14–16 axis (points left), 17 tyre radius [m], 18 tyre pressure [bar], 19 tyre flags (tyre_flag::), 20 rim sparks
-   [0, 1], 21–23 spark point (body-local), 24 rim bend (plastic strain), 25 nominal pressure [bar] */
+   [0, 1], 21–23 spark point (body-local), 24 rim bend (plastic strain), 25 nominal pressure [bar], §4.4: 26 camber [rad] (negative: top inward),
+   27 toe [rad] (positive: toe-in) */
 int sbc_vehicle_telemetry(sbc_world* w, int vehicle, float* out, int capacity);
 
 #ifdef __cplusplus

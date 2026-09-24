@@ -60,15 +60,23 @@ const rimYield = { rimYieldForce: 2200, rimHardening: 0.1 };
 const hubNodeMass = 4.8;  // [kg] axle nodes: Σk ≈ 48 spokes + the knuckle beams
 const segments = 24;
 
+// §4.4 bent suspension: arms, toe links, tie rods, the subframes and the pivots' body mounts yield about twice above
+// the highest load of hard driving and so bend only in crashes and kerb strikes (camber and toe change, the car pulls,
+// the steering centre moves). Peak axial loads measured on this car: arms 11.4 kN (ABS stop, 1.2 m jump landing),
+// tie rods 7.4 kN, toe links 4.1 kN, subframe 6.6 kN, pivot mounts 15.7 kN (jump landing); a 25 km/h slide into a
+// 15 cm kerb 38 / 20 / 20 kN, the 64 km/h wall 29 kN (arms) and 48 kN (subframe). A link bent past 25 % of its
+// length in total breaks and lets the wheel go. The forged uprights stay elastic.
+const suspensionYield = (plasticForce) => ({ plasticForce, hardening: 0.05, deformLimit: 0.25 });
+
 const b = new VehicleBuilder();
 b.group('chassis', { k: 6e5, zeta: 0.1 });                // per beam: k = EA / L, EA = 1.8e5 N
-b.group('hardpoint', { k: 8e5, zeta: 0.2 });
+b.group('hardpoint', { k: 8e5, zeta: 0.2, plasticForce: 3.0e4, hardening: 0.05 });
 b.group('knuckle', { k: 2e6, zeta: 0.1 });
-b.group('link', { k: 1.5e6, zeta: 0.1 });
-b.group('tierod', { type: 'hydro', k: 1.5e6, zeta: 0.1 });
-b.group('toelink', { k: 1.5e6, zeta: 0.1 });
+b.group('link', { k: 1.5e6, zeta: 0.1, ...suspensionYield(2.4e4) });
+b.group('tierod', { type: 'hydro', k: 1.5e6, zeta: 0.1, ...suspensionYield(1.4e4) });
+b.group('toelink', { k: 1.5e6, zeta: 0.1, ...suspensionYield(1.2e4) });
 b.group('bumpstop', { type: 'bounded', k: 1.5e5, zeta: 0.05 });
-b.group('subframe', { k: 1.2e6, zeta: 0.1 });
+b.group('subframe', { k: 1.2e6, zeta: 0.1, plasticForce: 3.0e4, hardening: 0.05 });
 
 // ---- chassis lattice -------------------------------------------------------------------------------------------
 const xs = [-0.9, -0.675, -0.45, -0.225, 0, 0.225, 0.45, 0.675, 0.9];

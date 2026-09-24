@@ -1,8 +1,10 @@
 // Crash lab controls (M2 launch tool): scenario, cars, speeds, geometry, launch, slow motion, the collision event
-// log and the energy / momentum graphs.
+// log, the wheels' alignment and tyres (§4.4, §6) and the energy / momentum graphs.
 import { DRIVE_VEHICLES, type VehiclePreset } from '../app/presets';
 import { t, tl } from '../ui/i18n';
 import { TIME_SCALES } from '../ui/SandboxPanel';
+import { TYRE } from '../physics/telemetry';
+import type { WheelRow } from './CrashLab';
 import type { CollisionRow } from './events';
 import { SPEED_PRESETS, type CrashKind, type CrashSpec } from './scenario';
 
@@ -29,6 +31,7 @@ export class CrashPanel {
   readonly root: HTMLElement;
   readonly graphs: HTMLElement;
   private readonly logBody: HTMLTableSectionElement;
+  private readonly wheelBody: HTMLTableSectionElement;
   private readonly spec: CrashSpec;
   /** Launches with the current settings (the R key, &go=1). */
   readonly launch: () => void;
@@ -104,6 +107,9 @@ export class CrashPanel {
     this.logBody = el('tbody');
     const head = el('thead', {}, el('tr', {}, ...[t('logTime'), t('logWhat'), t('logWhere'), t('logSpeed'), t('logForce'), t('logEnergy'), t('logG')].map((h) => el('th', {}, h))));
     const table = el('table', { className: 'eventlog' }, head, this.logBody);
+    this.wheelBody = el('tbody');
+    const wheelHead = el('thead', {}, el('tr', {}, ...[t('wheelCar'), t('wheelWheel'), t('wheelCamber'), t('wheelToe'), t('wheelTyre')].map((h) => el('th', {}, h))));
+    const wheels = el('table', { className: 'eventlog wheels' }, wheelHead, this.wheelBody);
 
     this.root = el('aside', { className: 'panel crashpanel' },
       el('div', { className: 'brand' }, el('b', {}, 'APEX_SIM'), el('span', {}, t('crashTitle'))),
@@ -111,9 +117,11 @@ export class CrashPanel {
         row(t('crashSpeedA'), speedA, el('small', {}, 'km/h')), el('div', { className: 'chips' }, ...chips), wallOnly),
       pairOnly,
       el('div', { className: 'row controls' }, launch, slow, xray, follow, back),
-      el('div', { className: 'section' }, el('h2', {}, t('crashLog')), table));
+      el('div', { className: 'section' }, el('h2', {}, t('crashLog')), table),
+      el('div', { className: 'section' }, el('h2', {}, t('wheelTitle')), wheels));
     this.graphs = el('div', { className: 'graphs' }, ...graphs);
     this.setLog([]);
+    this.setWheels([]);
   }
 
   setLog(rows: CollisionRow[]): void {
@@ -133,6 +141,21 @@ export class CrashPanel {
         el('td', {}, (r.absorbed / 1e3).toFixed(1)),
         el('td', {}, r.peakG.map((g) => g.toFixed(0)).join(' / ')));
       this.logBody.append(tr);
+    }
+  }
+
+  /** Camber and toe per wheel (highlighted once bent more than 1° from the launch) and the tyre's state. */
+  setWheels(rows: WheelRow[]): void {
+    this.wheelBody.replaceChildren();
+    if (rows.length === 0) {
+      this.wheelBody.append(el('tr', {}, el('td', { colSpan: 5, className: 'empty' }, t('wheelEmpty'))));
+      return;
+    }
+    const sign = (x: number) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)}°`;
+    for (const r of rows) {
+      const tyre = r.flags & TYRE.shredded ? t('tyreShredded') : r.flags & TYRE.flat ? t('tyreFlat') : `${r.pressure.toFixed(1)} bar`;
+      this.wheelBody.append(el('tr', { className: r.bent || r.flags & (TYRE.flat | TYRE.shredded) ? 'live' : '' },
+        el('td', {}, r.car), el('td', {}, r.wheel), el('td', {}, sign(r.camber)), el('td', {}, sign(r.toe)), el('td', {}, tyre)));
     }
   }
 }

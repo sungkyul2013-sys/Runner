@@ -275,6 +275,10 @@ struct WheelTelemetry {
   float sparks = 0.0f;      // rim-on-ground spark intensity [0, 1] (contact force × sliding speed)
   Vec3 sparkPoint;          // body-local [m]
   float rimBend = 0.0f;     // largest plastic strain of the rim [-]
+  // §4.4 alignment relative to the chassis frame (bent arms and tie rods change it): camber [rad], negative with the
+  // top of the wheel leaning inward; toe [rad], positive toe-in (the front wheels' includes the steering angle).
+  float camber = 0.0f;
+  float toe = 0.0f;
 };
 
 struct VehicleTelemetry {

@@ -242,6 +242,7 @@ struct Body {
   std::vector<float> compressionStiffness;  // kAnisotropic
   std::vector<int32_t> hydroChannel;        // kHydro
   std::vector<float> hydroFactor, hydroSpeed;
+  std::vector<float> hydroOffset;           // kHydro: plastic change of the actuated rest length [m] (a bent tie rod)
   std::array<int32_t, kBeamTypeCount + 1> typeBegin{};  // beams of type t: [typeBegin[t], typeBegin[t+1])
   std::vector<float> hydroInputs;           // per channel, set by the owner (vehicle) before each step
 

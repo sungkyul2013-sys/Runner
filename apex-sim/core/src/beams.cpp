@@ -171,13 +171,17 @@ int accumulateBeamForces(Body& b) {
     applyBeamForce<kTrack>(b, a, c, g, fe + fd, fd);
   }
 
-  // kHydro: plain spring-damper around the actuated rest length (no plasticity).
+  // kHydro: spring-damper around the actuated rest length. It can yield (a tie rod bent in a kerb strike): the
+  // plastic change of the rest length is kept as an offset the actuator carries from then on (updateHydros).
   for (int i = b.typeBegin[5]; i < b.typeBegin[6]; ++i) {
     if (b.broken[i]) continue;
     const int a = b.beamA[i], c = b.beamB[i];
     if (!beamGeometry(b, a, c, g)) continue;
-    const float fe = b.stiffness[i] * (g.length - b.restLength[i]);
-    if (std::fabs(fe) > b.breakForce[i]) { breakBeam(b, i, fe); ++newlyBroken; continue; }
+    bool broke = false;
+    const float before = b.restLength[i];
+    const float fe = plasticReturn(b, i, g.length, broke, b.stiffness[i]);
+    b.hydroOffset[i] += b.restLength[i] - before;
+    if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
     const float fd = b.damping[i] * g.lengthRate;
     applyBeamForce<kTrack>(b, a, c, g, fe + fd, fd);
   }
@@ -188,7 +192,7 @@ void updateHydros(Body& b, float dt) {
   for (int i = b.typeBegin[5]; i < b.typeBegin[6]; ++i) {
     if (b.broken[i]) continue;
     const float initial = b.initialRestLength[i];
-    const float target = initial * (1.0f + b.hydroFactor[i] * b.hydroInputs[b.hydroChannel[i]]);
+    const float target = initial * (1.0f + b.hydroFactor[i] * b.hydroInputs[b.hydroChannel[i]]) + b.hydroOffset[i];
     float next = target;
     if (b.hydroSpeed[i] > 0.0f) {
       const float maxStep = b.hydroSpeed[i] * initial * dt;

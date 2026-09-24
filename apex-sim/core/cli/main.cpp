@@ -15,6 +15,7 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <memory>
 #include <string>
 
 #include "sbc/scenes.h"
@@ -35,6 +36,7 @@ struct Args {
   int everySteps = 1000;
   bool energy = false;
   std::string out;
+  std::string vehicle;  // golden: two cars from this vehicle JSON (crash_pair)
 };
 
 bool parse(int argc, char** argv, Args& a) {
@@ -59,6 +61,7 @@ bool parse(int argc, char** argv, Args& a) {
     else if (k == "--every-steps") a.everySteps = std::atoi(next("--every-steps"));
     else if (k == "--out") a.out = next("--out");
     else if (k == "--energy") a.energy = true;
+    else if (k == "--vehicle") a.vehicle = next("--vehicle");
     else { std::fprintf(stderr, "unknown option %s\n", k.c_str()); return false; }
   }
   return true;
@@ -222,12 +225,22 @@ int cmdStability(const Args& a) {
 int cmdGolden(const Args& a) {
   sbc::SceneOptions o;
   o.threads = a.threads;
-  auto w = sbc::makeScene(a.scene, o);
+  std::unique_ptr<sbc::World> w;
+  if (!a.vehicle.empty()) {  // crash_pair: two cars from --vehicle (sbc::makeCrashGolden)
+    std::ifstream file(a.vehicle, std::ios::binary);
+    if (!file) { std::fprintf(stderr, "cannot read %s\n", a.vehicle.c_str()); return 1; }
+    std::stringstream text;
+    text << file.rdbuf();
+    w = sbc::makeCrashGolden(text.str(), o);
+  } else {
+    w = sbc::makeScene(a.scene, o);
+  }
   if (!w) { std::fprintf(stderr, "unknown scene '%s'\n", a.scene.c_str()); return 2; }
   const int steps = static_cast<int>(a.seconds / w->params().dt + 0.5);
   // Plain "step hash" lines: the format of tests/golden/*.txt.
-  std::printf("# golden state hashes for scene '%s' (sbc-cli golden %s --seconds %g --every-steps %d)\n",
-              a.scene.c_str(), a.scene.c_str(), a.seconds, a.everySteps);
+  std::printf("# golden state hashes for scene '%s' (sbc-cli golden %s%s%s --seconds %g --every-steps %d)\n",
+              a.scene.c_str(), a.scene.c_str(), a.vehicle.empty() ? "" : " --vehicle ", a.vehicle.c_str(), a.seconds,
+              a.everySteps);
   for (int s = a.everySteps; s <= steps; s += a.everySteps) {
     w->step(a.everySteps);
     std::printf("%d %016" PRIx64 "\n", s, w->stateHash());

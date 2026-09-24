@@ -11,6 +11,7 @@
 #include <cmath>
 #include <stdexcept>
 
+#include "sbc/det_math.h"
 #include "sbc/world.h"
 #include "vehicle_impl.h"
 
@@ -63,7 +64,7 @@ DVec3 wingForce(const Body& b, const WingDesc& wd, double extraAngle, DVec3 w, d
   if (!(nl > 1e-9) || !(w2 > 1e-12)) return {};
   n = n * (1.0 / nl);
   const DVec3 wh = w * (1.0 / std::sqrt(w2));
-  const double alpha = std::asin(std::clamp(-dot(wh, n), -1.0, 1.0)) + wd.angle + extraAngle;
+  const double alpha = det::asin(std::clamp(-dot(wh, n), -1.0, 1.0)) + wd.angle + extraAngle;
   if (alphaOut) *alphaOut = alpha;
   const double cl = liftCoefficient(wd, alpha);
   const double cd = wd.cd0 + cl * cl / (3.14159265358979 * wd.oswald * wd.aspectRatio);

@@ -57,7 +57,7 @@ class Vehicle {
     h.value(coolantL_); h.value(oilL_); h.value(fuelL_); h.value(coolantC_); h.value(engineWear_); h.value(lastPower_);
     h.value(engineFailed_); h.value(faults_);
     for (size_t i = 0; i < sensorLong_.size(); ++i) { h.value(sensorLong_[i]); h.value(sensorLat_[i]); }
-    h.value(sensorAt_); h.value(sensorFill_); h.value(airbags_); h.value(crashTime_); h.value(crashPeakG_); h.value(crashDeltaV_);
+    h.value(static_cast<uint64_t>(sensorAt_)); h.value(static_cast<uint64_t>(sensorFill_));  // size_t: 4 bytes on wasm32 h.value(airbags_); h.value(crashTime_); h.value(crashPeakG_); h.value(crashDeltaV_);
     h.value(crashEvents_); h.value(eventActive_); h.value(eventStart_); h.value(eventPeakG_); h.value(eventPeakForce_);
     h.value(eventDeltaV_); h.value(eventAbsorbed0_); h.value(eventAbsorbed_); h.value(eventQuiet_); h.value(eventSpeed_);
     h.value(eventPosition_.x); h.value(eventPosition_.y); h.value(eventPosition_.z);

@@ -1,6 +1,8 @@
 #include "sbc/det_math.h"
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace sbc::det {
 namespace {
@@ -61,6 +63,15 @@ constexpr double kPi = 3.14159265358979323846;
 constexpr double kSqrt3 = 1.73205080756887729353;
 constexpr double kTanPi12 = 0.26794919243112270647;  // 2 − √3
 
+// ln 2 split like π/2 above (fdlibm): e·kLn2Hi is exact for |e| < 2^11.
+constexpr double kLn2Hi = 6.93147180369123816490e-01;
+constexpr double kLn2Lo = 1.90821492927058770002e-10;
+constexpr double kInvLn2 = 1.44269504088896338700e+00;
+constexpr double kSqrtHalf = 0.70710678118654752440;
+constexpr double kInvFactorial[16] = {1.0, 1.0, 1.0 / 2, 1.0 / 6, 1.0 / 24, 1.0 / 120, 1.0 / 720, 1.0 / 5040,
+                                      1.0 / 40320, 1.0 / 362880, 1.0 / 3628800, 1.0 / 39916800, 1.0 / 479001600,
+                                      1.0 / 6227020800.0, 1.0 / 87178291200.0, 1.0 / 1307674368000.0};
+
 }  // namespace
 
 double sin(double x) {
@@ -97,6 +108,36 @@ double cos(double x) {
     case 2: return -cosPoly(r);
     default: return sinPoly(r);
   }
+}
+
+double asin(double x) {
+  const double c = std::clamp(x, -1.0, 1.0);
+  return atan2(c, std::sqrt((1.0 - c) * (1.0 + c)));  // sqrt is correctly rounded (IEEE)
+}
+
+double exp(double x) {
+  if (x != x) return x;
+  if (x > 709.78) return HUGE_VAL;
+  if (x < -745.2) return 0.0;
+  // x = k·ln 2 + r, |r| ≤ ln 2 / 2; e^r by its Taylor series to r^16 / 16! (the rest < 3e-19), then × 2^k exactly.
+  const double k = std::floor(x * kInvLn2 + 0.5);
+  const double r = (x - k * kLn2Hi) - k * kLn2Lo;
+  double p = 1.0 / 20922789888000.0;  // 1/16!
+  for (int n = 15; n >= 1; --n) p = p * r + kInvFactorial[n];
+  return std::ldexp(p * r + 1.0, static_cast<int>(k));
+}
+
+double log(double x) {
+  if (!(x > 0.0)) return x == 0.0 ? -HUGE_VAL : std::numeric_limits<double>::quiet_NaN();
+  if (x == HUGE_VAL) return x;
+  // x = m·2^e with m ∈ [√½, √2): log m = 2·atanh(s), s = (m − 1)/(m + 1), |s| < 0.172, series to s^31 (rest < 1e-24).
+  int e;
+  double m = std::frexp(x, &e);  // m ∈ [0.5, 1)
+  if (m < kSqrtHalf) { m *= 2.0; --e; }
+  const double s = (m - 1.0) / (m + 1.0), s2 = s * s;
+  double p = 1.0 / 31.0;
+  for (int n = 29; n >= 1; n -= 2) p = p * s2 + 1.0 / n;
+  return e * kLn2Hi + (e * kLn2Lo + 2.0 * s * p);
 }
 
 }  // namespace sbc::det

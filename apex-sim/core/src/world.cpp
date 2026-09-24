@@ -539,6 +539,7 @@ uint64_t World::stateHash() const {
     h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags);
     for (const ContactDepth& e : b.contactDepths) { h.value(e.node); h.value(e.otherBody); h.value(e.otherNode); h.value(e.depth); }
     h.vec(b.hydroInputs);
+    for (int i = b.typeBegin[5]; i < b.typeBegin[6]; ++i) h.value(b.hydroOffset[static_cast<size_t>(i)]);
     h.vec(b.damageBeamHit);
     h.vec(b.damageNodeHit);
     for (const DamageGroupState& g : b.damageGroups) { h.value(g.firstStep); h.value(g.peakStrain); h.value(g.peakImpact); }

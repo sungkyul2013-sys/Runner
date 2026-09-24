@@ -1,6 +1,7 @@
 // §5.1 · §5.2 body ↔ body contact (M2): node↔triangle, edge↔edge, CCD against moving triangles, self-collision
 // between surface groups, and the KICKOFF C2 penetration count.
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <cmath>
 
 #include "sbc/builder.h"
@@ -129,7 +130,10 @@ TEST_CASE("1000 random 300-540 km/h shots of a cube never pass through a thin pa
   // 5 cm panel is thick) at a bolted-down panel body (nodes anchored, so the test isolates the sweep tests from the
   // panel folding through its own thickness), random direction, aim and tumble. Penetration per KICKOFF C2 (a node
   // inside the other surface deeper than its radius, or an edge through a triangle) must stay 0 after every step.
-  Rng rng{2718};
+  // Two sets of 1000: the second (seed 11) once let 5 through — a cube face bent slightly along its diagonal folded
+  // over the panel's rim edge lying almost in its plane (feature × flat edge sweeps, M2n); 8 seeds × 1000 now pass.
+  const uint64_t seed = GENERATE(2718ull, 11ull);
+  Rng rng{seed};
   int penetrated = 0, clamps = 0;
   for (int trial = 0; trial < 1000; ++trial) {
     World w(test::zeroGravity());
@@ -153,7 +157,7 @@ TEST_CASE("1000 random 300-540 km/h shots of a cube never pass through a thin pa
     }
     if (bad) ++penetrated;
   }
-  INFO("CCD clamps seen: " << clamps);
+  INFO("seed " << seed << ": CCD clamps seen: " << clamps);
   CHECK(penetrated == 0);
   CHECK(clamps > 0);
 }

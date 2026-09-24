@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "sbc/world.h"
@@ -30,6 +31,10 @@ struct SceneOptions {
 
 // Returns nullptr for unknown names.
 std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& options = {});
+// Golden vehicle crash (§23.1 native == WASM with everything a car brings: tyres, drivetrain, aero and wake,
+// contacts, damage): two copies of the vehicle head-on at 64 km/h each, 0.4 m offset, in neutral, on the "crash"
+// ground. tests/golden/golden_crash_pair.txt holds its hashes (sbc-cli golden crash_pair --vehicle <json>).
+std::unique_ptr<World> makeCrashGolden(std::string_view vehicleJson, const SceneOptions& options = {});
 std::vector<std::string> sceneNames();
 
 }  // namespace sbc

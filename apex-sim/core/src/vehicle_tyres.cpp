@@ -11,8 +11,9 @@
 #include <cmath>
 #include <unordered_set>
 
-#include "sbc/scenes.h"
 #include "internal.h"
+#include "sbc/det_math.h"
+#include "sbc/scenes.h"
 #include "sbc/world.h"
 #include "vehicle_impl.h"
 
@@ -45,7 +46,7 @@ double gasEnergy(const Body& b, int g, double gauge) {
   const double v0 = b.groupInitialVolume[static_cast<size_t>(g)];
   const double ambient = b.groupAmbientPressure[static_cast<size_t>(g)];
   if (!(v > 1e-9) || !(v0 > 0.0)) return 0.0;
-  return -((gauge + ambient) * v0 * std::log(v / v0) - ambient * (v - v0));
+  return -((gauge + ambient) * v0 * det::log(v / v0) - ambient * (v - v0));
 }
 
 // Elastic energy of beam i as it stands (its compression or tension rate).
