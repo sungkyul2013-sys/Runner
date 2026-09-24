@@ -84,7 +84,10 @@ const inside = (p) => {
   if (Math.abs(x) > halfWidthAt(Math.max(y, 0.3), z) - 0.06) return false;
   return !wheelEnvelope(p);
 };
-b.buildLattice({ xs, ys, zs, inside, axialStiffness: 1.8e5 });
+const latticeGrid = b.buildLattice({ xs, ys, zs, inside, axialStiffness: 1.8e5 });
+// Collision surface: the lattice hull is self-collision group 0, each tyre its own group (1 … 4), so a wheel driven
+// into its arch in a crash hits the body (§5.1 self-collision) while nodes of one group never collide among themselves.
+const hullTriangles = b.latticeSurface(latticeGrid, 0);
 const latticeId = (x, y, z) => `c${xs.indexOf(x)}_${ys.indexOf(y)}_${zs.indexOf(z)}`;
 
 // ---- crash structure (§4.3): yield, densification and tearing of the lattice ------------------------------------
@@ -157,7 +160,7 @@ function pressureWheel(name, W, s, axleRight, axleLeft, t) {
     id: name, axleRight, axleLeft, center: W, segments,
     tyreRadius: R, treadWidth: t.width, rimRadius: 0.26, rimWidth: t.rimWidth,
     treadNodeMass: t.treadMass, rimNodeMass: t.rimMass, ...wheelSpokes,
-    treadMaterial: 'rubber', rimMaterial: 'steel',
+    treadMaterial: 'rubber', rimMaterial: 'steel', collisionGroup: b.pressureWheels.length + 1,
   });
 }
 
@@ -375,4 +378,5 @@ for (const c of Object.values(corners)) {
   console.log(`${c.name}: spring ${c.spring.k.toFixed(0)} N/m c ${c.spring.c.toFixed(0)} preload ${c.spring.load.toFixed(0)} N; ` +
     `${c.rackPoint ? 'rack' : 'toe'} point (${p.map((x) => x.toFixed(3)).join(', ')})`);
 }
+console.log(`collision hull: ${hullTriangles} triangles`);
 console.log(`hull z ${zMin.toFixed(2)}…${zMax.toFixed(2)}, refs ${vehicle.refCenter} ${vehicle.refFront} ${vehicle.refLeft}, dist ${dist(b.pos(vehicle.refCenter), b.pos(vehicle.refFront)).toFixed(2)}`);

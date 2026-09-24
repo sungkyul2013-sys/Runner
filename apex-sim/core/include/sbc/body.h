@@ -96,6 +96,15 @@ struct TorsionBarDesc {
   float breakTwist = 1.0f;
 };
 
+// Collision triangle (§4.1 삼각형 — the collision surface, §5.2 node↔triangle and edge↔edge contact). Wound
+// counter-clockwise seen from outside. Its half thickness is the mean radius of its three nodes, so two surfaces touch
+// where their node spheres would. Self-collision (§5.1): nodes of group g collide with this body's own triangles of
+// every other group ≥ 0 (a wheel against the wheel arch); group −1 surfaces collide only with other bodies.
+struct CollisionTriDesc {
+  int32_t a = -1, b = -1, c = -1;
+  int16_t group = -1;
+};
+
 struct BodyDesc {
   std::string name;
   DVec3 origin;  // [m] world position of the local frame
@@ -104,6 +113,7 @@ struct BodyDesc {
   std::vector<SliderDesc> sliders;
   std::vector<PressureGroupDesc> pressureGroups;
   std::vector<TorsionBarDesc> torsionBars;
+  std::vector<CollisionTriDesc> triangles;
   int hydroChannels = 0;
 };
 
@@ -130,6 +140,7 @@ struct Body {
   std::vector<float> px, py, pz;  // [m] local position
   std::vector<float> vx, vy, vz;  // [m/s]
   std::vector<float> fx, fy, fz;  // [N] force accumulator (all forces)
+  std::vector<float> sx, sy, sz;  // [m] local position at the start of the current step (CCD sweeps x_start → x)
   std::vector<float> mass;        // [kg]
   std::vector<float> invMass;     // [1/kg] 0 for fixed nodes
   std::vector<float> radius;      // [m]
@@ -195,6 +206,22 @@ struct Body {
   std::vector<float> torsionMinLever1, torsionMinLever2;  // [m²] squared perpendicular lever length at which it fails
   std::vector<uint8_t> torsionBroken;
 
+  // ---- collision surface (§5.2) ----
+  std::vector<int32_t> triNode;      // 3 node indices per triangle
+  std::vector<int16_t> triGroup;     // self-collision group (−1 = other bodies only)
+  std::vector<float> triTearEdge2;   // [m²] a triangle whose longest edge exceeds this is torn (inactive): the surface
+                                     // ripped apart with its beams, so it no longer spans a real panel
+  std::vector<float> triCrushArea2;  // [m⁴] |2·area|² below which a crushed (flattened) triangle is retired: its normal
+                                     // is no longer defined, and its nodes meet other bodies as spheres instead
+  std::vector<uint8_t> triTorn;
+  std::vector<int32_t> edgeNode;     // 2 node indices per unique triangle edge
+  std::vector<int32_t> edgeTri;      // 2 adjacent triangles per edge (−1 = none; non-manifold edges keep the first two)
+  std::vector<int16_t> nodeGroup;    // group of the first grouped triangle using the node (−1 = none)
+  std::vector<float> nodeSurface;    // number of intact collision triangles using the node (0 → it collides as a sphere)
+  // Members of each self-collision group g ≥ 0 (CSR): nodes groupNodes[groupNodeBegin[g] … groupNodeBegin[g+1]),
+  // triangles likewise.
+  std::vector<int32_t> groupNodes, groupNodeBegin, groupTris, groupTriBegin2;
+
   // ---- bookkeeping ----
   EnergyLosses losses;
   uint32_t topologyVersion = 0;  // bumped whenever beams break (render/debug views re-read topology)
@@ -206,6 +233,8 @@ struct Body {
   int sliderCount() const { return static_cast<int>(sliderNode.size()); }
   int pressureGroupCount() const { return static_cast<int>(groupInitialVolume.size()); }
   int torsionBarCount() const { return static_cast<int>(torsionArm1.size()); }
+  int triangleCount() const { return static_cast<int>(triGroup.size()); }
+  int edgeCount() const { return static_cast<int>(edgeNode.size() / 2); }
   Vec3 nodePosition(int i) const { return {px[i], py[i], pz[i]}; }
   Vec3 nodeVelocity(int i) const { return {vx[i], vy[i], vz[i]}; }
   DVec3 nodeWorldPosition(int i) const { return origin + toDouble(nodePosition(i)); }

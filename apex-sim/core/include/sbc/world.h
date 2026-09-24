@@ -60,9 +60,20 @@ struct MomentumReport {
   DVec3 angular;  // [kg·m²/s] about the world origin
 };
 
+// Interpenetration count of the current state (KICKOFF C2 "관통"): collision nodes more than their radius behind a
+// static triangle (inside its prism), nodes of one body behind a triangle of another deeper than the contact band,
+// and triangle edges of one body passing through a triangle of another (surfaces intersecting between nodes).
+struct PenetrationReport {
+  int staticNodes = 0;
+  int bodyNodes = 0;
+  int bodyEdges = 0;
+  int total() const { return staticNodes + bodyNodes + bodyEdges; }
+};
+
 struct StepStats {
   int staticContacts = 0;
   int bodyContacts = 0;
+  int selfContacts = 0;
   int ccdClamps = 0;
   int beamsBroken = 0;
 };
@@ -125,6 +136,7 @@ class World {
   // ---- measurement (§5.3) ----
   EnergyReport measureEnergy() const;
   MomentumReport measureMomentum() const;
+  PenetrationReport measurePenetration() const;
   // FNV-1a 64 over every state bit that influences the future (A§4.5 golden replays).
   uint64_t stateHash() const;
 
@@ -142,6 +154,7 @@ class World {
   };
 
   void stepOnce();
+  double potentialEnergy(bool extendedBand) const;  // gravity + elastic + contact [J]
   void computeInternalForces(int bodyIndex);
   void integrateBody(int bodyIndex);
   void finishBody(int bodyIndex);

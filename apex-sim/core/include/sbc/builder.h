@@ -26,6 +26,8 @@ struct LatticeParams {
   uint16_t material = 0;
   Vec3 velocity;                   // [m/s] initial velocity of every node
   Vec3 yawPitchRoll;               // [rad] orientation (Y, then X, then Z)
+  bool surface = true;             // outer faces as collision triangles (§5.2 node↔triangle contact)
+  int16_t surfaceGroup = -1;       // their self-collision group
 };
 
 BodyDesc makeLattice(const LatticeParams& p);
@@ -67,6 +69,8 @@ struct PressureWheelParams {
   float rimDampingRatio = 0.1f, treadDampingRatio = 0.05f, sidewallDampingRatio = 0.15f;  // ζ per beam
   float structuralPressure = 1.0e4f;  // [Pa] cavity gauge (0 = no pressure group)
   uint16_t treadMaterial = 0, rimMaterial = 0;
+  bool collisionSurface = true;       // tread and sidewalls as collision triangles (§5.2)
+  int16_t collisionGroup = -1;        // their self-collision group (e.g. one per wheel, the hull another)
 };
 
 struct PressureWheelNodes {

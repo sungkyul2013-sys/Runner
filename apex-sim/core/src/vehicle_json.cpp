@@ -287,6 +287,32 @@ struct Loader {
             static_cast<float>(number(yyjson_arr_get(v, 2), path + "[2]"))};
   }
 
+  // Collision triangles: [a, b, c] or [a, b, c, group] (node ids; counter-clockwise seen from outside).
+  void triangles(Val arr) {
+    if (!arr) return;
+    array(arr, "triangles");
+    size_t i, n;
+    Val item;
+    yyjson_arr_foreach(arr, i, n, item) {
+      const std::string path = "triangles[" + std::to_string(i) + "]";
+      array(item, path);
+      const size_t count = yyjson_arr_size(item);
+      if (count != 3 && count != 4) fail(path, "expected [a, b, c, group?]");
+      CollisionTriDesc t;
+      t.a = node(yyjson_arr_get(item, 0), path + "[0]");
+      t.b = node(yyjson_arr_get(item, 1), path + "[1]");
+      t.c = node(yyjson_arr_get(item, 2), path + "[2]");
+      if (count == 4) {
+        const Val g = yyjson_arr_get(item, 3);
+        if (!yyjson_is_num(g)) fail(path + "[3]", "expected a group number");
+        const double group = yyjson_get_num(g);
+        if (group < -1.0 || group > 32767.0 || group != std::floor(group)) fail(path + "[3]", "group must be an integer ≥ −1");
+        t.group = static_cast<int16_t>(group);
+      }
+      body().triangles.push_back(t);
+    }
+  }
+
   void pressureWheels(Val arr) {
     if (!arr) return;
     array(arr, "pressureWheels");
@@ -321,6 +347,9 @@ struct Loader {
       p.treadDampingRatio = floatOr(item, "treadDampingRatio", p.treadDampingRatio, path);
       p.sidewallDampingRatio = floatOr(item, "sidewallDampingRatio", p.sidewallDampingRatio, path);
       p.structuralPressure = floatOr(item, "structuralPressure", p.structuralPressure, path);
+      p.collisionSurface = !member(item, "collisionSurface") || yyjson_get_bool(member(item, "collisionSurface"));
+      p.collisionGroup = static_cast<int16_t>(numberOr(item, "collisionGroup", -1.0, path));
+      if (p.collisionGroup < -1) fail(path, "collisionGroup must be ≥ −1");
       p.treadMaterial = member(item, "treadMaterial") ? materialId(member(item, "treadMaterial"), path + ".treadMaterial")
                                                       : material::kRubber;
       p.rimMaterial = member(item, "rimMaterial") ? materialId(member(item, "rimMaterial"), path + ".rimMaterial")
@@ -511,6 +540,7 @@ LoadedVehicle loadVehicleJson(std::string_view text, const VehicleSpawn& spawn) 
   l.beams(member(root, "beamGroups"), member(root, "beams"));
   l.sliders(member(root, "sliders"));
   l.torsionBars(member(root, "torsionBars"));
+  l.triangles(member(root, "triangles"));
 
   // Pressure wheels remember their axle nodes for the vehicle's wheel entries.
   if (const Val pw = member(root, "pressureWheels")) {

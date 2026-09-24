@@ -214,12 +214,27 @@ void World::stepOnce() {
     stats_.bodyContacts = params_.trackEnergy ? ContactSolver::bodyContacts<true>(*this)
                                               : ContactSolver::bodyContacts<false>(*this);
   }
-  jobs_->parallelFor(n, [this](int i) {
-    integrateBody(i);
-    finishBody(i);
-  });
+  if (n > 1) {
+    jobs_->parallelFor(n, [this](int i) { integrateBody(i); });
+    // Sweep tests between bodies (serial, deterministic pair order). Their position corrections move nodes without a
+    // force doing the work; with energy tracking, the potential energy they change is measured and booked as work of
+    // the constraint (§5.3 ledger), the kinetic energy they remove as CCD loss.
+    // The springs are measured with the band continued behind the mid-plane, where this step's integration may have
+    // carried nodes (the force law and the ledger at step ends never see them there).
+    const double before = params_.trackEnergy ? potentialEnergy(true) : 0.0;
+    const int clamps = ContactSolver::ccdBodies(*this);
+    stats_.ccdClamps += clamps;
+    if (params_.trackEnergy && clamps > 0) bodies_[0].losses.external += potentialEnergy(true) - before;
+    jobs_->parallelFor(n, [this](int i) { finishBody(i); });
+  } else {
+    jobs_->parallelFor(n, [this](int i) {
+      integrateBody(i);
+      finishBody(i);
+    });
+  }
   for (const StepStats& s : bodyStats_) {  // serial reduction in body order
     stats_.staticContacts += s.staticContacts;
+    stats_.selfContacts += s.selfContacts;
     stats_.ccdClamps += s.ccdClamps;
     stats_.beamsBroken += s.beamsBroken;
   }
@@ -247,12 +262,20 @@ void World::computeInternalForces(int bi) {
     st.beamsBroken = detail::accumulateBeamForces<true>(b);
     detail::accumulateConstraintForces<true>(b);
     st.staticContacts = ContactSolver::staticContacts<true>(*this, bi);
+    if (b.triangleCount() > 0) {
+      ContactSolver::updateSurface(*this, bi);
+      st.selfContacts = ContactSolver::selfContacts<true>(*this, bi);
+    }
     for (const int v : bodyVehicles_[static_cast<size_t>(bi)]) vehicles_[static_cast<size_t>(v)]->step(*this, b, true);
   } else {
     detail::updateHydros(b, params_.dt);
     st.beamsBroken = detail::accumulateBeamForces<false>(b);
     detail::accumulateConstraintForces<false>(b);
     st.staticContacts = ContactSolver::staticContacts<false>(*this, bi);
+    if (b.triangleCount() > 0) {
+      ContactSolver::updateSurface(*this, bi);
+      st.selfContacts = ContactSolver::selfContacts<false>(*this, bi);
+    }
     for (const int v : bodyVehicles_[static_cast<size_t>(bi)]) vehicles_[static_cast<size_t>(v)]->step(*this, b, false);
   }
 }
@@ -282,6 +305,9 @@ void World::integrateBody(int bi) {
     b.losses.external += wExternal * dt;
   }
   // Symplectic (semi-implicit) Euler, §4.2: v ← v + (F/m)·dt, then x ← x + v·dt.
+  std::copy(b.px.begin(), b.px.end(), b.sx.begin());
+  std::copy(b.py.begin(), b.py.end(), b.sy.begin());
+  std::copy(b.pz.begin(), b.pz.end(), b.sz.begin());
   for (int i = 0; i < n; ++i) {
     const float im = b.invMass[i];
     if (im == 0.0f) {
@@ -312,9 +338,17 @@ void World::finishBody(int bi) {
                 sz = static_cast<float>(std::floor(cz));
     for (int i = 0; i < n; ++i) {
       b.px[i] -= sx; b.py[i] -= sy; b.pz[i] -= sz;
+      b.sx[i] -= sx; b.sy[i] -= sy; b.sz[i] -= sz;
     }
     b.origin += DVec3{sx, sy, sz};
   }
+}
+
+double World::potentialEnergy(bool extendedBand) const {
+  double e = ContactSolver::contactPotential(*this, extendedBand);
+  for (const Body& b : bodies_)
+    e += gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b) + detail::constraintPotentialEnergy(b);
+  return e;
 }
 
 EnergyReport World::measureEnergy() const {
@@ -334,6 +368,8 @@ EnergyReport World::measureEnergy() const {
   r.contactPotential = ContactSolver::contactPotential(*this);
   return r;
 }
+
+PenetrationReport World::measurePenetration() const { return ContactSolver::measurePenetration(*this); }
 
 MomentumReport World::measureMomentum() const {
   MomentumReport r;
@@ -356,7 +392,7 @@ uint64_t World::stateHash() const {
     h.vec(b.px); h.vec(b.py); h.vec(b.pz);
     h.vec(b.vx); h.vec(b.vy); h.vec(b.vz);
     h.vec(b.stickX); h.vec(b.stickY); h.vec(b.stickZ); h.vec(b.anchorContact);
-    h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.broken); h.vec(b.torsionBroken);
+    h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.broken); h.vec(b.torsionBroken); h.vec(b.triTorn); h.vec(b.nodeSurface);
     h.vec(b.hydroInputs);
   }
   for (const auto& v : vehicles_) v->hashState(h);

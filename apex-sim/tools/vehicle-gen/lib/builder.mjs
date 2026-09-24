@@ -2,7 +2,7 @@
 // blocks expanded by the core, and the vehicle section. Holds the construction helpers learned on the APEX Proto
 // car (core/src/proto_car.cpp): hardpoints tied into the lattice on all sides, stiff triangulated uprights, tie rods
 // placed for zero bump steer.
-import { add, sub, scale, dot, len, dist, circleThrough, rotateAbout, norm } from './v3.mjs';
+import { add, sub, scale, dot, len, dist, circleThrough, rotateAbout, norm, cross as cross3 } from './v3.mjs';
 import { knucklePose } from './kinematics.mjs';
 
 const round = (x, d = 5) => Math.round(x * 10 ** d) / 10 ** d;
@@ -16,6 +16,7 @@ export class VehicleBuilder {
     this.sliders = [];
     this.torsionBars = [];
     this.pressureWheels = [];
+    this.triangles = [];       // collision surface: [a, b, c, group]
     this.lattice = [];         // ids of chassis lattice nodes
   }
 
@@ -57,6 +58,42 @@ export class VehicleBuilder {
       }
     }
     return grid;
+  }
+
+  // Collision surface of a lattice (§5.2): every lattice cube is split into the six Kuhn tetrahedra around its main
+  // diagonal (all of whose edges are lattice beams); a tetrahedron exists when its four nodes do, so the clipped
+  // fringe of the lattice (partial cubes under a sloping bonnet or bumper) is covered too. The surface is the set of
+  // tetrahedron faces not shared by two tetrahedra, wound counter-clockwise seen from outside.
+  latticeSurface(grid, group = 0) {
+    const key = (i, j, k) => `${i},${j},${k}`;
+    // Kuhn decomposition of the unit cube: paths 0 → 7 through the corners (bit 0 = +i, 1 = +j, 2 = +k).
+    const tets = [[0, 1, 3, 7], [0, 1, 5, 7], [0, 2, 3, 7], [0, 2, 6, 7], [0, 4, 5, 7], [0, 4, 6, 7]];
+    const faces = new Map();  // sorted ids → { tri, opposite, count }
+    for (const k0 of grid.keys()) {
+      const [i, j, k] = k0.split(',').map(Number);
+      const corner = (c) => grid.get(key(i + (c & 1), j + ((c >> 1) & 1), k + ((c >> 2) & 1)));
+      for (const tet of tets) {
+        const ids = tet.map(corner);
+        if (ids.some((id) => !id)) continue;
+        for (let f = 0; f < 4; ++f) {
+          const tri = ids.filter((_, q) => q !== f);
+          const fk = [...tri].sort().join('|');
+          const entry = faces.get(fk);
+          if (entry) entry.count++;
+          else faces.set(fk, { tri, opposite: ids[f], count: 1 });
+        }
+      }
+    }
+    let count = 0;
+    for (const { tri, opposite, count: c } of faces.values()) {
+      if (c !== 1) continue;
+      const [pa, pb, pc] = tri.map((id) => this.pos(id));
+      const nrm = cross3(sub(pb, pa), sub(pc, pa));
+      const outward = dot(nrm, sub(pa, this.pos(opposite))) >= 0;  // away from the tetrahedron's fourth node
+      this.triangles.push(outward ? [...tri, group] : [tri[0], tri[2], tri[1], group]);
+      ++count;
+    }
+    return count;
   }
 
   // Hardpoint tied into the lattice through the nearest lattice node in each of the 8 octants around it, so it is
@@ -120,6 +157,7 @@ export class VehicleBuilder {
       beams: this.beams,
       sliders: this.sliders,
       torsionBars: this.torsionBars,
+      triangles: this.triangles,
       pressureWheels: this.pressureWheels,
       vehicle: meta.vehicle,
       targets: meta.targets,

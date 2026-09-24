@@ -27,7 +27,7 @@ Body buildBody(const BodyDesc& desc) {
   const size_t n = desc.nodes.size();
   require(n > 0, "body has no nodes");
   auto resizeNodes = [n](auto&... arrays) { (arrays.assign(n, {}), ...); };
-  resizeNodes(b.px, b.py, b.pz, b.vx, b.vy, b.vz, b.fx, b.fy, b.fz, b.mass, b.invMass, b.radius, b.material,
+  resizeNodes(b.px, b.py, b.pz, b.vx, b.vy, b.vz, b.fx, b.fy, b.fz, b.sx, b.sy, b.sz, b.mass, b.invMass, b.radius, b.material,
               b.flags, b.fdBeamX, b.fdBeamY, b.fdBeamZ, b.fdContactX, b.fdContactY, b.fdContactZ, b.fdFrictionX,
               b.fdFrictionY, b.fdFrictionZ, b.fdExternalX, b.fdExternalY, b.fdExternalZ, b.stickX, b.stickY, b.stickZ,
               b.patchForce, b.patchNx, b.patchNy, b.patchNz, b.patchMaterial);
@@ -39,6 +39,7 @@ Body buildBody(const BodyDesc& desc) {
     require(fixed || (d.mass > 0.0f && std::isfinite(d.mass)), "node " + std::to_string(i) + " needs mass > 0");
     require(d.radius >= 0.0f, "node " + std::to_string(i) + " has negative radius");
     b.px[i] = d.position.x; b.py[i] = d.position.y; b.pz[i] = d.position.z;
+    b.sx[i] = d.position.x; b.sy[i] = d.position.y; b.sz[i] = d.position.z;
     b.vx[i] = fixed ? 0.0f : d.velocity.x;
     b.vy[i] = fixed ? 0.0f : d.velocity.y;
     b.vz[i] = fixed ? 0.0f : d.velocity.z;
@@ -136,6 +137,59 @@ Body buildBody(const BodyDesc& desc) {
     const double v = detail::pressureGroupVolume(b, static_cast<int>(g));
     require(v > 0.0, "pressure group " + std::to_string(g) + " has non-positive volume (check winding)");
     b.groupInitialVolume.back() = v;
+  }
+
+  // Collision surface: triangles, unique edges with their adjacent triangles, node groups.
+  b.nodeGroup.assign(n, -1);
+  b.nodeSurface.assign(n, 0.0f);
+  {
+    std::vector<std::pair<uint64_t, int32_t>> halfEdges;  // (min·2³² + max, triangle)
+    for (size_t t = 0; t < desc.triangles.size(); ++t) {
+      const CollisionTriDesc& d = desc.triangles[t];
+      require(validNode(d.a) && validNode(d.b) && validNode(d.c) && d.a != d.b && d.b != d.c && d.a != d.c,
+              "collision triangle " + std::to_string(t) + " has invalid nodes");
+      require(d.group >= -1, "collision triangle " + std::to_string(t) + " has group < −1");
+      const Vec3 pa = desc.nodes[d.a].position, pb = desc.nodes[d.b].position, pc = desc.nodes[d.c].position;
+      require(length(cross(pb - pa, pc - pa)) > 1e-10f, "collision triangle " + std::to_string(t) + " is degenerate");
+      const float longest = std::max({dot(pb - pa, pb - pa), dot(pc - pb, pc - pb), dot(pa - pc, pa - pc)});
+      b.triNode.insert(b.triNode.end(), {d.a, d.b, d.c});
+      b.triGroup.push_back(d.group);
+      b.triTearEdge2.push_back(4.0f * longest);  // (2 × longest initial edge)²
+      const Vec3 area2 = cross(pb - pa, pc - pa);
+      b.triCrushArea2.push_back(0.0025f * dot(area2, area2));  // (5 % of the initial area)²
+      b.triTorn.push_back(0);
+      for (const int32_t v : {d.a, d.b, d.c}) {
+        b.nodeSurface[static_cast<size_t>(v)] += 1.0f;
+        if (b.nodeGroup[static_cast<size_t>(v)] < 0) b.nodeGroup[static_cast<size_t>(v)] = d.group;
+      }
+      const int32_t e[3][2] = {{d.a, d.b}, {d.b, d.c}, {d.c, d.a}};
+      for (const auto& [u, w] : e) {
+        const uint64_t key = (static_cast<uint64_t>(std::min(u, w)) << 32) | static_cast<uint32_t>(std::max(u, w));
+        halfEdges.push_back({key, static_cast<int32_t>(t)});
+      }
+    }
+    int16_t groups = 0;
+    for (const int16_t g : b.triGroup) groups = std::max<int16_t>(groups, static_cast<int16_t>(g + 1));
+    b.groupNodeBegin.assign(static_cast<size_t>(groups) + 1, 0);
+    b.groupTriBegin2.assign(static_cast<size_t>(groups) + 1, 0);
+    for (int16_t g = 0; g < groups; ++g) {
+      for (size_t i = 0; i < n; ++i)
+        if (b.nodeGroup[i] == g) b.groupNodes.push_back(static_cast<int32_t>(i));
+      for (size_t t = 0; t < b.triGroup.size(); ++t)
+        if (b.triGroup[t] == g) b.groupTris.push_back(static_cast<int32_t>(t));
+      b.groupNodeBegin[static_cast<size_t>(g) + 1] = static_cast<int32_t>(b.groupNodes.size());
+      b.groupTriBegin2[static_cast<size_t>(g) + 1] = static_cast<int32_t>(b.groupTris.size());
+    }
+    std::sort(halfEdges.begin(), halfEdges.end());
+    for (size_t i = 0; i < halfEdges.size();) {
+      size_t j = i;
+      while (j < halfEdges.size() && halfEdges[j].first == halfEdges[i].first) ++j;
+      b.edgeNode.push_back(static_cast<int32_t>(halfEdges[i].first >> 32));
+      b.edgeNode.push_back(static_cast<int32_t>(halfEdges[i].first & 0xffffffffu));
+      b.edgeTri.push_back(halfEdges[i].second);
+      b.edgeTri.push_back(j - i > 1 ? halfEdges[i + 1].second : -1);
+      i = j;
+    }
   }
 
   for (size_t k = 0; k < desc.torsionBars.size(); ++k) {

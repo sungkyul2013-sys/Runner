@@ -91,6 +91,29 @@ BodyDesc makeLattice(const LatticeParams& p) {
       }
     }
   }
+
+  // Collision surface (§5.2): the six outer faces, two triangles per boundary quad, wound outward.
+  if (p.surface) {
+    auto quad = [&](int a, int b, int c, int e) {
+      for (const auto& t : {std::array<int, 3>{a, b, c}, std::array<int, 3>{a, c, e}}) {
+        const Vec3 pa = d.nodes[static_cast<size_t>(t[0])].position, pb = d.nodes[static_cast<size_t>(t[1])].position,
+                   pc = d.nodes[static_cast<size_t>(t[2])].position;
+        const Vec3 centroid = (pa + pb + pc) * (1.0f / 3.0f);  // lattice centre is the local origin
+        const bool outward = dot(cross(pb - pa, pc - pa), centroid) >= 0.0f;
+        d.triangles.push_back(outward ? CollisionTriDesc{t[0], t[1], t[2], p.surfaceGroup}
+                                      : CollisionTriDesc{t[0], t[2], t[1], p.surfaceGroup});
+      }
+    };
+    for (int side = 0; side < 2; ++side) {
+      const int i = side ? p.nx - 1 : 0, j = side ? p.ny - 1 : 0, k = side ? p.nz - 1 : 0;
+      for (int b = 0; b + 1 < p.ny; ++b)
+        for (int c = 0; c + 1 < p.nz; ++c) quad(index(i, b, c), index(i, b + 1, c), index(i, b + 1, c + 1), index(i, b, c + 1));
+      for (int a = 0; a + 1 < p.nx; ++a)
+        for (int c = 0; c + 1 < p.nz; ++c) quad(index(a, j, c), index(a + 1, j, c), index(a + 1, j, c + 1), index(a, j, c + 1));
+      for (int a = 0; a + 1 < p.nx; ++a)
+        for (int b = 0; b + 1 < p.ny; ++b) quad(index(a, b, k), index(a + 1, b, k), index(a + 1, b + 1, k), index(a, b + 1, k));
+    }
+  }
   return d;
 }
 
@@ -232,6 +255,28 @@ PressureWheelNodes addPressureWheel(BodyDesc& d, const PressureWheelParams& p) {
       tri(rimB(j), treadB(j + 1), treadB(j), 0.0, axis);
     }
     d.pressureGroups.push_back(std::move(g));
+  }
+  // Collision surface (§5.2): tread, sidewalls and rim bed, wound outward — what another car or the arch liner
+  // touches; closed, so inside/outside is defined.
+  if (p.collisionSurface) {
+    auto tri = [&](int a, int b, int cc, double sign, DVec3 axial) {
+      const DVec3 centroid = (position(a) + position(b) + position(cc)) * (1.0 / 3.0) - c;
+      const DVec3 radial = centroid - axis * dot(centroid, axis);
+      const DVec3 outward = sign != 0.0 ? radial * sign : axial;
+      const DVec3 nrm = cross(position(b) - position(a), position(cc) - position(a));
+      d.triangles.push_back(dot(nrm, outward) >= 0.0 ? CollisionTriDesc{a, b, cc, p.collisionGroup}
+                                                     : CollisionTriDesc{a, cc, b, p.collisionGroup});
+    };
+    for (int j = 0; j < n; ++j) {
+      tri(treadA(j), treadA(j + 1), treadB(j), 1.0, {});
+      tri(treadB(j), treadA(j + 1), treadB(j + 1), 1.0, {});
+      tri(rimA(j), rimA(j + 1), rimB(j), -1.0, {});    // rim bed: closes the surface (a torus around the hub)
+      tri(rimB(j), rimA(j + 1), rimB(j + 1), -1.0, {});
+      tri(rimA(j), rimA(j + 1), treadA(j + 1), 0.0, axis * -1.0);
+      tri(rimA(j), treadA(j + 1), treadA(j), 0.0, axis * -1.0);
+      tri(rimB(j), rimB(j + 1), treadB(j + 1), 0.0, axis);
+      tri(rimB(j), treadB(j + 1), treadB(j), 0.0, axis);
+    }
   }
   return out;
 }
