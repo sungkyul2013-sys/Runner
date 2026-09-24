@@ -35,6 +35,7 @@ add_library(sbc STATIC
   src/constraints.cpp
   src/contact.cpp
   src/body_contact.cpp
+  src/islands.cpp
   src/world.cpp
   src/builder.cpp
   src/stability.cpp
@@ -130,6 +131,7 @@ if(SBC_BUILD_TESTS)
     tests/test_beams.cpp
     tests/test_contact.cpp
     tests/test_body_contact.cpp
+    tests/test_islands.cpp
     tests/test_elements.cpp
     tests/test_vehicle.cpp
     tests/test_vehicle_json.cpp

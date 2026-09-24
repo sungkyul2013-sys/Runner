@@ -46,6 +46,8 @@ class Vehicle {
     for (const WheelState& w : wheels_) {
       h.value(w.rhoX); h.value(w.rhoY); h.value(w.brakeAngle); h.value(w.absFactor); h.value(w.angle);
     }
+    for (const uint8_t lost : wheelLost_) h.value(lost);
+    h.value(wrecked_);
   }
 
  private:
@@ -82,6 +84,10 @@ class Vehicle {
   DVec3 prevVelocity_;        // mass-centre velocity of the previous step [m/s]
   double accelLong_ = 0.0, accelLat_ = 0.0, odometer_ = 0.0;
   bool firstStep_ = true;
+  // Parts torn off the body (§4.3 island split): a lost wheel no longer takes drive, brake or tyre forces; a lost
+  // chassis reference (the car broke apart) switches the controller off.
+  std::vector<uint8_t> wheelLost_;
+  bool wrecked_ = false;
 
   // Per-step scratch (no allocation in step()).
   struct WheelFrame {

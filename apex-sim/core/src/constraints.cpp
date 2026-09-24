@@ -77,6 +77,7 @@ template <bool kTrack>
 void accumulateConstraintForces(Body& b) {
   // Sliders: node pulled onto the (infinite) line through railA–railB.
   for (int s = 0; s < b.sliderCount(); ++s) {
+    if (b.sliderBroken[s]) continue;
     const int n = b.sliderNode[s], ia = b.sliderA[s], ib = b.sliderB[s];
     const DVec3 a = dpos(b, ia), ab = dpos(b, ib) - a;
     const double l2 = dot(ab, ab);
@@ -97,6 +98,7 @@ void accumulateConstraintForces(Body& b) {
 
   // Pressure groups: isothermal ideal gas, uniform gauge pressure on every triangle.
   for (int g = 0; g < b.pressureGroupCount(); ++g) {
+    if (b.groupBroken[g]) continue;
     const double v = pressureGroupVolume(b, g);
     const double ambient = b.groupAmbientPressure[g];
     const double absolute0 = static_cast<double>(b.groupGaugePressure[g]) + ambient;
@@ -151,6 +153,7 @@ template void accumulateConstraintForces<false>(Body&);
 double constraintPotentialEnergy(const Body& b) {
   double e = 0.0;
   for (int s = 0; s < b.sliderCount(); ++s) {
+    if (b.sliderBroken[s]) continue;
     const DVec3 a = dpos(b, b.sliderA[s]), ab = dpos(b, b.sliderB[s]) - a;
     const double l2 = dot(ab, ab);
     if (!(l2 > 1e-12)) continue;
@@ -159,6 +162,7 @@ double constraintPotentialEnergy(const Body& b) {
     e += 0.5 * b.sliderStiffness[s] * dot(d, d);
   }
   for (int g = 0; g < b.pressureGroupCount(); ++g) {
+    if (b.groupBroken[g]) continue;
     // Work the gas can still do while expanding back to V0: −∫ p_gauge dV from V0 to V.
     const double v = pressureGroupVolume(b, g), v0 = b.groupInitialVolume[g];
     const double ambient = b.groupAmbientPressure[g];

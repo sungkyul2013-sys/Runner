@@ -290,6 +290,24 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   const double dt = world.params().dt;
   const VehicleDesc& D = desc_;
   const size_t nw = D.wheels.size();
+  auto detached = [&](int32_t i) { return (b.flags[static_cast<size_t>(i)] & node_flag::kDetached) != 0; };
+  if (wheelLost_.size() != nw) wheelLost_.assign(nw, 0);
+  if (!wrecked_ && (detached(D.refCenter) || detached(D.refFront) || detached(D.refLeft))) wrecked_ = true;
+  if (wrecked_) {
+    telemetry_.time = world.time() + dt;
+    telemetry_.speed = 0.0f;
+    telemetry_.engineRunning = false;
+    for (WheelTelemetry& tel : telemetry_.wheels) tel.contact = false;
+    return;
+  }
+  for (size_t w = 0; w < nw; ++w) {
+    const WheelDesc& wd = D.wheels[w];
+    // Hub torn from the knuckle (axle nodes gone) or the wheel off its hub (its rim and tyre gone).
+    if (!wheelLost_[w] && (detached(wd.axleLeft) || detached(wd.axleRight) || detached(wd.rotatingNodes.front()) ||
+                           detached(wd.treadNodes.front()))) {
+      wheelLost_[w] = 1;
+    }
+  }
 
   // ---- chassis frame and mass centre -------------------------------------------------------------------------
   const DVec3 pc = pos(b, D.refCenter);
@@ -327,6 +345,11 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     const WheelDesc& wd = D.wheels[w];
     WheelFrame& f = frames_[w];
     WheelState& s = wheels_[w];
+    if (wheelLost_[w]) {  // torn off: nothing to measure, no forces (drive torque on it goes nowhere)
+      f = WheelFrame{};
+      f.axis = normalized(pos(b, wd.axleLeft) - pos(b, wd.axleRight));
+      continue;
+    }
     f.wheel = fitNodes(b, wd.rotatingNodes);
     f.carrier = fitNodes(b, wd.carrierNodes);
     f.axis = normalized(pos(b, wd.axleLeft) - pos(b, wd.axleRight));
@@ -719,6 +742,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     if (nodes.empty() || area == 0.0) return;
     double m = 0.0;
     for (const int32_t i : nodes) m += b.mass[i];
+    if (!(m > 0.0)) return;  // the whole axle end broke off
     const DVec3 perKg = up * (-q * area / m);
     for (const int32_t i : nodes) addForce(b, i, perKg * static_cast<double>(b.mass[i]), track, Ledger::kExternal);
   };

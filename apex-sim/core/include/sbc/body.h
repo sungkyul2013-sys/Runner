@@ -32,6 +32,9 @@ inline constexpr uint8_t kFixed = 1u << 1;    // immovable anchor (infinite mass
 // Tyre tread node (§6 hybrid tyre): static contacts give it only the normal (penalty) force and report that force
 // in Body::patch*; the tangential force comes from the owning vehicle's slip-based tyre model instead of node friction.
 inline constexpr uint8_t kTread = 1u << 2;
+// Moved to another body when its part broke off (§4.3 island split). The slot stays so that node indices held by a
+// vehicle controller remain valid; the node takes no further part here (no mass, no collision, no forces).
+inline constexpr uint8_t kDetached = 1u << 3;
 }  // namespace node_flag
 
 struct NodeDesc {
@@ -189,6 +192,7 @@ struct Body {
   // ---- sliders ----
   std::vector<int32_t> sliderNode, sliderA, sliderB;
   std::vector<float> sliderStiffness, sliderDamping;
+  std::vector<uint8_t> sliderBroken;          // its nodes went to different bodies
 
   // ---- pressure groups (triangles flattened, groupTriBegin[g]..groupTriBegin[g+1]) ----
   std::vector<int32_t> pressureTri;           // 3 node indices per triangle
@@ -197,6 +201,7 @@ struct Body {
   std::vector<float> groupGaugePressure;      // [Pa] at the initial volume
   std::vector<float> groupAmbientPressure;    // [Pa]
   std::vector<float> groupCurrentGauge;       // [Pa] last evaluated (telemetry)
+  std::vector<uint8_t> groupBroken;           // its triangles went to another body
 
   // ---- torsion bars ----
   std::vector<int32_t> torsionArm1, torsionPivot1, torsionPivot2, torsionArm2;
@@ -226,6 +231,7 @@ struct Body {
   EnergyLosses losses;
   uint32_t topologyVersion = 0;  // bumped whenever beams break (render/debug views re-read topology)
   int32_t brokenBeamCount = 0;
+  int32_t islandCheckedAt = 0;              // brokenBeamCount when connectivity was last checked (island split)
   std::vector<int32_t> pendingBreakGroups;  // groups triggered this step, applied at step end
 
   int nodeCount() const { return static_cast<int>(px.size()); }

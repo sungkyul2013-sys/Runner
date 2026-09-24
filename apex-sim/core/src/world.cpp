@@ -232,6 +232,22 @@ void World::stepOnce() {
       finishBody(i);
     });
   }
+  // Island split (§4.3, A§4.2 step 11): parts that broke loose become bodies of their own. Serial, body order; new
+  // bodies are appended, so existing body indices never change.
+  std::vector<Body> parts;
+  for (int i = 0; i < n; ++i) {
+    Body& b = bodies_[static_cast<size_t>(i)];
+    if (b.brokenBeamCount == b.islandCheckedAt) continue;
+    b.islandCheckedAt = b.brokenBeamCount;
+    for (Body& part : detail::splitIslands(b)) parts.push_back(std::move(part));
+  }
+  for (Body& part : parts) {
+    bodies_.push_back(std::move(part));
+    bodyStats_.emplace_back();
+    scratch_.emplace_back();
+    bodyVehicles_.emplace_back();
+    stats_.islandsSplit++;
+  }
   for (const StepStats& s : bodyStats_) {  // serial reduction in body order
     stats_.staticContacts += s.staticContacts;
     stats_.selfContacts += s.selfContacts;
@@ -393,6 +409,7 @@ uint64_t World::stateHash() const {
     h.vec(b.vx); h.vec(b.vy); h.vec(b.vz);
     h.vec(b.stickX); h.vec(b.stickY); h.vec(b.stickZ); h.vec(b.anchorContact);
     h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.broken); h.vec(b.torsionBroken); h.vec(b.triTorn); h.vec(b.nodeSurface);
+    h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags);
     h.vec(b.hydroInputs);
   }
   for (const auto& v : vehicles_) v->hashState(h);

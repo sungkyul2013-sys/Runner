@@ -76,6 +76,7 @@ struct StepStats {
   int selfContacts = 0;
   int ccdClamps = 0;
   int beamsBroken = 0;
+  int islandsSplit = 0;  // parts that broke loose this step and became bodies of their own (§4.3)
 };
 
 inline constexpr int kMaxMaterials = 64;  // material ids are < kMaxMaterials
