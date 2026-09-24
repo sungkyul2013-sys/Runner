@@ -1,9 +1,12 @@
 // Binds a vehicle's GLB visual (VehicleModel) to its physics state every frame (§4 렌더 = 노드 위치 표시):
 //   body   ← chassis frame (reference node + forward/up/left from the core, A§4.8)
 //   wheels ← each physics wheel's centre, spin axis (steer + camber) and spin angle
-// The body mesh is rigid in M1; per-vertex flexbody deformation from the node cage follows in M2.
+//   body   ← with a node cage (vehicle JSON lattice): per-vertex flexbody deformation on the GPU (M2, Flexbody.ts);
+//            without one (the rigid fallback), the chassis frame
 import * as THREE from 'three/webgpu';
+import type { RenderFrame } from '../physics/PhysicsClient';
 import type { VehicleState, V3 } from '../physics/telemetry';
+import { Flexbody, type CageNode, type NodeLocator } from '../vehicles/Flexbody';
 import type { VehicleModel } from '../vehicles/VehicleModel';
 
 /** Rotation whose columns are the given orthonormal axes (x, y, z). */
@@ -31,10 +34,16 @@ export class VehicleView {
   private mounts: THREE.Object3D[] = [];
   private mountScale: THREE.Vector3[] = [];
   private map: number[] | null = null; // physics wheel → model wheel
+  readonly flexbody: Flexbody | null = null;
 
-  constructor(readonly model: VehicleModel) {
+  /** `cage`: the chassis lattice of physics body `body` (null: the body mesh stays rigid on the chassis frame). */
+  constructor(readonly model: VehicleModel, cage: CageNode[] | null = null, body = -1) {
     this.group.add(model.root);
     model.root.matrixAutoUpdate = false;
+    if (cage && cage.length > 0 && body >= 0) {
+      this.flexbody = new Flexbody(model.root, model.body, cage, body);
+      this.group.add(this.flexbody.group);
+    }
     // Wheel mounts leave the body's hierarchy: they are placed in world space from the physics hubs.
     for (const spin of model.wheels) {
       const mount = spin.parent!;
@@ -71,7 +80,9 @@ export class VehicleView {
     });
   }
 
-  update(v: VehicleState): void {
+  /** `frame` and `locate` drive the flexbody (ignored without one). */
+  update(v: VehicleState, frame: RenderFrame | null = null, locate: NodeLocator | null = null, islandVersion = 0): void {
+    if (this.flexbody && frame && locate) this.flexbody.update(frame, locate, islandVersion);
     const { x, y, z } = chassisFrame(v);
     const q = basis(x, y, z);
     const ref = new THREE.Vector3(...v.refCenterModel).applyQuaternion(q);
@@ -94,6 +105,7 @@ export class VehicleView {
   }
 
   dispose(): void {
+    this.flexbody?.dispose();
     this.group.removeFromParent();
   }
 }

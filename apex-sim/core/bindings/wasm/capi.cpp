@@ -185,6 +185,37 @@ uint32_t sbc_body_topology_version(sbc_world* w, int b) {
   return validBody(w, b) ? w->world.body(b).topologyVersion : 0u;
 }
 
+int sbc_body_damage_group_count(sbc_world* w, int b) {
+  return validBody(w, b) ? static_cast<int>(w->world.body(b).damageGroups.size()) : 0;
+}
+
+const char* sbc_body_damage_group_id(sbc_world* w, int b, int g) {
+  if (!validBody(w, b) || g < 0 || static_cast<size_t>(g) >= w->world.body(b).damageGroups.size()) return "";
+  return w->world.body(b).damageGroups[static_cast<size_t>(g)].id.c_str();
+}
+
+int sbc_body_damage_groups(sbc_world* w, int b, float* out, int capacity) {
+  if (!validBody(w, b) || !out) return 0;
+  const auto& groups = w->world.body(b).damageGroups;
+  int written = 0;
+  for (const sbc::DamageGroupState& g : groups) {
+    if (written + 6 > capacity) break;
+    out[written++] = static_cast<float>(g.beams);
+    out[written++] = static_cast<float>(g.damaged);
+    out[written++] = g.firstStep < 0 ? -1.0f : static_cast<float>(static_cast<double>(g.firstStep) * w->world.params().dt);
+    out[written++] = static_cast<float>(g.firstNodeA);
+    out[written++] = static_cast<float>(g.firstNodeB);
+    out[written++] = g.peakStrain;
+  }
+  return written;
+}
+
+int sbc_body_source(sbc_world* w, int b) { return validBody(w, b) ? w->world.body(b).sourceBody : -1; }
+
+const int32_t* sbc_body_source_nodes(sbc_world* w, int b) {
+  return validBody(w, b) && !w->world.body(b).sourceNode.empty() ? w->world.body(b).sourceNode.data() : nullptr;
+}
+
 void sbc_body_origin(sbc_world* w, int b, double* out) {
   if (!validBody(w, b) || !out) return;
   const auto o = w->world.body(b).origin;

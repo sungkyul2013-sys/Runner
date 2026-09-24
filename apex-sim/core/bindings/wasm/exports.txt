@@ -22,6 +22,11 @@ _sbc_world_body_count
 _sbc_body_node_count
 _sbc_body_beam_count
 _sbc_body_topology_version
+_sbc_body_source
+_sbc_body_source_nodes
+_sbc_body_damage_group_count
+_sbc_body_damage_group_id
+_sbc_body_damage_groups
 _sbc_body_origin
 _sbc_body_px
 _sbc_body_py

@@ -44,6 +44,7 @@ Body extract(const Body& src, const std::vector<int32_t>& nodes, const std::vect
   Body b;
   b.name = src.name + "/part";
   b.origin = src.origin;
+  b.sourceNode = nodes;
   pick(b.px, src.px, nodes); pick(b.py, src.py, nodes); pick(b.pz, src.pz, nodes);
   pick(b.vx, src.vx, nodes); pick(b.vy, src.vy, nodes); pick(b.vz, src.vz, nodes);
   pick(b.sx, src.sx, nodes); pick(b.sy, src.sy, nodes); pick(b.sz, src.sz, nodes);

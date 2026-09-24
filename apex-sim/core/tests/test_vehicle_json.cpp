@@ -310,9 +310,39 @@ TEST_CASE("Porsche 911 Turbo: a wall crash in the drive scene keeps the energy b
   }
   INFO("worst |balance| " << worst / 1e3 << " kJ, peak kinetic " << peakKinetic / 1e3 << " kJ");
   CHECK(w->vehicleTelemetry(v).speed < 5.0f);  // it did hit the wall
-  // §23.1's 5 %. (Measured ≈ 3.4 %: at this speed the front wheels are driven into the crumpling arches, and the
+  // §23.1's 5 %. (Measured ≈ 0.9 %: at this speed the front wheels are driven into the crumpling arches, and the
   // self-collision springs there — no sweep tests inside one body — switch on and off as the arch folds.)
   CHECK(worst < 0.05 * peakKinetic);
+}
+
+TEST_CASE("Porsche 911 Turbo: the wreck comes to rest after a wall crash and its books stay closed",
+          "[vehicle_json][porsche][crash][5.3]") {
+  // 100 km/h into the drive scene's wall in Drive (the web's default), then 5 s at rest. A front wheel jammed in its
+  // crushed arch once turned by itself and kept the wreck vibrating at ≈ 190 W from nowhere: contact springs scaled
+  // with the barycentric effective mass Σw²/m change stiffness as their contact point slides, which is not
+  // conservative. The weight-linear mass Σw/m keeps a spring's stiffness constant across a triangle.
+  SceneOptions so;
+  so.threads = 1;
+  so.trackEnergy = true;
+  auto w = makeScene("drive", so);
+  const LoadedVehicle car = loadVehicleJson(porscheJson(), {{0.0, 0.0, 250.0}, 0.0, 100.0f / 3.6f});
+  const int body = w->addBody(car.build.body);
+  const int v = w->addVehicle(body, car.build.vehicle);
+  w->setVehicleInput(v, VehicleInput{});
+  w->step(12000);  // 6 s: the crash is over at ≈ 2.4 s
+  const double settled = w->measureEnergy().balance();
+  double maxKinetic = 0.0, maxSpin = 0.0;
+  for (int k = 0; k < 10; ++k) {
+    w->step(1000);
+    maxKinetic = std::max(maxKinetic, w->measureEnergy().kinetic);
+    for (const WheelTelemetry& t : w->vehicleTelemetry(v).wheels) maxSpin = std::max(maxSpin, static_cast<double>(std::fabs(t.spin)));
+  }
+  const double drift = w->measureEnergy().balance() - settled;
+  INFO("balance drift at rest " << drift << " J over 5 s, max kinetic " << maxKinetic << " J, max wheel spin " << maxSpin);
+  CHECK(w->vehicleTelemetry(v).speed < 0.1f);
+  CHECK(std::fabs(drift) < 20.0);  // was ≈ 950 J
+  CHECK(maxKinetic < 5.0);
+  CHECK(maxSpin < 0.05);           // no wheel turning by itself (was 0.19 rad/s)
 }
 
 TEST_CASE("Porsche 911 Turbo: 64 km/h rigid-wall crash crumples the nose and closes the energy balance",

@@ -247,7 +247,6 @@ int ContactSolver::ccdStatic(World& w, int bodyIndex) {
   Body& b = w.bodies_[bodyIndex];
   const ContactScratch& s = w.scratch_[bodyIndex];
   if (s.tris.empty() && s.planes.empty()) return 0;
-  const float dt = w.params_.dt;
   int clamps = 0;
   for (int i = 0; i < b.nodeCount(); ++i) {
     if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) continue;

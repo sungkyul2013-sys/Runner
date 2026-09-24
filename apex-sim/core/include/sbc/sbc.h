@@ -60,6 +60,14 @@ int sbc_body_node_count(sbc_world* w, int body);
 int sbc_body_beam_count(sbc_world* w, int body);
 uint32_t sbc_body_topology_version(sbc_world* w, int body);
 void sbc_body_origin(sbc_world* w, int body, double* out3);
+/* Damage groups (§4.3 glass/lamps, §4.4): count, id, and per group 6 floats [beams, damaged, first damage time [s]
+   (−1: intact), first damaged beam's node a, node b, peak strain]; returns the floats written. */
+int sbc_body_damage_group_count(sbc_world* w, int body);
+const char* sbc_body_damage_group_id(sbc_world* w, int body, int group);
+int sbc_body_damage_groups(sbc_world* w, int body, float* out, int capacity);
+/* Island provenance: the body a split-off part came from (−1 for spawned bodies) and, per node, its index there. */
+int sbc_body_source(sbc_world* w, int body);
+const int32_t* sbc_body_source_nodes(sbc_world* w, int body);
 /* Pointers into the live SoA arrays (valid until the next step / topology change). */
 const float* sbc_body_px(sbc_world* w, int body);
 const float* sbc_body_py(sbc_world* w, int body);

@@ -31,6 +31,8 @@ export interface SbcModule {
   _sbc_body_node_count(w: Ptr, body: number): number;
   _sbc_body_beam_count(w: Ptr, body: number): number;
   _sbc_body_topology_version(w: Ptr, body: number): number;
+  _sbc_body_source(w: Ptr, body: number): number;
+  _sbc_body_source_nodes(w: Ptr, body: number): Ptr;
   _sbc_body_origin(w: Ptr, body: number, out3: Ptr): void;
   _sbc_body_px(w: Ptr, body: number): Ptr;
   _sbc_body_py(w: Ptr, body: number): Ptr;

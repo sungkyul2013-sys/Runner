@@ -93,6 +93,13 @@ struct Side {
     for (int k = 0; k < count; ++k) s += w[k] * w[k] * b.invMass[node[k]];
     return s;
   }
+  // Weight-linear inverse mass Σ w·(1/m) ≥ Σ w²·(1/m): the same for every point of a triangle (or edge) whose nodes
+  // weigh the same, so a spring scaled with it keeps its stiffness while its contact point slides.
+  float stiffnessInverseMass(const Body& b) const {
+    float s = 0.0f;
+    for (int k = 0; k < count; ++k) s += w[k] * b.invMass[node[k]];
+    return s;
+  }
   uint16_t material(const Body& b) const {
     int best = 0;
     for (int k = 1; k < count; ++k) if (w[k] > w[best]) best = k;

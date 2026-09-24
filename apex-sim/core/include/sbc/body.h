@@ -69,6 +69,8 @@ struct BeamDesc {
   int32_t hydroChannel = -1;           // kHydro: index into Body::hydroInputs
   float hydroFactor = 0.0f;            // kHydro: relative rest-length change per unit input [-]
   float hydroSpeed = 0.0f;             // kHydro: max relative rest-length change per second [1/s] (≤ 0 → instant)
+  int32_t damageGroup = -1;            // index into BodyDesc::damageGroups (−1: not watched)
+  float damageStrain = -1.0f;          // [-] trigger strain of this beam (≤ 0 → the group's)
 };
 
 // Node constrained to the line through two other nodes (prismatic joint: MacPherson strut telescope, §7).
@@ -108,6 +110,24 @@ struct CollisionTriDesc {
   int16_t group = -1;
 };
 
+// Damage group (§4.3 glass and lamps, §4.4 damage → function): a named set of beams watched for damage — the beams
+// around a windscreen, a lamp, a radiator. A beam counts as damaged once its length has left [1 − s, 1 + s]·L0,init
+// (elastically or plastically; s = its trigger strain) or it broke; the group's damage is the damaged share.
+struct DamageGroupDesc {
+  std::string id;
+  float strain = 0.01f;  // [-] default trigger strain of its beams
+};
+
+struct DamageGroupState {
+  std::string id;
+  int32_t beams = 0;                         // beams in the group
+  int32_t damaged = 0;                       // of them damaged so far
+  int64_t firstStep = -1;                    // step of the first damage (−1: intact)
+  int32_t firstNodeA = -1, firstNodeB = -1;  // nodes of the first damaged beam (where a crack starts)
+  float peakStrain = 0.0f;                   // [-] largest |L/L0,init − 1| seen on one of its beams
+  float damage() const { return beams > 0 ? static_cast<float>(damaged) / static_cast<float>(beams) : 0.0f; }
+};
+
 struct BodyDesc {
   std::string name;
   DVec3 origin;  // [m] world position of the local frame
@@ -117,6 +137,7 @@ struct BodyDesc {
   std::vector<PressureGroupDesc> pressureGroups;
   std::vector<TorsionBarDesc> torsionBars;
   std::vector<CollisionTriDesc> triangles;
+  std::vector<DamageGroupDesc> damageGroups;
   int hydroChannels = 0;
 };
 
@@ -236,6 +257,15 @@ struct Body {
   int32_t brokenBeamCount = 0;
   int32_t islandCheckedAt = 0;              // brokenBeamCount when connectivity was last checked (island split)
   std::vector<int32_t> pendingBreakGroups;  // groups triggered this step, applied at step end
+  // Damage groups: the watched beams (body beam index, group, trigger strain, damaged flag) and each group's state.
+  std::vector<int32_t> damageBeam, damageBeamGroup;
+  std::vector<float> damageBeamStrain;
+  std::vector<uint8_t> damageBeamHit;
+  std::vector<DamageGroupState> damageGroups;
+  // Island provenance (render binding of detached parts): the body this one was split from (−1: spawned) and, per
+  // node, its index there. Not physics state (not hashed).
+  int32_t sourceBody = -1;
+  std::vector<int32_t> sourceNode;
 
   int nodeCount() const { return static_cast<int>(px.size()); }
   int beamCount() const { return static_cast<int>(beamA.size()); }

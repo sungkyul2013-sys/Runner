@@ -31,6 +31,8 @@ double constraintPotentialEnergy(const Body& body);
 
 // Breaks every intact beam whose breakGroup was triggered this step. Returns beams broken.
 int applyPendingBreakGroups(Body& body);
+// Marks damage-group beams past their trigger strain (or broken) as damaged; returns how many were newly damaged.
+int updateDamageGroups(Body& body, int64_t step);
 
 // Marks beam i broken and books its released elastic energy.
 void breakBeam(Body& body, int i, float elasticForce);

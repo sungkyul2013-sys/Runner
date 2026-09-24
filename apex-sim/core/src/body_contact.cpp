@@ -162,13 +162,6 @@ float maxCollisionRadius(const Body& b) {
   return r;
 }
 
-Box triBox(const Body& b, int t, Vec3 offset) {
-  Box box;
-  const int32_t* n = triNodes(b, t);
-  for (int k = 0; k < 3; ++k) box.add(pos(b, n[k], offset));
-  return box;
-}
-
 // Collision-node box and largest node radius of a body in its own frame.
 struct Extent {
   Box box;
@@ -236,7 +229,7 @@ void recordDepth(Body& A, const Side& a, Body& B, const Side& b, float p) {
 
 // Effective mass of the two contact points, m = 1 / (Σ w_i²/m_i + Σ w_j²/m_j); 0 when both are anchored.
 float contactMass(const Body& A, const Side& a, const Body& B, const Side& b) {
-  const float inv = a.inverseMass(A) + b.inverseMass(B);
+  const float inv = a.stiffnessInverseMass(A) + b.stiffnessInverseMass(B);
   return inv > 0.0f ? 1.0f / inv : 0.0f;
 }
 

@@ -265,4 +265,27 @@ int applyPendingBreakGroups(Body& b) {
   return count;
 }
 
+int updateDamageGroups(Body& b, int64_t step) {
+  int hits = 0;
+  for (size_t k = 0; k < b.damageBeam.size(); ++k) {
+    const int i = b.damageBeam[k];
+    DamageGroupState& g = b.damageGroups[static_cast<size_t>(b.damageBeamGroup[k])];
+    const float l0 = b.initialRestLength[static_cast<size_t>(i)];
+    const float strain = b.broken[static_cast<size_t>(i)]
+                             ? kInfiniteForce
+                             : std::fabs(length(b.nodePosition(b.beamB[static_cast<size_t>(i)]) - b.nodePosition(b.beamA[static_cast<size_t>(i)])) / l0 - 1.0f);
+    if (strain < kInfiniteForce) g.peakStrain = std::max(g.peakStrain, strain);
+    if (b.damageBeamHit[k] || strain < b.damageBeamStrain[k]) continue;
+    b.damageBeamHit[k] = 1;
+    ++g.damaged;
+    ++hits;
+    if (g.firstStep < 0) {
+      g.firstStep = step;
+      g.firstNodeA = b.beamA[static_cast<size_t>(i)];
+      g.firstNodeB = b.beamB[static_cast<size_t>(i)];
+    }
+  }
+  return hits;
+}
+
 }  // namespace sbc::detail

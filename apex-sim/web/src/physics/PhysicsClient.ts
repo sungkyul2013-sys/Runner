@@ -70,6 +70,9 @@ type Listener<T> = (value: T) => void;
 
 export class PhysicsClient {
   readonly topology: BodyTopology[] = [];
+  /** Bumped whenever nodes move to a split-off body (consumers of `locate` re-resolve). */
+  islandVersion = 0;
+  private moved = new Map<number, Map<number, [number, number]>>(); // body → node → [part body, part node]
   staticTriangles: Float32Array = new Float32Array(0);
   threads = 1;
   /** Rendering is done relative to this world point (floating origin for large maps, M6). */
@@ -122,6 +125,16 @@ export class PhysicsClient {
   }
 
   onTopology(l: Listener<{ reset: boolean; added: BodyTopology[] }>) { this.listeners.topology.push(l); }
+
+  /** Where a node is now: [body, node]. Parts that broke loose took their nodes into new bodies (§4.3 island split). */
+  locate(body: number, node: number): [number, number] {
+    for (let hop = 0; hop < 64; hop++) {
+      const next = this.moved.get(body)?.get(node);
+      if (!next) break;
+      [body, node] = next;
+    }
+    return [body, node];
+  }
   onStability(l: Listener<Extract<FromWorker, { type: 'stability' }>>) { this.listeners.stability.push(l); }
   onError(l: Listener<string>) { this.listeners.error.push(l); }
 
@@ -313,8 +326,19 @@ export class PhysicsClient {
         this.arrived = msg.buffer;
         break;
       case 'topology':
-        if (msg.reset) this.topology.length = 0;
-        for (const t of msg.bodies) this.topology[t.index] = t;
+        if (msg.reset) {
+          this.topology.length = 0;
+          this.moved.clear();
+          this.islandVersion++;
+        }
+        for (const t of msg.bodies) {
+          this.topology[t.index] = t;
+          if (t.source < 0 || !t.sourceNodes) continue;
+          let m = this.moved.get(t.source);
+          if (!m) this.moved.set(t.source, (m = new Map()));
+          t.sourceNodes.forEach((from, k) => m!.set(from, [t.index, k]));
+          this.islandVersion++;
+        }
         this.staticTriangles = msg.staticTriangles;
         this.listeners.topology.forEach((l) => l({ reset: msg.reset, added: msg.bodies }));
         break;

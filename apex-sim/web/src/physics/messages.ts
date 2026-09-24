@@ -46,6 +46,9 @@ export interface BodyTopology {
   beamA: Int32Array;
   beamB: Int32Array;
   radius: Float32Array;
+  /** Island split (§4.3): the body this part broke off from (−1: spawned) and each node's index there. */
+  source: number;
+  sourceNodes: Int32Array | null;
 }
 
 export type FromWorker =

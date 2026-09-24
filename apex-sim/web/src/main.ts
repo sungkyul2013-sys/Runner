@@ -140,7 +140,14 @@ async function main(): Promise<void> {
 
   // ---- driving (?drive=<vehicle id>) ----
   const driveVehicle = params.has('drive') ? DRIVE_VEHICLES.find((v) => v.id === params.get('drive')) ?? DRIVE_VEHICLES[0] : null;
-  const drive = driveVehicle ? new DriveSession(physics, viewer, debug, driveVehicle, fail, () => setPaused(!paused)) : null;
+  // Optional start pose: &at=<x>,<z> [m] &yaw=<deg> &kmh=<forward speed> (a run-up into the end wall at z = 300 m).
+  const at = (params.get('at') ?? '0,0').split(',').map(Number);
+  const pose = {
+    position: [at[0] || 0, 0, at[1] || 0] as [number, number, number],
+    yaw: (Number(params.get('yaw')) || 0) * (Math.PI / 180),
+    speed: (Number(params.get('kmh')) || 0) / 3.6,
+  };
+  const drive = driveVehicle ? new DriveSession(physics, viewer, debug, driveVehicle, fail, () => setPaused(!paused), pose) : null;
   if (drive) {
     window.__apex!.drive = drive;
     panel.root.hidden = true;

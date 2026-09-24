@@ -85,6 +85,14 @@ TEST_CASE("a body torn in two becomes two bodies that keep colliding", "[islands
   CHECK(std::fabs(totalMass(w.body(0)) - 20.0) < 1e-3);  // the heavier (first) part stays: A, and B moved out
   CHECK(std::fabs(totalMass(w.body(1)) - 20.0) < 1e-3);
   CHECK(w.body(1).triangleCount() == 12);                 // B took its surface along
+  // Provenance for the render binding: part node k was source node sourceNode[k] (B's nodes 8…15), now detached.
+  CHECK(w.body(0).sourceBody == -1);
+  CHECK(w.body(1).sourceBody == 0);
+  REQUIRE(w.body(1).sourceNode.size() == 8);
+  for (int k = 0; k < 8; ++k) {
+    CHECK(w.body(1).sourceNode[static_cast<size_t>(k)] == 8 + k);
+    CHECK((w.body(0).flags[static_cast<size_t>(8 + k)] & node_flag::kDetached) != 0);
+  }
   CHECK(test::norm(w.measureMomentum().linear - p0) < 1e-3);
   const EnergyReport e = w.measureEnergy();
   INFO("balance " << e.balance() << " J of " << 0.5 * 20.0 * 36.0 << " J");

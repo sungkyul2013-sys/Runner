@@ -84,6 +84,8 @@ function cString(text: string): Ptr {
 function topologyOf(b: number): BodyTopology {
   const n = sbc._sbc_body_node_count(world, b);
   const m = sbc._sbc_body_beam_count(world, b);
+  const source = sbc._sbc_body_source(world, b);
+  const sourcePtr = source >= 0 ? sbc._sbc_body_source_nodes(world, b) : 0;
   return {
     index: b,
     name: `body ${b}`,
@@ -92,6 +94,8 @@ function topologyOf(b: number): BodyTopology {
     beamA: new Int32Array(heap(), sbc._sbc_body_beam_a(world, b), m).slice(),
     beamB: new Int32Array(heap(), sbc._sbc_body_beam_b(world, b), m).slice(),
     radius: new Float32Array(heap(), sbc._sbc_body_radius(world, b), n).slice(),
+    source,
+    sourceNodes: sourcePtr ? new Int32Array(heap(), sourcePtr, n).slice() : null,
   };
 }
 
@@ -259,6 +263,8 @@ function stepTimed(steps: number): number {
   sbc._sbc_world_step(world, steps);
   const ms = performance.now() - t0;
   stepMs = stepMs === 0 ? ms / steps : stepMs * (1 - EMA) + (ms / steps) * EMA;
+  // Parts that broke loose during these steps are bodies of their own now (island split, §4.3).
+  if (sbc._sbc_world_body_count(world) > knownBodies) announceNewBodies(false, 'island');
   return ms;
 }
 

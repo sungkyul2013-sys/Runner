@@ -2,6 +2,8 @@
 //   1. golden_m0 in the browser worker must reproduce the native golden hashes (§23.1 결정론, native = WASM)
 //   2. sandbox screenshots (docs/screenshots/)
 //   2b. driving (§17, M1e): the Porsche launches, steers and brakes under keyboard input; drive screenshots
+//   2c. crash (M2): the Porsche at 100 km/h into the end wall — the nose crushes, the books stay closed, and the GLB
+//       follows the node cage (flexbody, §4.5); crash screenshots
 //   3. short benchmark run → bench/results/ (GPU-less CI machines render on SwiftShader: frame times there are
 //      NOT representative of real hardware; physics timings are)
 // Usage: npm run build && node tools/e2e.mjs [--no-bench] [--chromium /path/to/chrome]
@@ -143,6 +145,50 @@ async function main() {
       if (minUp < 0.9) failures.push('drive: the car tipped over');
       const errors = await page.evaluate(() => window.__apex.errors);
       if (errors.length || consoleErrors.length) failures.push(`errors (drive): ${[...errors, ...consoleErrors].join(' | ')}`);
+      await page.close();
+    }
+    // 2c. wall crash with flexbody deformation
+    {
+      const dir = join(root, 'docs', 'screenshots');
+      const { page, consoleErrors } = await openPage(browser, '?drive=porsche_911_turbo_991&at=0,250&kmh=100');
+      await page.waitForFunction(() => window.__apex?.drive?.latest != null && window.__apex.drive.view != null, null, { timeout: 120000 });
+      const state = () =>
+        page.evaluate(() => {
+          const d = window.__apex.drive;
+          const e = d.physics.latestStats()?.energy;
+          return {
+            kmh: d.latest.speed * 3.6,
+            z: d.latest.position[2],
+            flexMeshes: d.view.flexbody ? d.view.flexbody.meshes.length : 0,
+            plasticKJ: e ? e.plastic / 1e3 : 0,
+            balance: e ? Math.abs(e.balance) / Math.max(Math.abs(e.external), 1) : 1,
+          };
+        });
+      const t0 = Date.now();
+      let s = await state();
+      while ((s.plasticKJ < 50 || Math.abs(s.kmh) > 1) && Date.now() - t0 < 90000) {
+        await page.waitForTimeout(250);
+        s = await state();
+      }
+      await page.keyboard.press('KeyC'); // orbit camera: look at the crushed nose from the front left
+      await page.evaluate(() => {
+        const d = window.__apex.drive, p = d.latest.position;
+        d.viewer.controls.target.set(p[0], p[1], p[2] + 1.0);
+        d.viewer.camera.position.set(p[0] + 3.2, p[1] + 1.6, p[2] + 3.4);
+        d.viewer.controls.update();
+      });
+      await page.waitForTimeout(1500);
+      await page.screenshot({ path: join(dir, 'M2-crash-flexbody.png') });
+      await page.keyboard.press('KeyV');
+      await page.waitForTimeout(1200);
+      await page.screenshot({ path: join(dir, 'M2-crash-cage.png') });
+      console.log('crash:', JSON.stringify(s));
+      if (s.flexMeshes === 0) failures.push('crash: the body mesh is not bound to the node cage (no flexbody)');
+      if (s.plasticKJ < 50) failures.push(`crash: only ${s.plasticKJ.toFixed(1)} kJ absorbed plastically`);
+      if (Math.abs(s.kmh) > 1) failures.push(`crash: the wreck still moves at ${s.kmh.toFixed(1)} km/h`);
+      if (s.balance > 0.05) failures.push(`crash: energy balance error ${(100 * s.balance).toFixed(2)} %`);
+      const errors = await page.evaluate(() => window.__apex.errors);
+      if (errors.length || consoleErrors.length) failures.push(`errors (crash): ${[...errors, ...consoleErrors].join(' | ')}`);
       await page.close();
     }
     // 3. benchmark

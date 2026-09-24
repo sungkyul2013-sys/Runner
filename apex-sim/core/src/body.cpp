@@ -157,6 +157,22 @@ Body buildBody(const BodyDesc& desc) {
     b.hydroSpeed[k] = d.hydroSpeed;
     b.typeBegin[static_cast<int>(d.type) + 1]++;
   }
+  for (const DamageGroupDesc& g : desc.damageGroups) {
+    require(g.strain > 0.0f, "damage group \"" + g.id + "\" needs a positive trigger strain");
+    DamageGroupState st;
+    st.id = g.id;
+    b.damageGroups.push_back(st);
+  }
+  for (size_t k = 0; k < m; ++k) {  // in body beam order
+    const BeamDesc& d = desc.beams[order[k]];
+    if (d.damageGroup < 0) continue;
+    require(static_cast<size_t>(d.damageGroup) < desc.damageGroups.size(), "beam " + std::to_string(order[k]) + " has an unknown damage group");
+    b.damageBeam.push_back(static_cast<int32_t>(k));
+    b.damageBeamGroup.push_back(d.damageGroup);
+    b.damageBeamStrain.push_back(d.damageStrain > 0.0f ? d.damageStrain : desc.damageGroups[static_cast<size_t>(d.damageGroup)].strain);
+    b.damageBeamHit.push_back(0);
+    b.damageGroups[static_cast<size_t>(d.damageGroup)].beams++;
+  }
   for (int t = 0; t < kBeamTypeCount; ++t) b.typeBegin[t + 1] += b.typeBegin[t];
 
   auto validNode = [n](int32_t i) { return i >= 0 && static_cast<size_t>(i) < n; };

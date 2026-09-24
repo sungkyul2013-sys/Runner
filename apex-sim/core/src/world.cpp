@@ -244,7 +244,10 @@ void World::stepOnce() {
     Body& b = bodies_[static_cast<size_t>(i)];
     if (b.brokenBeamCount == b.islandCheckedAt) continue;
     b.islandCheckedAt = b.brokenBeamCount;
-    for (Body& part : detail::splitIslands(b)) parts.push_back(std::move(part));
+    for (Body& part : detail::splitIslands(b)) {
+      part.sourceBody = static_cast<int32_t>(i);
+      parts.push_back(std::move(part));
+    }
   }
   for (Body& part : parts) {
     bodies_.push_back(std::move(part));
@@ -348,6 +351,7 @@ void World::integrateBody(int bi) {
 void World::finishBody(int bi) {
   Body& b = bodies_[bi];
   bodyStats_[bi].beamsBroken += detail::applyPendingBreakGroups(b);
+  if (!b.damageBeam.empty()) detail::updateDamageGroups(b, stepIndex_);
 
   // Deterministic re-basing of the local frame by whole metres (A§4.4).
   double cx = 0.0, cy = 0.0, cz = 0.0;
@@ -416,6 +420,8 @@ uint64_t World::stateHash() const {
     h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.broken); h.vec(b.torsionBroken); h.vec(b.triTorn); h.vec(b.nodeSurface);
     h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags); h.vec(b.contactDepth);
     h.vec(b.hydroInputs);
+    h.vec(b.damageBeamHit);
+    for (const DamageGroupState& g : b.damageGroups) { h.value(g.firstStep); h.value(g.peakStrain); }
   }
   for (const auto& v : vehicles_) v->hashState(h);
   return h.h;

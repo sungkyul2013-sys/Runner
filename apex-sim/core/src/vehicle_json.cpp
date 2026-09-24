@@ -149,6 +149,8 @@ struct Loader {
     double crush = 0.95, tear = kInfiniteForce;
     double kc = -1.0;
     std::string breakGroup;
+    std::string damage;         // damage group id
+    double damageStrain = -1.0;
   };
 
   static BeamType beamType(const std::string& name, const std::string& path) {
@@ -176,6 +178,26 @@ struct Loader {
     p.tear = numberOr(obj, "tearLimit", p.tear, path);
     p.kc = numberOr(obj, "kc", p.kc, path);
     p.breakGroup = stringOr(obj, "breakGroup", p.breakGroup, path);
+    p.damage = stringOr(obj, "damage", p.damage, path);
+    p.damageStrain = numberOr(obj, "damageStrain", p.damageStrain, path);
+  }
+
+  // Damage groups: [{"id", "strain"?, "visual"?}] ("visual" is render metadata the core does not read).
+  std::unordered_map<std::string, int32_t> damageGroupIndex;
+  void damageGroups(Val arr) {
+    if (!arr) return;
+    array(arr, "damageGroups");
+    size_t i, n;
+    Val item;
+    yyjson_arr_foreach(arr, i, n, item) {
+      const std::string path = "damageGroups[" + std::to_string(i) + "]";
+      DamageGroupDesc g;
+      g.id = string(member(item, "id"), path + ".id");
+      g.strain = floatOr(item, "strain", g.strain, path);
+      if (!(g.strain > 0.0f)) fail(path, "strain must be > 0");
+      if (!damageGroupIndex.emplace(g.id, static_cast<int32_t>(body().damageGroups.size())).second) fail(path, "duplicate id '" + g.id + "'");
+      body().damageGroups.push_back(g);
+    }
   }
 
   void beams(Val groupsObj, Val arr) {
@@ -223,6 +245,12 @@ struct Loader {
       bd.compressionStiffness = static_cast<float>(p.kc);
       if (!p.breakGroup.empty()) {
         bd.breakGroup = breakGroups.emplace(p.breakGroup, static_cast<int32_t>(breakGroups.size())).first->second;
+      }
+      if (!p.damage.empty()) {
+        const auto dg = damageGroupIndex.find(p.damage);
+        if (dg == damageGroupIndex.end()) fail(path, "unknown damage group '" + p.damage + "'");
+        bd.damageGroup = dg->second;
+        bd.damageStrain = static_cast<float>(p.damageStrain);
       }
       const float initial = initialLength(bd.a, bd.b);
       if (over) {
@@ -537,6 +565,7 @@ LoadedVehicle loadVehicleJson(std::string_view text, const VehicleSpawn& spawn) 
   l.body().name = l.out.id;
   l.body().hydroChannels = static_cast<int>(numberOr(root, "hydroChannels", 0.0, "$"));
   l.nodes(member(root, "nodes"));
+  l.damageGroups(member(root, "damageGroups"));
   l.beams(member(root, "beamGroups"), member(root, "beams"));
   l.sliders(member(root, "sliders"));
   l.torsionBars(member(root, "torsionBars"));
