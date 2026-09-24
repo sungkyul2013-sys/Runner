@@ -40,6 +40,9 @@ const CARS = [
       rear: { radius: 0.368, width: 0.285, rimRadius: 0.254 },  // 285/40 R20
       maxScale: 1.06,
     },
+    // The bake's own tyres sit 3 cm ahead of and 5 cm outboard of the fitted wheels, so their front arc stuck out
+    // ahead of the spinning wheel: cut the dark tyre fragments around the bake's wheel centres.
+    cutBakeWheels: { radius: 0.46, role: 'trim', maxLum: 0.05, minAbsX: 0.58 },
   },
   {
     key: 'maybach',
@@ -68,22 +71,45 @@ const CARS = [
     // The bake lost the windscreen, the panoramic roof panes and the rear window, and has nothing behind the grille
     // and intakes: fill them (boxes relative to the body: x/z about its centre, y above its bottom).
     fill: [
-      { view: 'top', box: { x: [-0.75, 0.75], z: [-1.3, 1.38] }, threshold: 0.15, role: 'glass', color: [20, 26, 32], flatRole: 'tint', flatBelowDeg: 16 },
-      { view: 'rear', box: { x: [-0.62, 0.62], y: [1.22, 1.56] }, threshold: 0.15, role: 'glass', color: [20, 26, 32], enclosed: false },
+      { view: 'top', box: { x: [-0.75, 0.75], z: [-1.3, 1.38] }, threshold: 0.15, role: 'tint', color: [20, 26, 32] },
+      { view: 'rear', box: { x: [-0.62, 0.62], y: [1.22, 1.56] }, threshold: 0.15, role: 'tint', color: [20, 26, 32], enclosed: false },
+      // The tail-lamp lenses are missing too (one looked through the lamp openings into the dark body). Seen
+      // square-on from behind and outside, each opening is framed by tailgate, quarter and body: close it with lens
+      // glass, relit as the lamp below. Both sides (mirror).
+      { dir: [0.62, 0.12, -0.78], mirror: true, box: { ax: [0.26, 1.2], y: [0.9, 1.13], z: [-2.9, -2.0] }, threshold: 0.05, role: 'glass', color: [40, 6, 6], grow: false, detect: 'valley', enclosed: false, reach: 0.3 },
       { view: 'front', box: { x: [-0.92, 0.92], y: [0.16, 0.92] }, threshold: 0.3, role: 'trim', color: [2, 2, 3], inset: 0.05, grow: false },
+      // The headlamp lenses are missing as well (only the lower lens band survived): seen square-on from the front
+      // and outside, close each opening flush with lens glass, relit as the lamp.
+      { dir: [0.55, 0.18, 0.82], mirror: true, box: { ax: [0.42, 1.2], y: [0.58, 1.02], z: [1.8, 2.9] }, threshold: 0.05, role: 'glass', color: [60, 70, 80], grow: false, detect: 'valley', enclosed: false, reach: 0.3 },
       // The headlamps are open on top: through the slot between the bonnet and the lens one sees into the empty
       // housing and down to the ground. Close it flush with lens glass (only see-through cells: threshold ∞); in the
       // lamp zone it is relit with the rest of the lens.
       { view: 'top', box: { ax: [0.42, 1.0], z: [1.9, 2.62] }, threshold: Infinity, role: 'glass', color: [60, 70, 80], grow: false },
     ],
-    lamps: {
-      // front: the lower lens band is the daytime-running strip; the dark upper half (open-topped housing in the
-      // bake) becomes the dark-chrome housing of the user's Crash Lab design
-      front: { depth: 0.5, maxHeight: 1.0, minAbsX: 0.46, color: [200, 225, 255], trim: { maxLum: 0.025, role: 'chrome' } },
-      // colours linear (glTF vertex colours): ≈ sRGB 205,24,32; the smoked upper half ≈ sRGB 120,10,14; maxLum is
-      // linear too (≈ sRGB 0.16)
-      rear: { depth: 0.45, minHeight: 0.74, maxHeight: 1.07, minAbsX: 0.28, color: [150, 3, 6], trim: { maxLum: 0.025, factor: 0.32 } },
-    },
+    // The bake's own fragments of the windscreen, roof panes and rear window take the same tinted glass as the
+    // filled-in parts, so each pane reads as one sheet (the side windows stay clear).
+    // Trim lying on the outer surface of those panes (seen first from `view`: bake leftovers such as the sensor
+    // housing and the header band) turns to the same glass; trim inside the cabin stays.
+    tintGlass: [
+      { x: [-0.72, 0.72], y: [1.02, 2.0], z: [-2.2, 1.38], view: 'top' },
+      { x: [-0.64, 0.64], y: [1.18, 1.6], z: [-2.7, -2.15], view: 'rear' },
+    ],
+    // Lamp zones (the bake marks no lamps). Colours are linear (glTF vertex colours); maxLum is linear too
+    // (0.2 ≈ sRGB 0.48: every dark-to-mid trim piece in the band). `gradient`: brighter toward the zone's bottom
+    // edge (LED strip).
+    lamps: [
+      // Headlamps: the lower lens band is the daytime-running strip; the dark upper part (an open housing in the
+      // bake) becomes the lit silver reflector interior.
+      { end: 'front', depth: 0.5, minHeight: 0.6, maxHeight: 0.79, minAbsX: 0.46, glass: { color: [200, 225, 255] },
+        trim: { maxLum: 0.2, color: [120, 135, 158], gradient: 0.35 } },
+      { end: 'front', depth: 0.5, minHeight: 0.79, maxHeight: 1.0, minAbsX: 0.46, glass: { color: [150, 170, 205], gradient: 0.55 },
+        trim: { maxLum: 0.2, color: [120, 135, 158], gradient: 0.35 } },
+      // Tail lamps: the dark band across tailgate and quarters is the lamp (≈ sRGB 205,24,32, brighter along its
+      // lower edge). The glass band under it is not a lamp: it is closed with the body colour.
+      { end: 'rear', depth: 0.5, minHeight: 0.94, maxHeight: 1.09, minAbsX: 0.3, trim: { maxLum: 0.2, color: [150, 3, 6], gradient: 0.3 },
+        glass: { color: [150, 3, 6] } },
+      { end: 'rear', depth: 0.45, minHeight: 0.74, maxHeight: 0.98, minAbsX: 0.28, glass: { role: 'paint' } },
+    ],
   },
 ];
 
@@ -330,45 +356,68 @@ function quantFrame(parts) {
 // windscreen runs from the cowl to the roof header and a roof pane from rail to rail. Cells that were not holes but lie
 // below the membrane (a dashboard seen through the missing windscreen) are covered too.
 const FILL_CELL = 0.03; // [m]
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit3 = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+// A view is an orthonormal frame: U, V span the raster, T points from the car toward the viewer (depth = p·T, the
+// first surface seen is the one with the largest depth).
 const FILL_VIEWS = {
-  top: { u: 0, v: 2, d: 1, sign: 1 }, // looking down: depth = +y
-  front: { u: 0, v: 1, d: 2, sign: 1 }, // looking back from the front: depth = +z
-  rear: { u: 0, v: 1, d: 2, sign: -1 }, // looking forward from the rear: depth = −z
+  top: { U: [1, 0, 0], V: [0, 0, 1], T: [0, 1, 0] }, // looking down
+  front: { U: [1, 0, 0], V: [0, 1, 0], T: [0, 0, 1] }, // looking back from the front
+  rear: { U: [1, 0, 0], V: [0, 1, 0], T: [0, 0, -1] }, // looking forward from the rear
+  left: { U: [0, 0, 1], V: [0, 1, 0], T: [1, 0, 0] }, // looking at the left side (+X)
+  right: { U: [0, 0, 1], V: [0, 1, 0], T: [-1, 0, 0] }, // looking at the right side
 };
+/** Oblique view from direction `toward` (car → viewer), e.g. straight at a lamp that faces forward and outward. */
+function viewFrom(toward) {
+  const T = unit3(toward);
+  const U = unit3(cross3(Math.abs(T[1]) > 0.95 ? [0, 0, 1] : [0, 1, 0], T));
+  return { U, V: cross3(T, U), T };
+}
 
-function fillRaster(g, view, box) {
-  const V = FILL_VIEWS[view], C = FILL_CELL;
-  const u0 = box.lo[V.u], v0 = box.lo[V.v];
-  const nu = Math.ceil((box.hi[V.u] - u0) / C) + 1, nv = Math.ceil((box.hi[V.v] - v0) / C) + 1;
+function fillRaster(g, V) {
+  const C = FILL_CELL;
+  const pu = new Float64Array(g.n), pv = new Float64Array(g.n), pd = new Float64Array(g.n);
+  let u0 = Infinity, v0 = Infinity, u1 = -Infinity, v1 = -Infinity;
+  for (let i = 0; i < g.n; i++) {
+    const p = [g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]];
+    pu[i] = dot3(p, V.U); pv[i] = dot3(p, V.V); pd[i] = dot3(p, V.T);
+    u0 = Math.min(u0, pu[i]); u1 = Math.max(u1, pu[i]); v0 = Math.min(v0, pv[i]); v1 = Math.max(v1, pv[i]);
+  }
+  const nu = Math.ceil((u1 - u0) / C) + 1, nv = Math.ceil((v1 - v0) / C) + 1;
   const depth = new Float64Array(nu * nv).fill(-Infinity);
-  const P = (i, a) => g.pos[i * 3 + a];
   for (let t = 0; t < g.idx.length; t += 3) {
     const a = g.idx[t], b = g.idx[t + 1], c = g.idx[t + 2];
-    const edge = Math.max(
-      Math.hypot(P(a, V.u) - P(b, V.u), P(a, V.v) - P(b, V.v)),
-      Math.hypot(P(b, V.u) - P(c, V.u), P(b, V.v) - P(c, V.v)),
-      Math.hypot(P(c, V.u) - P(a, V.u), P(c, V.v) - P(a, V.v)));
+    const edge = Math.max(Math.hypot(pu[a] - pu[b], pv[a] - pv[b]), Math.hypot(pu[b] - pu[c], pv[b] - pv[c]), Math.hypot(pu[c] - pu[a], pv[c] - pv[a]));
     const n = Math.min(64, Math.max(2, Math.ceil(edge / (C * 0.5))));
     for (let i = 0; i <= n; i++) {
       for (let j = 0; j <= n - i; j++) {
         const wa = i / n, wb = j / n, wc = 1 - wa - wb;
-        const pu = wa * P(a, V.u) + wb * P(b, V.u) + wc * P(c, V.u);
-        const pv = wa * P(a, V.v) + wb * P(b, V.v) + wc * P(c, V.v);
-        const pd = V.sign * (wa * P(a, V.d) + wb * P(b, V.d) + wc * P(c, V.d));
-        const k = Math.floor((pv - v0) / C) * nu + Math.floor((pu - u0) / C);
-        if (pd > depth[k]) depth[k] = pd;
+        const u = wa * pu[a] + wb * pu[b] + wc * pu[c];
+        const v = wa * pv[a] + wb * pv[b] + wc * pv[c];
+        const d = wa * pd[a] + wb * pd[b] + wc * pd[c];
+        const k = Math.floor((v - v0) / C) * nu + Math.floor((u - u0) / C);
+        if (d > depth[k]) depth[k] = d;
       }
     }
   }
-  return { V, nu, nv, u0, v0, depth };
+  return { nu, nv, u0, v0, depth };
 }
 
 function fillHoles(g, fills) {
   const box = bounds(g.pos, g.n);
   const mid = box.lo.map((l, a) => (l + box.hi[a]) / 2);
   const add = { pos: [], nor: [], col: [], mask: [], idx: [] };
+  const jobs = [];
   for (const f of fills) {
-    const { V, nu, nv, u0, v0, depth } = fillRaster(g, f.view, box);
+    if (f.view) jobs.push({ f, V: FILL_VIEWS[f.view], label: f.view });
+    else {
+      jobs.push({ f, V: viewFrom(f.dir), label: `dir ${f.dir}` });
+      if (f.mirror) jobs.push({ f, V: viewFrom([-f.dir[0], f.dir[1], f.dir[2]]), label: `dir ${f.dir} mirrored` });
+    }
+  }
+  for (const { f, V, label } of jobs) {
+    const { nu, nv, u0, v0, depth } = fillRaster(g, V);
     const C = FILL_CELL, N = nu * nv, R = Math.round(0.16 / C);
     // Envelope: the nearest surface within ±16 cm.
     const env = new Float64Array(N).fill(-Infinity);
@@ -387,7 +436,30 @@ function fillHoles(g, fills) {
       }
     }
     const hole = new Uint8Array(N);
-    for (let k = 0; k < N; k++) hole[k] = depth[k] === -Infinity || env[k] - depth[k] > f.threshold ? 1 : 0;
+    if (f.detect === 'valley') {
+      // A valley: across the opening (either raster axis), surface stands above this cell by `threshold` on both
+      // sides within `reach`, and along it the opening is closed on both sides within `span` — a lamp opening in the
+      // skin, however elongated. A sloped surface (higher on one side only) or the silhouette (nothing on one side)
+      // is not a valley, whatever the view angle.
+      const reach = Math.round((f.reach ?? 0.3) / C), span = Math.round((f.span ?? 1.2) / C);
+      const rim = (u, v, du, dv, n) => {
+        let m = -Infinity;
+        for (let r = 1; r <= n; r++) {
+          const uu = u + du * r, vv = v + dv * r;
+          if (uu < 0 || vv < 0 || uu >= nu || vv >= nv) break;
+          m = Math.max(m, depth[vv * nu + uu]);
+        }
+        return m;
+      };
+      const valley = (u, v, d, du, dv, n) => Math.min(rim(u, v, du, dv, n), rim(u, v, -du, -dv, n)) - d > f.threshold;
+      for (let k = 0; k < N; k++) {
+        const u = k % nu, v = (k / nu) | 0, d = depth[k] === -Infinity ? -1e9 : depth[k];
+        hole[k] = (valley(u, v, d, 1, 0, reach) && valley(u, v, d, 0, 1, span)) ||
+          (valley(u, v, d, 0, 1, reach) && valley(u, v, d, 1, 0, span)) ? 1 : 0;
+      }
+    } else {
+      for (let k = 0; k < N; k++) hole[k] = depth[k] === -Infinity || env[k] - depth[k] > f.threshold ? 1 : 0;
+    }
     // Exterior holes: reachable from the raster border through holes.
     const outside = new Uint8Array(N);
     const stack = [];
@@ -406,18 +478,45 @@ function fillHoles(g, fills) {
     while (stack.length) {
       for (const q of nbr(stack.pop())) if (hole[q] && !outside[q]) { outside[q] = 1; stack.push(q); }
     }
-    // The box (relative: u/v across the body's centre in x and z, above its bottom in y).
-    const rel = [(x) => x - mid[0], (y) => y - box.lo[1], (z) => z - mid[2]];
+    // The box, relative to the body: x (or |x|: `ax`, both sides) and z about its centre, y above its bottom. A
+    // cell is tested at the surface around it (the envelope depth); a box key the view does not constrain is free.
+    const cellPoint = (k, d) => {
+      const u = u0 + (k % nu + 0.5) * C, v = v0 + (((k / nu) | 0) + 0.5) * C;
+      return [0, 1, 2].map((a) => u * V.U[a] + v * V.V[a] + d * V.T[a]);
+    };
     const inBox = (k) => {
-      const pu = rel[V.u](u0 + (k % nu + 0.5) * C), pv = rel[V.v](v0 + (((k / nu) | 0) + 0.5) * C);
-      const bv = f.box['xyz'[V.v]];
-      if (pv < bv[0] || pv > bv[1]) return false;
-      if (f.box.ax) return Math.abs(pu) >= f.box.ax[0] && Math.abs(pu) <= f.box.ax[1]; // both sides (|x|)
-      const bu = f.box['xyz'[V.u]];
-      return pu >= bu[0] && pu <= bu[1];
+      if (env[k] === -Infinity) return false;
+      const p = cellPoint(k, env[k]);
+      const r = [p[0] - mid[0], p[1] - box.lo[1], p[2] - mid[2]];
+      const B = f.box;
+      if (B.ax && (Math.abs(r[0]) < B.ax[0] || Math.abs(r[0]) > B.ax[1])) return false;
+      if (B.x && (r[0] < B.x[0] || r[0] > B.x[1])) return false;
+      if (B.y && (r[1] < B.y[0] || r[1] > B.y[1])) return false;
+      if (B.z && (r[2] < B.z[0] || r[2] > B.z[1])) return false;
+      return true;
     };
     // `enclosed: false` (a frame with a gap in it): every hole in the box is filled; holes outside it are free edges.
-    if (f.enclosed === false) for (let k = 0; k < N; k++) outside[k] = hole[k] && !inBox(k) ? 1 : 0;
+    // `enclosed: 'local'`: a hole in the box is filled only when real surface bounds it within `reach` [m] in all
+    // four directions (a lamp opening in the skin), so the silhouette, where the body curves away from this view
+    // and every cell looks deep, is left alone.
+    if (f.enclosed === false || f.enclosed === 'local') {
+      const reach = Math.round((f.reach ?? 0.36) / C);
+      const bounded = (k) => {
+        const u = k % nu, v = (k / nu) | 0;
+        for (const [du, dv] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          let hit = false;
+          for (let r = 1; r <= reach && !hit; r++) {
+            const uu = u + du * r, vv = v + dv * r;
+            if (uu < 0 || vv < 0 || uu >= nu || vv >= nv) break;
+            const q = vv * nu + uu;
+            if (!hole[q]) hit = true;
+          }
+          if (!hit) return false;
+        }
+        return true;
+      };
+      for (let k = 0; k < N; k++) outside[k] = hole[k] && !(inBox(k) && (f.enclosed === false || bounded(k))) ? 1 : 0;
+    }
     const unknown = new Uint8Array(N);
     for (let k = 0; k < N; k++) unknown[k] = hole[k] && !outside[k] ? 1 : 0;
     // Membrane: SOR on the unknown cells; exterior holes are free edges (not averaged in).
@@ -477,14 +576,14 @@ function fillHoles(g, fills) {
       }
     }
     const emit = (k) => (unknown[k] || edge[k]) && inBox(k);
-    if (process.env.APEX_FILL_DEBUG === f.view) {
+    if (process.env.APEX_FILL_DEBUG && label.startsWith(process.env.APEX_FILL_DEBUG)) {
       for (let v = nv - 1; v >= 0; v--) {
         let row = '';
         for (let u = 0; u < nu; u++) {
           const k = v * nu + u;
           row += emit(k) ? '@' : unknown[k] ? 'u' : outside[k] ? (depth[k] === -Infinity ? ' ' : 'o') : inBox(k) ? ':' : '.';
         }
-        console.log(rel[V.v](v0 + (v + 0.5) * C).toFixed(2).padStart(6), row);
+        console.log((v0 + (v + 0.5) * C).toFixed(2).padStart(6), row);
       }
     }
     const corner = new Map();
@@ -510,10 +609,8 @@ function fillHoles(g, fills) {
           if (!outside[k] && depth[k] !== -Infinity) { sum += depth[k]; n++; }
         }
       }
-      const p = [0, 0, 0];
-      p[V.u] = u0 + cu * C;
-      p[V.v] = v0 + cv * C;
-      p[V.d] = V.sign * (sum / n - inset);
+      const u = u0 + cu * C, v = v0 + cv * C, d = sum / n - inset;
+      const p = [0, 1, 2].map((a) => u * V.U[a] + v * V.V[a] + d * V.T[a]);
       const id = g.n + add.pos.length / 3;
       add.pos.push(...p);
       add.nor.push(0, 0, 0);
@@ -540,7 +637,7 @@ function fillHoles(g, fills) {
       const e1 = [0, 1, 2].map((q) => at(b, q) - at(a, q)), e2 = [0, 1, 2].map((q) => at(c, q) - at(a, q));
       const nrm = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
       const l = Math.hypot(...nrm) || 1;
-      if (nrm[V.d] * V.sign < 0) {
+      if (dot3(nrm, V.T) < 0) {
         [b, c] = [c, b];
         add.idx[t + 1] = b;
         add.idx[t + 2] = c;
@@ -552,7 +649,7 @@ function fillHoles(g, fills) {
       }
     }
     for (let t = add.idx.length - cells * 6; t < add.idx.length; t++) if (add.mask[add.idx[t] - base] === MASK[f.flatRole]) tinted++;
-    console.log(`  fill ${f.view}: ${cells} cells (${(cells * C * C).toFixed(2)} m²)${f.flatRole ? `, ${Math.round(tinted / 3)} tris ${f.flatRole}` : ''}`);
+    console.log(`  fill ${label}: ${cells} cells (${(cells * C * C).toFixed(2)} m²)${f.flatRole ? `, ${Math.round(tinted / 3)} tris ${f.flatRole}` : ''}`);
   }
   // A shared corner can end up with both roles; the split classifies a triangle by OR-ing its vertex masks, so resolve
   // each fill triangle to the role of its first vertex by giving vertices one role only (already the case per corner).
@@ -801,52 +898,101 @@ for (const car of CARS) {
       const v = body.idx[tri + k];
       cx += body.pos[v * 3] / 3; cy += body.pos[v * 3 + 1] / 3; cz += body.pos[v * 3 + 2] / 3;
     }
-    return bakeWheels.some((p, k) => Math.abs(cx) < skins[k] - 0.04 && Math.sign(cx) === Math.sign(p[0]) &&
-      (cy - (p[1] - lowered)) ** 2 + (cz - p[2]) ** 2 < cb.radius ** 2);
+    const near = (p) => Math.sign(cx) === Math.sign(p[0]) && (cy - (p[1] - lowered)) ** 2 + (cz - p[2]) ** 2 < cb.radius ** 2;
+    if (cb.role) {
+      // Tyre fragments: dark triangles of the given role, outboard of the wheel well.
+      let m = 0, lum = 0;
+      for (let k = 0; k < 3; k++) {
+        const v = body.idx[tri + k];
+        m |= body.mask ? body.mask[v] : 0;
+        lum += (body.col[v * 3] + body.col[v * 3 + 1] + body.col[v * 3 + 2]) / (9 * 255);
+      }
+      return MASK_ROLE(m) === cb.role && lum < cb.maxLum && Math.abs(cx) > cb.minAbsX && bakeWheels.some(near);
+    }
+    return bakeWheels.some((p, k) => Math.abs(cx) < skins[k] - 0.04 && near(p));
   };
   let removed = 0;
   const lampBox = bounds(body.pos, body.n);
-  // Lamp zones: near an end, within a height band and outboard of the grille / number plate. Glass there is the lens;
-  // with `trim` set, dark trim there (the upper, smoked half of the tail lamps) belongs to the lamp as well.
-  const lampEnd = (tri, role) => {
-    const L = car.lamps;
-    if (!L) return null;
+  // Lamp zones (car.lamps): near an end, within a height band and outboard of the grille / number plate. Glass there
+  // is the lens; dark trim (below `trim.maxLum`) is the housing or smoked lens. Each spec relights it as a lamp
+  // (or recolours it with another role).
+  const centroid = (tri) => {
     let cx = 0, cy = 0, cz = 0, lum = 0;
     for (let k = 0; k < 3; k++) {
       const v = body.idx[tri + k];
       cx += body.pos[v * 3] / 3; cy += body.pos[v * 3 + 1] / 3; cz += body.pos[v * 3 + 2] / 3;
       lum += (body.col[v * 3] + body.col[v * 3 + 1] + body.col[v * 3 + 2]) / (9 * 255);
     }
-    const h = cy - lampBox.lo[1], ax = Math.abs(cx - (lampBox.lo[0] + lampBox.hi[0]) / 2);
-    for (const end of ['front', 'rear']) {
-      const Z = L[end];
-      const near = end === 'front' ? cz > lampBox.hi[2] - Z.depth : cz < lampBox.lo[2] + Z.depth;
+    return { cx, cy, cz, lum };
+  };
+  const boxMidX = (lampBox.lo[0] + lampBox.hi[0]) / 2, boxMidZ = (lampBox.lo[2] + lampBox.hi[2]) / 2;
+  const lampSpec = (tri, role) => {
+    if (!car.lamps || (role !== 'glass' && role !== 'trim')) return null;
+    const { cx, cy, cz, lum } = centroid(tri);
+    const h = cy - lampBox.lo[1], ax = Math.abs(cx - boxMidX);
+    for (let i = 0; i < car.lamps.length; i++) {
+      const Z = car.lamps[i];
+      const near = Z.end === 'front' ? cz > lampBox.hi[2] - Z.depth : cz < lampBox.lo[2] + Z.depth;
       if (!near || h > Z.maxHeight || h < (Z.minHeight ?? 0) || ax < (Z.minAbsX ?? 0)) continue;
-      if (role === 'glass') return `lamp_${end}`;
-      if (role === 'trim' && Z.trim && lum < Z.trim.maxLum) return Z.trim.role ?? `lamp_${end}_trim`;
+      if (role === 'glass' && Z.glass) return `lamp_${i}_glass`;
+      if (role === 'trim' && Z.trim && lum < Z.trim.maxLum) return `lamp_${i}_trim`;
     }
     return null;
   };
-  let relit = 0;
+  const tintRasters = (car.tintGlass ?? []).map((b) => (b.view ? { V: FILL_VIEWS[b.view], ...fillRaster(body, FILL_VIEWS[b.view]) } : null));
+  const inTintBox = (tri, role) => {
+    if (!car.tintGlass) return false;
+    const { cx, cy, cz } = centroid(tri);
+    const r = [cx - boxMidX, cy - lampBox.lo[1], cz - boxMidZ];
+    return car.tintGlass.some((b, i) => {
+      if (r[0] < b.x[0] || r[0] > b.x[1] || r[1] < b.y[0] || r[1] > b.y[1] || r[2] < b.z[0] || r[2] > b.z[1]) return false;
+      if (role === 'glass') return true;
+      const R = tintRasters[i];
+      if (!R) return false;
+      const p = [cx, cy, cz];
+      const u = Math.floor((dot3(p, R.V.U) - R.u0) / FILL_CELL), v = Math.floor((dot3(p, R.V.V) - R.v0) / FILL_CELL);
+      if (u < 0 || v < 0 || u >= R.nu || v >= R.nv) return false;
+      return dot3(p, R.V.T) > R.depth[v * R.nu + u] - 0.03; // on the outer surface
+    });
+  };
+  // The body colour, for glass closed with paint: the median paint vertex colour.
+  const paintColour = (() => {
+    if (!body.mask) return [200, 200, 200];
+    const ch = [[], [], []];
+    for (let v = 0; v < body.n; v++) if (body.mask[v] & MASK.paint) for (let a = 0; a < 3; a++) ch[a].push(body.col[v * 3 + a]);
+    return ch.map((c) => (c.sort((x, y) => x - y), c[c.length >> 1] ?? 200));
+  })();
+  let relit = 0, tinted = 0;
   const parts = split(body, (tri) => {
     if (cut(tri)) { removed++; return null; }
     const role = body.mask ? MASK_ROLE(body.mask[body.idx[tri]] | body.mask[body.idx[tri + 1]] | body.mask[body.idx[tri + 2]]) : 'trim';
-    const lamp = role === 'glass' || role === 'trim' ? lampEnd(tri, role) : null;
+    const lamp = lampSpec(tri, role);
     if (lamp) { relit++; return lamp; }
+    if ((role === 'glass' || role === 'trim') && inTintBox(tri, role)) { tinted++; return 'tint'; }
     return role;
   });
-  // Relit lenses: lamp colour, shaded by the lens's own brightness (smoked trim darker); merged into the lamp
-  // primitive. Colours are linear (glTF vertex colours).
+  // Relit zones: the spec's colour, shaded by the lens's own brightness (glass) or graded toward the zone's lower
+  // edge (trim); `role` other than lamp recolours instead (paint: the body colour). Colours are linear.
   for (const p of parts) {
     if (!p.key.startsWith('lamp_')) continue;
-    const [, end, trim] = p.key.split('_');
-    const Z = car.lamps[end];
+    const [, zi, kind] = p.key.split('_');
+    const Z = car.lamps[Number(zi)], spec = Z[kind];
+    const colour = spec.role === 'paint' ? paintColour : spec.color;
+    const lo = lampBox.lo[1] + (Z.minHeight ?? 0), span = Math.max(1e-3, (Z.maxHeight ?? 1) - (Z.minHeight ?? 0));
     for (let i = 0; i < p.n; i++) {
-      const lum = (p.col[i * 3] + p.col[i * 3 + 1] + p.col[i * 3 + 2]) / (3 * 255);
-      const f = trim ? Z.trim.factor : 0.72 + 0.28 * Math.min(1, lum * 2.5);
-      for (let a = 0; a < 3; a++) p.col[i * 3 + a] = Math.round(Z.color[a] * f);
+      let f = 1;
+      if (spec.role !== 'paint') {
+        if (kind === 'glass' && !spec.gradient) {
+          const lum = (p.col[i * 3] + p.col[i * 3 + 1] + p.col[i * 3 + 2]) / (3 * 255);
+          f = 0.72 + 0.28 * Math.min(1, lum * 2.5);
+        } else if (spec.gradient) {
+          const t = Math.min(1, Math.max(0, (p.pos[i * 3 + 1] - lo) / span)); // 0 bottom … 1 top
+          f = 1 - spec.gradient * t;
+        }
+      }
+      for (let a = 0; a < 3; a++) p.col[i * 3 + a] = Math.round(colour[a] * f);
     }
-    p.key = 'lamp';
+    p.key = spec.role ?? 'lamp';
   }
   for (let i = parts.length - 1; i >= 0; i--) {
     const first = parts.findIndex((q) => q.key === parts[i].key);
@@ -854,7 +1000,7 @@ for (const car of CARS) {
     parts[first] = mergeParts(parts[first], parts[i]);
     parts.splice(i, 1);
   }
-  if (relit) console.log(`${car.id}: ${relit} lamp triangles relit`);
+  if (relit || tinted) console.log(`${car.id}: ${relit} lamp-zone triangles relit, ${tinted} pane triangles tinted`);
   if (removed) console.log(`${car.id}: removed ${removed} body triangles inside the wheels`);
   const bodyFrame = quantFrame(parts);
   glb.mesh('body', parts.map((p) => glb.primitive(p, bodyFrame.center, bodyFrame.half, p.key, MATERIALS[p.key])), bodyFrame.center, bodyFrame.half);

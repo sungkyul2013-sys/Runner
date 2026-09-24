@@ -51,17 +51,19 @@ function materialFor(role: string | undefined): THREE.Material {
     case 'paint':
       return new THREE.MeshPhysicalNodeMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.06, side });
     case 'glass':
-      return new THREE.MeshPhysicalNodeMaterial({ color: 0x151b22, metalness: 0, roughness: 0.06, envMapIntensity: 0.6, transparent: true, opacity: 0.66, side });
+      return new THREE.MeshPhysicalNodeMaterial({ color: 0x151b22, metalness: 0, roughness: 0.06, specularIntensity: 0.6, transparent: true, opacity: 0.66, side });
     case 'tint':
       // Privacy/panoramic-roof glass: nearly opaque; a softer reflection than clear glass (a flat roof pane mirrors the
       // whole sky and would read as white).
-      return new THREE.MeshPhysicalNodeMaterial({ color: 0x07090c, metalness: 0, roughness: 0.14, envMapIntensity: 0.35, transparent: true, opacity: 0.93, side });
+      // (envMapIntensity does not scale scene.environment for node materials: the reflection is cut through the
+      // specular level instead.)
+      return new THREE.MeshPhysicalNodeMaterial({ color: 0x05070a, metalness: 0, roughness: 0.22, specularIntensity: 0.2, transparent: true, opacity: 0.97, side });
     case 'lamp':
       // Self-lit lens (unlit vertex colour, slightly translucent), not a clear window into an empty housing.
       return new THREE.MeshBasicNodeMaterial({ vertexColors: true, transparent: true, opacity: 0.92, side, toneMapped: false });
     case 'chrome':
       // Dark chrome lamp housing (the user's Crash Lab MAT_CHROME_DARK: 0x2d3238, low reflection, sharp highlight).
-      return new THREE.MeshStandardNodeMaterial({ color: 0x2d3238, metalness: 0.7, roughness: 0.2, envMapIntensity: 0.5, side });
+      return new THREE.MeshStandardNodeMaterial({ color: 0x2d3238, metalness: 0.7, roughness: 0.2, side });
     case 'tire':
       return new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, side });
     case 'rim':
