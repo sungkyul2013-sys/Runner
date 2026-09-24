@@ -6,7 +6,7 @@ import { FAULT, type VehicleState } from '../physics/telemetry';
 import type { Viewer } from '../render/Viewer';
 import type { VehiclePreset } from '../app/presets';
 import { t } from '../ui/i18n';
-import { VehicleView } from '../drive/VehicleView';
+import { VehicleView, type WheelRings } from '../drive/VehicleView';
 import { Airbags, type AirbagDef } from './Airbags';
 import { decodeDamage, type DamageGroupDef } from './Damage';
 import type { Debris } from './Debris';
@@ -66,7 +66,7 @@ export class VehicleActor {
       try {
         const [model, doc] = await Promise.all([modelPromise, docPromise]);
         this.view = new VehicleView(model, doc?.cage ?? null, this.spawned.body,
-          doc ? { defs: doc.damageGroups, nodeRest: doc.nodeRest, parts: doc.parts } : null);
+          doc ? { defs: doc.damageGroups, nodeRest: doc.nodeRest, parts: doc.parts } : null, doc?.wheelRings ?? []);
         this.viewer.scene.add(this.view.group, this.loose.group);
         if (doc) {
           this.leaks = new Leaks(doc.damageGroups);
@@ -86,7 +86,7 @@ export class VehicleActor {
         this.onError(`${t('vehicleFailed')}: ${(err as Error).message}`);
       }
     } else {
-      this.view?.flexbody?.rebind(this.spawned.body); // respawned into a fresh world (same vehicle, same node order)
+      this.view?.rebind(this.spawned.body); // respawned into a fresh world (same vehicle, same node order)
       this.view?.flexbody?.setDamage([]);             // a new car: every pane and lamp intact
     }
     this.setXray(this.xray);
@@ -150,6 +150,7 @@ export async function loadVehicleDoc(url: string): Promise<{
   damageGroups: DamageGroupDef[];
   airbags: AirbagDef[];
   internals: InternalPartDef[];
+  wheelRings: Array<WheelRings | undefined>;
   nodeRest: (i: number) => [number, number, number];
   nodeIndex: (id: string) => number;
 } | null> {
@@ -159,12 +160,30 @@ export async function loadVehicleDoc(url: string): Promise<{
     nodes?: VehicleJsonNode[];
     damageGroups?: DamageGroupDef[];
     visual?: { airbags?: AirbagDef[]; parts?: VehiclePartDef[]; internals?: InternalPartDef[] };
+    pressureWheels?: Array<{ id: string; segments?: number; tyreRadius: number; rimRadius: number; treadWidth?: number;
+      rimWidth?: number; treadNodeRadius?: number }>;
+    vehicle?: { wheels?: Array<{ pressureWheel?: string }> };
   };
   if (!doc.nodes) return null;
   const nodes = doc.nodes;
   const parts = doc.visual?.parts ?? [];
   const index = new Map(nodes.map((row, i) => [row[0], i]));
+  // Pressure wheels expand after the explicit nodes, in order, 4 nodes per segment (core addPressureWheel; the
+  // defaults are the core's PressureWheelParams).
+  const ringsById = new Map<string, WheelRings>();
+  let base = nodes.length;
+  for (const pw of doc.pressureWheels ?? []) {
+    const segments = pw.segments ?? 24;
+    ringsById.set(pw.id, {
+      base,
+      rest: { segments, tyreRadius: pw.tyreRadius, rimRadius: pw.rimRadius, treadWidth: pw.treadWidth ?? 0.22,
+        rimWidth: pw.rimWidth ?? 0.2, treadNodeRadius: pw.treadNodeRadius ?? 0.04 },
+    });
+    base += 4 * segments;
+  }
+  const wheelRings = (doc.vehicle?.wheels ?? []).map((w) => ringsById.get(w.pressureWheel ?? ''));
   return {
+    wheelRings,
     cage: vehicleCage(nodes, parts),
     parts,
     damageGroups: doc.damageGroups ?? [],

@@ -9,6 +9,14 @@ import { TYRE, type VehicleState, type V3 } from '../physics/telemetry';
 import type { DamageGroupDef } from '../vehicles/Damage';
 import { Flexbody, type CageNode, type NodeLocator, type VehiclePartDef } from '../vehicles/Flexbody';
 import type { VehicleModel } from '../vehicles/VehicleModel';
+import { sampleRing, type RingSample, type WheelRest } from '../vehicles/WheelDeform';
+
+/** A physics wheel's ring nodes: body node index of its first node (segment j: base + 4j + tread A, tread B, rim A,
+ *  rim B — core addPressureWheel) and its rest geometry. Indexed like the telemetry's wheels. */
+export interface WheelRings {
+  base: number;
+  rest: WheelRest;
+}
 
 /** Rotation whose columns are the given orthonormal axes (x, y, z). */
 function basis(x: THREE.Vector3, y: THREE.Vector3, z: THREE.Vector3): THREE.Quaternion {
@@ -39,8 +47,9 @@ export class VehicleView {
 
   /** `cage`: the chassis lattice of physics body `body` (null: the body mesh stays rigid on the chassis frame);
    *  `damage`: the vehicle's damage groups and node rest positions (glass and lamps). */
-  constructor(readonly model: VehicleModel, cage: CageNode[] | null = null, body = -1,
-              damage: { defs: DamageGroupDef[]; nodeRest: (node: number) => [number, number, number]; parts?: VehiclePartDef[] } | null = null) {
+  constructor(readonly model: VehicleModel, cage: CageNode[] | null = null, private body = -1,
+              damage: { defs: DamageGroupDef[]; nodeRest: (node: number) => [number, number, number]; parts?: VehiclePartDef[] } | null = null,
+              private readonly rings: Array<WheelRings | undefined> = []) {
     this.group.add(model.root);
     model.root.matrixAutoUpdate = false;
     if (cage && cage.length > 0 && body >= 0) {
@@ -56,6 +65,13 @@ export class VehicleView {
       this.group.add(mount);
       this.mounts.push(mount);
     }
+  }
+
+  /** Respawned into a fresh world as body `body` (same vehicle, same node order). */
+  rebind(body: number): void {
+    this.body = body;
+    this.flexbody?.rebind(body);
+    for (const d of this.model.deforms) d.reset();
   }
 
   set visible(on: boolean) {
@@ -104,6 +120,14 @@ export class VehicleView {
       mount.matrix.compose(new THREE.Vector3(...w.center), basis(axis, up, fwd), this.mountScale[j]);
       mount.matrixWorldNeedsUpdate = true;
       this.model.wheels[j].rotation.x = w.angle; // positive about the left-pointing axis = rolling forward
+      // §6: rim and tyre bent the way the physics rings are.
+      const deform = this.model.deforms[j];
+      const ring = this.rings[i];
+      if (deform && ring && frame && locate) {
+        deform.spin.value = w.angle;
+        deform.mirror.value = Math.sign(this.mountScale[j].x) || 1;
+        deform.setRings(this.ringSamples(ring, frame, locate, w.center, axis, up, fwd), ring.rest);
+      }
       // §6: the tyre flattens where it meets the road by the physics deflection; a shredded one is gone (rim only).
       const tyre = this.model.tyres[j];
       if (tyre) {
@@ -112,6 +136,30 @@ export class VehicleView {
         tyre.floor.value = deflection > 0.002 ? -(tyre.radius - deflection) : -2 * tyre.radius;
       }
     });
+  }
+
+  /** The four rings of a physics wheel seen from its hub (nodes no longer with the rim — a shredded tyre — skipped). */
+  private ringSamples(ring: WheelRings, frame: RenderFrame, locate: NodeLocator, c: V3, axis: THREE.Vector3, up: THREE.Vector3,
+                      fwd: THREE.Vector3): [RingSample[], RingSample[], RingSample[], RingSample[]] {
+    const n = ring.rest.segments;
+    const [rimBody] = locate(this.body, ring.base + 2);
+    const out: [V3[], V3[], V3[], V3[]] = [[], [], [], []];
+    for (let s = 0; s < n; s++) {
+      for (let k = 0; k < 4; k++) {
+        const [b, node] = locate(this.body, ring.base + 4 * s + k);
+        if (b !== rimBody || b >= frame.bodyCount || node >= frame.nodeCount[b]) continue;
+        const o = (frame.nodeOffset[b] + node) * 3;
+        out[k].push([frame.positions[o], frame.positions[o + 1], frame.positions[o + 2]]);
+      }
+    }
+    const a: V3 = [axis.x, axis.y, axis.z], u: V3 = [up.x, up.y, up.z], f: V3 = [fwd.x, fwd.y, fwd.z];
+    const rings = out.map((pts) => sampleRing(pts, c, a, u, f)) as [RingSample[], RingSample[], RingSample[], RingSample[]];
+    // Axial positions from the wheel's own mid-plane (the mean over its rings), not the hub's axle nodes (which sit
+    // off it: the knuckle's inner and outer bearing).
+    const all = rings.flat();
+    const mid = all.length ? all.reduce((sum, s) => sum + s.axial, 0) / all.length : 0;
+    for (const ring of rings) for (const s of ring) s.axial -= mid;
+    return rings;
   }
 
   dispose(): void {

@@ -27,7 +27,7 @@ import { loadVehicleModel, VEHICLES } from './vehicles/VehicleModel';
 
 declare global {
   interface Window {
-    __apex?: { bench?: unknown; golden?: unknown; garage?: unknown; drive?: DriveSession; crash?: CrashLab; tools?: TetherTool; ready?: boolean; errors: string[] };
+    __apex?: { bench?: unknown; golden?: unknown; garage?: unknown; drive?: DriveSession; crash?: CrashLab; tools?: TetherTool; viewer?: Viewer; ready?: boolean; errors: string[] };
   }
 }
 window.__apex = { errors: [] };
@@ -77,6 +77,7 @@ async function main(): Promise<void> {
   // The Artifact build renders through WebGL2: an embedded frame may not get a WebGPU adapter, and a lost device
   // could not switch backends there (no query string to carry the choice).
   const viewer = new Viewer(canvas, HASH_ROUTES || params.get('backend') === 'webgl2');
+  window.__apex!.viewer = viewer; // scripted checks place the camera
   await viewer.init((message) => {
     // A lost WebGPU device cannot be recovered on the same canvas: reload once on the WebGL2 backend.
     fail(`WebGPU device lost (${message}) — switching to WebGL2`);

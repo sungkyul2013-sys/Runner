@@ -3,6 +3,7 @@
 import * as THREE from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { max, positionLocal, uniform, vec3 } from 'three/tsl';
+import { WheelDeform } from './WheelDeform';
 
 export interface VehicleWheelMeta {
   position: [number, number, number]; // [m] hub centre, vehicle frame (+Z forward, +Y up, +X left)
@@ -42,6 +43,7 @@ export interface VehicleModel {
   body: THREE.Object3D;
   wheels: THREE.Object3D[]; // one pivot per wheel (rotate about local X to spin)
   tyres: WheelTyre[]; // per wheel: its tyre, which does not spin (it is round) and flattens where it meets the road
+  deforms: WheelDeform[]; // per wheel: rim and tyre bent by the physics rings (§6)
   meta: VehicleMeta;
 }
 
@@ -92,7 +94,7 @@ export interface WheelTyre {
   radius: number;
 }
 
-function tyreOf(spin: THREE.Object3D, mount: THREE.Object3D, radius: number): WheelTyre {
+function tyreOf(spin: THREE.Object3D, mount: THREE.Object3D, radius: number, deform: WheelDeform): WheelTyre {
   const group = new THREE.Group();
   mount.add(group);
   const floor = uniform(-radius * 2);
@@ -109,15 +111,42 @@ function tyreOf(spin: THREE.Object3D, mount: THREE.Object3D, radius: number): Wh
     const geometry = m.geometry.clone();
     geometry.applyMatrix4(toMount);
     const material = (m.material as THREE.Material).clone() as THREE.MeshStandardNodeMaterial;
-    // Squashed onto the road line, the rubber bulges out sideways (a flat tyre's sidewalls).
-    const squash = max(floor.sub(positionLocal.y), 0);
-    material.positionNode = vec3(positionLocal.x.mul(squash.mul(1.6 / radius).add(1)), max(positionLocal.y, floor), positionLocal.z);
+    // Bent with the physics rings, then squashed onto the road line, where the rubber bulges out sideways (a flat
+    // tyre's sidewalls).
+    const p = deform.position(positionLocal as unknown as ReturnType<typeof vec3>, false);
+    const squash = max(floor.sub(p.y), 0);
+    material.positionNode = vec3(p.x.mul(squash.mul(1.6 / radius).add(1)), max(p.y, floor), p.z);
     const flat = new THREE.Mesh(geometry, material);
     flat.castShadow = true;
     m.removeFromParent();
     group.add(flat);
   }
   return { group, floor, radius };
+}
+
+/** The spinning meshes of a wheel (rim, spokes, disc) with their geometry in the spin pivot's frame and their own
+ *  material bent by the wheel's deformation (their angle about the axle is their own plus the spin). */
+function bendSpinning(spin: THREE.Object3D, deform: WheelDeform): void {
+  const meshes: THREE.Mesh[] = [];
+  spin.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh) meshes.push(m);
+  });
+  spin.updateMatrixWorld(true);
+  const toSpin = new THREE.Matrix4();
+  const spinInverse = new THREE.Matrix4().copy(spin.matrixWorld).invert();
+  for (const m of meshes) {
+    toSpin.copy(m.matrixWorld).premultiply(spinInverse);
+    const geometry = m.geometry.clone();
+    geometry.applyMatrix4(toSpin);
+    const material = (m.material as THREE.Material).clone() as THREE.MeshStandardNodeMaterial;
+    material.positionNode = deform.position(positionLocal as unknown as ReturnType<typeof vec3>, true);
+    const bent = new THREE.Mesh(geometry, material);
+    bent.castShadow = m.castShadow;
+    bent.userData = m.userData;
+    m.removeFromParent();
+    spin.add(bent);
+  }
 }
 
 /** Torus-like tyre around the X axis (for bakes whose wheel mesh has no tyre). */
@@ -285,6 +314,7 @@ export async function loadVehicleModel(source: string | ArrayBuffer): Promise<Ve
 
   const wheels: THREE.Object3D[] = [];
   const tyres: WheelTyre[] = [];
+  const deforms: WheelDeform[] = [];
   for (const w of meta.wheels) {
     const mount = new THREE.Group(); // steering pivot (M1: rotate about Y)
     mount.position.fromArray(w.position);
@@ -300,12 +330,16 @@ export async function loadVehicleModel(source: string | ArrayBuffer): Promise<Ve
       mount.add(pw.fixed);
     }
     if (caliperTemplate) mount.add(caliperTemplate.clone()); // calipers steer but do not spin
-    tyres.push(tyreOf(spin, mount, w.radius ?? meta.wheel?.radius ?? 0.33));
+    const radius = w.radius ?? meta.wheel?.radius ?? 0.33;
+    const deform = new WheelDeform({ tyreRadius: radius, rimRadius: w.rimRadius ?? meta.wheel?.rimRadius ?? radius * 0.72, treadWidth: w.width ?? meta.wheel?.width ?? 0.22 });
+    deforms.push(deform);
+    tyres.push(tyreOf(spin, mount, radius, deform));
+    bendSpinning(spin, deform);
     if (mirror) mount.scale.x = -1;
     root.add(mount);
     wheels.push(spin);
   }
-  return { root, body: bodyNode, wheels, tyres, meta };
+  return { root, body: bodyNode, wheels, tyres, deforms, meta };
 }
 
 export const VEHICLES = [
