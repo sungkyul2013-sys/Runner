@@ -421,7 +421,9 @@ void Vehicle::step(const World& world, Body& b, bool track) {
       if (eventActive_) {
         eventPeakG_ = std::max(eventPeakG_, g10);
         eventPeakForce_ = std::max(eventPeakForce_, totalMass * g10 * kStandardGravity);
-        eventDeltaV_ = std::max(eventDeltaV_, dv);
+        // Δv of the event: the cabin's change of (horizontal) velocity since it began, not a 50 ms window's.
+        const DVec3 change = vs - eventVelocity_;
+        eventDeltaV_ = std::max(eventDeltaV_, length2d(change.x, change.z));
         eventAbsorbed_ = absorbed - eventAbsorbed0_;
         eventQuiet_ = g10 < 1.0 ? eventQuiet_ + dt : 0.0;
         if (eventQuiet_ >= 0.1) eventActive_ = false;

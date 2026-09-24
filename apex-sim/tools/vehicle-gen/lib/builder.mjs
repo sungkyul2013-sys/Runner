@@ -38,13 +38,14 @@ export class VehicleBuilder {
 
   // Damage groups (§4.3, §4.4): each group watches the beams among `beamGroups` whose midpoint lies within `radius` of
   // one of its sample points (a beam near several groups goes to the nearest) for plastic strain past `strain`, and the
-  // lattice nodes within `nodeRadius` of them for contact forces past `impact` [N].
+  // lattice nodes within `nodeRadius` of them (and the group's own `nodes`) for contact forces past `impact` [N].
   // Beams already watched by an earlier call keep their group (a beam belongs to one group).
   tagDamageGroups(groups, { beamGroups = ['chassis'], radius = 0.2, nodeRadius = 0.15 } = {}) {
     const mid = (beam) => scale(add(this.pos(beam[0]), this.pos(beam[1])), 0.5);
     const near = (p, g) => g.samples.some((s) => dist(p, s) < nodeRadius);
     for (const g of groups) {
-      const nodes = g.impact ? this.lattice.filter((id) => near(this.pos(id), g)) : [];
+      // Watched nodes: the lattice near the samples, plus the group's own (`nodes`: a part's node block).
+      const nodes = g.impact ? [...(g.nodes ?? []), ...this.lattice.filter((id) => near(this.pos(id), g))] : [];
       this.damageGroups.push({ id: g.id, strain: g.strain, ...(g.impact ? { impact: g.impact, nodes } : {}), ...(g.visual ? { visual: g.visual } : {}) });
     }
     for (const beam of this.beams) {
@@ -142,17 +143,44 @@ export class VehicleBuilder {
     return grid;
   }
 
+  // Rigid part as a block of nodes (§4.4 internal parts: engine, gearbox): an n[0] × n[1] × n[2] grid over the box
+  // lo … hi, ids `<id>_<i>_<j>_<k>`, `mass` spread evenly, beams in all 13 lattice directions (`beamGroup`), its
+  // surface a self-collision group of its own. Returns the grid: at(i, j, k) → node id, and the node list.
+  block({ id, lo, hi, n, mass, beamGroup, collisionGroup, radius = 0.04 }) {
+    const grid = new Map();
+    const key = (i, j, k) => `${i},${j},${k}`;
+    const count = n[0] * n[1] * n[2];
+    for (let i = 0; i < n[0]; i++) for (let j = 0; j < n[1]; j++) for (let k = 0; k < n[2]; k++) {
+      const p = [i / (n[0] - 1), j / (n[1] - 1), k / (n[2] - 1)].map((t, a) => lo[a] + (hi[a] - lo[a]) * t);
+      grid.set(key(i, j, k), this.node(`${id}_${i}_${j}_${k}`, p, mass / count, { radius }));
+    }
+    const dirs = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, -1, 0], [1, 0, 1], [1, 0, -1], [0, 1, 1], [0, 1, -1],
+      [1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1]];
+    for (const [k0, a] of grid) {
+      const [i, j, k] = k0.split(',').map(Number);
+      for (const [di, dj, dk] of dirs) {
+        const c = grid.get(key(i + di, j + dj, k + dk));
+        if (c) this.beam(a, c, beamGroup);
+      }
+    }
+    this.latticeSurface(grid, collisionGroup);
+    return { at: (i, j, k) => grid.get(key(i, j, k)), nodes: [...grid.values()] };
+  }
+
   // Collision surface of a lattice (§5.2): every lattice cube is split into the six Kuhn tetrahedra around its main
   // diagonal (all of whose edges are lattice beams); a tetrahedron exists when its four nodes do, so the clipped
   // fringe of the lattice (partial cubes under a sloping bonnet or bumper) is covered too. The surface is the set of
-  // tetrahedron faces not shared by two tetrahedra, wound counter-clockwise seen from outside.
-  latticeSurface(grid, group = 0) {
+  // tetrahedron faces not shared by two tetrahedra, wound counter-clockwise seen from outside. Cells for which
+  // `skipCell(i, j, k)` holds contribute no tetrahedra (a cavity cut into the lattice: its walls are then the faces of
+  // the whole cells around it, not slanted faces of the cells it cut through).
+  latticeSurface(grid, group = 0, { skipCell } = {}) {
     const key = (i, j, k) => `${i},${j},${k}`;
     // Kuhn decomposition of the unit cube: paths 0 → 7 through the corners (bit 0 = +i, 1 = +j, 2 = +k).
     const tets = [[0, 1, 3, 7], [0, 1, 5, 7], [0, 2, 3, 7], [0, 2, 6, 7], [0, 4, 5, 7], [0, 4, 6, 7]];
     const faces = new Map();  // sorted ids → { tri, opposite, count }
     for (const k0 of grid.keys()) {
       const [i, j, k] = k0.split(',').map(Number);
+      if (skipCell?.(i, j, k)) continue;
       const corner = (c) => grid.get(key(i + (c & 1), j + ((c >> 1) & 1), k + ((c >> 2) & 1)));
       for (const tet of tets) {
         const ids = tet.map(corner);
@@ -184,6 +212,12 @@ export class VehicleBuilder {
   // then top the set up to six, and the beam directions must still span all three axes.
   hardpoint(id, p, mass, { reach = 0.6 } = {}) {
     this.node(id, p, mass);
+    for (const lid of this.anchors(id, p, reach)) this.beam(id, lid, 'hardpoint');
+    return id;
+  }
+
+  // Lattice nodes that hold point p in every direction (see hardpoint): the nearest in each octant, topped up to six.
+  anchors(id, p, reach = 0.6) {
     const chosen = new Set();
     for (let o = 0; o < 8; ++o) {
       const sgn = [o & 1 ? 1 : -1, o & 2 ? 1 : -1, o & 4 ? 1 : -1];
@@ -209,8 +243,32 @@ export class VehicleBuilder {
     }
     const det = M[0] * (M[4] * M[8] - M[5] * M[7]) - M[1] * (M[3] * M[8] - M[5] * M[6]) + M[2] * (M[3] * M[7] - M[4] * M[6]);
     if (det < 0.05) throw new Error(`hardpoint ${id} at ${p.map((x) => x.toFixed(3))}: attachment spread too flat (det ${det.toFixed(3)})`);
-    for (const lid of chosen) this.beam(id, lid, 'hardpoint');
-    return id;
+    return [...chosen];
+  }
+
+  // Smallest gap between the nodes of collision group `g` and the triangles of group `h` and back, less the contact
+  // reach (the node's radius + the triangle's half thickness, the mean radius of its nodes; core nodeTriangle) [m]
+  // (negative: a node already in contact at rest).
+  clearance(g, h) {
+    const tris = (group) => this.triangles.filter((t) => t[3] === group).map((t) => {
+      const ids = t.slice(0, 3);
+      const pts = ids.map((id) => this.pos(id));
+      pts.halfThickness = ids.reduce((s, id) => s + this.byId.get(id).radius, 0) / 3;
+      return pts;
+    });
+    const nodes = (group) => [...new Set(this.triangles.filter((t) => t[3] === group).flatMap((t) => t.slice(0, 3)))];
+    let worst = { gap: Infinity };
+    for (const [ng, th] of [[g, h], [h, g]]) {
+      const T = tris(th);
+      for (const id of nodes(ng)) {
+        const p = this.pos(id);
+        for (const t of T) {
+          const gap = pointTriangleDistance(p, t) - this.byId.get(id).radius - t.halfThickness;
+          if (gap < worst.gap) worst = { gap, node: id };
+        }
+      }
+    }
+    return worst;
   }
 
   // Tie rod / toe link inner point with zero bump steer: the knuckle's steering-arm point sweeps a circle as the
@@ -247,6 +305,25 @@ export class VehicleBuilder {
       targets: meta.targets,
     };
   }
+}
+
+function pointTriangleDistance(p, [a, b, c]) {
+  // Ericson, Real-Time Collision Detection 5.1.5: closest point on triangle abc to p.
+  const ab = sub(b, a), ac = sub(c, a), ap = sub(p, a);
+  const d1 = dot(ab, ap), d2 = dot(ac, ap);
+  if (d1 <= 0 && d2 <= 0) return dist(p, a);
+  const bp = sub(p, b), d3 = dot(ab, bp), d4 = dot(ac, bp);
+  if (d3 >= 0 && d4 <= d3) return dist(p, b);
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return dist(p, add(a, scale(ab, d1 / (d1 - d3))));
+  const cp = sub(p, c), d5 = dot(ab, cp), d6 = dot(ac, cp);
+  if (d6 >= 0 && d5 <= d6) return dist(p, c);
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return dist(p, add(a, scale(ac, d2 / (d2 - d6))));
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return dist(p, add(b, scale(sub(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6)))));
+  const denom = 1 / (va + vb + vc);
+  return dist(p, add(a, add(scale(ab, vb * denom), scale(ac, vc * denom))));
 }
 
 // Front-view helpers shared by the suspension builders.

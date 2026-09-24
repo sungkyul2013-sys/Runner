@@ -28,7 +28,7 @@
 | `vehicle` | 객체 | 차량 컨트롤러. 없으면 일반 노드-빔 소품으로 취급한다 |
 | `targets` | 객체(숫자) | 시험 목표값(KICKOFF C7): `mass`, `frontWeightFraction`, `zeroTo100`, `topSpeed`, `braking100`, `skidpadG` … |
 | `sources` | 객체(문자열) | 목표값·추정치의 출처 설명(로더는 읽지 않는다) |
-| `visual` | 객체 | 렌더 메타데이터(코어는 읽지 않는다): `parts`(경첩 패널 GLB 조각 → 패널 노드 접두사), `airbags`(위치·크기) |
+| `visual` | 객체 | 렌더 메타데이터(코어는 읽지 않는다): `parts`(경첩 패널 GLB 조각 → 패널 노드 접두사), `airbags`(위치·크기), `internals`(내부 부품 블록: `kind` 엔진·변속기, `corners` 모서리 노드 id 8개 — 비트 0 +x, 1 +y, 2 +z) |
 
 ## 노드
 

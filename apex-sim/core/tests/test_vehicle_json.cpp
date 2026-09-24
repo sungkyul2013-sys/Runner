@@ -415,8 +415,9 @@ TEST_CASE("Porsche 911 Turbo: 64 km/h rigid-wall crash crumples the nose and clo
     FAIL("no node " << id);
     return -1;
   };
-  // Nose: front-most lattice layer relative to the centre reference; cell: floor nodes 0.9 m ahead of / behind centre.
-  const int centre = car.build.vehicle.refCenter, cellFront = node("c4_1_10"), cellRear = node("c4_1_4");
+  // Nose: front-most lattice layer relative to the centre reference; cell: floor nodes 0.9 m ahead of / behind centre,
+  // beside the tunnel (the gearbox sits on the centreline behind the cell).
+  const int centre = car.build.vehicle.refCenter, cellFront = node("c2_1_10"), cellRear = node("c2_1_4");
   auto noseLength = [&] {
     double zMax = -1e9;
     for (int i = 0; i < b.nodeCount(); ++i)

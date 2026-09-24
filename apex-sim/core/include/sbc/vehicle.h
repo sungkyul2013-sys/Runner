@@ -322,7 +322,7 @@ struct VehicleTelemetry {
   float eventStart = 0.0f;      // [s]
   float eventPeakG = 0.0f;      // peak 10 ms-average deceleration [g]
   float eventPeakForce = 0.0f;  // vehicle mass × peak deceleration [N]: the peak force the car took
-  float eventDeltaV = 0.0f;     // largest 50 ms velocity change [m/s]
+  float eventDeltaV = 0.0f;     // velocity change of the cabin since the event began (horizontal) [m/s]
   float eventAbsorbed = 0.0f;   // work absorbed by the car's structure (plastic + fracture) during it [J]
   float eventSpeed = 0.0f;      // [m/s] cabin speed at its start
   DVec3 eventPosition;          // cabin (reference node) at its start, world frame [m]

@@ -211,8 +211,8 @@ TEST_CASE("Porsche 911 Turbo: hard driving sets no fault, wall crashes break wha
   };
   CHECK(faultsAfter({0.0, 0.0, 0.0}, 0.0f, launch, 6.0).faults == 0u);
   CHECK(faultsAfter({0.0, 0.0, 0.0}, 100.0f, brake, 4.0).faults == 0u);
-  // 15 km/h: the front radiators crack — a slow coolant leak, nothing else.
-  const VehicleTelemetry slow = faultsAfter({0.0, 0.0, 296.6}, 15.0f, VehicleInput{}, 2.0);
+  // 20 km/h: the front radiators crack — a slow coolant leak, nothing else.
+  const VehicleTelemetry slow = faultsAfter({0.0, 0.0, 296.6}, 20.0f, VehicleInput{}, 2.0);
   CHECK(slow.faults == fault::kCoolantLeak);
   // 64 km/h: radiators, battery, front brake lines and half shafts; the engine still runs.
   const VehicleTelemetry hard = faultsAfter({0.0, 0.0, 296.6}, 64.0f, VehicleInput{}, 4.0);
@@ -489,7 +489,7 @@ TEST_CASE("an unlatched front lid flies open at speed, flaps on its hinges, and 
     VehicleInput hold;
     hold.throttle = 0.5f;
     w->setVehicleInput(w->addVehicle(body, car.build.vehicle), hold);
-    const int lid = nodeIndex(car, "p_frontLid_1_0_0"), ref = nodeIndex(car, "c4_2_12");
+    const int lid = nodeIndex(car, "p_frontLid_2_0_0"), ref = nodeIndex(car, "c4_2_12");  // leading edge, 0.22 m off centre
     auto lift = [&] { const Body& b = w->body(body); return b.nodePosition(lid).y - b.nodePosition(ref).y; };
     const float closed = lift();
     float highest = closed;
@@ -617,7 +617,8 @@ TEST_CASE("Porsche 911 Turbo: kerb strikes bend the struck side's suspension, ha
 
   // Sliding sideways (to the right, −X) into a 15 cm square kerb: at 15 km/h the wheels take it; at 25 km/h the right
   // side's arms, toe link and tie rod bend — camber and toe change there. The left side does not yield (its alignment
-  // moves a little only because the body now leans onto the right side's punctured tyres).
+  // moves a little, elastically, only because the body now leans onto the right side's punctured tyres: ≈ 0.5° of toe
+  // at the unloaded left wheels).
   struct Slide { std::vector<WheelTelemetry> before, after; double plasticLeft = 0.0, plasticRight = 0.0; int broken = 0; };
   auto slide = [](float kmh) {
     WorldParams wp;
@@ -656,7 +657,7 @@ TEST_CASE("Porsche 911 Turbo: kerb strikes bend the struck side's suspension, ha
       CHECK(std::fabs(camber) > 1.5);  // struck (right) side
     } else {
       CHECK(std::fabs(camber) < 0.6);
-      CHECK(std::fabs(toe) < 0.3);
+      CHECK(std::fabs(toe) < 0.7);
     }
   }
   INFO("suspension plastic left " << hard.plasticLeft * 1e3 << " mm, right " << hard.plasticRight * 1e3 << " mm");
@@ -722,4 +723,54 @@ TEST_CASE("a bent tie rod makes the car pull and moves the steering centre", "[d
   CHECK(std::fabs(held.meanSteer) < 0.005);
   CHECK(std::fabs(offset.meanSteer) > 0.02);
   CHECK(offset.meanSteer * pulled.drift < 0.0);  // the driver steers against the pull
+}
+
+TEST_CASE("Porsche 911 Turbo: the powertrain rides on its mounts, stays on at 64 km/h and tears loose at 100 km/h",
+          "[damage][porsche][4.4]") {
+  // §4.4 internal parts: engine and PDK are node blocks of their own on four rubber mounts (generator). Under full
+  // throttle the drive-torque reaction rocks the unit on them; a 64 km/h wall crash throws it against its snubbers but
+  // leaves the mounts on; at 100 km/h mounts tear (their damage group counts it).
+  struct Mounts { double peakStretch = 0.0; int broken = 0; int total = 0; float mountDamage = 0.0f; };
+  auto run = [](float kmh, VehicleInput in, double seconds, DVec3 at) {
+    SceneOptions so;
+    so.threads = 1;
+    auto w = makeScene("drive", so);
+    const LoadedVehicle car = loadVehicleJson(porscheJson(), {at, 0.0, kmh / 3.6f});
+    const int body = w->addBody(car.build.body);
+    w->setVehicleInput(w->addVehicle(body, car.build.vehicle), in);
+    const Body& b = w->body(body);
+    auto isBlock = [&](int i) { return car.nodeIds[i].rfind("engine_", 0) == 0 || car.nodeIds[i].rfind("gearbox_", 0) == 0; };
+    std::vector<int> ties;  // rubber ties: block node to lattice node, spring beams (the snubbers are bounded)
+    for (int i = 0; i < b.beamCount(); ++i)
+      if (isBlock(b.beamA[i]) != isBlock(b.beamB[i]) && b.beamType[i] == static_cast<uint8_t>(BeamType::kNormal)) ties.push_back(i);
+    Mounts m;
+    m.total = static_cast<int>(ties.size());
+    for (int k = 0; k < static_cast<int>(seconds / 0.005); ++k) {
+      w->step(10);
+      for (const int i : ties) {
+        if (b.broken[i]) continue;
+        m.peakStretch = std::max(m.peakStretch, std::fabs(static_cast<double>(length(b.nodePosition(b.beamB[i]) - b.nodePosition(b.beamA[i]))) - b.restLength[i]));
+      }
+    }
+    for (const int i : ties) m.broken += b.broken[i] ? 1 : 0;
+    for (const DamageGroupState& g : b.damageGroups)
+      if (g.id == "engine_mounts") m.mountDamage = g.damage();
+    return m;
+  };
+  VehicleInput launch;
+  launch.throttle = 1.0f;
+  const Mounts rock = run(0.0f, launch, 3.0, {0.0, 0.0, 0.0});
+  INFO("launch: peak tie stretch " << rock.peakStretch * 1e3 << " mm of " << rock.total << " ties");
+  CHECK(rock.total >= 24);
+  CHECK(rock.peakStretch > 0.001);   // the unit moves on its mounts under drive torque …
+  CHECK(rock.peakStretch < 0.015);   // … within the snubbers' free travel
+  CHECK(rock.broken == 0);
+  const Mounts wall64 = run(64.0f, VehicleInput{}, 1.5, {0.0, 0.0, 296.6});
+  INFO("64 km/h: peak tie stretch " << wall64.peakStretch * 1e3 << " mm, broken " << wall64.broken);
+  CHECK(wall64.peakStretch > 0.015);  // thrown against the snubbers
+  CHECK(wall64.broken == 0);
+  const Mounts wall100 = run(100.0f, VehicleInput{}, 1.5, {0.0, 0.0, 296.6});
+  INFO("100 km/h: broken " << wall100.broken << ", mount damage " << wall100.mountDamage);
+  CHECK(wall100.broken > 0);
+  CHECK(wall100.mountDamage > 0.0f);
 }

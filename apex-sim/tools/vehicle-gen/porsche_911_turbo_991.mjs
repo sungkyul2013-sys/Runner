@@ -6,7 +6,8 @@
 //   front:      MacPherson strut (strut tube = part of the upright, top mount on a slider, coilover, bump stop)
 //   rear:       five-link (split upper and lower arms + toe link), coilover to the lower ball joint
 //   both:       anti-roll bars, tie rod / toe link at the zero-bump-steer point, pressure wheels 245/35 R20 · 305/30 R20
-//   powertrain: 3.8 L twin-turbo flat six, 7-speed PDK, AWD (fixed 30/70 split), rear clutch LSD
+//   powertrain: 3.8 L twin-turbo flat six, 7-speed PDK, AWD (fixed 30/70 split), rear clutch LSD; engine and PDK are
+//               node blocks of their own on rubber mounts (they rock under drive torque, tear loose in a crash)
 //
 // Data: Porsche AG press kit "911 Turbo / Turbo S" (2013): 1,595 kg (DIN), 383 kW, 660 N·m 1,950–5,000 rpm,
 // 0–100 km/h 3.4 s (3.2 s with Sport Chrono), 315 km/h, wheelbase 2,450 mm; weight split and PDK ratios from
@@ -78,6 +79,24 @@ b.group('toelink', { k: 1.5e6, zeta: 0.1, ...suspensionYield(1.2e4) });
 b.group('bumpstop', { type: 'bounded', k: 1.5e5, zeta: 0.05 });
 b.group('subframe', { k: 1.2e6, zeta: 0.1, plasticForce: 3.0e4, hardening: 0.05 });
 
+// ---- powertrain (§4.4 internal parts) ---------------------------------------------------------------------------
+// The engine behind the rear axle and the PDK (with the rear differential) ahead of it are rigid node blocks bolted
+// together, hung in a cavity of the chassis lattice on four rubber mounts. Their mass (≈ 21 % of the car) moves on
+// the mounts: the unit pitches under the drive-torque reaction (it carries it: vehicle.driveReaction), and in a crash
+// it is thrown against the structure around it, bends its mount brackets and tears them loose. The blocks are
+// collision proxies of the dense parts (crankcase and heads, gearbox case) smaller than the real units, so the lattice
+// around them keeps the rear suspension's pivots. Masses: engineering estimates (9A1 twin-turbo 3.8 L with turbos
+// ≈ 215 kg, 7-speed PDK with the differential and the front-drive take-off ≈ 125 kg).
+const powertrain = {
+  engine: { lo: [-0.33, 0.20, -1.98], hi: [0.33, 0.68, -1.32], n: [3, 3, 3], mass: 215 },
+  gearbox: { lo: [-0.2, 0.2, -1.08], hi: [0.2, 0.55, -0.75], n: [2, 2, 3], mass: 125 },
+};
+// Lattice nodes this close to a block are cut away: contact reach 0.09 m (lattice node radius 0.05 + block node
+// radius 0.04) and ≥ 2 cm of free play around the blocks at rest.
+const cavityClearance = 0.115;
+const inCavity = (p) => Object.values(powertrain).some(({ lo, hi }) =>
+  [0, 1, 2].every((k) => p[k] > lo[k] - cavityClearance && p[k] < hi[k] + cavityClearance));
+
 // ---- chassis lattice -------------------------------------------------------------------------------------------
 const xs = [-0.9, -0.675, -0.45, -0.225, 0, 0.225, 0.45, 0.675, 0.9];
 const ys = [0.14, 0.36, 0.58, 0.80, 1.02];
@@ -88,17 +107,23 @@ const wheelEnvelope = (p) => wheelsModel.some((w) => {
   return Math.abs(p[0] - w.position[0]) < width / 2 + 0.14 &&
          Math.hypot(p[1] - w.position[1], p[2] - w.position[2]) < R + 0.12;
 });
-const inside = (p) => {
+const insideHull = (p) => {
   const [x, y, z] = p;
   if (z < zMin + 0.08 || z > zMax - 0.08) return false;
   if (y > roofAt(x, z) - 0.05) return false;
   if (Math.abs(x) > halfWidthAt(Math.max(y, 0.3), z) - 0.06) return false;
   return !wheelEnvelope(p);
 };
+const inside = (p) => insideHull(p) && !inCavity(p);
 const latticeGrid = b.buildLattice({ xs, ys, zs, inside, axialStiffness: 1.8e5 });
 // Collision surface: the lattice hull is self-collision group 0, each tyre its own group (1 … 4), so a wheel driven
 // into its arch in a crash hits the body (§5.1 self-collision) while nodes of one group never collide among themselves.
-const hullTriangles = b.latticeSurface(latticeGrid, 0);
+// The powertrain cavity's walls are part of the hull surface (facing the blocks, group 9).
+const carved = (i, j, k) => xs[i] !== undefined && ys[j] !== undefined && zs[k] !== undefined &&
+  insideHull([xs[i], ys[j], zs[k]]) && inCavity([xs[i], ys[j], zs[k]]);
+const hullTriangles = b.latticeSurface(latticeGrid, 0, {
+  skipCell: (i, j, k) => [0, 1, 2, 3, 4, 5, 6, 7].some((c) => carved(i + (c & 1), j + ((c >> 1) & 1), k + ((c >> 2) & 1))),
+});
 const latticeId = (x, y, z) => `c${xs.indexOf(x)}_${ys.indexOf(y)}_${zs.indexOf(z)}`;
 
 // ---- crash structure (§4.3): yield, densification and tearing of the lattice ------------------------------------
@@ -139,7 +164,7 @@ const zoneForce = (z) => {
     const pa = b.pos(beam[0]), pc = b.pos(beam[1]);
     // Section through the beam's midpoint, nudged off node layers (a plane through a layer crosses no beam).
     const zm = Math.round(((pa[2] + pc[2]) / 2) * 1000) / 1000;
-    const zc = zs.includes(zm) ? zm + 0.15 * Math.sign(-zm || 1) : zm;
+    const zc = zs.includes(zm) ? zm + 0.05 * Math.sign(-zm || 1) : zm;
     if (!cosCache.has(zc)) cosCache.set(zc, sectionCos(zc));
     const yieldForce = zoneForce((pa[2] + pc[2]) / 2) / cosCache.get(zc);
     Object.assign(beam[3], {
@@ -170,12 +195,12 @@ const paintPieces = connectedPieces(primitiveGeometry(glb, 'body', 'paint'));
 const unit = (x) => norm(x);
 const panelParts = [];
 const panelLift = { front: 0, rear: 0 };  // Σ C_S·A·n_y of the panels [m²]
-function hingedPanel({ id, piece, ref, hingeSide, pitch, mass, group, latchBreak, hingeBreak, hingeYield, suction }) {
+function hingedPanel({ id, piece, ref, hingeSide, pitch, mass, group, latchBreak, hingeBreak, hingeYield, hingeTear = 0.3, suction, EA, yieldForce }) {
   const n = unit(piece.n);
   const u = unit(sub(ref, scale(n, dot(ref, n))));
   const v = cross(n, u);
   const aeroBefore = b.aeroPanels?.length ?? 0;
-  const panel = b.panelPart({ id, samples: piece.samples, n, u, v, pitch, mass, collisionGroup: group, suction });
+  const panel = b.panelPart({ id, samples: piece.samples, n, u, v, pitch, mass, collisionGroup: group, suction, ...(EA ? { EA } : {}), ...(yieldForce ? { yieldForce } : {}) });
   for (const [a, c, d] of b.aeroPanels.slice(aeroBefore)) {
     const area2 = cross(sub(b.pos(c), b.pos(a)), sub(b.pos(d), b.pos(a)));
     panelLift[piece.c[2] > 0 ? 'front' : 'rear'] += suction * 0.5 * area2[1];
@@ -186,10 +211,10 @@ function hingedPanel({ id, piece, ref, hingeSide, pitch, mass, group, latchBreak
     const ext = sign > 0 ? Math.max(...outers.map(along)) : Math.min(...outers.map(along));
     return outers.filter((x) => Math.abs(along(x) - ext) < 0.6 * pitch);
   };
-  const tie = (node, count, beamGroup, breakForce, breakGroup, yieldForce) => {
+  const tie = (node, count, beamGroup, breakForce, breakGroup, yieldForce, candidates = b.lattice) => {
     const p = b.pos(node);
-    const near = [...b.lattice].sort((a, c) => dist(b.pos(a), p) - dist(b.pos(c), p)).slice(0, count);
-    const plastic = yieldForce ? { plasticForce: yieldForce, hardening: 0, tearLimit: 0.3 } : {};
+    const near = [...candidates].sort((a, c) => dist(b.pos(a), p) - dist(b.pos(c), p)).slice(0, count);
+    const plastic = yieldForce ? { plasticForce: yieldForce, hardening: 0, tearLimit: hingeTear } : {};
     for (const l of near) b.beam(node, l, beamGroup, { breakForce, breakGroup, ...plastic });
   };
   // Hinges: the two ends of the hinge-side row (along the row's longest spread), each a ball joint.
@@ -200,7 +225,15 @@ function hingedPanel({ id, piece, ref, hingeSide, pitch, mass, group, latchBreak
     b.byId.get(h).mass += 0.5;  // hinge hardware
     tie(h, 3, 'hinge', hingeBreak, `${id}_hinge${k}`, hingeYield);
   });
-  for (const inner of panel.nodes.filter((x) => x.endsWith('_1'))) tie(inner, 2, 'seal');
+  // Seals: each inner node rests on the two nearest lattice nodes behind it (inward along the panel normal; a support
+  // beam to a node beside or above it would hold the panel down when it opens).
+  for (const inner of panel.nodes.filter((x) => x.endsWith('_1'))) {
+    const behind = b.lattice.filter((l) => {
+      const d = sub(b.pos(l), b.pos(inner));
+      return dot(d, n) < -0.5 * Math.hypot(...d);
+    });
+    tie(inner, 2, 'seal', undefined, undefined, undefined, behind);
+  }
   // Latch: the middle of the opposite row (outer and inner node).
   const latchRow = edge(-1);
   const mid = latchRow.map((x) => b.pos(x)).reduce((a, p) => add(a, scale(p, 1 / latchRow.length)), [0, 0, 0]);
@@ -213,13 +246,52 @@ const frontLid = paintPieces.find((p) => p.c[2] > 1.0 && Math.abs(p.c[0]) < 0.1 
 const engineLid = paintPieces.find((p) => p.c[2] < -1.6 && p.c[2] > -1.9 && Math.abs(p.c[0]) < 0.1 && p.area > 0.4);
 const doors = paintPieces.filter((p) => Math.abs(p.c[0]) > 0.8 && Math.abs(p.c[2]) < 0.3 && p.area > 0.5);
 if (!frontLid || !engineLid || doors.length !== 2) throw new Error('GLB paint pieces for the lids and doors not found');
-hingedPanel({ id: 'frontLid', piece: frontLid, ref: [1, 0, 0], hingeSide: [0, 0, -1], pitch: 0.42, mass: 9, group: 5, latchBreak: 6e3, hingeBreak: 1e4, hingeYield: 2.5e3, suction: 0.3 });
+// The front lid's grid is twice as fine as the other panels' (dents and folds of the bonnet in a frontal crash); its
+// beams' axial rigidity and yield force scale with the pitch, so the lid is as stiff and as strong as a coarse one.
+// The finer lid flexes as it slams into the windscreen at 280 km/h and stretches its hinges ≈ 27 %: its lighter
+// hinges tear at 25 % (a 100 km/h wall crash bends them ≈ 19 %).
+hingedPanel({ id: 'frontLid', piece: frontLid, ref: [1, 0, 0], hingeSide: [0, 0, -1], pitch: 0.21, mass: 9, group: 5, latchBreak: 6e3, hingeBreak: 1e4, hingeYield: 2.5e3, hingeTear: 0.25, suction: 0.3, EA: 1.0e4, yieldForce: 750 });
 hingedPanel({ id: 'engineLid', piece: engineLid, ref: [1, 0, 0], hingeSide: [0, 0, 1], pitch: 0.38, mass: 8, group: 6, latchBreak: 6e3, hingeBreak: 1e4, hingeYield: 2.5e3, suction: 0.2 });
 for (const door of doors) {
   const left = door.c[0] > 0;
   hingedPanel({ id: left ? 'doorLeft' : 'doorRight', piece: door, ref: [0, 0, 1], hingeSide: [0, 0, 1], pitch: 0.4, mass: 16,
     group: left ? 7 : 8, latchBreak: 1.1e4, hingeBreak: 2e4, hingeYield: 5e3, suction: 0.2 });
 }
+
+// ---- powertrain blocks and mounts -------------------------------------------------------------------------------
+// Case beams: stiff (1.5e6 N/m, 13 directions), unbreakable. The bell housing joins the gearbox's rear face to every
+// node of the engine's front face. Mounts (hydraulically damped rubber): two at the rear of the engine, two at the
+// front of the gearbox, each tied to the three nearest lattice nodes — ≈ 1e6 N/m in all, the unit bounces at ≈ 9 Hz
+// on them. Like real mounts they are progressive: past ±15 mm a snubber (travel limiter, parallel stop beam) takes
+// the load, so hard driving and a low-speed knock move the unit a centimetre or two, not into the structure around
+// it. A mount tears loose — its bracket and snubber together — at 25 kN on one of its ties: 64 and 80 km/h into a
+// rigid wall leave them on, 100 km/h tears two (the hardest landings load the unit with ≈ 3 g).
+b.group('powertrain', { k: 1.5e6, zeta: 0.1 });
+b.group('engineMount', { k: 2.5e5, zeta: 0.3 });
+b.group('mountStop', { type: 'bounded', k: 2.0e6, zeta: 0.1 });
+const engine = b.block({ id: 'engine', ...powertrain.engine, beamGroup: 'powertrain', collisionGroup: 9 });
+const gearbox = b.block({ id: 'gearbox', ...powertrain.gearbox, beamGroup: 'powertrain', collisionGroup: 9 });
+for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+  for (let ei = 0; ei < 3; ei++) for (let ej = 0; ej < 3; ej++) b.beam(gearbox.at(i, j, 0), engine.at(ei, ej, 2), 'powertrain');
+}
+const mountBreak = 2.5e4;
+const mounts = [
+  ['engineMountLeft', engine.at(2, 1, 0)], ['engineMountRight', engine.at(0, 1, 0)],
+  ['gearboxMountLeft', gearbox.at(1, 1, 2)], ['gearboxMountRight', gearbox.at(0, 1, 2)],
+];
+for (const [mount, node] of mounts) {
+  for (const l of b.anchors(node, b.pos(node))) {
+    b.beam(node, l, 'engineMount', { breakForce: mountBreak, breakGroup: mount, damage: 'engine_mounts' });
+    b.beam(node, l, 'mountStop', { minOffset: -0.015, maxOffset: 0.015, breakForce: mountBreak, breakGroup: mount });
+  }
+}
+b.damageGroups.push({ id: 'engine_mounts', strain: 0.1 });  // a torn tie counts as damaged
+{
+  const c = b.clearance(0, 9);
+  if (c.gap < 0.015) throw new Error(`powertrain cavity: ${c.node} only ${(c.gap * 100).toFixed(1)} cm from the other side`);
+  console.log(`powertrain cavity clearance ${(c.gap * 100).toFixed(1)} cm (${c.node})`);
+}
+const powertrainNodes = [...engine.nodes, ...gearbox.nodes];
 
 // ---- suspension ------------------------------------------------------------------------------------------------
 const hydroChannel = 0, steeringLock = 0.49;  // [rad] ≈ 10.6 m turning circle
@@ -361,7 +433,20 @@ function antiRollBar(l, r, dz, k) {
 antiRollBar(corners.FL, corners.FR, 0.30, 2600);   // [N·m/rad] ≈ 25 kN/m per wheel in roll (estimate)
 antiRollBar(corners.RL, corners.RR, -0.30, 1800);
 
-// ---- masses: lattice + engine placed to hit 1,595 kg with 39 % on the front axle -----------------------------------
+// ---- masses: lattice + ancillaries placed to hit 1,595 kg with 39 % on the front axle ------------------------------
+// The 2 kHz step needs every node heavy enough for the beams on it: m ≥ ½·Σk·t², t = 0.63 ms (the explicit-integration
+// limit √(2m/Σk) ≥ dt / 0.8 that sbc-cli vehicle checks). Nodes the layer weights leave lighter get that minimum, the
+// rest share the remaining mass by layer weight.
+const beamK = (beam) => beam[3]?.k ?? b.groups[beam[2]]?.k ?? 0;
+const stiffnessSum = new Map();
+for (const beam of b.beams) for (const id of beam.slice(0, 2)) stiffnessSum.set(id, (stiffnessSum.get(id) ?? 0) + beamK(beam));
+const minNodeMass = (n) => 0.5 * (stiffnessSum.get(n.id) ?? 0) * 0.00063 ** 2;
+// Hinged panels' nodes too: the latch and hinge ties on a fine panel grid's light nodes would outrun the step.
+const panelMassAdded = b.nodes.filter((n) => n.id.startsWith('p_')).reduce((sum, n) => {
+  const add = Math.max(0, minNodeMass(n) - n.mass);
+  n.mass += add;
+  return sum + add;
+}, 0);
 const wheelMass = (t) => segments * 2 * (t.treadMass + t.rimMass);
 const fixedParts = [];  // [mass, z]
 for (const n of b.nodes) if (!b.lattice.includes(n.id)) fixedParts.push([n.mass, n.p[2]]);
@@ -370,23 +455,42 @@ const fixedMass = fixedParts.reduce((s, [m]) => s + m, 0);
 // Mass per lattice layer (floor pan and sills heaviest; the roof layer still needs ≈ 1.5 kg per node for the 2 kHz step).
 const layerWeight = { 0.14: 1.0, 0.36: 1.0, 0.58: 0.9, 0.8: 0.8, 1.02: 0.68 };
 const latticeNodes = b.lattice.map((lid) => b.byId.get(lid));
-const engineNodes = latticeNodes.filter((n) => n.p[2] < zR - 0.05 && n.p[1] < 0.7 && Math.abs(n.p[0]) < 0.6);
-function distribute(engineMass) {
-  const rest = TARGET_MASS - fixedMass - engineMass;
-  const wsum = latticeNodes.reduce((s, n) => s + layerWeight[n.p[1]], 0);
-  for (const n of latticeNodes) n.mass = rest * layerWeight[n.p[1]] / wsum;
-  for (const n of engineNodes) n.mass += engineMass / engineNodes.length;
+// The mass the weight split still asks for beyond the powertrain blocks: engine-bay ancillaries (turbos,
+// intercoolers, exhaust) on the lattice around the engine when positive, the front bay's (fuel, radiators, battery)
+// when negative.
+const rearBay = latticeNodes.filter((n) => n.p[2] < zR - 0.05 && n.p[1] < 0.7 && Math.abs(n.p[0]) < 0.7);
+const frontBay = latticeNodes.filter((n) => n.p[2] > zF - 0.3 && n.p[1] < 0.7);
+function spread(nodes, total, weight) {
+  const floor = new Set();
+  for (let pass = 0; pass < 20; ++pass) {
+    const free = nodes.filter((n) => !floor.has(n));
+    const left = total - [...floor].reduce((s, n) => s + minNodeMass(n), 0);
+    const wsum = free.reduce((s, n) => s + weight(n), 0);
+    let changed = false;
+    for (const n of free) {
+      n.mass = left * weight(n) / wsum;
+      if (n.mass < minNodeMass(n)) { floor.add(n); changed = true; }
+    }
+    for (const n of floor) n.mass = minNodeMass(n);
+    if (!changed) return;
+  }
+}
+function distribute(ancillaryMass) {
+  const rest = TARGET_MASS - fixedMass - Math.abs(ancillaryMass);
+  spread(latticeNodes, rest, (n) => layerWeight[n.p[1]]);
+  const bay = ancillaryMass >= 0 ? rearBay : frontBay;
+  for (const n of bay) n.mass += Math.abs(ancillaryMass) / bay.length;
   let m = fixedMass, mz = fixedParts.reduce((s, [mm, z]) => s + mm * z, 0);
   for (const n of latticeNodes) { m += n.mass; mz += n.mass * n.p[2]; }
   return (mz / m - zR) / (zF - zR);
 }
-let lo = 0, hi = 800;
+let lo = -400, hi = 800;  // the front fraction falls as the ancillary mass moves from the front bay to the rear
 for (let it = 0; it < 60; ++it) {
   const mid = (lo + hi) / 2;
   if (distribute(mid) > TARGET_FRONT) lo = mid; else hi = mid;
 }
-const engineMass = (lo + hi) / 2;
-const frontFraction = distribute(engineMass);
+const ancillaryMass = (lo + hi) / 2;
+const frontFraction = distribute(ancillaryMass);
 let cgY = 0, total = 0;
 for (const n of b.nodes) { total += n.mass; cgY += n.mass * n.p[1]; }
 total += 2 * wheelMass(tyreFront) + 2 * wheelMass(tyreRear);
@@ -410,7 +514,9 @@ const vehicle = {
     { left: 'FL', right: 'FR' },
     { left: 'RL', right: 'RR', lsdPreload: 80, lsdLockDrive: 0.3, lsdLockCoast: 0.25 },
   ],
-  driveReaction: ['FL', 'FR', 'RL', 'RR'].flatMap((c) => [corners[c].laF, corners[c].laR]),
+  // The drive-torque reaction goes into the gearbox case (the differentials' housing): the powertrain pitches on its
+  // mounts under load.
+  driveReaction: gearbox.nodes,
   // PTM (Porsche Traction Management): electronically controlled multi-plate front coupling, 0 … ≈ 50 % to the front
   centreCoupling: { active: true, frontAxle: 0, rearAxle: 1, minFront: 0.1, maxFront: 0.45, rate: 4 },
   engine: {
@@ -461,11 +567,12 @@ const lampUnit = ({ c }) => {
   return null;                                                   // interior and trim parts sharing the lamp material
 };
 // Trigger values measured on this car (core/tests/test_damage.cpp): hard driving bends nothing permanently; the peak
-// plastic strain of the windscreen frame is 0.75 % in a 64 km/h frontal wall crash (1.2 % on a 60 km/h landing off
-// the 1.2 m ramp), of the side-window frames 1.1 % at 64 and 66 % at 100 km/h, of the rear-window frame 2.0 % at
-// 64 km/h; a 15 km/h wall hit puts 20 kN on a headlamp node, a traffic cone at 50 km/h 1 kN.
+// plastic strain of the windscreen frame is 0 up to 40 km/h and 0.29 % in a 64 km/h frontal wall crash (35 % at
+// 100 km/h), of the side-window frames 0.4 % at 64 and 26 % at 100 km/h; a 15 km/h wall hit puts 20 kN on a
+// headlamp node, a traffic cone at 50 km/h 1 kN. (With the powertrain as its own blocks on mounts, 21 % of the mass
+// no longer loads the lattice directly, and the frames bend less than the earlier 0.75 % / 1.1 % at 64 km/h.)
 const damage = {
-  windscreen: { strain: 0.006, impact: 3.0e4 },   // laminated [-] plastic strain of the frame, [N] contact force
+  windscreen: { strain: 0.002, impact: 3.0e4 },   // laminated [-] plastic strain of the frame, [N] contact force
   side: { strain: 0.02, impact: 2.0e4 },          // tempered
   quarter: { strain: 0.02, impact: 2.0e4 },
   rear: { strain: 0.025, impact: 2.0e4 },
@@ -497,7 +604,7 @@ for (const piece of connectedPieces(primitiveGeometry(glb, 'body', 'lamp'))) {
 // fuel tank under the front luggage bay, the battery beside it, the steering rack on the front axle, a half shaft and
 // a brake line at every wheel. Each group: the lattice beams near its box (crushed: plastic strain past 4 %) and the
 // lattice nodes near it (struck harder than 25 kN). Hard driving, 50 km/h over the speed bumps and a traffic cone
-// damage nothing; a 15 km/h wall hit cracks the radiators; big jumps and crashes damage what they reach.
+// damage nothing; a 20 km/h wall hit cracks the radiators; big jumps and crashes damage what they reach.
 const box = (lo, hi, step = 0.06) => {
   const pts = [];
   for (let x = lo[0]; x <= hi[0] + 1e-9; x += step) for (let y = lo[1]; y <= hi[1] + 1e-9; y += step)
@@ -511,8 +618,10 @@ const components = [
   { id: 'radiator_right', samples: box([-0.75, 0.2, 1.85], [-0.45, 0.5, 2.1]) },
   { id: 'radiator_centre', samples: box([-0.3, 0.2, 1.95], [0.3, 0.45, 2.15]) },
   { id: 'coolant_lines', samples: box([-0.15, 0.12, -0.9], [0.15, 0.2, 1.8], 0.1) },
-  { id: 'oil_sump', samples: box([-0.35, 0.12, -1.95], [0.35, 0.3, -1.35]) },
-  { id: 'gearbox', samples: box([-0.3, 0.15, -1.15], [0.3, 0.45, -0.6]) },
+  // The sump is the engine block's lower layer (struck from below: grounding, debris; from any side in a crash), the
+  // gearbox its own block, each also watching the lattice around it.
+  { id: 'oil_sump', samples: box([-0.35, 0.12, -1.95], [0.35, 0.3, -1.35]), nodes: engine.nodes.filter((x) => /_\d_0_\d$/.test(x)) },
+  { id: 'gearbox', samples: box([-0.3, 0.15, -1.15], [0.3, 0.45, -0.6]), nodes: gearbox.nodes },
   { id: 'fuel_tank', samples: box([-0.5, 0.2, 0.65], [0.5, 0.5, 1.1]) },
   { id: 'battery', samples: box([0.1, 0.25, 1.3], [0.45, 0.45, 1.6]) },
   { id: 'steering_rack', samples: box([-0.45, 0.2, zF - 0.25], [0.45, 0.35, zF - 0.05]) },
@@ -537,6 +646,9 @@ const damageLinks = [
   { group: 'coolant_lines', effect: 'coolantLeak', rate: 0.2 },
   { group: 'oil_sump', effect: 'oilLeak', rate: 0.25 },
   { group: 'gearbox', effect: 'gearbox' },
+  // Mounts torn or bent far: the unit sags and shifts, the rear half shafts' joints bind and break.
+  { group: 'engine_mounts', effect: 'driveLoss', wheel: 'RL' },
+  { group: 'engine_mounts', effect: 'driveLoss', wheel: 'RR' },
   { group: 'fuel_tank', effect: 'fuelLeak', rate: 0.4 },
   { group: 'battery', effect: 'electrical' },
   { group: 'steering_rack', effect: 'steering' },
@@ -553,6 +665,10 @@ vehicle.damageLinks = damageLinks;
 // driver on +X (left); bag centres and half sizes are estimates for the 991 cabin.
 const visual = {
   parts: panelParts,  // hinged panels: their GLB paint pieces bind to their own nodes (web flexbody)
+  // Internal parts drawn as boxes through their blocks' eight corner nodes (bit 0: +x, bit 1: +y, bit 2: +z).
+  internals: [['engine', engine, powertrain.engine.n], ['gearbox', gearbox, powertrain.gearbox.n]].map(([kind, blk, n]) => ({
+    kind, corners: [0, 1, 2, 3, 4, 5, 6, 7].map((c) => blk.at(c & 1 ? n[0] - 1 : 0, c & 2 ? n[1] - 1 : 0, c & 4 ? n[2] - 1 : 0)),
+  })),
   airbags: [
     { bag: 'driver', at: [0.37, 0.82, 0.16], size: [0.28, 0.27, 0.17] },
     { bag: 'passenger', at: [-0.37, 0.86, 0.28], size: [0.31, 0.29, 0.22] },
@@ -587,8 +703,9 @@ fs.writeFileSync(outPath, JSON.stringify(json) + '\n');
 
 console.log(`${id}: ${b.nodes.length} explicit nodes (${b.lattice.length} lattice) + ${4 * 4 * segments} wheel nodes, ` +
   `${b.beams.length} beams → ${path.relative(root, outPath)} (${(fs.statSync(outPath).size / 1024).toFixed(0)} KiB)`);
-console.log(`mass ${total.toFixed(1)} kg, front ${(frontFraction * 100).toFixed(1)} %, engine block ${engineMass.toFixed(0)} kg ` +
-  `on ${engineNodes.length} nodes, CG height ${cgY.toFixed(3)} m`);
+console.log(`mass ${total.toFixed(1)} kg, front ${(frontFraction * 100).toFixed(1)} %, powertrain ${powertrain.engine.mass} + ` +
+  `${powertrain.gearbox.mass} kg on ${powertrainNodes.length} nodes, ancillaries ${ancillaryMass.toFixed(0)} kg ` +
+  `(${ancillaryMass >= 0 ? "rear" : "front"} bay), panel nodes +${panelMassAdded.toFixed(1)} kg for the step, CG height ${cgY.toFixed(3)} m`);
 for (const c of Object.values(corners)) {
   const p = c.rackPoint || c.toePoint;
   console.log(`${c.name}: spring ${c.spring.k.toFixed(0)} N/m c ${c.spring.c.toFixed(0)} preload ${c.spring.load.toFixed(0)} N; ` +

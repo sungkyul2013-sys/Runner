@@ -11,6 +11,7 @@ import { Airbags, type AirbagDef } from './Airbags';
 import { decodeDamage, type DamageGroupDef } from './Damage';
 import type { Debris } from './Debris';
 import { vehicleCage, type CageNode, type VehicleJsonNode, type VehiclePartDef } from './Flexbody';
+import { InternalParts, type InternalPartDef } from './InternalParts';
 import { Leaks } from './Leaks';
 import { LooseParts } from './LooseParts';
 import type { Sparks } from './Sparks';
@@ -22,6 +23,7 @@ export class VehicleActor {
   state: VehicleState | null = null;
   leaks: Leaks | null = null; // coolant, oil and fuel drips and stains (§4.4)
   airbags: Airbags | null = null;
+  internals: InternalParts | null = null; // engine and gearbox blocks (§4.4 internal parts)
   readonly loose = new LooseParts(); // torn-off parts the model does not cover (a shredded tyre's carcass)
   private looseVersion = -1;
   private xray = false;
@@ -71,6 +73,8 @@ export class VehicleActor {
           this.viewer.scene.add(this.leaks.group);
           this.airbags = new Airbags(doc.airbags);
           model.root.add(this.airbags.group); // rides on the chassis frame
+          this.internals = new InternalParts(doc.internals, doc.nodeIndex);
+          this.viewer.scene.add(this.internals.group);
         }
         const known = this.physics.damage.get(this.spawned.body);
         if (known) this.view.flexbody?.setDamage(decodeDamage(known.status));
@@ -93,6 +97,8 @@ export class VehicleActor {
   dispose(): void {
     this.view?.group.removeFromParent();
     this.leaks?.dispose();
+    this.internals?.dispose();
+    this.internals = null;
     this.loose.dispose();
     this.view = null;
     this.spawned = null;
@@ -103,6 +109,7 @@ export class VehicleActor {
     this.xray = on;
     if (this.view) this.view.visible = !on;
     this.loose.group.visible = !on; // x-ray shows every node anyway
+    if (this.internals) this.internals.group.visible = !on;
   }
 
   /** Per rendered frame: the vehicle's latest state, its model posed and its damage shown. Null before it exists. */
@@ -115,6 +122,7 @@ export class VehicleActor {
     const known = this.physics.damage.get(this.spawned.body);
     this.leaks?.update(dt, v, known ? decodeDamage(known.status) : null);
     this.airbags?.update(v.airbags, dt);
+    this.internals?.update(frame, this.spawned.body, (b, n) => this.physics.locate(b, n));
     if (this.view?.flexbody) this.view.flexbody.lights = (v.faults & FAULT.electrical) === 0;
     // §6 rim sparks: from each scraping rim, thrown back along the road at about half the car's speed.
     const sparks = this.debris.sparks;
@@ -125,7 +133,8 @@ export class VehicleActor {
     // Loose parts: re-found when the islands change (the flexbody has located its cage by now).
     if (this.view && this.physics.islandVersion !== this.looseVersion) {
       this.looseVersion = this.physics.islandVersion;
-      this.loose.setBodies(LooseParts.find(this.physics.topology, this.spawned.body, this.view.flexbody?.bodies ?? new Set([this.spawned.body])));
+      const shown = new Set([...(this.view.flexbody?.bodies ?? [this.spawned.body]), ...(this.internals?.bodies ?? [])]);
+      this.loose.setBodies(LooseParts.find(this.physics.topology, this.spawned.body, shown));
     }
     this.loose.update(frame, this.physics.topology);
     return v;
@@ -133,30 +142,35 @@ export class VehicleActor {
 }
 
 /** What the renderer needs from an apex-vehicle JSON document: the flexbody cage (chassis lattice and hinged panels),
- *  the damage groups (glass, lamps, components), the hinged panels, the airbags and the nodes' rest positions (model
- *  frame). */
+ *  the damage groups (glass, lamps, components), the hinged panels, the airbags, the internal parts (engine and
+ *  gearbox blocks), the nodes' rest positions (model frame) and their indices by id. */
 export async function loadVehicleDoc(url: string): Promise<{
   cage: CageNode[];
   parts: VehiclePartDef[];
   damageGroups: DamageGroupDef[];
   airbags: AirbagDef[];
+  internals: InternalPartDef[];
   nodeRest: (i: number) => [number, number, number];
+  nodeIndex: (id: string) => number;
 } | null> {
   const response = await fetch(url);
   if (!response.ok) return null;
   const doc = (await response.json()) as {
     nodes?: VehicleJsonNode[];
     damageGroups?: DamageGroupDef[];
-    visual?: { airbags?: AirbagDef[]; parts?: VehiclePartDef[] };
+    visual?: { airbags?: AirbagDef[]; parts?: VehiclePartDef[]; internals?: InternalPartDef[] };
   };
   if (!doc.nodes) return null;
   const nodes = doc.nodes;
   const parts = doc.visual?.parts ?? [];
+  const index = new Map(nodes.map((row, i) => [row[0], i]));
   return {
     cage: vehicleCage(nodes, parts),
     parts,
     damageGroups: doc.damageGroups ?? [],
     airbags: doc.visual?.airbags ?? [],
+    internals: doc.visual?.internals ?? [],
+    nodeIndex: (id) => index.get(id) ?? -1,
     nodeRest: (i) => (nodes[i] ? [nodes[i][1], nodes[i][2], nodes[i][3]] : [0, 0, 0]),
   };
 }
