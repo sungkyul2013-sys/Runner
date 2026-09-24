@@ -13,6 +13,7 @@
 namespace sbc {
 
 class JobSystem;
+struct SurfaceLibrary;
 class Vehicle;
 struct ContactScratch;
 
@@ -94,6 +95,17 @@ struct StepStats {
 
 inline constexpr int kMaxMaterials = 64;  // material ids are < kMaxMaterials
 
+// Surface decal (World::addSurfaceDecal): a rectangle (half extents halfX × halfZ, turned by yaw about +Y) or a disc
+// (radius > 0) on the ground around `center`.
+struct SurfaceDecal {
+  DVec3 center;
+  double halfX = 0.0, halfZ = 0.0;
+  double yaw = 0.0;
+  double radius = 0.0;       // > 0: a disc
+  uint16_t material = 0;
+  bool active = true;        // removed decals stay as inactive slots (stable ids)
+};
+
 // §20 sandbox tools: a spring-damper from a node to an anchor — a world point the caller moves (node grab, crane hook)
 // or a node of another body (tow rope). A grab pulls its node toward the point in every direction and saturates at
 // `maxForce` (its strength). A rope (`rope`) only pulls, above its length; a winch reels that length toward a target at
@@ -134,6 +146,26 @@ class World {
   // ---- materials ----
   void setContactPair(uint16_t materialA, uint16_t materialB, const ContactPairParams& p);
   const ContactPairParams& contactPair(uint16_t materialA, uint16_t materialB) const;
+  // §6 tyre type on a surface material: factor on the pair's µ (grip) and on its rolling resistance (default 1).
+  void setTyreFactors(uint16_t material, TyreType type, float grip, float crr);
+  float tyreGrip(uint16_t material, TyreType type) const {
+    return tyreGrip_[static_cast<size_t>(material) * kTyreTypeCount + static_cast<size_t>(type)];
+  }
+  float tyreCrr(uint16_t material, TyreType type) const {
+    return tyreCrr_[static_cast<size_t>(material) * kTyreTypeCount + static_cast<size_t>(type)];
+  }
+  // The surface library in use (applySurfaces; §11 roughness and loose layers). Null until one is set.
+  void setSurfaces(const SurfaceLibrary& library);
+  const SurfaceLibrary* surfaces() const { return surfaces_.get(); }
+
+  // ---- surface decals (§11.1 µ-split lanes, road paint, spills): the material of static contacts whose point lies
+  // inside a decal (seen from above, within 1 m of its height) is the decal's. The latest decal wins. ----
+  int addSurfaceDecal(const SurfaceDecal& decal);
+  void removeSurfaceDecal(int id);
+  int surfaceDecalCount() const { return static_cast<int>(decals_.size()); }
+  const SurfaceDecal& surfaceDecal(int id) const { return decals_.at(static_cast<size_t>(id)); }
+  // Material of the static surface `base` at world point p after the decals.
+  uint16_t surfaceMaterialAt(DVec3 p, uint16_t base) const;
 
   // ---- static geometry ----
   // Infinite half-space below y = height (world). Returns its surface id.
@@ -230,6 +262,9 @@ class World {
   std::vector<StaticTri> staticTris_;
   std::vector<GroundPlane> planes_;
   std::vector<ContactPairParams> pairTable_;  // dense (kMaxMaterials²) lookup
+  std::vector<float> tyreGrip_, tyreCrr_;       // kMaxMaterials × kTyreTypeCount
+  std::shared_ptr<const SurfaceLibrary> surfaces_;
+  std::vector<SurfaceDecal> decals_;
   uint64_t stepIndex_ = 0;
   StepStats stats_;
   std::vector<StepStats> bodyStats_;

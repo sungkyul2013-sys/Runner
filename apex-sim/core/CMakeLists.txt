@@ -50,8 +50,17 @@ add_library(sbc STATIC
   src/proto_car.cpp
   src/vehicle_build.cpp
   src/vehicle_json.cpp
+  src/surfaces.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/generated/surfaces_data.cpp
 )
 target_include_directories(sbc PUBLIC include)
+
+# §11.1 surface table: web/public/data/surfaces/surfaces.json is compiled in (sbc::defaultSurfaces()), so native,
+# WASM and the browser share one source of truth. CMake re-runs when the file changes.
+set(SBC_SURFACES_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../web/public/data/surfaces/surfaces.json)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SBC_SURFACES_FILE})
+file(READ ${SBC_SURFACES_FILE} SBC_SURFACES_JSON)
+configure_file(cmake/surfaces_data.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/generated/surfaces_data.cpp @ONLY)
 
 # JSON parser for vehicle data (A§4.11): yyjson, MIT licence.
 include(FetchContent)
@@ -145,6 +154,7 @@ if(SBC_BUILD_TESTS)
     tests/test_tyres.cpp
     tests/test_aero.cpp
     tests/test_static_bvh.cpp
+  tests/test_surfaces.cpp
   )
   target_link_libraries(sbc_tests PRIVATE sbc Catch2::Catch2WithMain)
   target_compile_options(sbc_tests PRIVATE ${SBC_FP_FLAGS})

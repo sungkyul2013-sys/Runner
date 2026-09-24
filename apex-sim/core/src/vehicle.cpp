@@ -494,8 +494,8 @@ void Vehicle::step(const World& world, Body& b, bool track) {
       load += fn;
       normal += weighted;
       road += (pos(b, i) - weighted * ((b.radius[i] - penetration) / fn)) * fn;
-      mu += fn * pp.staticFriction;
-      crr += fn * pp.rollingResistance;
+      mu += fn * pp.staticFriction * world.tyreGrip(b.patchMaterial[i], wd.tyre.type);
+      crr += fn * pp.rollingResistance * world.tyreCrr(b.patchMaterial[i], wd.tyre.type);
       nodeShare += fn * pp.treadShare;
     }
     f.contact = false;

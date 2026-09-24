@@ -11,6 +11,7 @@
 
 #include "sbc/builder.h"
 #include "sbc/scenes.h"
+#include "sbc/surfaces.h"
 
 namespace sbc {
 namespace {
@@ -68,10 +69,8 @@ uint16_t materialId(Val v, const std::string& path) {
     return static_cast<uint16_t>(m);
   }
   const std::string name = string(v, path);
-  if (name == "steel") return material::kSteel;
-  if (name == "concrete") return material::kConcrete;
-  if (name == "rubber") return material::kRubber;
-  if (name == "asphalt") return material::kAsphalt;
+  for (int m = 0; m < builtinSurfaceCount(); ++m)
+    if (builtinSurfaceName(static_cast<uint16_t>(m)) == name) return static_cast<uint16_t>(m);
   fail(path, "unknown material '" + name + "'");
 }
 
@@ -443,6 +442,13 @@ struct Loader {
     t.relaxationX = floatOr(obj, "relaxationX", t.relaxationX, path);
     t.relaxationY = floatOr(obj, "relaxationY", t.relaxationY, path);
     t.rollingResistance = floatOr(obj, "rollingResistance", t.rollingResistance, path);
+    if (const Val type = member(obj, "type")) {
+      try {
+        t.type = tyreTypeFromName(string(type, path + ".type"));
+      } catch (const std::runtime_error& e) {
+        fail(path + ".type", e.what());
+      }
+    }
     t.pneumaticTrail = floatOr(obj, "pneumaticTrail", t.pneumaticTrail, path);
     t.camberStiffness = floatOr(obj, "camberStiffness", t.camberStiffness, path);
     t.lowSpeed = floatOr(obj, "lowSpeed", t.lowSpeed, path);

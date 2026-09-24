@@ -1,0 +1,66 @@
+{
+  // §11.1 surface table (docs/SURFACE_FORMAT.md). Values are for the reference tyre (summer): mu = peak friction
+  // (the tyre model's µ scale), muSlide = locked-wheel friction (plain node contact), crr = rolling-resistance
+  // coefficient of a tyre on it, steel = [µs, µk] of bare metal (a rim, a scraping body). Tyre types scale the grip by
+  // surface category (tyreTypes). The core embeds this file at build time (sbc::defaultSurfaces()).
+  "format": "apex-surfaces",
+  "version": 1,
+  "surfaces": [
+    { "id": "steel",          "category": "dry",   "mu": 0.70, "muSlide": 0.60, "crr": 0.010, "steel": [0.70, 0.50], "color": "#8a9099", "label": { "ko": "강철", "en": "Steel" } },
+    { "id": "concrete",       "category": "dry",   "mu": 0.95, "muSlide": 0.75, "crr": 0.0115, "steel": [0.60, 0.45], "color": "#9aa0a6", "label": { "ko": "콘크리트", "en": "Concrete" },
+      "roughness": { "kind": "joints", "spacing": 5.0, "depth": 0.004, "width": 0.012 } },
+    { "id": "rubber",         "category": "dry",   "mu": 1.00, "muSlide": 0.80, "crr": 0.012, "steel": [0.70, 0.60], "color": "#2a2c30", "label": { "ko": "고무", "en": "Rubber" } },
+    { "id": "asphalt",        "category": "dry",   "mu": 1.00, "muSlide": 0.80, "crr": 0.012, "steel": [0.55, 0.45], "color": "#3a3d42", "label": { "ko": "아스팔트(신규·건조)", "en": "Asphalt (new, dry)" },
+      "roughness": { "kind": "iso8608", "class": "A" } },
+    { "id": "spikes",         "category": "dry",   "mu": 0.70, "muSlide": 0.60, "crr": 0.012, "steel": [0.70, 0.50], "color": "#b8860b", "label": { "ko": "스파이크 스트립", "en": "Spike strip" } },
+    { "id": "asphalt_old",    "category": "dry",   "mu": 0.85, "muSlide": 0.70, "crr": 0.0135, "steel": [0.55, 0.45], "color": "#4a4d52", "label": { "ko": "아스팔트(노후)", "en": "Asphalt (worn)" },
+      "roughness": { "kind": "iso8608", "class": "B" } },
+    { "id": "asphalt_wet",    "category": "wet",   "mu": 0.60, "muSlide": 0.45, "crr": 0.014, "steel": [0.40, 0.30], "color": "#23262b", "label": { "ko": "아스팔트(젖음)", "en": "Asphalt (wet)" },
+      "roughness": { "kind": "iso8608", "class": "A" }, "water": 0.001 },
+    { "id": "cobblestone",    "category": "dry",   "mu": 0.78, "muSlide": 0.62, "crr": 0.020, "steel": [0.55, 0.45], "color": "#7d7468", "label": { "ko": "코블스톤", "en": "Cobblestone" },
+      "roughness": { "kind": "cobble", "size": 0.12, "gap": 0.015, "depth": 0.012 } },
+    { "id": "cobblestone_wet","category": "wet",   "mu": 0.48, "muSlide": 0.38, "crr": 0.020, "steel": [0.40, 0.30], "color": "#5d564d", "label": { "ko": "코블스톤(젖음)", "en": "Cobblestone (wet)" },
+      "roughness": { "kind": "cobble", "size": 0.12, "gap": 0.015, "depth": 0.012 }, "water": 0.001 },
+    { "id": "gravel",         "category": "loose", "mu": 0.575, "muSlide": 0.52, "crr": 0.030, "steel": [0.50, 0.42], "color": "#a09888", "label": { "ko": "자갈", "en": "Gravel" },
+      "roughness": { "kind": "iso8608", "class": "C" }, "layer": { "depth": 0.05, "kc": 0, "kphi": 2.0e6, "n": 1.0, "bulldozing": 0.6 } },
+    { "id": "gravel_trap",    "category": "loose", "mu": 0.50, "muSlide": 0.46, "crr": 0.060, "steel": [0.50, 0.42], "color": "#b3a78f", "label": { "ko": "그래블 트랩", "en": "Gravel trap" },
+      "roughness": { "kind": "iso8608", "class": "C" }, "layer": { "depth": 0.25, "kc": 0, "kphi": 8.0e5, "n": 1.0, "bulldozing": 1.0 } },
+    { "id": "gravel_washboard", "category": "loose", "mu": 0.575, "muSlide": 0.52, "crr": 0.030, "steel": [0.50, 0.42], "color": "#a89c85", "label": { "ko": "자갈(빨래판)", "en": "Gravel (washboard)" },
+      "roughness": { "kind": "washboard", "wavelength": 0.75, "amplitude": 0.02 }, "layer": { "depth": 0.03, "kc": 0, "kphi": 2.0e6, "n": 1.0, "bulldozing": 0.6 } },
+    { "id": "dirt",           "category": "loose", "mu": 0.625, "muSlide": 0.56, "crr": 0.030, "steel": [0.50, 0.42], "color": "#8a6d4d", "label": { "ko": "흙길(건조)", "en": "Dirt (dry)" },
+      "roughness": { "kind": "iso8608", "class": "C" }, "layer": { "depth": 0.02, "kc": 0, "kphi": 3.0e6, "n": 1.0, "bulldozing": 0.5 } },
+    { "id": "mud",            "category": "mud",   "mu": 0.35, "muSlide": 0.30, "crr": 0.10, "steel": [0.30, 0.25], "color": "#5b4632", "label": { "ko": "진흙", "en": "Mud" },
+      "roughness": { "kind": "iso8608", "class": "D" }, "layer": { "depth": 0.15, "kc": 0, "kphi": 4.0e5, "n": 0.8, "bulldozing": 1.2 }, "sticky": 0.6 },
+    { "id": "sand",           "category": "sand",  "mu": 0.50, "muSlide": 0.45, "crr": 0.20, "steel": [0.45, 0.40], "color": "#d6c28f", "label": { "ko": "모래", "en": "Sand" },
+      "roughness": { "kind": "iso8608", "class": "C" }, "layer": { "depth": 0.25, "kc": 0, "kphi": 6.0e5, "n": 1.0, "bulldozing": 1.4 } },
+    { "id": "grass",          "category": "loose", "mu": 0.425, "muSlide": 0.38, "crr": 0.045, "steel": [0.40, 0.35], "color": "#4f7a3a", "label": { "ko": "잔디", "en": "Grass" },
+      "roughness": { "kind": "iso8608", "class": "C" }, "layer": { "depth": 0.02, "kc": 0, "kphi": 3.0e6, "n": 1.0, "bulldozing": 0.4 } },
+    { "id": "grass_wet",      "category": "wet",   "mu": 0.25, "muSlide": 0.22, "crr": 0.050, "steel": [0.30, 0.25], "color": "#3d6330", "label": { "ko": "잔디(젖음)", "en": "Grass (wet)" },
+      "roughness": { "kind": "iso8608", "class": "C" }, "layer": { "depth": 0.03, "kc": 0, "kphi": 2.0e6, "n": 1.0, "bulldozing": 0.5 }, "water": 0.001 },
+    { "id": "snow_packed",    "category": "snow",  "mu": 0.25, "muSlide": 0.20, "crr": 0.030, "steel": [0.15, 0.12], "color": "#e4e9ee", "label": { "ko": "압설", "en": "Packed snow" },
+      "roughness": { "kind": "iso8608", "class": "B" } },
+    { "id": "snow_fresh",     "category": "snow",  "mu": 0.22, "muSlide": 0.18, "crr": 0.020, "steel": [0.12, 0.10], "color": "#f4f7fa", "label": { "ko": "신설", "en": "Fresh snow" },
+      "layer": { "depth": 0.15, "kc": 0, "kphi": 3.0e5, "n": 1.0, "bulldozing": 1.0 } },
+    { "id": "ice",            "category": "ice",   "mu": 0.10, "muSlide": 0.07, "crr": 0.010, "steel": [0.05, 0.04], "color": "#cfe3ef", "label": { "ko": "얼음·블랙아이스", "en": "Ice / black ice" } },
+    { "id": "steel_plate",    "category": "dry",   "mu": 0.55, "muSlide": 0.45, "crr": 0.010, "steel": [0.60, 0.45], "color": "#6f757d", "label": { "ko": "철판·복공판·맨홀", "en": "Steel plate / manhole" } },
+    { "id": "steel_plate_wet","category": "wet",   "mu": 0.30, "muSlide": 0.25, "crr": 0.010, "steel": [0.35, 0.25], "color": "#565c64", "label": { "ko": "철판(젖음)", "en": "Steel plate (wet)" }, "water": 0.001 },
+    { "id": "wood",           "category": "dry",   "mu": 0.575, "muSlide": 0.48, "crr": 0.015, "steel": [0.45, 0.35], "color": "#8b6a45", "label": { "ko": "나무 다리·데크", "en": "Wooden bridge / deck" } },
+    { "id": "paint",          "category": "dry",   "mu": 0.80, "muSlide": 0.64, "crr": 0.012, "steel": [0.50, 0.40], "color": "#e8e6df", "label": { "ko": "노면 표시 페인트", "en": "Road paint" } },
+    { "id": "paint_wet",      "category": "wet",   "mu": 0.40, "muSlide": 0.32, "crr": 0.014, "steel": [0.35, 0.25], "color": "#c9c7c0", "label": { "ko": "노면 표시 페인트(젖음)", "en": "Road paint (wet)" }, "water": 0.001 },
+    { "id": "oil",            "category": "oil",   "mu": 0.30, "muSlide": 0.24, "crr": 0.012, "steel": [0.20, 0.15], "color": "#1b1712", "label": { "ko": "오일·냉각수 누출", "en": "Oil / coolant spill" } }
+  ],
+  // Grip factor of each tyre type relative to the reference summer tyre, by surface category; `crr` scales the
+  // rolling resistance. Per-surface overrides go in "surfaces".
+  "tyreTypes": {
+    "summer":     { "dry": 1.00, "wet": 1.00, "loose": 1.00, "mud": 1.00, "sand": 1.00, "snow": 1.00, "ice": 1.00, "oil": 1.00, "crr": 1.00, "label": { "ko": "여름", "en": "Summer" } },
+    "all_season": { "dry": 0.95, "wet": 0.97, "loose": 1.02, "mud": 1.05, "sand": 1.02, "snow": 1.35, "ice": 1.15, "oil": 1.00, "crr": 1.00, "label": { "ko": "사계절", "en": "All-season" } },
+    "winter":     { "dry": 0.88, "wet": 0.93, "loose": 1.05, "mud": 1.10, "sand": 1.05, "snow": 1.65, "ice": 1.40, "oil": 1.00, "crr": 1.05, "label": { "ko": "윈터", "en": "Winter" } },
+    "studded":    { "dry": 0.85, "wet": 0.88, "loose": 1.05, "mud": 1.10, "sand": 1.00, "snow": 1.70, "ice": 2.60, "oil": 1.10, "crr": 1.10, "label": { "ko": "스터드", "en": "Studded" } },
+    "semi_slick": { "dry": 1.12, "wet": 0.85, "loose": 0.85, "mud": 0.70, "sand": 0.85, "snow": 0.70, "ice": 0.90, "oil": 0.95, "crr": 0.95, "label": { "ko": "세미슬릭", "en": "Semi-slick" } },
+    "slick":      { "dry": 1.25, "wet": 0.45, "loose": 0.70, "mud": 0.50, "sand": 0.75, "snow": 0.40, "ice": 0.80, "oil": 0.90, "crr": 0.90, "label": { "ko": "슬릭(드라이)", "en": "Slick (dry)" } },
+    "slick_wet":  { "dry": 1.00, "wet": 1.15, "loose": 0.80, "mud": 0.70, "sand": 0.80, "snow": 0.70, "ice": 0.90, "oil": 1.00, "crr": 0.95, "label": { "ko": "슬릭(웨트)", "en": "Slick (wet)" } },
+    "offroad_at": { "dry": 0.92, "wet": 0.90, "loose": 1.20, "mud": 1.25, "sand": 1.15, "snow": 1.30, "ice": 1.00, "oil": 1.00, "crr": 1.15, "label": { "ko": "오프로드 AT", "en": "Off-road AT" } },
+    "offroad_mt": { "dry": 0.85, "wet": 0.80, "loose": 1.25, "mud": 1.55, "sand": 1.20, "snow": 1.25, "ice": 0.95, "oil": 0.95, "crr": 1.30, "label": { "ko": "오프로드 MT", "en": "Off-road MT" } },
+    "drag":       { "dry": 1.35, "wet": 0.40, "loose": 0.60, "mud": 0.40, "sand": 0.60, "snow": 0.30, "ice": 0.70, "oil": 0.80, "crr": 0.90, "label": { "ko": "드래그", "en": "Drag" } }
+  }
+}

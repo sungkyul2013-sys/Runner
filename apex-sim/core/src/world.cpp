@@ -1,5 +1,7 @@
 #include "sbc/world.h"
 
+#include "sbc/surfaces.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -68,7 +70,9 @@ double gravityPotential(const Body& b, Vec3 g) {
 World::World(const WorldParams& params)
     : params_(params),
       jobs_(std::make_unique<JobSystem>(std::max(1, params.threadCount))),
-      pairTable_(static_cast<size_t>(kMaxMaterials) * kMaxMaterials) {
+      pairTable_(static_cast<size_t>(kMaxMaterials) * kMaxMaterials),
+      tyreGrip_(static_cast<size_t>(kMaxMaterials) * kTyreTypeCount, 1.0f),
+      tyreCrr_(static_cast<size_t>(kMaxMaterials) * kTyreTypeCount, 1.0f) {
   if (!(params_.dt > 0.0f)) throw std::invalid_argument("WorldParams::dt must be > 0");
 }
 
@@ -80,6 +84,40 @@ void World::setContactPair(uint16_t a, uint16_t b, const ContactPairParams& p) {
 }
 
 const ContactPairParams& World::contactPair(uint16_t a, uint16_t b) const { return pairTable_[pairIndex(a, b)]; }
+
+void World::setTyreFactors(uint16_t material, TyreType type, float grip, float crr) {
+  pairIndex(material, material);
+  const size_t k = static_cast<size_t>(material) * kTyreTypeCount + static_cast<size_t>(type);
+  tyreGrip_[k] = grip;
+  tyreCrr_[k] = crr;
+}
+
+void World::setSurfaces(const SurfaceLibrary& library) { surfaces_ = std::make_shared<SurfaceLibrary>(library); }
+
+int World::addSurfaceDecal(const SurfaceDecal& decal) {
+  pairIndex(decal.material, decal.material);
+  decals_.push_back(decal);
+  decals_.back().active = true;
+  return static_cast<int>(decals_.size()) - 1;
+}
+
+void World::removeSurfaceDecal(int id) { decals_.at(static_cast<size_t>(id)).active = false; }
+
+uint16_t World::surfaceMaterialAt(DVec3 p, uint16_t base) const {
+  for (size_t k = decals_.size(); k-- > 0;) {
+    const SurfaceDecal& d = decals_[k];
+    if (!d.active || std::fabs(p.y - d.center.y) > 1.0) continue;
+    const double dx = p.x - d.center.x, dz = p.z - d.center.z;
+    if (d.radius > 0.0) {
+      if (dx * dx + dz * dz <= d.radius * d.radius) return d.material;
+      continue;
+    }
+    const double c = det::cos(d.yaw), s = det::sin(d.yaw);
+    const double u = c * dx - s * dz, v = s * dx + c * dz;  // into the decal's frame (yaw about +Y)
+    if (std::fabs(u) <= d.halfX && std::fabs(v) <= d.halfZ) return d.material;
+  }
+  return base;
+}
 
 int World::addGroundPlane(double height, uint16_t material) {
   pairIndex(material, material);  // validates the id
@@ -545,6 +583,10 @@ uint64_t World::stateHash() const {
     for (const DamageGroupState& g : b.damageGroups) { h.value(g.firstStep); h.value(g.peakStrain); h.value(g.peakImpact); }
   }
   for (const auto& v : vehicles_) v->hashState(h);
+  for (const SurfaceDecal& d : decals_) {
+    h.value(d.center.x); h.value(d.center.y); h.value(d.center.z); h.value(d.halfX); h.value(d.halfZ); h.value(d.yaw);
+    h.value(d.radius); h.value(d.material); h.value(d.active);
+  }
   for (const Tether& t : tethers_) {
     h.value(t.active); h.value(t.desc.body); h.value(t.desc.node); h.value(t.desc.anchorBody); h.value(t.desc.anchorNode);
     h.value(t.desc.anchor.x); h.value(t.desc.anchor.y); h.value(t.desc.anchor.z);

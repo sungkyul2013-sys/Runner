@@ -169,6 +169,12 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
     const Vec3 x = b.nodePosition(i), v = b.nodeVelocity(i);
     const int n = collectStaticContacts(s, x, b.radius[i], contacts);
     if (n == 0) { b.anchorContact[i] = -1; continue; }
+    if (!w.decals_.empty()) {  // §11.1 decals: µ-split lanes, road paint, spills
+      for (int k = 0; k < n; ++k) {
+        const Vec3 surfacePoint = x - contacts[k].normal * (b.radius[i] - contacts[k].penetration);
+        contacts[k].material = w.surfaceMaterialAt(b.origin + toDouble(surfacePoint), contacts[k].material);
+      }
+    }
     const float m = b.mass[i];
     s.capacity[static_cast<size_t>(i)] = contactCapacity(m, n);
     if (b.flags[i] & node_flag::kTread) {

@@ -24,8 +24,13 @@ namespace sbc {
 // ---- tyre (§6) -------------------------------------------------------------------------------------------------
 // Magic Formula (H. B. Pacejka, Tire and Vehicle Dynamics, 3rd ed., 2012, §4.3): F(s) = D·sin(C·atan(B·s − E·(B·s −
 // atan(B·s)))) with D = µ·Fz. Longitudinal slip s = κ, lateral slip s = tan α.
+// §6 tyre types (surfaces.json "tyreTypes"): grip and rolling-resistance factors by surface category.
+enum class TyreType : uint8_t { kSummer, kAllSeason, kWinter, kStudded, kSemiSlick, kSlick, kSlickWet, kOffroadAT, kOffroadMT, kDrag };
+inline constexpr int kTyreTypeCount = 10;
+
 struct TyreParams {
   float radius = 0.33f;             // unloaded outer radius R0 [m]
+  TyreType type = TyreType::kSummer;  // §6 compound / tread (surfaces.json tyreTypes)
   float mu = 1.0f;                  // peak friction of this tyre on a µ = 1 reference surface [-]
   float Bx = 14.0f, Cx = 1.5f, Ex = 0.1f;    // longitudinal shape (peak near κ ≈ 0.13; locked wheel ≈ 0.8 of peak)
   float By = 11.0f, Cy = 1.35f, Ey = -0.6f;  // lateral shape (peak near α ≈ 8.5°)

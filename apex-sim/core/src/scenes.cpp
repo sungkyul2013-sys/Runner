@@ -2,6 +2,7 @@
 
 #include "sbc/builder.h"
 #include "sbc/proto_car.h"
+#include "sbc/surfaces.h"
 #include "sbc/vehicle_json.h"
 
 namespace sbc {
@@ -56,47 +57,7 @@ std::unique_ptr<World> baseWorld(const SceneOptions& o) {
 
 }  // namespace
 
-void applyDefaultContactPairs(World& w) {
-  ContactPairParams steelConcrete;  // dry steel on concrete: µs ≈ 0.6, µk ≈ 0.45
-  steelConcrete.staticFriction = 0.6f;
-  steelConcrete.kineticFriction = 0.45f;
-  w.setContactPair(material::kSteel, material::kConcrete, steelConcrete);
-  ContactPairParams steelSteel;  // dry mild steel on steel: µs ≈ 0.7, µk ≈ 0.5
-  steelSteel.staticFriction = 0.7f;
-  steelSteel.kineticFriction = 0.5f;
-  w.setContactPair(material::kSteel, material::kSteel, steelSteel);
-  // Tyre tread pairs (§11.1 reference summer tyre). For kTread nodes only the normal law, staticFriction (the
-  // surface µ scale of the tyre model), rollingResistance and treadShare are used. The contact spring is the tyre's
-  // local contact rate; a tenth of it acts on the tread node (carcass deformation), the rest of the load is carried by
-  // the tyre's radial spring on the hub (TyreParams::verticalStiffness, A§4.7). The discrete tread and
-  // the carcass beams add their own speed-dependent rolling loss (≈ 0.0023 of the load at 25 m/s, see KNOWN_ISSUES
-  // P10), so the pair's explicit Crr is the remainder of a §11.1 summer tyre's ≈ 0.012.
-  ContactPairParams rubberAsphalt;
-  rubberAsphalt.staticFriction = 1.0f;
-  rubberAsphalt.kineticFriction = 0.8f;
-  rubberAsphalt.normalFrequencyHz = 110.0f;
-  rubberAsphalt.normalDampingRatio = 0.05f;
-  rubberAsphalt.rollingResistance = 0.0097f;
-  rubberAsphalt.treadShare = 0.1f;
-  w.setContactPair(material::kRubber, material::kAsphalt, rubberAsphalt);
-  ContactPairParams rubberConcrete = rubberAsphalt;
-  rubberConcrete.staticFriction = 0.95f;
-  rubberConcrete.kineticFriction = 0.75f;
-  rubberConcrete.rollingResistance = 0.0092f;
-  w.setContactPair(material::kRubber, material::kConcrete, rubberConcrete);
-  ContactPairParams rubberSteel = rubberAsphalt;
-  rubberSteel.staticFriction = 0.7f;
-  rubberSteel.kineticFriction = 0.6f;
-  w.setContactPair(material::kRubber, material::kSteel, rubberSteel);
-  w.setContactPair(material::kRubber, material::kRubber, rubberAsphalt);
-  ContactPairParams steelAsphalt;  // rim or body scraping the road
-  steelAsphalt.staticFriction = 0.55f;
-  steelAsphalt.kineticFriction = 0.45f;
-  w.setContactPair(material::kSteel, material::kAsphalt, steelAsphalt);
-  // Spike strip / sharp debris (§6): steel spikes. The tread rolls over it like over steel and is punctured.
-  w.setContactPair(material::kRubber, material::kSpikes, rubberSteel);
-  w.setContactPair(material::kSteel, material::kSpikes, steelSteel);
-}
+void applyDefaultContactPairs(World& w) { applySurfaces(w, defaultSurfaces()); }
 
 std::vector<std::string> sceneNames() {
   return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0", "proto_drive", "drive", "crash"};
