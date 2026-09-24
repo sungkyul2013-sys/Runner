@@ -83,6 +83,8 @@ export const VW = {
   // §4.4 alignment
   camber: 26,
   toe: 27,
+  camber0: 28, // at the vehicle's first step (design geometry)
+  toe0: 29,
 } as const;
 
 /** Core tyre_flag:: bits (sbc/vehicle.h). */
@@ -120,6 +122,8 @@ export interface WheelState {
   rimBend: number; // plastic strain of the rim [-]
   camber: number; // [rad] relative to the chassis, negative = top inward (§4.4 bent suspension)
   toe: number; // [rad] positive = toe-in (front wheels: steering included)
+  camber0: number; // [rad] design camber (the vehicle's first step)
+  toe0: number; // [rad] design toe
 }
 
 export interface VehicleState {
@@ -226,6 +230,8 @@ export function decodeVehicle(r: Float32Array, origin: V3, renderOrigin: V3 = [0
       rimBend: r[o + VW.rimBend],
       camber: r[o + VW.camber],
       toe: r[o + VW.toe],
+      camber0: r[o + VW.camber0],
+      toe0: r[o + VW.toe0],
     });
   }
   return {

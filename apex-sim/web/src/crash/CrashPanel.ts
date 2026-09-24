@@ -144,7 +144,7 @@ export class CrashPanel {
     }
   }
 
-  /** Camber and toe per wheel (highlighted once bent more than 1° from the launch) and the tyre's state. */
+  /** Camber and toe per wheel (highlighted once more than 1° off the design alignment) and the tyre's state. */
   setWheels(rows: WheelRow[]): void {
     this.wheelBody.replaceChildren();
     if (rows.length === 0) {
@@ -154,7 +154,8 @@ export class CrashPanel {
     const sign = (x: number) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)}°`;
     for (const r of rows) {
       const tyre = r.flags & TYRE.shredded ? t('tyreShredded') : r.flags & TYRE.flat ? t('tyreFlat') : `${r.pressure.toFixed(1)} bar`;
-      this.wheelBody.append(el('tr', { className: r.bent || r.flags & (TYRE.flat | TYRE.shredded) ? 'live' : '' },
+      const damaged = r.bent || (r.flags & (TYRE.puncture | TYRE.blowout | TYRE.flat | TYRE.shredded)) !== 0;
+      this.wheelBody.append(el('tr', { className: damaged ? 'live' : '' },
         el('td', {}, r.car), el('td', {}, r.wheel), el('td', {}, sign(r.camber)), el('td', {}, sign(r.toe)), el('td', {}, tyre)));
     }
   }

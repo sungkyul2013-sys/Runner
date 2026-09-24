@@ -458,6 +458,8 @@ int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
     o[25] = d.wheels[static_cast<size_t>(i)].tyre.pressure;
     o[26] = wt.camber;
     o[27] = wt.toe;
+    o[28] = wt.camber0;
+    o[29] = wt.toe0;
   }
   return needed;
 }

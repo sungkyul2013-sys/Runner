@@ -279,6 +279,7 @@ struct WheelTelemetry {
   // top of the wheel leaning inward; toe [rad], positive toe-in (the front wheels' includes the steering angle).
   float camber = 0.0f;
   float toe = 0.0f;
+  float camber0 = 0.0f, toe0 = 0.0f;  // [rad] the same at the vehicle's first step (its data's design geometry)
 };
 
 struct VehicleTelemetry {

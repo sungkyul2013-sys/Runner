@@ -967,7 +967,9 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     const double al = dot(f.axis, left);
     tel.camber = static_cast<float>(-side * det::atan2(dot(f.axis, up), al));
     tel.toe = static_cast<float>(side * det::atan2(dot(f.axis, fwd), al));
+    if (!alignmentRecorded_) { tel.camber0 = tel.camber; tel.toe0 = tel.toe; }
   }
+  alignmentRecorded_ = true;
 }
 
 }  // namespace sbc

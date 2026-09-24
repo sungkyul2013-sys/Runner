@@ -171,6 +171,7 @@ class Vehicle {
 
   // §4.4 crash sensor: the cabin reference node's chassis-frame velocity over the last 50 ms (ring buffer).
   std::vector<double> sensorLong_, sensorLat_;
+  bool alignmentRecorded_ = false;  // telemetry camber0 / toe0 taken (first step; display only, not hashed)
   size_t sensorAt_ = 0, sensorFill_ = 0;
   uint32_t airbags_ = 0;
   double crashTime_ = -1.0, crashPeakG_ = 0.0, crashDeltaV_ = 0.0;

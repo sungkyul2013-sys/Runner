@@ -25,7 +25,7 @@ export interface WheelRow {
   toe: number; // [°] positive = toe-in
   pressure: number; // [bar]
   flags: number; // TYRE bits
-  bent: boolean; // camber or toe moved more than 1° since the launch
+  bent: boolean; // camber or toe more than 1° off the vehicle's design alignment
 }
 
 const WHEEL_NAMES = ['FL', 'FR', 'RL', 'RR'];
@@ -58,8 +58,6 @@ export class CrashLab {
   private logChanged = false;
   onLog: ((rows: CollisionRow[]) => void) | null = null;
   onWheels: ((rows: WheelRow[]) => void) | null = null;
-  /** Alignment of each car's wheels at its first telemetry after the launch [°]. */
-  private wheelBase: Array<{ camber: number[]; toe: number[] } | undefined> = [];
   private wheelTimer = 0;
   lastSpec: CrashSpec | null = null;
 
@@ -78,16 +76,14 @@ export class CrashLab {
     this.actors.forEach((a, i) => {
       const v = a.state;
       if (!v) return;
-      const camber = v.wheels.map((w) => w.camber * DEG), toe = v.wheels.map((w) => w.toe * DEG);
-      const base = (this.wheelBase[i] ??= { camber, toe });
       v.wheels.forEach((w, k) => rows.push({
         car: this.labels[i]?.split(' · ')[0] ?? String(i),
         wheel: WHEEL_NAMES[k] ?? String(k),
-        camber: camber[k],
-        toe: toe[k],
+        camber: w.camber * DEG,
+        toe: w.toe * DEG,
         pressure: w.pressure,
         flags: w.tyreFlags,
-        bent: Math.abs(camber[k] - base.camber[k]) > 1 || Math.abs(toe[k] - base.toe[k]) > 1,
+        bent: Math.abs(w.camber - w.camber0) * DEG > 1 || Math.abs(w.toe - w.toe0) * DEG > 1,
       }));
     });
     return rows;
@@ -110,7 +106,6 @@ export class CrashLab {
     this.physics.loadScene(CRASH_SCENE);
     this.log.clear();
     this.onLog?.([]);
-    this.wheelBase = [];
     this.onWheels?.([]);
     this.energyGraph.clear();
     this.momentumGraph.clear();
