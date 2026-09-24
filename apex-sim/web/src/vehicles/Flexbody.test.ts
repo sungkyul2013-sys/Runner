@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bindVertex, deformVertex, latticeCage, nodeFrame, relativeRotation, restFrame, type NodePose, type VehicleJsonNode } from './Flexbody';
+import { bindVertex, deformVertex, latticeCage, nodeFrame, relativeRotation, restFrame, vehicleCage, type NodePose, type VehicleJsonNode } from './Flexbody';
 
 type V3 = [number, number, number];
 
@@ -120,5 +120,35 @@ describe('flexbody binding', () => {
   it('refuses a degenerate frame (neighbour crushed onto the node or onto one line)', () => {
     expect(nodeFrame([0, 0, 0], [0, 0, 0], [0, 0, 1], 1, 1)).toBeNull();
     expect(nodeFrame([0, 0, 0], [1, 0, 0], [2, 0, 0], 1, 1)).toBeNull();
+  });
+});
+
+describe('hinged panel cage', () => {
+  // A 3 × 2 lid grid of two layers above the lattice, as builder.panelPart names it.
+  const withLid: VehicleJsonNode[] = [...lattice()];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < 2; k++) withLid.push([`p_lid_${i}_${j}_${k}`, 0.2 * i, 1.0 - 0.06 * k, 0.3 * j]);
+  const parts = [{ id: 'lid', pieces: [[0.2, 1.0, 0.15]] as V3[], nodePrefix: 'p_lid_' }];
+  const full = vehicleCage(withLid, parts);
+
+  it('adds every panel node, framed by its grid neighbours, tagged with its part', () => {
+    const lid = full.filter((c) => c.part === 0);
+    expect(full.length - lid.length).toBe(18);  // the lattice as before
+    expect(lid.length).toBe(12);
+    const corner = lid.find((c) => withLid[c.index][0] === 'p_lid_0_0_0')!;
+    expect(withLid[corner.x[0].node][0]).toBe('p_lid_1_0_0');
+    expect(corner.x[0].sign).toBe(1);
+    expect(withLid[corner.z[0].node][0]).toBe('p_lid_0_1_0');
+    const far = lid.find((c) => withLid[c.index][0] === 'p_lid_2_1_1')!;
+    expect(far.x[0]).toEqual({ node: withLid.findIndex((r) => r[0] === 'p_lid_1_1_1'), sign: -1 });
+  });
+
+  it('binds a lid vertex to lid nodes only and a body vertex to lattice nodes only', () => {
+    const lidNodes = full.flatMap((c, k) => (c.part === 0 ? [k] : []));
+    const latticeNodes = full.flatMap((c, k) => (c.part === undefined ? [k] : []));
+    const onLid = bindVertex([0.2, 0.99, 0.15], full, lidNodes);
+    expect(onLid.nodes.every((k) => full[k].part === 0)).toBe(true);
+    const nearLid = bindVertex([0.1, 0.6, 0.2], full, latticeNodes); // closer to the lid than to most lattice nodes
+    expect(nearLid.nodes.every((k) => full[k].part === undefined)).toBe(true);
+    expect(onLid.weights.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 6);
   });
 });

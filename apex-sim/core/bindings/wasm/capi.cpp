@@ -345,6 +345,10 @@ int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
   out[37] = t.engineWear;
   out[38] = t.derate;
   out[39] = static_cast<float>(t.faults);
+  out[40] = static_cast<float>(t.airbags);
+  out[41] = t.crashTime;
+  out[42] = t.crashPeakG;
+  out[43] = t.crashDeltaV;
   for (int i = 0; i < wheels; ++i) {
     const sbc::WheelTelemetry& wt = t.wheels[static_cast<size_t>(i)];
     float* o = out + SBC_VT_HEADER + SBC_VT_WHEEL * i;

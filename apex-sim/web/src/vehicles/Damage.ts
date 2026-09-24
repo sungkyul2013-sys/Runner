@@ -9,9 +9,11 @@
 export type V3 = [number, number, number];
 
 export interface DamageGroupVisual {
-  kind: 'glass' | 'lamp';
+  kind: 'glass' | 'lamp' | 'component';
   glass?: 'laminated' | 'tempered';
-  pieces: V3[]; // area-weighted centroids of the GLB pieces of this group (model frame)
+  pieces?: V3[]; // glass, lamp: area-weighted centroids of the GLB pieces of this group (model frame)
+  fluid?: 'coolant' | 'oil' | 'fuel'; // component: what leaks from it (Leaks.ts)
+  at?: V3;       // component: where (model frame)
 }
 
 export interface DamageGroupDef {
@@ -57,7 +59,7 @@ export interface PanelLook {
  *  struck) and sags once a quarter of its frame beams are bent; the rest break at the first damage. */
 export function panelLook(def: DamageGroupDef, s: DamageStatus | undefined): PanelLook {
   const intact: PanelLook = { state: PanelState.Intact, crackRadius: 0, sag: 0 };
-  if (!def.visual || !s || (s.damaged <= 0 && s.impacts <= 0)) return intact;
+  if (!def.visual || def.visual.kind === 'component' || !s || (s.damaged <= 0 && s.impacts <= 0)) return intact;
   if (def.visual.kind === 'glass' && def.visual.glass === 'laminated') {
     const bent = s.beams > 0 ? s.damaged / s.beams : 0;
     return {
@@ -134,7 +136,7 @@ export function matchPieces(centroids: V3[], defs: DamageGroupDef[], kind: 'glas
     let best = -1, bestD = tolerance;
     defs.forEach((d, g) => {
       if (d.visual?.kind !== kind) return;
-      for (const p of d.visual.pieces) {
+      for (const p of d.visual.pieces ?? []) {
         const dist = Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]);
         if (dist < bestD) {
           bestD = dist;

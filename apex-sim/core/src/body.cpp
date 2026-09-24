@@ -65,6 +65,26 @@ void buildSurfaceTopology(Body& b) {
     b.edgeTri.push_back(j - i > 1 ? halfEdges[i + 1].second : -1);
     i = j;
   }
+  // Closed surfaces: connected sets of triangles (over shared edges) without a boundary edge. Only these have an
+  // inside (measurePenetration's ray parity); an open sheet — a door skin, a lid — has none.
+  const size_t nt = static_cast<size_t>(b.triangleCount());
+  std::vector<int32_t> parent(nt);
+  for (size_t t = 0; t < nt; ++t) parent[t] = static_cast<int32_t>(t);
+  auto find = [&](int32_t x) {
+    while (parent[static_cast<size_t>(x)] != x) x = parent[static_cast<size_t>(x)] = parent[static_cast<size_t>(parent[static_cast<size_t>(x)])];
+    return x;
+  };
+  for (size_t i = 0; i < halfEdges.size();) {
+    size_t j = i;
+    while (j < halfEdges.size() && halfEdges[j].first == halfEdges[i].first) ++j;
+    for (size_t k = i + 1; k < j; ++k) parent[static_cast<size_t>(find(halfEdges[k].second))] = find(halfEdges[i].second);
+    i = j;
+  }
+  std::vector<uint8_t> open(nt, 0);
+  for (size_t e = 0; e < b.edgeTri.size(); e += 2)
+    if (b.edgeTri[e + 1] < 0) open[static_cast<size_t>(find(b.edgeTri[e]))] = 1;
+  b.triClosed.assign(nt, 0);
+  for (size_t t = 0; t < nt; ++t) b.triClosed[t] = open[static_cast<size_t>(find(static_cast<int32_t>(t)))] ? 0 : 1;
 }
 
 }  // namespace detail
@@ -110,7 +130,8 @@ Body buildBody(const BodyDesc& desc) {
   const size_t m = desc.beams.size();
   auto resizeBeams = [m](auto&... arrays) { (arrays.assign(m, {}), ...); };
   resizeBeams(b.beamA, b.beamB, b.beamType, b.stiffness, b.damping, b.restLength, b.initialRestLength,
-              b.plasticForce, b.hardening, b.breakForce, b.deformLimit, b.crushFloor, b.tearLength, b.plasticDeformation, b.minLength,
+              b.plasticForce, b.hardening, b.breakForce, b.deformLimit, b.crushFloor, b.tearLength, b.plasticDeformation,
+              b.fatigueLimit, b.fatigue, b.plasticSign, b.minLength,
               b.maxLength, b.breakGroup, b.broken, b.compressionStiffness, b.hydroChannel, b.hydroFactor,
               b.hydroSpeed);
   require(desc.hydroChannels >= 0, "negative hydroChannels");
@@ -141,6 +162,7 @@ Body buildBody(const BodyDesc& desc) {
     b.hardening[k] = d.hardening;
     b.breakForce[k] = d.breakForce;
     b.deformLimit[k] = d.deformLimit;
+    b.fatigueLimit[k] = d.fatigueLimit;
     require(d.crushLimit > 0.0f && d.crushLimit <= 1.0f, tag + " crushLimit must be in (0, 1]");
     require(d.tearLimit > 0.0f, tag + " tearLimit must be > 0");
     b.crushFloor[k] = (1.0f - d.crushLimit) * rest;
@@ -156,6 +178,13 @@ Body buildBody(const BodyDesc& desc) {
     b.hydroFactor[k] = d.hydroFactor;
     b.hydroSpeed[k] = d.hydroSpeed;
     b.typeBegin[static_cast<int>(d.type) + 1]++;
+  }
+  for (const AeroPanelDesc& a : desc.aeroPanels) {
+    require(a.a >= 0 && a.b >= 0 && a.c >= 0 && static_cast<size_t>(std::max({a.a, a.b, a.c})) < n, "aero panel has invalid nodes");
+    require(a.normalCoefficient >= 0.0f && a.suctionCoefficient >= 0.0f, "aero panel coefficients must be ≥ 0");
+    b.aeroNode.insert(b.aeroNode.end(), {a.a, a.b, a.c});
+    b.aeroCoefficient.push_back(a.normalCoefficient);
+    b.aeroSuction.push_back(a.suctionCoefficient);
   }
   for (size_t gi = 0; gi < desc.damageGroups.size(); ++gi) {
     const DamageGroupDesc& g = desc.damageGroups[gi];
@@ -233,8 +262,6 @@ Body buildBody(const BodyDesc& desc) {
     b.triTorn.push_back(0);
   }
   detail::buildSurfaceTopology(b);
-  b.contactDepth.assign(n, 0.0f);
-  b.contactDepthNext.assign(n, 0.0f);
 
   for (size_t k = 0; k < desc.torsionBars.size(); ++k) {
     const TorsionBarDesc& d = desc.torsionBars[k];

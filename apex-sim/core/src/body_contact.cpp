@@ -32,8 +32,7 @@ namespace {
 
 constexpr float kTwoPi = 6.283185307179586f;
 constexpr int kMaxCandidates = 24;         // triangle contacts examined per node per body pair
-constexpr int kMaxContactsPerNode = 3;     // distinct surface directions kept per node per body pair
-constexpr float kSameSurfaceCos = 0.9f;    // normals within ~26° count as one surface (neighbouring triangles)
+constexpr int kMaxContactsPerNode = 3;     // surface patches (not sharing a vertex) a node presses per body pair
 constexpr float kSlipEpsilon = 1e-6f;      // [m/s]
 constexpr float kEdgeEnd = 0.05f;          // [-] edge↔edge only between the inner 90 % of both edges (the ends are
                                            // nodes, handled by node↔triangle)
@@ -196,34 +195,62 @@ Side edgeSide(const Body& b, int e, float s) {
 inline void addNodeForce(Body& b, int i, Vec3 f) { b.fx[i] += f.x; b.fy[i] += f.y; b.fz[i] += f.z; }
 
 // Contacts grow continuously from the edge of the contact band (§5.3 energy ledger): a new contact may be only as
-// deep as the two sides could have come together during the last step, plus what its nodes were already pressed in
-// by other contacts (sliding over a triangle edge onto the neighbour hands the depth on). A node that turns up deep
-// inside a band sideways — a crushed hull folding over it, a node crossing into another triangle's prism behind
-// its face — is not grabbed by a spring that would appear with ½k·p² out of nowhere; between bodies the sweep
-// tests keep such a node from getting through, within a body the neighbouring contacts do.
+// deep as the two sides could have come together during the last step, plus the depth its nodes were already in
+// contact at last step (sliding over a triangle edge onto the neighbour, an edge handing over to the next edge or to
+// a face, a rolling tyre's next node taking over a pressed patch hand the depth on). A node that turns up deep inside
+// a band sideways — a crushed hull folding over it, a node crossing into another triangle's prism behind its face —
+// is not grabbed by a spring that would appear with ½k·p² out of nowhere.
+//   Between bodies, where the sweep tests keep nodes and edges from getting through, the depth a node had against
+// the other body is handed on (hard, fast impacts need every contact they can get). Within a body and between the
+// parts of one (Body::family: no sweeps there), only depth the same node pairs had: contacts of unrelated nodes do
+// not lend theirs. A part that has just torn off starts afresh with everyone.
 constexpr float kEntryTolerance = 2e-3f;  // [m]
 constexpr float kEntrySteps = 2.0f;       // [-] steps of approach a new contact may have covered
 
-float priorDepth(const Body& A, const Side& a, const Body& B, const Side& b) {
+// Deepest depth of node `node` against body `otherBody` (any of its nodes), and of the pair (node, otherNode).
+float nodeDepth(const Body& b, int32_t node, int otherBody) {
+  const std::vector<ContactDepth>& list = b.contactDepths;
+  auto it = std::lower_bound(list.begin(), list.end(), node, [otherBody](const ContactDepth& e, int32_t n) {
+    return e.node != n ? e.node < n : e.otherBody < otherBody;
+  });
+  float d = 0.0f;
+  for (; it != list.end() && it->node == node && it->otherBody == otherBody; ++it) d = std::max(d, it->depth);
+  return d;
+}
+float pairDepth(const Body& b, int32_t node, int otherBody, int32_t otherNode) {
+  const std::vector<ContactDepth>& list = b.contactDepths;
+  auto it = std::lower_bound(list.begin(), list.end(), node, [otherBody, otherNode](const ContactDepth& e, int32_t n) {
+    if (e.node != n) return e.node < n;
+    return e.otherBody != otherBody ? e.otherBody < otherBody : e.otherNode < otherNode;
+  });
+  return it != list.end() && it->node == node && it->otherBody == otherBody && it->otherNode == otherNode ? it->depth
+                                                                                                          : 0.0f;
+}
+
+float priorDepth(const Body& A, int ia, const Side& a, const Body& B, int ib, const Side& b) {
   float prior = 0.0f;
-  for (int k = 0; k < a.count; ++k) prior = std::max(prior, A.contactDepth[static_cast<size_t>(a.node[k])]);
-  for (int k = 0; k < b.count; ++k) prior = std::max(prior, B.contactDepth[static_cast<size_t>(b.node[k])]);
+  if (A.family == B.family) {
+    for (int k = 0; k < a.count; ++k)
+      for (int l = 0; l < b.count; ++l) prior = std::max(prior, pairDepth(A, a.node[k], ib, b.node[l]));
+    return prior;
+  }
+  for (int k = 0; k < a.count; ++k) prior = std::max(prior, nodeDepth(A, a.node[k], ib));
+  for (int k = 0; k < b.count; ++k) prior = std::max(prior, nodeDepth(B, b.node[k], ia));
   return prior;
 }
 
-bool admissible(const Body& A, const Side& a, const Body& B, const Side& b, Vec3 n, float p, float dt) {
+bool admissible(const Body& A, int ia, const Side& a, const Body& B, int ib, const Side& b, Vec3 n, float p, float dt) {
   const float approach = std::max(0.0f, -dot(a.velocity(A) - b.velocity(B), n));
-  return p <= priorDepth(A, a, B, b) + approach * dt * kEntrySteps + kEntryTolerance;
+  const float reach = approach * dt * kEntrySteps + kEntryTolerance;
+  return p <= reach || p <= priorDepth(A, ia, a, B, ib, b) + reach;
 }
 
-void recordDepth(Body& A, const Side& a, Body& B, const Side& b, float p) {
+void recordDepth(Body& A, int ia, const Side& a, Body& B, int ib, const Side& b, float p) {
   for (int k = 0; k < a.count; ++k) {
-    float& d = A.contactDepthNext[static_cast<size_t>(a.node[k])];
-    d = std::max(d, p);
-  }
-  for (int k = 0; k < b.count; ++k) {
-    float& d = B.contactDepthNext[static_cast<size_t>(b.node[k])];
-    d = std::max(d, p);
+    for (int l = 0; l < b.count; ++l) {
+      A.contactDepthsNext.push_back({a.node[k], ib, b.node[l], p});
+      B.contactDepthsNext.push_back({b.node[l], ia, a.node[k], p});
+    }
   }
 }
 
@@ -234,19 +261,31 @@ float contactMass(const Body& A, const Side& a, const Body& B, const Side& b) {
 }
 
 // Explicit stability of many contacts on one node (§4.2): each contact is stable on its own (mass-scaled penalty,
-// ω·dt = 0.47 on the pair's effective mass, damping ratio 0.7), and a node may press on up to three surfaces at full
-// strength, as against static geometry. But a light node that is the vertex of a triangle pressed by many heavy nodes
-// (a tyre node inside a crushed nose) gathers all of their dampers: its row of the damping matrix grows past the
-// explicit limit c·dt/m < 2. The contacts touching such a node are softened together so that
-// Σ_contacts w·m_contact ≤ kContactLoadBudget·m for every node (w: the node's weight in the contact point).
-constexpr float kContactLoadBudget = 3.0f;
+// ω·dt = 0.47 on the pair's effective mass, damping ratio 0.7; the regularised friction a damper with ζ = 1). But a
+// light node pressed from several sides (a tyre node inside a crushed nose, the edge of a lid folded into it) gathers
+// all of their springs and dampers. Symplectic Euler stays stable while k·dt²/m + 2·c·dt/m < 4 along the normals
+// (0.22 + 1.32 per contact at full strength) and c·dt/m < 2 along the friction dampers (0.94 per contact). A contact's
+// share in its node's row of M^-½·C·M^-½ (Gershgorin) is w·m_contact·(1 + √(m_node / m_other))/m_node: one unit at
+// full strength against a heavy or static partner, and also against an equal one (m_contact = m/2), whose antiphase
+// motion doubles the relative velocity the damper sees. All contacts touching a node — static, self and between
+// bodies — are softened together so that their shares stay within kContactLoadBudget. Static contacts take one unit
+// (contactCapacity), self contacts are budgeted next and body contacts get what is left (`capacity`, per node [kg]).
+inline float contactShare(const Body& b, int node, float w, float m, float otherInverseMass) {
+  return w * m * (1.0f + std::sqrt(b.mass[node] * otherInverseMass));
+}
 
-template <typename BodyOf>
-void budgetContacts(std::vector<ContactRecord>& recs, BodyOf&& bodyOf, std::vector<std::vector<float>>& load) {
-  for (const ContactRecord& r : recs) {
-    for (int k = 0; k < r.a.count; ++k) load[static_cast<size_t>(r.bodyA)][static_cast<size_t>(r.a.node[k])] += r.a.w[k] * r.m;
-    for (int k = 0; k < r.b.count; ++k) load[static_cast<size_t>(r.bodyB)][static_cast<size_t>(r.b.node[k])] += r.b.w[k] * r.m;
-  }
+template <typename BodyOf, typename CapacityOf>
+void budgetContacts(std::vector<ContactRecord>& recs, BodyOf&& bodyOf, std::vector<std::vector<float>>& load,
+                    CapacityOf&& capacityOf) {
+  auto shares = [&](const ContactRecord& r, auto&& use) {
+    const Body& A = bodyOf(r.bodyA);
+    const Body& B = bodyOf(r.bodyB);
+    const float invA = r.a.stiffnessInverseMass(A), invB = r.b.stiffnessInverseMass(B);
+    for (int k = 0; k < r.a.count; ++k) use(r.bodyA, r.a.node[k], contactShare(A, r.a.node[k], r.a.w[k], r.m, invB));
+    for (int k = 0; k < r.b.count; ++k) use(r.bodyB, r.b.node[k], contactShare(B, r.b.node[k], r.b.w[k], r.m, invA));
+  };
+  for (const ContactRecord& r : recs)
+    shares(r, [&](int body, int node, float u) { load[static_cast<size_t>(body)][static_cast<size_t>(node)] += u; });
   for (ContactRecord& r : recs) {
     float scale = 1.0f;
     auto limit = [&](int body, const Side& side) {
@@ -254,16 +293,19 @@ void budgetContacts(std::vector<ContactRecord>& recs, BodyOf&& bodyOf, std::vect
       for (int k = 0; k < side.count; ++k) {
         const int i = side.node[k];
         const float l = load[static_cast<size_t>(body)][static_cast<size_t>(i)];
-        if (b.invMass[i] > 0.0f && l > kContactLoadBudget * b.mass[i]) scale = std::min(scale, kContactLoadBudget * b.mass[i] / l);
+        const float cap = std::max(capacityOf(body, i), 0.0f);
+        if (b.invMass[i] > 0.0f && l > cap) scale = std::min(scale, cap / l);
       }
     };
     limit(r.bodyA, r.a);
     limit(r.bodyB, r.b);
     r.m *= scale;
   }
-  for (const ContactRecord& r : recs) {  // reset only what was touched
-    for (int k = 0; k < r.a.count; ++k) load[static_cast<size_t>(r.bodyA)][static_cast<size_t>(r.a.node[k])] = 0.0f;
-    for (int k = 0; k < r.b.count; ++k) load[static_cast<size_t>(r.bodyB)][static_cast<size_t>(r.b.node[k])] = 0.0f;
+  for (const ContactRecord& r : recs) {  // reset only what was touched; use up the capacity
+    shares(r, [&](int body, int node, float u) {
+      load[static_cast<size_t>(body)][static_cast<size_t>(node)] = 0.0f;
+      capacityOf(body, node) -= u;
+    });
   }
 }
 
@@ -358,8 +400,17 @@ bool nodeTriangle(Vec3 x, float r, Vec3 a, Vec3 b, Vec3 c, Vec3 n, float rt, boo
   return true;
 }
 
-// Sorts hits deepest first (ties by triangle id) and keeps up to kMaxContactsPerNode distinct directions.
-int selectHits(TriHit* cand, int n) {
+// Picks the contacts of one node with one body's surface from its hits on nearby triangles, so that the contact
+// energy is a continuous function of the positions (§5.3: no energy from nowhere). Hits on triangles that share a
+// vertex belong to one patch of surface, and the node's penetration of that patch is its penetration of the nearest
+// face — the deepest hit (the node's distance to the patch; a triangle whose closest point lies on its boundary
+// gives a rounded-edge hit that meets its neighbour's face hit where the regions meet). So one contact per patch:
+// the deepest, and up to kMaxContactsPerNode patches (folded layers, the two sides of a crease that are not
+// neighbours), deepest first (ties by triangle id). Counting every face near a nearly flat crease once when the
+// node sits over its edge and twice when a dent puts it inside both prisms, or dropping a shallower hit whenever
+// its normal crosses a similarity threshold, would switch springs on and off at depth and pump energy.
+template <typename TriNodesOf>
+int selectHits(TriHit* cand, int n, TriNodesOf&& triNodesOf) {
   auto before = [](const TriHit& a, const TriHit& b) {
     return a.penetration != b.penetration ? a.penetration > b.penetration : a.tri < b.tri;
   };
@@ -371,10 +422,14 @@ int selectHits(TriHit* cand, int n) {
   }
   int kept = 0;
   for (int i = 0; i < n && kept < kMaxContactsPerNode; ++i) {
-    bool duplicate = false;
-    for (int k = 0; k < kept; ++k)
-      if (dot(cand[i].normal, cand[k].normal) > kSameSurfaceCos) { duplicate = true; break; }
-    if (!duplicate) cand[kept++] = cand[i];
+    const int32_t* v = triNodesOf(cand[i].tri);
+    bool neighbour = false;
+    for (int k = 0; k < kept && !neighbour; ++k) {
+      const int32_t* u = triNodesOf(cand[k].tri);
+      for (int a = 0; a < 3 && !neighbour; ++a)
+        neighbour = v[a] == u[0] || v[a] == u[1] || v[a] == u[2];
+    }
+    if (!neighbour) cand[kept++] = cand[i];
   }
   return kept;
 }
@@ -493,7 +548,7 @@ int forEachNodeTriangle(BodyT& A, BodyT& B, const Pair& pr, SurfaceCache& surfB,
       cand[n++] = h;
     }
     if (n == 0) continue;
-    const int kept = selectHits(cand, n);
+    const int kept = selectHits(cand, n, [&](int t) { return triNodes(B, t); });
     for (int h = 0; h < kept; ++h) visit(i, cand[h]);
     count += kept;
   }
@@ -669,7 +724,7 @@ void gatherBodyContacts(Bodies& bodies, Scratch&& scratchOf, Surfaces&& surfaceO
       const Body& X = bodies[bodyA];
       const Body& Y = bodies[bodyB];
       const float m = contactMass(X, a, Y, b);
-      if (m > 0.0f && admissible(X, a, Y, b, n, p, dt)) out.push_back({bodyA, bodyB, a, b, n, p, m});
+      if (m > 0.0f && admissible(X, bodyA, a, Y, bodyB, b, n, p, dt)) out.push_back({bodyA, bodyB, a, b, n, p, m});
     };
     if (B.triangleCount() > 0) {
       forEachNodeTriangle(A, B, pr, nB, s, false, [&](int i, const TriHit& h) {
@@ -706,12 +761,14 @@ int ContactSolver::bodyContacts(World& w) {
                      [&](int i) -> SurfaceCache& { return w.scratch_[static_cast<size_t>(i)].surface; }, recs,
                      w.params().dt);
   for (const ContactRecord& r : recs)
-    recordDepth(w.bodies_[static_cast<size_t>(r.bodyA)], r.a, w.bodies_[static_cast<size_t>(r.bodyB)], r.b, r.p);
+    recordDepth(w.bodies_[static_cast<size_t>(r.bodyA)], r.bodyA, r.a, w.bodies_[static_cast<size_t>(r.bodyB)], r.bodyB, r.b,
+                r.p);
   if (recs.empty()) return 0;
   std::vector<std::vector<float>>& load = w.scratch_[0].bodyLoad;
   if (load.size() != w.bodies_.size()) load = makeLoads(w.bodies_);
   for (size_t i = 0; i < w.bodies_.size(); ++i) load[i].resize(static_cast<size_t>(w.bodies_[i].nodeCount()), 0.0f);
-  budgetContacts(recs, [&](int i) -> const Body& { return w.bodies_[static_cast<size_t>(i)]; }, load);
+  budgetContacts(recs, [&](int i) -> const Body& { return w.bodies_[static_cast<size_t>(i)]; }, load,
+                 [&](int body, int node) -> float& { return w.scratch_[static_cast<size_t>(body)].capacity[static_cast<size_t>(node)]; });
   for (const ContactRecord& r : recs)
     applyContact<kTrack>(w, w.bodies_[static_cast<size_t>(r.bodyA)], r.a, w.bodies_[static_cast<size_t>(r.bodyB)], r.b, r.n, r.p, r.m);
   return static_cast<int>(recs.size());
@@ -821,15 +878,16 @@ int ContactSolver::selfContacts(World& w, int bodyIndex) {
   forEachSelfContact(b, s.surface, s, [&](int i, const TriHit& hit) {
     const Side a = nodeSide(i), t = triSide(b, hit.tri, hit.bary);
     const float m = contactMass(b, a, b, t);
-    if (m > 0.0f && admissible(b, a, b, t, hit.normal, hit.penetration, dt)) {
+    if (m > 0.0f && admissible(b, bodyIndex, a, b, bodyIndex, t, hit.normal, hit.penetration, dt)) {
       recs.push_back({0, 0, a, t, hit.normal, hit.penetration, m});
     }
   });
-  for (const ContactRecord& r : recs) recordDepth(b, r.a, b, r.b, r.p);
+  for (const ContactRecord& r : recs) recordDepth(b, bodyIndex, r.a, b, bodyIndex, r.b, r.p);
   if (recs.empty()) return 0;
   if (s.selfLoad.size() != 1) s.selfLoad.assign(1, {});
   s.selfLoad[0].resize(static_cast<size_t>(b.nodeCount()), 0.0f);
-  budgetContacts(recs, [&](int) -> const Body& { return b; }, s.selfLoad);
+  budgetContacts(recs, [&](int) -> const Body& { return b; }, s.selfLoad,
+                 [&](int, int node) -> float& { return s.capacity[static_cast<size_t>(node)]; });
   for (const ContactRecord& r : recs) applyContact<kTrack>(w, b, r.a, b, r.b, r.n, r.p, r.m);
   return static_cast<int>(recs.size());
 }
@@ -1028,6 +1086,7 @@ int ContactSolver::ccdPass(World& w) {
   forEachPair(w.bodies_, 2.0f * dt, [&](int ia, int ib, const Pair& pr) {
     Body& A = w.bodies_[ia];
     Body& B = w.bodies_[ib];
+    if (A.family == B.family) return;  // a part and the body it broke off from: like self-contacts, no sweeps
     ContactScratch& s = w.scratch_[ia];
     for (int pass = 0; pass < 2; ++pass) {
       Body& N = pass == 0 ? A : B;  // node body
@@ -1096,19 +1155,16 @@ int ContactSolver::ccdPass(World& w) {
 
 // ---- energy and penetration ------------------------------------------------------------------------------------
 
-double ContactSolver::bodyContactPotential(const World& w, bool extendedBand) {
+double ContactSolver::bodyContactPotential(const World& w, bool extendedBand, std::vector<std::vector<float>>& capacity) {
   double e = 0.0;
   std::vector<ContactScratch> scratch(w.bodies_.size());
   for (size_t i = 0; i < w.bodies_.size(); ++i) scratch[i].surface.reset(static_cast<size_t>(w.bodies_[i].triangleCount()));
   // The self-collision Verlet lists are a pure speed-up (same contacts as a full search), so a fresh one is used here.
+  // Self contacts first, as in the step: they are budgeted before the contacts between bodies.
   std::vector<ContactRecord> recs;
   std::vector<std::vector<float>> load = makeLoads(w.bodies_);
   auto bodyOf = [&](int i) -> const Body& { return w.bodies_[static_cast<size_t>(i)]; };
-  gatherBodyContacts(w.bodies_, [&](int i) -> ContactScratch& { return scratch[static_cast<size_t>(i)]; },
-                     [&](int i) -> SurfaceCache& { return scratch[static_cast<size_t>(i)].surface; }, recs,
-                     w.params().dt, extendedBand);
-  budgetContacts(recs, bodyOf, load);
-  for (const ContactRecord& r : recs) e += contactEnergy(w, bodyOf(r.bodyA), r.a, bodyOf(r.bodyB), r.b, r.p, r.m);
+  auto capacityOf = [&](int body, int node) -> float& { return capacity[static_cast<size_t>(body)][static_cast<size_t>(node)]; };
   for (size_t bi = 0; bi < w.bodies_.size(); ++bi) {
     const Body& b = w.bodies_[bi];
     if (b.triangleCount() == 0) continue;
@@ -1116,13 +1172,20 @@ double ContactSolver::bodyContactPotential(const World& w, bool extendedBand) {
     forEachSelfContact(b, scratch[bi].surface, scratch[bi], [&](int i, const TriHit& hit) {
       const Side a = nodeSide(i), t = triSide(b, hit.tri, hit.bary);
       const float m = contactMass(b, a, b, t);
-      if (m > 0.0f && admissible(b, a, b, t, hit.normal, hit.penetration, w.params().dt)) {
+      if (m > 0.0f && admissible(b, static_cast<int>(bi), a, b, static_cast<int>(bi), t, hit.normal, hit.penetration,
+                                 w.params().dt)) {
         recs.push_back({static_cast<int32_t>(bi), static_cast<int32_t>(bi), a, t, hit.normal, hit.penetration, m});
       }
     });
-    budgetContacts(recs, bodyOf, load);
+    budgetContacts(recs, bodyOf, load, capacityOf);
     for (const ContactRecord& r : recs) e += contactEnergy(w, b, r.a, b, r.b, r.p, r.m);
   }
+  recs.clear();
+  gatherBodyContacts(w.bodies_, [&](int i) -> ContactScratch& { return scratch[static_cast<size_t>(i)]; },
+                     [&](int i) -> SurfaceCache& { return scratch[static_cast<size_t>(i)].surface; }, recs,
+                     w.params().dt, extendedBand);
+  budgetContacts(recs, bodyOf, load, capacityOf);
+  for (const ContactRecord& r : recs) e += contactEnergy(w, bodyOf(r.bodyA), r.a, bodyOf(r.bodyB), r.b, r.p, r.m);
   return e;
 }
 
@@ -1153,6 +1216,7 @@ PenetrationReport ContactSolver::measurePenetration(const World& w) {
   forEachPair(w.bodies_, 0.0f, [&](int ia, int ib, const Pair& pr) {
     const Body& A = w.bodies_[ia];
     const Body& B = w.bodies_[ib];
+    if (A.family == B.family) return;  // parts of one body (see Body::family)
     for (int pass = 0; pass < 2; ++pass) {
       const Body& N = pass == 0 ? A : B;
       const Body& T = pass == 0 ? B : A;
@@ -1166,6 +1230,7 @@ PenetrationReport ContactSolver::measurePenetration(const World& w) {
         int crossings = 0;
         float nearest = 1e30f;
         for (int t = 0; t < T.triangleCount(); ++t) {
+          if (!T.triClosed[static_cast<size_t>(t)]) continue;  // an open sheet has no inside
           const int32_t* tn = triNodes(T, t);
           const Vec3 a = pos(T, tn[0], p.offset), b = pos(T, tn[1], p.offset), c = pos(T, tn[2], p.offset);
           bool interior;
@@ -1230,5 +1295,26 @@ PenetrationReport ContactSolver::measurePenetration(const World& w) {
   });
   return r;
 }
+
+
+namespace detail {
+
+void settleContactDepths(Body& b) {
+  std::vector<ContactDepth>& next = b.contactDepthsNext;
+  std::sort(next.begin(), next.end(), [](const ContactDepth& x, const ContactDepth& y) {
+    if (x.node != y.node) return x.node < y.node;
+    if (x.otherBody != y.otherBody) return x.otherBody < y.otherBody;
+    if (x.otherNode != y.otherNode) return x.otherNode < y.otherNode;
+    return x.depth > y.depth;
+  });
+  // The deepest of each pair sorts first.
+  next.erase(std::unique(next.begin(), next.end(), [](const ContactDepth& x, const ContactDepth& y) {
+    return x.node == y.node && x.otherBody == y.otherBody && x.otherNode == y.otherNode;
+  }), next.end());
+  b.contactDepths.swap(next);
+  next.clear();
+}
+
+}  // namespace detail
 
 }  // namespace sbc

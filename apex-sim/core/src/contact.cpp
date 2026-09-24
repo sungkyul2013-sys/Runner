@@ -140,6 +140,8 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
   ContactScratch& s = w.scratch_[bodyIndex];
   gatherStaticCandidates(w, b, s);
   std::fill(b.patchForce.begin(), b.patchForce.end(), 0.0f);
+  s.capacity.resize(static_cast<size_t>(b.nodeCount()));
+  for (int i = 0; i < b.nodeCount(); ++i) s.capacity[static_cast<size_t>(i)] = contactCapacity(b.mass[i], 0);
   if (s.tris.empty() && s.planes.empty()) {
     std::fill(b.anchorContact.begin(), b.anchorContact.end(), -1);
     return 0;
@@ -152,6 +154,7 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
     const int n = collectStaticContacts(s, x, b.radius[i], contacts);
     if (n == 0) { b.anchorContact[i] = -1; continue; }
     const float m = b.mass[i];
+    s.capacity[static_cast<size_t>(i)] = contactCapacity(m, n);
     if (b.flags[i] & node_flag::kTread) {
       // Tyre tread: normal force only; the vehicle's tyre model supplies the tangential force (§6 hybrid). The node
       // takes `treadShare` of the spring (with its own damping); the full spring force is reported for the vehicle,
@@ -249,9 +252,9 @@ template int ContactSolver::staticContacts<false>(World&, int);
 
 int ContactSolver::ccdStatic(World& w, int bodyIndex) {
   Body& b = w.bodies_[bodyIndex];
-  const ContactScratch& s = w.scratch_[bodyIndex];
+  ContactScratch& s = w.scratch_[bodyIndex];
+  s.corrections.clear();
   if (s.tris.empty() && s.planes.empty()) return 0;
-  int clamps = 0;
   for (int i = 0; i < b.nodeCount(); ++i) {
     if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) continue;
     const Vec3 x1 = b.nodePosition(i);
@@ -262,11 +265,12 @@ int ContactSolver::ccdStatic(World& w, int bodyIndex) {
     float bestT = 2.0f;
     Vec3 bestNormal{};
     float bestOffset = 0.0f;  // plane offset: d(p) = dot(p, n) − offset
+    uint16_t bestMaterial = 0;
     for (const LocalPlane& pl : s.planes) {
       const float d0 = x0.y - pl.height, d1 = x1.y - pl.height;
       if (d0 >= -kCcdSlop && d1 < 0.0f && d1 < d0) {
         const float t = std::max(0.0f, d0) / (d0 - d1);
-        if (t < bestT) { bestT = t; bestNormal = {0.0f, 1.0f, 0.0f}; bestOffset = pl.height; }
+        if (t < bestT) { bestT = t; bestNormal = {0.0f, 1.0f, 0.0f}; bestOffset = pl.height; bestMaterial = pl.material; }
       }
     }
     for (const LocalTri& t : s.tris) {
@@ -278,6 +282,7 @@ int ContactSolver::ccdStatic(World& w, int bodyIndex) {
       bestT = tt;
       bestNormal = t.normal;
       bestOffset = dot(t.v0, t.normal);
+      bestMaterial = t.material;
     }
     if (bestT > 1.0f) continue;
     // Land on the surface's plane where the step ends: only the penetration is removed, the tangential part of the
@@ -286,29 +291,72 @@ int ContactSolver::ccdStatic(World& w, int bodyIndex) {
     // undid the tangential step instead: a node pressed onto the surface every step — a tyre tread node under a hard
     // landing, or one riding exactly on a bump's top edge — stayed frozen in place while its tangential velocity
     // kept growing under its beams (the latter reached 500 m/s and blew the car up at 80 km/h).
-    const Vec3 hit = x1 - bestNormal * (dot(x1, bestNormal) - bestOffset);
-    b.px[i] = hit.x; b.py[i] = hit.y; b.pz[i] = hit.z;
+    // Landing depth: the node keeps the contact spring it had at the start of the step (depth p0 of its sphere) plus
+    // what its normal kinetic energy can pay for, ½k(p² − p0²) ≤ ½m·v_n², at most its radius (the centre on the
+    // plane). Landing every crossing node on the plane itself would hand it a spring of ½k·r² — kilojoules for a
+    // chassis node hitting a wall — to push the car back with.
     const float vn = dot(v, bestNormal);
-    if (vn < 0.0f) {
-      const Vec3 v2 = v - bestNormal * vn;
-      b.vx[i] = v2.x; b.vy[i] = v2.y; b.vz[i] = v2.z;
-      b.losses.ccd += 0.5 * static_cast<double>(b.mass[i]) * (static_cast<double>(dot(v, v)) - dot(v2, v2));
-    }
-    b.anchorContact[i] = -1;
-    ++clamps;
+    const float r = b.radius[i];
+    const ContactPairParams& pp = w.contactPair(b.material[i], bestMaterial);
+    const float omega = kTwoPi * pp.normalFrequencyHz;
+    const float share = (b.flags[i] & node_flag::kTread) ? pp.treadShare : 1.0f;
+    const float k = share * b.mass[i] * omega * omega;
+    const float p0 = std::clamp(r - (dot(x0, bestNormal) - bestOffset), 0.0f, r);
+    const float kinetic = vn < 0.0f ? 0.5f * b.mass[i] * vn * vn : 0.0f;
+    const float p = k > 0.0f ? std::min(r, std::sqrt(p0 * p0 + 2.0f * kinetic / k)) : r;
+    const Vec3 hit = x1 - bestNormal * (dot(x1, bestNormal) - bestOffset - (r - p));
+    const Vec3 v2 = vn < 0.0f ? v - bestNormal * vn : v;
+    s.corrections.push_back({static_cast<int32_t>(i), hit, v2, kinetic});
   }
-  return clamps;
+  return static_cast<int>(s.corrections.size());
+}
+
+void ContactSolver::applyCcdStatic(World& w, int bodyIndex) {
+  Body& b = w.bodies_[bodyIndex];
+  for (const ContactScratch::StaticCorrection& c : w.scratch_[bodyIndex].corrections) {
+    const size_t i = static_cast<size_t>(c.node);
+    b.px[i] = c.position.x; b.py[i] = c.position.y; b.pz[i] = c.position.z;
+    b.vx[i] = c.velocity.x; b.vy[i] = c.velocity.y; b.vz[i] = c.velocity.z;
+    b.losses.ccd += c.kineticLoss;
+    b.anchorContact[i] = -1;
+  }
+}
+
+double ContactSolver::staticContactPotential(const World& w, int bodyIndex) {
+  const Body& b = w.bodies_[static_cast<size_t>(bodyIndex)];
+  const ContactScratch& s = w.scratch_[static_cast<size_t>(bodyIndex)];  // this step's static candidates
+  Contact contacts[kMaxContactsPerNode];
+  double e = 0.0;
+  for (int i = 0; i < b.nodeCount(); ++i) {
+    if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) continue;
+    const int n = collectStaticContacts(s, b.nodePosition(i), b.radius[i], contacts);
+    const bool tread = (b.flags[i] & node_flag::kTread) != 0;
+    for (int k = 0; k < n; ++k) {
+      const ContactPairParams& pp = w.contactPair(b.material[i], contacts[k].material);
+      const float omega = kTwoPi * pp.normalFrequencyHz;
+      const double share = tread ? pp.treadShare : 1.0;
+      e += 0.5 * share * static_cast<double>(b.mass[i]) * omega * omega * contacts[k].penetration * contacts[k].penetration;
+    }
+  }
+  return e;
 }
 
 double ContactSolver::contactPotential(const World& w, bool extendedBand) {
   double e = 0.0;
   ContactScratch s;
   Contact contacts[kMaxContactsPerNode];
-  for (const Body& b : w.bodies_) {
+  std::vector<std::vector<float>> capacity(w.bodies_.size());
+  for (size_t bi = 0; bi < w.bodies_.size(); ++bi) {
+    const Body& b = w.bodies_[bi];
     gatherStaticCandidates(w, b, s);
+    std::vector<float>& cap = capacity[bi];
+    cap.resize(static_cast<size_t>(b.nodeCount()));
+    for (int i = 0; i < b.nodeCount(); ++i) cap[static_cast<size_t>(i)] = contactCapacity(b.mass[i], 0);
+    if (s.tris.empty() && s.planes.empty()) continue;
     for (int i = 0; i < b.nodeCount(); ++i) {
       if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) continue;
       const int n = collectStaticContacts(s, b.nodePosition(i), b.radius[i], contacts);
+      cap[static_cast<size_t>(i)] = contactCapacity(b.mass[i], n);
       // A tread node's wheel share is not a node spring: its work is booked by the vehicle (A§4.7).
       const bool tread = (b.flags[i] & node_flag::kTread) != 0;
       for (int k = 0; k < n; ++k) {
@@ -320,7 +368,7 @@ double ContactSolver::contactPotential(const World& w, bool extendedBand) {
       }
     }
   }
-  e += bodyContactPotential(w, extendedBand);
+  e += bodyContactPotential(w, extendedBand, capacity);
   return e;
 }
 

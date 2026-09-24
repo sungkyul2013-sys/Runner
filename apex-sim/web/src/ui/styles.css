@@ -114,6 +114,10 @@ select { width: 100%; }
 .lamp.on { color: var(--text-2); }
 .lamp.act { color: #140a05; background: var(--warning); border-color: var(--warning); }
 .lamp.off { text-decoration: line-through; }
+.dash-gauges { display: flex; gap: 14px; justify-content: center; font-family: var(--font-num); font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.gauge.bad { color: var(--danger); }
+.dash-warn { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.lamp.warn { color: #fff; background: var(--danger); border-color: var(--danger); }
 .dash-help { color: var(--text-3); font-size: 11px; text-align: center; line-height: 1.5; }
 @media (max-width: 720px) { .dash-help { display: none; } }
 .drivebar { position: fixed; top: 16px; left: 16px; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; background: rgba(20, 23, 28, 0.82); border: 1px solid var(--border); border-radius: var(--radius-m); backdrop-filter: blur(8px); }

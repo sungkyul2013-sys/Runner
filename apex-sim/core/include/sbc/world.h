@@ -24,6 +24,7 @@ struct WorldParams {
   float dt = kDefaultDt;                         // [s]
   int threadCount = 1;                           // total threads incl. the caller
   bool trackEnergy = false;                      // per-category dissipation bookkeeping (§5.3)
+  float airDensity = 1.225f;                     // ρ [kg/m³] acting on bodies' aero panels (ISA sea level; 0: no air)
 };
 
 // Contact law for one material pair (§5.2): mass-scaled penalty spring-damper along the normal and

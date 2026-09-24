@@ -163,6 +163,7 @@ async function main() {
             kmh: d.latest.speed * 3.6,
             z: d.latest.position[2],
             flexMeshes: d.view.flexbody ? d.view.flexbody.meshes.length : 0,
+            partVertices: d.view.flexbody ? [...d.view.flexbody.partVertices] : [],
             windscreen: look('glass_windscreen'),
             headlamps: [look('lamp_front_left'), look('lamp_front_right')],
             tailLamps: [look('lamp_rear_left'), look('lamp_rear_right')],
@@ -192,6 +193,8 @@ async function main() {
       await page.screenshot({ path: join(dir, 'M2-crash-cage.png') });
       console.log('crash:', JSON.stringify(s));
       if (s.flexMeshes === 0) failures.push('crash: the body mesh is not bound to the node cage (no flexbody)');
+      // §4.4 hinged panels: the lids' and doors' GLB pieces follow their own node-beam panels.
+      if (s.partVertices.length !== 4 || s.partVertices.some((n) => n === 0)) failures.push(`crash: hinged panel vertices ${s.partVertices}`);
       if (s.plasticKJ < 50) failures.push(`crash: only ${s.plasticKJ.toFixed(1)} kJ absorbed plastically`);
       if (Math.abs(s.kmh) > 1) failures.push(`crash: the wreck still moves at ${s.kmh.toFixed(1)} km/h`);
       if (s.balance > 0.05) failures.push(`crash: energy balance error ${(100 * s.balance).toFixed(2)} %`);

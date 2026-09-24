@@ -17,6 +17,11 @@
 // on the WebGL2 fallback, which has no compute shaders (the UE design of §3 does this in a compute pass; this is the
 // web platform's equivalent, ARCHITECTURE A§5). Meshes render in render space with an identity transform.
 //
+// Hinged panels (§4.4: lids and doors, the vehicle JSON's visual.parts): each is a GLB paint piece with a node-beam
+// panel of its own. Its vertices bind only to that panel's nodes (a frame from the panel grid's neighbours), every
+// other vertex only to the chassis lattice, so a lid swings open, flaps and flies off with its panel while the body
+// under it stays put.
+//
 // Tearing: a node that broke off with a part lives in another body (island split, §4.3). The texture carries each
 // node's piece (its current body); a vertex follows only the nodes in its nearest node's piece, and a triangle whose
 // corners ended up in different pieces is discarded, so the panel parts along the tear instead of stretching across it.
@@ -27,7 +32,7 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, attribute, cross as crossNode, float, fract, int, ivec2, materialColor, materialOpacity, max, mix, negateOnBackSide, normalize, select, sin,
-  smoothstep, fwidth, textureLoad, transformNormalToView, uniformArray, varying, varyingProperty, vec2, vec3, vec4,
+  smoothstep, fwidth, textureLoad, transformNormalToView, uniform, uniformArray, varying, varyingProperty, vec2, vec3, vec4,
 } from 'three/tsl';
 import type { RenderFrame } from '../physics/PhysicsClient';
 import { matchPieces, panelLook, PanelState, rimDistance, splitPieces, type DamageGroupDef, type DamageStatus } from './Damage';
@@ -45,9 +50,20 @@ interface Neighbour {
 export interface CageNode {
   index: number;
   rest: V3;
-  /** Lattice neighbours spanning the node frame (preferred first): along the model x axis, and along z. */
+  /** Neighbours spanning the node frame (preferred first): along the model x axis and along z for the lattice, along
+   *  the panel grid's two directions for a panel node. */
   x: Neighbour[];
   z: Neighbour[];
+  /** Hinged panel the node belongs to (index into the parts list); absent: the chassis lattice. */
+  part?: number;
+}
+
+/** A hinged panel of the vehicle JSON (visual.parts): its GLB pieces (area-weighted centroids, model frame) and the
+ *  id prefix of its node grid ("<prefix><i>_<j>_<layer>"). */
+export interface VehiclePartDef {
+  id: string;
+  pieces: V3[];
+  nodePrefix: string;
 }
 
 /** Resolves where a body node is now ([body, node]) — PhysicsClient.locate. */
@@ -113,10 +129,12 @@ export interface VertexBinding {
   gradients: V3[];
 }
 
-/** Binds a model-frame rest vertex to the cage. */
-export function bindVertex(v: V3, cage: CageNode[]): VertexBinding {
+/** Binds a model-frame rest vertex to the cage (to the nodes among `candidates` when given: cage indices). */
+export function bindVertex(v: V3, cage: CageNode[], candidates?: number[]): VertexBinding {
   const bestD = new Array<number>(K).fill(Infinity), bestK = new Array<number>(K).fill(0);
-  for (let k = 0; k < cage.length; k++) {
+  const count = candidates ? candidates.length : cage.length;
+  for (let q = 0; q < count; q++) {
+    const k = candidates ? candidates[q] : q;
     const r = cage[k].rest;
     const d = (v[0] - r[0]) ** 2 + (v[1] - r[1]) ** 2 + (v[2] - r[2]) ** 2;
     if (d >= bestD[K - 1]) continue;
@@ -200,6 +218,12 @@ export class Flexbody {
   private readonly panelSag: THREE.Vector4[];
   private readonly panelVerts: Array<Array<{ mesh: THREE.Mesh; tris: number[] }>>;
   private readonly states: PanelState[];
+  private readonly parts: VehiclePartDef[];
+  private readonly lattice: number[];     // cage indices of the chassis lattice
+  private readonly partNodes: number[][]; // cage indices of each hinged panel
+  /** Vertices bound to each hinged panel (tests: every panel's GLB piece was found). */
+  readonly partVertices: number[];
+  private readonly lampPower = uniform(1); // 0 when the electrics failed (§4.4): every lamp goes dark
   /** Called when a tempered pane shatters or a lamp breaks, with fragment points and velocities (render space). */
   onBreak: ((kind: 'glass' | 'lamp', points: V3[], velocities: V3[], colors: THREE.Color[]) => void) | null = null;
 
@@ -207,11 +231,17 @@ export class Flexbody {
    * @param root      the model's vehicle-frame root
    * @param bodyMesh  the body part of the model (wheels removed); its meshes move into `group`
    * @param cage      chassis lattice nodes of physics body `body`
-   * @param damage    the vehicle's damage groups and its nodes' rest positions (model frame), for glass and lamps
+   * @param damage    the vehicle's damage groups and its nodes' rest positions (model frame), for glass and lamps, and
+   *                  its hinged panels (the cage's part nodes carry their GLB pieces)
    */
   constructor(root: THREE.Object3D, bodyMesh: THREE.Object3D, private readonly cage: CageNode[], private body: number,
-              damage: { defs: DamageGroupDef[]; nodeRest: (node: number) => V3 } | null = null) {
+              damage: { defs: DamageGroupDef[]; nodeRest: (node: number) => V3; parts?: VehiclePartDef[] } | null = null) {
     this.defs = damage?.defs ?? [];
+    this.parts = damage?.parts ?? [];
+    this.lattice = [];
+    this.partNodes = this.parts.map(() => []);
+    this.partVertices = this.parts.map(() => 0);
+    cage.forEach((c, k) => (c.part === undefined ? this.lattice : this.partNodes[c.part] ?? this.lattice).push(k));
     this.nodeRest = damage?.nodeRest ?? (() => [0, 0, 0]);
     const groups = Math.max(this.defs.length, 1);
     this.panelState = Array.from({ length: groups }, (_, g) => new THREE.Vector4(0, 0, 0, (g * 0.6180339887) % 1));
@@ -308,10 +338,14 @@ export class Flexbody {
     if (kind) this.bindPanels(mesh, kind);
     const pos = g.getAttribute('position');
     const n = pos.count;
+    const vertexPart = role === 'paint' && this.parts.length ? this.partOfVertices(g) : null;
     const ids = new Float32Array(n * K), weights = new Float32Array(n * K);
     const gradients = [0, 1, 2, 3].map(() => new Float32Array(n * 3));
     for (let i = 0; i < n; i++) {
-      const b = bindVertex([pos.getX(i), pos.getY(i), pos.getZ(i)], this.cage);
+      const part = vertexPart ? vertexPart[i] : -1;
+      const own = part >= 0 && this.partNodes[part].length >= K;
+      if (own) this.partVertices[part]++;
+      const b = bindVertex([pos.getX(i), pos.getY(i), pos.getZ(i)], this.cage, own ? this.partNodes[part] : this.lattice);
       ids.set(b.nodes, i * K);
       weights.set(b.weights, i * K);
       for (let s = 0; s < K; s++) gradients[s].set(b.gradients[s], i * 3);
@@ -333,6 +367,34 @@ export class Flexbody {
       return f;
     });
     mesh.material = Array.isArray(mesh.material) ? flex : flex[0];
+  }
+
+  /** Hinged panel of every vertex of a baked paint mesh (−1: the body): its connected pieces matched to the parts'
+   *  piece centroids (to 2 cm, as the generator measured them). */
+  private partOfVertices(g: THREE.BufferGeometry): Int32Array {
+    const pos = g.getAttribute('position').array as Float32Array;
+    const index = g.index ? (g.index.array as ArrayLike<number>) : null;
+    const { triPiece, centroids } = splitPieces(pos, index);
+    const pieceParts = centroids.map((c) => {
+      let best = -1, bestD = 0.02;
+      this.parts.forEach((p, k) => {
+        for (const q of p.pieces) {
+          const d = Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]);
+          if (d < bestD) {
+            bestD = d;
+            best = k;
+          }
+        }
+      });
+      return best;
+    });
+    const out = new Int32Array(pos.length / 3).fill(-1);
+    for (let t = 0; t < triPiece.length; t++) {
+      const part = pieceParts[triPiece[t]];
+      if (part < 0) continue;
+      for (let k = 0; k < 3; k++) out[index ? index[t * 3 + k] : t * 3 + k] = part;
+    }
+    return out;
   }
 
   /** Tags the glass / lamp vertices of a baked mesh with their damage group ('fbPanel', −1: none) and, for glass, their
@@ -446,7 +508,7 @@ export class Flexbody {
     const cell = vX.mul(66).floor();
     const noise = fract(sin(cell.dot(vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
     if (kind === 'lamp') {
-      mat.colorNode = materialColor.mul(select(broken, float(0.12), float(1)));
+      mat.colorNode = materialColor.mul(select(broken, float(0.12), float(1))).mul(this.lampPower.mul(0.88).add(0.12));
       mat.maskNode = intact.and(broken.and(noise.greaterThan(0.55)).not());
       mat.needsUpdate = true;
       return;
@@ -540,6 +602,15 @@ export class Flexbody {
     this.texture.needsUpdate = true;
   }
 
+  /** Lamps lit (electrics working) or dark. */
+  set lights(on: boolean) {
+    this.lampPower.value = on ? 1 : 0;
+  }
+
+  get lights(): boolean {
+    return this.lampPower.value > 0.5;
+  }
+
   /** Current look of every damage group (index = group). */
   get panelStates(): readonly PanelState[] {
     return this.states;
@@ -570,7 +641,8 @@ export class Flexbody {
         }
         this.panelCrack[g].set(best[0], best[1], best[2], 0);
       }
-      if (look.state === PanelState.Broken && this.states[g] !== PanelState.Broken && def.visual) this.shed(g, def.visual.kind, rand);
+      const kind = def.visual?.kind;
+      if (look.state === PanelState.Broken && this.states[g] !== PanelState.Broken && (kind === 'glass' || kind === 'lamp')) this.shed(g, kind, rand);
       this.states[g] = look.state;
     });
   }
@@ -673,5 +745,36 @@ export function latticeCage(nodes: VehicleJsonNode[]): CageNode[] {
     if (x.length === 0 || z.length === 0) continue; // no frame: cannot carry vertices
     cage.push({ index: p.index, rest: p.rest, x, z });
   }
+  return cage;
+}
+
+/**
+ * Cage of an apex-vehicle JSON document with its hinged panels: the chassis lattice (latticeCage) and every panel's
+ * node grid ("<prefix><i>_<j>_<layer>"), each node framed by its grid neighbours along i and j (same layer).
+ */
+export function vehicleCage(nodes: VehicleJsonNode[], parts: VehiclePartDef[] = []): CageNode[] {
+  const cage = latticeCage(nodes);
+  parts.forEach((part, p) => {
+    const byGrid = new Map<string, number>();
+    const grid: Array<{ index: number; i: number; j: number; k: number; rest: V3 }> = [];
+    nodes.forEach((row, index) => {
+      if (!row[0].startsWith(part.nodePrefix)) return;
+      const m = /^(\d+)_(\d+)_(\d+)$/.exec(row[0].slice(part.nodePrefix.length));
+      if (!m) return;
+      const [i, j, k] = [Number(m[1]), Number(m[2]), Number(m[3])];
+      byGrid.set(`${i},${j},${k}`, index);
+      grid.push({ index, i, j, k, rest: [row[1], row[2], row[3]] });
+    });
+    const at = (i: number, j: number, k: number, sign: 1 | -1): Neighbour[] => {
+      const node = byGrid.get(`${i},${j},${k}`);
+      return node === undefined ? [] : [{ node, sign }];
+    };
+    for (const g of grid) {
+      const x = [...at(g.i + 1, g.j, g.k, 1), ...at(g.i - 1, g.j, g.k, -1)];
+      const z = [...at(g.i, g.j + 1, g.k, 1), ...at(g.i, g.j - 1, g.k, -1)];
+      if (x.length === 0 || z.length === 0) continue;
+      cage.push({ index: g.index, rest: g.rest, x, z, part: p });
+    }
+  });
   return cage;
 }

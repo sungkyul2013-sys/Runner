@@ -50,6 +50,8 @@ class Vehicle {
     h.value(wrecked_);
     h.value(coolantL_); h.value(oilL_); h.value(fuelL_); h.value(coolantC_); h.value(engineWear_); h.value(lastPower_);
     h.value(engineFailed_); h.value(faults_);
+    for (size_t i = 0; i < sensorLong_.size(); ++i) { h.value(sensorLong_[i]); h.value(sensorLat_[i]); }
+    h.value(sensorAt_); h.value(sensorFill_); h.value(airbags_); h.value(crashTime_); h.value(crashPeakG_); h.value(crashDeltaV_);
   }
 
  private:
@@ -105,6 +107,12 @@ class Vehicle {
   int gearsLost_ = 0;
   std::vector<uint8_t> driveLost_;   // per wheel
   std::vector<double> brakeFactor_;  // per wheel
+
+  // §4.4 crash sensor: the cabin reference node's chassis-frame velocity over the last 50 ms (ring buffer).
+  std::vector<double> sensorLong_, sensorLat_;
+  size_t sensorAt_ = 0, sensorFill_ = 0;
+  uint32_t airbags_ = 0;
+  double crashTime_ = -1.0, crashPeakG_ = 0.0, crashDeltaV_ = 0.0;
 
   // Per-step scratch (no allocation in step()).
   struct WheelFrame {

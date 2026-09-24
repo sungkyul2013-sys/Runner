@@ -63,6 +63,60 @@ export class VehicleBuilder {
     }
   }
 
+  // Hinged panel (§4.4 hoods, lids, doors): a two-layer grid of nodes snapped to the outer surface of a GLB piece
+  // (`samples`, outward normal `n`, in-plane axes `u`, `v`), ids `p_<id>_<i>_<j>_<k>` (k = 0 outer skin, 1 inner frame,
+  // `thickness` inside), beams in all 13 lattice directions (k = EA / L, yielding at `yieldForce`: dents), collision
+  // triangles on the outer layer (own self-collision group) that are also aero panels (flat plate, C_N 1.2). Returns
+  // the outer-layer grid: outer(i, j) → node id or undefined.
+  panelPart({ id, samples, n, u, v, pitch, mass, collisionGroup, thickness = 0.06, EA = 2.0e4, yieldForce = 1.5e3, radius = 0.03, suction = 0 }) {
+    const su = samples.map((p) => dot(p, u)), sv = samples.map((p) => dot(p, v)), sn = samples.map((p) => dot(p, n));
+    const lo = [Math.min(...su) + 0.03, Math.min(...sv) + 0.03], hi = [Math.max(...su) - 0.03, Math.max(...sv) - 0.03];
+    const ni = Math.max(2, Math.round((hi[0] - lo[0]) / pitch) + 1), nj = Math.max(2, Math.round((hi[1] - lo[1]) / pitch) + 1);
+    const grid = new Map(), key = (i, j, k) => `${i},${j},${k}`;
+    const reach = 0.6 * pitch;
+    for (let i = 0; i < ni; i++) {
+      for (let j = 0; j < nj; j++) {
+        const U = lo[0] + ((hi[0] - lo[0]) * i) / (ni - 1), V = lo[1] + ((hi[1] - lo[1]) * j) / (nj - 1);
+        let best = -1;
+        samples.forEach((p, k) => {
+          if (Math.hypot(su[k] - U, sv[k] - V) < reach && (best < 0 || sn[k] > sn[best])) best = k;
+        });
+        if (best < 0) continue;  // outside the piece's outline
+        const outer = add(add(scale(u, U), scale(v, V)), scale(n, sn[best]));
+        grid.set(key(i, j, 0), this.node(`p_${id}_${i}_${j}_0`, outer, 1, { radius }));
+        grid.set(key(i, j, 1), this.node(`p_${id}_${i}_${j}_1`, add(outer, scale(n, -thickness)), 1, { radius }));
+      }
+    }
+    const ids = [...grid.values()];
+    for (const nid of ids) this.byId.get(nid).mass = mass / ids.length;
+    const dirs = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, -1, 0], [1, 0, 1], [1, 0, -1], [0, 1, 1], [0, 1, -1],
+      [1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1]];
+    for (const [k0, a] of grid) {
+      const [i, j, k] = k0.split(',').map(Number);
+      for (const [di, dj, dk] of dirs) {
+        const c = grid.get(key(i + di, j + dj, k + dk));
+        if (!c) continue;
+        this.beam(a, c, 'panel', { k: Math.round(EA / dist(this.pos(a), this.pos(c))), plasticForce: yieldForce, hardening: 0.05 });
+      }
+    }
+    const outer = (i, j) => grid.get(key(i, j, 0));
+    this.aeroPanels ??= [];
+    for (let i = 0; i + 1 < ni; i++) {
+      for (let j = 0; j + 1 < nj; j++) {
+        const q = [outer(i, j), outer(i + 1, j), outer(i + 1, j + 1), outer(i, j + 1)];
+        for (const tri of [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]) {
+          if (tri.some((x) => !x)) continue;
+          const [pa, pb, pc] = tri.map((x) => this.pos(x));
+          const outward = dot(cross3(sub(pb, pa), sub(pc, pa)), n) > 0;
+          const wound = outward ? tri : [tri[0], tri[2], tri[1]];
+          this.triangles.push([...wound, collisionGroup]);
+          this.aeroPanels.push([...wound, 1.2, suction]);
+        }
+      }
+    }
+    return { ni, nj, outer, inner: (i, j) => grid.get(key(i, j, 1)), nodes: ids };
+  }
+
   // Box lattice clipped to a hull: node (x_i, y_j, z_k) exists when `inside(p)`; 13 forward neighbour directions.
   // Beam stiffness k = EA / L (uniform axial rigidity, like core makeLattice) when `axialStiffness` is given.
   buildLattice({ xs, ys, zs, inside, group = 'chassis', radius = 0.05, axialStiffness }) {
@@ -186,6 +240,7 @@ export class VehicleBuilder {
       sliders: this.sliders,
       torsionBars: this.torsionBars,
       triangles: this.triangles,
+      aeroPanels: this.aeroPanels ?? [],
       damageGroups: this.damageGroups,
       pressureWheels: this.pressureWheels,
       vehicle: meta.vehicle,

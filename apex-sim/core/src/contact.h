@@ -173,7 +173,23 @@ struct ContactScratch {
   std::vector<SelfPairCache> selfCache;              // persists across steps
   std::vector<ContactRecord> records, selfRecords;  // this step's contacts (inter-body: scratch of body 0)
   std::vector<std::vector<float>> bodyLoad, selfLoad;       // per-node contact load (Σ w·m), kept zeroed
+  std::vector<float> capacity;  // per node: contact load [kg] still available to self and body contacts this step
+  struct StaticCorrection {
+    int32_t node;
+    Vec3 position, velocity;
+    float kineticLoss;  // [J]
+  };
+  std::vector<StaticCorrection> corrections;  // this step's static CCD clamps (ccdStatic, applied by applyCcdStatic)
 };
+
+// Explicit stability of all contacts on one node (§4.2, see body_contact.cpp budgetContacts): Σ w·m_contact over its
+// static, self and body contacts stays within kContactLoadBudget·m. A node's static contacts take one unit.
+inline constexpr float kContactLoadBudget = 2.0f;
+
+// Budget left for self and body contacts once a node has `staticContacts` contacts with static geometry.
+inline float contactCapacity(float mass, int staticContacts) {
+  return (kContactLoadBudget - (staticContacts > 0 ? 1.0f : 0.0f)) * mass;
+}
 
 struct ContactSolver {
   // Static triangles/planes within reach of the body this step, in its local coordinates.
@@ -183,6 +199,10 @@ struct ContactSolver {
   static int staticContacts(World& world, int bodyIndex);
   // After integration: clamps nodes whose centre crossed a static surface during the step.
   static int ccdStatic(World& world, int bodyIndex);
+  // Applies the clamps ccdStatic found (their kinetic energy goes to losses.ccd).
+  static void applyCcdStatic(World& world, int bodyIndex);
+  // Potential energy of one body's springs against static geometry (as contactPotential counts it).
+  static double staticContactPotential(const World& world, int bodyIndex);
   // Contacts between different bodies (serial phase, deterministic pair order): node↔triangle and edge↔edge when
   // both bodies have a collision surface, node spheres otherwise.
   template <bool kTrack>
@@ -200,7 +220,8 @@ struct ContactSolver {
   // extendedBand: body springs continue behind the triangle mid-plane (only for the potential right before the
   // sweep corrections; forces and the ledger at step ends use the front-only band).
   static double contactPotential(const World& world, bool extendedBand = false);
-  static double bodyContactPotential(const World& world, bool extendedBand = false);
+  // `capacity`: per body and node, the contact budget left by static contacts (contactCapacity).
+  static double bodyContactPotential(const World& world, bool extendedBand, std::vector<std::vector<float>>& capacity);
   static PenetrationReport measurePenetration(const World& world);
 };
 

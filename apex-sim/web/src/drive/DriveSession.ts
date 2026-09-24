@@ -10,7 +10,10 @@ import { Dashboard } from '../ui/Dashboard';
 import { t } from '../ui/i18n';
 import { decodeDamage, type DamageGroupDef } from '../vehicles/Damage';
 import { Debris, glassDebris, lampDebris } from '../vehicles/Debris';
-import { latticeCage, type CageNode, type VehicleJsonNode } from '../vehicles/Flexbody';
+import { Leaks } from '../vehicles/Leaks';
+import { Airbags, type AirbagDef } from '../vehicles/Airbags';
+import { FAULT } from '../physics/telemetry';
+import { vehicleCage, type CageNode, type VehicleJsonNode, type VehiclePartDef } from '../vehicles/Flexbody';
 import { loadVehicleModel } from '../vehicles/VehicleModel';
 import { ChaseCamera } from './ChaseCamera';
 import { DriveInput } from './DriveInput';
@@ -30,6 +33,8 @@ export class DriveSession {
   // Glass granules and lamp shards (§4.3 side-effect particles).
   readonly glassDebris: Debris = glassDebris();
   readonly lampDebris: Debris = lampDebris();
+  leaks: Leaks | null = null; // coolant, oil and fuel drips and stains (§4.4)
+  airbags: Airbags | null = null;
 
   constructor(
     private readonly physics: PhysicsClient,
@@ -79,6 +84,8 @@ export class DriveSession {
     this.physics.loadScene(DRIVE_SCENE);
     this.glassDebris.clear();
     this.lampDebris.clear();
+    this.leaks?.clear();
+    this.airbags?.reset();
     const modelPromise = this.vehicle.model && !this.view ? loadVehicleModel(this.vehicle.model) : null;
     // Worker URLs resolve against the worker script, not the page: send an absolute one.
     const src = this.vehicle.source;
@@ -93,8 +100,15 @@ export class DriveSession {
     if (modelPromise) {
       try {
         const [model, doc] = await Promise.all([modelPromise, docPromise]);
-        this.view = new VehicleView(model, doc?.cage ?? null, this.spawned.body, doc ? { defs: doc.damageGroups, nodeRest: doc.nodeRest } : null);
+        this.view = new VehicleView(model, doc?.cage ?? null, this.spawned.body,
+          doc ? { defs: doc.damageGroups, nodeRest: doc.nodeRest, parts: doc.parts } : null);
         this.viewer.scene.add(this.view.group);
+        if (doc) {
+          this.leaks = new Leaks(doc.damageGroups);
+          this.viewer.scene.add(this.leaks.group);
+          this.airbags = new Airbags(doc.airbags);
+          model.root.add(this.airbags.group); // rides on the chassis frame
+        }
         const known = this.physics.damage.get(this.spawned.body);
         if (known) this.view.flexbody?.setDamage(decodeDamage(known.status));
         if (this.view.flexbody) {
@@ -135,6 +149,10 @@ export class DriveSession {
     this.view?.update(v, frame, (b, n) => this.physics.locate(b, n), this.physics.islandVersion);
     this.glassDebris.update(dt);
     this.lampDebris.update(dt);
+    const known = this.physics.damage.get(this.spawned.body);
+    this.leaks?.update(dt, v, known ? decodeDamage(known.status) : null);
+    this.airbags?.update(v.airbags, dt);
+    if (this.view?.flexbody) this.view.flexbody.lights = (v.faults & FAULT.electrical) === 0;
     this.chase.update(dt, v);
     this.physics.setVehicleInput(this.spawned.vehicle, this.input.update(dt, v.speed));
     const logic = this.input.logic;
@@ -147,17 +165,31 @@ export class DriveSession {
   }
 }
 
-/** What the renderer needs from an apex-vehicle JSON document: the chassis lattice cage (flexbody), the damage groups
- *  (glass and lamps) and the nodes' rest positions (model frame). */
-async function loadVehicleDoc(url: string): Promise<{ cage: CageNode[]; damageGroups: DamageGroupDef[]; nodeRest: (i: number) => [number, number, number] } | null> {
+/** What the renderer needs from an apex-vehicle JSON document: the flexbody cage (chassis lattice and hinged panels),
+ *  the damage groups (glass, lamps, components), the hinged panels, the airbags and the nodes' rest positions (model
+ *  frame). */
+async function loadVehicleDoc(url: string): Promise<{
+  cage: CageNode[];
+  parts: VehiclePartDef[];
+  damageGroups: DamageGroupDef[];
+  airbags: AirbagDef[];
+  nodeRest: (i: number) => [number, number, number];
+} | null> {
   const response = await fetch(url);
   if (!response.ok) return null;
-  const doc = (await response.json()) as { nodes?: VehicleJsonNode[]; damageGroups?: DamageGroupDef[] };
+  const doc = (await response.json()) as {
+    nodes?: VehicleJsonNode[];
+    damageGroups?: DamageGroupDef[];
+    visual?: { airbags?: AirbagDef[]; parts?: VehiclePartDef[] };
+  };
   if (!doc.nodes) return null;
   const nodes = doc.nodes;
+  const parts = doc.visual?.parts ?? [];
   return {
-    cage: latticeCage(nodes),
+    cage: vehicleCage(nodes, parts),
+    parts,
     damageGroups: doc.damageGroups ?? [],
+    airbags: doc.visual?.airbags ?? [],
     nodeRest: (i) => (nodes[i] ? [nodes[i][1], nodes[i][2], nodes[i][3]] : [0, 0, 0]),
   };
 }

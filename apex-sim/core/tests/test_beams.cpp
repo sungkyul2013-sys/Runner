@@ -70,6 +70,48 @@ TEST_CASE("plastic yield with hardening settles at the analytic permanent set", 
   CHECK(b.broken[0] == 0);
 }
 
+TEST_CASE("low-cycle fatigue: yielding back and forth breaks a beam, yielding one way does not", "[beams][4.3][4.4]") {
+  // A 1 kg node on a 1 m perfectly plastic beam (k = 10 kN/m, F_y = 20 N) from a fixed anchor, kicked to 1 m/s every
+  // 0.2 s: each kick drives some 10 mm of plastic flow (½mv² / F_y, less what the damper takes). Kicked alternately
+  // out and in, every flow after the first runs against the one before it, and 10 cm of that (fatigueLimit 0.1)
+  // breaks the beam after about ten reversals.
+  // Kicked outward only, the beam stretches the same way every time: no fatigue (its tear limit is not set).
+  auto run = [](bool alternate, int& reversalsSeen) {
+    World w(test::zeroGravity());
+    BodyDesc d;
+    NodeDesc anchor;
+    anchor.flags = node_flag::kFixed;
+    anchor.mass = 0.0f;
+    NodeDesc m;
+    m.position = {1.0f, 0.0f, 0.0f};
+    m.mass = 1.0f;
+    d.nodes = {anchor, m};
+    BeamDesc beam;
+    beam.a = 0;
+    beam.b = 1;
+    beam.stiffness = 1.0e4f;
+    beam.damping = 40.0f;  // ζ = 0.2: the elastic rebound after each kick dies out before it could yield backwards
+    beam.plasticForce = 20.0f;
+    beam.fatigueLimit = 0.1f;
+    d.beams.push_back(beam);
+    w.addBody(d);
+    reversalsSeen = 0;
+    for (int k = 0; k < 20 && !w.body(0).broken[0]; ++k) {
+      const float target = alternate && (k % 2) ? -1.0f : 1.0f;
+      w.addBodyVelocity(0, {target - w.body(0).vx[1], 0.0f, 0.0f});
+      w.step(400);
+      if (w.body(0).fatigue[0] > 0.0f) ++reversalsSeen;
+    }
+    return w.body(0).broken[0] != 0;
+  };
+  int reversals = 0;
+  CHECK(run(true, reversals));
+  CHECK(reversals >= 5);
+  CHECK(reversals <= 15);
+  CHECK_FALSE(run(false, reversals));
+  CHECK(reversals == 0);
+}
+
 TEST_CASE("beam breaks above its break force and books the released energy", "[beams][4.3]") {
   WorldParams wp;
   wp.trackEnergy = true;

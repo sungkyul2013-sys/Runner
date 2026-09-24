@@ -156,6 +156,7 @@ int World::addBody(const BodyDesc& desc) {
   const double contactBefore = ContactSolver::contactPotential(*this);
   const double own = kineticEnergy(b) + gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b) +
                      detail::constraintPotentialEnergy(b);
+  b.family = static_cast<int32_t>(bodies_.size());
   bodies_.push_back(std::move(b));
   bodyStats_.emplace_back();
   scratch_.emplace_back();
@@ -215,10 +216,7 @@ void World::stepOnce() {
                                               : ContactSolver::bodyContacts<false>(*this);
   }
   // The contact depths just gathered become the reference for the next contacts (and the ledger at the step end).
-  for (Body& b : bodies_) {
-    b.contactDepth.swap(b.contactDepthNext);
-    std::fill(b.contactDepthNext.begin(), b.contactDepthNext.end(), 0.0f);
-  }
+  jobs_->parallelFor(n, [this](int i) { detail::settleContactDepths(bodies_[static_cast<size_t>(i)]); });
   if (n > 1) {
     jobs_->parallelFor(n, [this](int i) { integrateBody(i); });
     // Sweep tests between bodies (serial, deterministic pair order). Their position corrections move nodes without a
@@ -246,10 +244,24 @@ void World::stepOnce() {
     b.islandCheckedAt = b.brokenBeamCount;
     for (Body& part : detail::splitIslands(b)) {
       part.sourceBody = static_cast<int32_t>(i);
+      part.family = b.family;
       parts.push_back(std::move(part));
     }
   }
+  // Pairs with a node that moved into a new part lose their continuity (the part's contacts start afresh).
+  if (!parts.empty()) {
+    for (int i = 0; i < n; ++i) {
+      Body& own = bodies_[static_cast<size_t>(i)];
+      std::erase_if(own.contactDepths, [&](const ContactDepth& e) {
+        const Body& other = bodies_[static_cast<size_t>(e.otherBody)];
+        return (own.flags[static_cast<size_t>(e.node)] & node_flag::kDetached) ||
+               (other.flags[static_cast<size_t>(e.otherNode)] & node_flag::kDetached);
+      });
+    }
+  }
   for (Body& part : parts) {
+    part.contactDepths.clear();
+    part.contactDepthsNext.clear();
     bodies_.push_back(std::move(part));
     bodyStats_.emplace_back();
     scratch_.emplace_back();
@@ -286,6 +298,7 @@ void World::computeInternalForces(int bi) {
     detail::updateHydros(b, params_.dt);
     st.beamsBroken = detail::accumulateBeamForces<true>(b);
     detail::accumulateConstraintForces<true>(b);
+    if (!b.aeroCoefficient.empty()) detail::accumulateAeroPanels<true>(b, params_.airDensity);
     st.staticContacts = ContactSolver::staticContacts<true>(*this, bi);
     if (b.triangleCount() > 0) {
       ContactSolver::updateSurface(*this, bi);
@@ -296,6 +309,7 @@ void World::computeInternalForces(int bi) {
     detail::updateHydros(b, params_.dt);
     st.beamsBroken = detail::accumulateBeamForces<false>(b);
     detail::accumulateConstraintForces<false>(b);
+    if (!b.aeroCoefficient.empty()) detail::accumulateAeroPanels<false>(b, params_.airDensity);
     st.staticContacts = ContactSolver::staticContacts<false>(*this, bi);
     if (b.triangleCount() > 0) {
       ContactSolver::updateSurface(*this, bi);
@@ -346,7 +360,20 @@ void World::integrateBody(int bi) {
     b.py[i] += b.vy[i] * dt;
     b.pz[i] += b.vz[i] * dt;
   }
-  bodyStats_[bi].ccdClamps = ContactSolver::ccdStatic(*this, bi);
+  // Static sweep tests (CCD): their position corrections move nodes without a force doing the work. The kinetic
+  // energy they remove is CCD loss; the potential energy they change (a node set back onto a wall against the beams
+  // that pushed it in, its contact spring) is measured and booked as work of the constraint, as for the sweeps
+  // between bodies (§5.3 ledger).
+  const int clamps = ContactSolver::ccdStatic(*this, bi);
+  bodyStats_[bi].ccdClamps = clamps;
+  if (clamps == 0) return;
+  auto potential = [&] {
+    return gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b) + detail::constraintPotentialEnergy(b) +
+           ContactSolver::staticContactPotential(*this, bi);
+  };
+  const double before = params_.trackEnergy ? potential() : 0.0;
+  ContactSolver::applyCcdStatic(*this, bi);
+  if (params_.trackEnergy) b.losses.external += potential() - before;
 }
 
 void World::finishBody(int bi) {
@@ -418,8 +445,9 @@ uint64_t World::stateHash() const {
     h.vec(b.px); h.vec(b.py); h.vec(b.pz);
     h.vec(b.vx); h.vec(b.vy); h.vec(b.vz);
     h.vec(b.stickX); h.vec(b.stickY); h.vec(b.stickZ); h.vec(b.anchorContact);
-    h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.broken); h.vec(b.torsionBroken); h.vec(b.triTorn); h.vec(b.nodeSurface);
-    h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags); h.vec(b.contactDepth);
+    h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.fatigue); h.vec(b.plasticSign); h.vec(b.broken); h.vec(b.torsionBroken); h.vec(b.triTorn); h.vec(b.nodeSurface);
+    h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags);
+    for (const ContactDepth& e : b.contactDepths) { h.value(e.node); h.value(e.otherBody); h.value(e.otherNode); h.value(e.depth); }
     h.vec(b.hydroInputs);
     h.vec(b.damageBeamHit);
     h.vec(b.damageNodeHit);

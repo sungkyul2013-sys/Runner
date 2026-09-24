@@ -56,6 +56,10 @@ struct BeamDesc {
   float hardening = 0.0f;              // [-] post-yield slope as a fraction of k (0 = perfectly plastic)
   float breakForce = kInfiniteForce;   // [N] elastic force magnitude at which the beam breaks
   float deformLimit = kInfiniteForce;  // [-] accumulated plastic strain at which the beam breaks
+  // [-] accumulated *reversed* plastic strain at which the beam breaks (low-cycle fatigue): only yielding against the
+  // direction of the previous yielding counts, so a hinge worked back and forth by a flapping lid tears while one
+  // bent once in a crash does not.
+  float fatigueLimit = kInfiniteForce;
   // [-] fraction of the initial length a beam can be plastically crushed: the rest length never yields below
   // (1 − crushLimit)·L0,init. Crushed sheet metal and tube stacks densify rather than vanish, so from there the beam
   // stays elastic (and keeps the two nodes apart) instead of yielding further.
@@ -110,6 +114,19 @@ struct CollisionTriDesc {
   int16_t group = -1;
 };
 
+// Aerodynamic panel (§4.4 a lid or door that comes open flaps in the wind): on triangle abc (outward normal n, area
+// A, velocity v through still air, shared equally by its nodes)
+//   F = −½·ρ·C_N·A·|v_n|·v_n·n          flat plate across the flow (v_n = v·n): a panel swinging into the stream
+//     + ½·ρ·C_S·A·|v − v_n·n|²·n        suction of the flow along its outer face (the closed lid's outside sees the
+//                                        flow's low pressure, its inside the still air under it)
+// A closed lid held by its latch feels only the suction (part of the car's lift); an unlatched one is lifted by it
+// until the stream gets under its edge and throws it open. Its work is booked as external (air).
+struct AeroPanelDesc {
+  int32_t a = -1, b = -1, c = -1;
+  float normalCoefficient = 1.2f;  // C_N of a flat plate across the flow [-]
+  float suctionCoefficient = 0.0f; // C_S: −C_p of the flow over the outer face [-]
+};
+
 // Damage group (§4.3 glass and lamps, §4.4 damage → function): a named set of beams watched for damage — the beams
 // around a windscreen, a lamp, a radiator. A beam counts as damaged once its length has left [1 − s, 1 + s]·L0,init
 // (elastically or plastically; s = its trigger strain) or it broke; the group's damage is the damaged share.
@@ -143,6 +160,7 @@ struct BodyDesc {
   std::vector<PressureGroupDesc> pressureGroups;
   std::vector<TorsionBarDesc> torsionBars;
   std::vector<CollisionTriDesc> triangles;
+  std::vector<AeroPanelDesc> aeroPanels;
   std::vector<DamageGroupDesc> damageGroups;
   int hydroChannels = 0;
 };
@@ -160,6 +178,12 @@ struct EnergyLosses {
   double totalDissipated() const {
     return beamDamping + contactDamping + friction + plastic + fracture + ccd;
   }
+};
+
+// A node pair of an accepted body/self contact and its depth, kept by the body of `node` (Body::contactDepths).
+struct ContactDepth {
+  int32_t node, otherBody, otherNode;
+  float depth;  // [m]
 };
 
 struct Body {
@@ -209,6 +233,9 @@ struct Body {
   std::vector<float> crushFloor;        // [m] lowest plastic rest length, (1 − crushLimit)·L0,init
   std::vector<float> tearLength;        // [m] plastic rest length at which the beam tears, (1 + tearLimit)·L0,init
   std::vector<float> plasticDeformation; // accumulated |Δ rest length| [m]
+  std::vector<float> fatigueLimit;       // [-]
+  std::vector<float> fatigue;            // accumulated reversed |Δ rest length| [m]
+  std::vector<int8_t> plasticSign;       // last yielding: ±1 first excursion, ±2 a reversed one (+ stretch), 0 none
   std::vector<float> minLength, maxLength;
   std::vector<int32_t> breakGroup;
   std::vector<uint8_t> broken;
@@ -250,11 +277,13 @@ struct Body {
   std::vector<uint8_t> triTorn;
   std::vector<int32_t> edgeNode;     // 2 node indices per unique triangle edge
   std::vector<int32_t> edgeTri;      // 2 adjacent triangles per edge (−1 = none; non-manifold edges keep the first two)
+  std::vector<uint8_t> triClosed;    // triangle belongs to a closed surface (no boundary edge in its connected set)
   std::vector<int16_t> nodeGroup;    // group of the first grouped triangle using the node (−1 = none)
   std::vector<float> nodeSurface;    // number of intact collision triangles using the node (0 → it collides as a sphere)
-  // Deepest body/self contact penetration each node took part in, accepted in this step's forces [m], and the one
-  // being gathered (see ContactSolver: contacts grow continuously from the edge of the contact band).
-  std::vector<float> contactDepth, contactDepthNext;
+  // Contact continuity (see ContactSolver: contacts grow continuously from the edge of the contact band): for every
+  // node pair of an accepted body/self contact, from this body's node, the deepest depth [m] — this step's reference
+  // and the pairs being gathered; sorted by (node, other body, other node), unique, after each step.
+  std::vector<ContactDepth> contactDepths, contactDepthsNext;
   // Members of each self-collision group g ≥ 0 (CSR): nodes groupNodes[groupNodeBegin[g] … groupNodeBegin[g+1]),
   // triangles likewise.
   std::vector<int32_t> groupNodes, groupNodeBegin, groupTris, groupTriBegin2;
@@ -265,6 +294,9 @@ struct Body {
   int32_t brokenBeamCount = 0;
   int32_t islandCheckedAt = 0;              // brokenBeamCount when connectivity was last checked (island split)
   std::vector<int32_t> pendingBreakGroups;  // groups triggered this step, applied at step end
+  // Aero panels: 3 node indices each and C_N.
+  std::vector<int32_t> aeroNode;
+  std::vector<float> aeroCoefficient, aeroSuction;
   // Damage groups: the watched beams (body beam index, group, trigger strain, damaged flag) and each group's state.
   std::vector<int32_t> damageBeam, damageBeamGroup;
   std::vector<float> damageBeamStrain;
@@ -276,6 +308,11 @@ struct Body {
   // Island provenance (render binding of detached parts): the body this one was split from (−1: spawned) and, per
   // node, its index there. Not physics state (not hashed).
   int32_t sourceBody = -1;
+  // The body this one first broke off from (itself when added to the world). Bodies of one family collide like the
+  // parts of one body — contact forces only, no sweep tests (a part tears off wherever the crushed structure left it,
+  // interlocked with its source, which a sweep would try to pull apart every step) — and are not counted as
+  // interpenetrating each other (World::measurePenetration).
+  int32_t family = -1;
   std::vector<int32_t> sourceNode;
 
   int nodeCount() const { return static_cast<int>(px.size()); }

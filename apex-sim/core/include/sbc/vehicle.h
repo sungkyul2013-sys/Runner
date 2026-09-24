@@ -246,6 +246,18 @@ struct VehicleTelemetry {
   float engineWear = 0.0f;   // [0, 1]: 1 = seized / ruined
   float derate = 1.0f;       // engine power available [0, 1] (overheating)
   uint32_t faults = 0;       // fault:: bits
+  // §4.4 crash sensor (cabin reference node) and airbags
+  uint32_t airbags = 0;      // airbag:: bits deployed
+  float crashTime = -1.0f;   // [s] first crash detection (−1: none)
+  float crashPeakG = 0.0f;   // peak 10 ms-average deceleration of the cabin [g]
+  float crashDeltaV = 0.0f;  // largest velocity change within 50 ms [m/s]
 };
+
+// Airbags (VehicleTelemetry::airbags): the front pair fires on a frontal velocity change over 25 km/h within 50 ms,
+// a side bag on a lateral one over 15 km/h toward its side (deployment calibrations: no fire below ≈ 13 km/h into a
+// rigid barrier, must fire by 25 km/h).
+namespace airbag {
+constexpr uint32_t kDriver = 1u << 0, kPassenger = 1u << 1, kSideLeft = 1u << 2, kSideRight = 1u << 3;
+}
 
 }  // namespace sbc

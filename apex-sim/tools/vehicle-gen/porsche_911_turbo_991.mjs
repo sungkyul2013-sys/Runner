@@ -17,7 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readGlb, meshGeometry, surfaceSamples, primitiveGeometry, connectedPieces } from './lib/glb.mjs';
 import { VehicleBuilder, steeringFactor } from './lib/builder.mjs';
-import { add, sub, scale, norm, dist } from './lib/v3.mjs';
+import { add, sub, scale, norm, dist, dot, cross } from './lib/v3.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const id = 'porsche_911_turbo_991';
@@ -135,6 +135,79 @@ const zoneForce = (z) => {
       plasticForce: Math.round(yieldForce), hardening: crash.hardening, crushLimit: crash.crushLimit, tearLimit: crash.tearLimit,
     });
   }
+}
+
+// ---- hinged panels (§4.4 latches): front luggage lid, engine lid, doors ------------------------------------------
+// Each is its own GLB paint piece and its own node-beam panel (builder.panelPart), hung on two hinge points — a
+// panel node tied to the three nearest lattice nodes by stiff beams is a ball joint, two of them make the hinge line —
+// and held shut by a latch (beams in one break group). A crash that tears the latch lets the panel swing on its
+// hinges; open at speed, the air catches it (aero panels) until it slams against the body or its hinges tear
+// (another break group each). Strengths: door latches ≈ 11 kN (FMVSS 206), lid latches ≈ 6 kN, hinges 10–20 kN.
+// Hinges are pressed steel: they yield (a lid's at 2.5 kN per tie, a door's at 5 kN) and tear when stretched 30 % — a
+// lid thrown open at 280 km/h slams into the windscreen that hard (250 km/h: 19 %), a 100 km/h wall crash bends them
+// ≈ 19 %, a 64 km/h one ≈ 1 %. (Flapping against the windscreen loads them ≈ 0.2 kN, far below yield: no fatigue.)
+// The flow over a closed lid pulls it outward (suction C_S ≈ −C_p over a bonnet's leading part ≈ 0.3, a door's side
+// ≈ 0.2): a latched panel passes it to the body — it is part of the car's lift, taken out of liftAreaFront/Rear
+// below so the closed car's lift is unchanged — and an unlatched one is lifted by it into the stream.
+b.group('panel', { k: 1e5, zeta: 0.1 });
+b.group('hinge', { k: 1e6, zeta: 0.2 });
+b.group('latch', { k: 3e5, zeta: 0.2 });
+// Seals and stops (§4.1 support beams, compression only): each inner panel node rests on the two nearest lattice
+// nodes, so a crash cannot push a door or lid into the body through its frame, while it opens freely.
+b.group('seal', { type: 'support', k: 5e4, zeta: 0.1 });
+const paintPieces = connectedPieces(primitiveGeometry(glb, 'body', 'paint'));
+const unit = (x) => norm(x);
+const panelParts = [];
+const panelLift = { front: 0, rear: 0 };  // Σ C_S·A·n_y of the panels [m²]
+function hingedPanel({ id, piece, ref, hingeSide, pitch, mass, group, latchBreak, hingeBreak, hingeYield, suction }) {
+  const n = unit(piece.n);
+  const u = unit(sub(ref, scale(n, dot(ref, n))));
+  const v = cross(n, u);
+  const aeroBefore = b.aeroPanels?.length ?? 0;
+  const panel = b.panelPart({ id, samples: piece.samples, n, u, v, pitch, mass, collisionGroup: group, suction });
+  for (const [a, c, d] of b.aeroPanels.slice(aeroBefore)) {
+    const area2 = cross(sub(b.pos(c), b.pos(a)), sub(b.pos(d), b.pos(a)));
+    panelLift[piece.c[2] > 0 ? 'front' : 'rear'] += suction * 0.5 * area2[1];
+  }
+  const outers = panel.nodes.filter((x) => x.endsWith('_0'));
+  const along = (x) => dot(b.pos(x), hingeSide);
+  const edge = (sign) => {
+    const ext = sign > 0 ? Math.max(...outers.map(along)) : Math.min(...outers.map(along));
+    return outers.filter((x) => Math.abs(along(x) - ext) < 0.6 * pitch);
+  };
+  const tie = (node, count, beamGroup, breakForce, breakGroup, yieldForce) => {
+    const p = b.pos(node);
+    const near = [...b.lattice].sort((a, c) => dist(b.pos(a), p) - dist(b.pos(c), p)).slice(0, count);
+    const plastic = yieldForce ? { plasticForce: yieldForce, hardening: 0, tearLimit: 0.3 } : {};
+    for (const l of near) b.beam(node, l, beamGroup, { breakForce, breakGroup, ...plastic });
+  };
+  // Hinges: the two ends of the hinge-side row (along the row's longest spread), each a ball joint.
+  const row = edge(+1);
+  const spread = sub(b.pos(row[row.length - 1]), b.pos(row[0]));
+  const byAxis = [...row].sort((a, c) => dot(b.pos(a), spread) - dot(b.pos(c), spread));
+  [byAxis[0], byAxis[byAxis.length - 1]].forEach((h, k) => {
+    b.byId.get(h).mass += 0.5;  // hinge hardware
+    tie(h, 3, 'hinge', hingeBreak, `${id}_hinge${k}`, hingeYield);
+  });
+  for (const inner of panel.nodes.filter((x) => x.endsWith('_1'))) tie(inner, 2, 'seal');
+  // Latch: the middle of the opposite row (outer and inner node).
+  const latchRow = edge(-1);
+  const mid = latchRow.map((x) => b.pos(x)).reduce((a, p) => add(a, scale(p, 1 / latchRow.length)), [0, 0, 0]);
+  const latch = [...latchRow].sort((a, c) => dist(b.pos(a), mid) - dist(b.pos(c), mid))[0];
+  tie(latch, 2, 'latch', latchBreak, `${id}_latch`);
+  tie(latch.replace(/_0$/, '_1'), 2, 'latch', latchBreak, `${id}_latch`);
+  panelParts.push({ id, pieces: [piece.c.map((x) => +x.toFixed(4))], nodePrefix: `p_${id}_` });
+}
+const frontLid = paintPieces.find((p) => p.c[2] > 1.0 && Math.abs(p.c[0]) < 0.1 && p.area > 0.8);
+const engineLid = paintPieces.find((p) => p.c[2] < -1.6 && p.c[2] > -1.9 && Math.abs(p.c[0]) < 0.1 && p.area > 0.4);
+const doors = paintPieces.filter((p) => Math.abs(p.c[0]) > 0.8 && Math.abs(p.c[2]) < 0.3 && p.area > 0.5);
+if (!frontLid || !engineLid || doors.length !== 2) throw new Error('GLB paint pieces for the lids and doors not found');
+hingedPanel({ id: 'frontLid', piece: frontLid, ref: [1, 0, 0], hingeSide: [0, 0, -1], pitch: 0.42, mass: 9, group: 5, latchBreak: 6e3, hingeBreak: 1e4, hingeYield: 2.5e3, suction: 0.3 });
+hingedPanel({ id: 'engineLid', piece: engineLid, ref: [1, 0, 0], hingeSide: [0, 0, 1], pitch: 0.38, mass: 8, group: 6, latchBreak: 6e3, hingeBreak: 1e4, hingeYield: 2.5e3, suction: 0.2 });
+for (const door of doors) {
+  const left = door.c[0] > 0;
+  hingedPanel({ id: left ? 'doorLeft' : 'doorRight', piece: door, ref: [0, 0, 1], hingeSide: [0, 0, 1], pitch: 0.4, mass: 16,
+    group: left ? 7 : 8, latchBreak: 1.1e4, hingeBreak: 2e4, hingeYield: 5e3, suction: 0.2 });
 }
 
 // ---- suspension ------------------------------------------------------------------------------------------------
@@ -340,7 +413,7 @@ const vehicle = {
   brakes: { stiffness: 1.0e5, damping: 40 },
   electronics: { abs: true, absSlip: 0.13, tcs: true, tcsSlip: 0.10 },
   aero: {
-    dragArea: 0.65, liftAreaFront: 0.03, liftAreaRear: 0.06,
+    dragArea: 0.65, liftAreaFront: +(0.03 - panelLift.front).toFixed(4), liftAreaRear: +(0.06 - panelLift.rear).toFixed(4),
     frontNodes: b.lattice.filter((lid) => b.pos(lid)[2] > zF + 0.2 && b.pos(lid)[1] < 0.6),
     rearNodes: b.lattice.filter((lid) => b.pos(lid)[2] < zR - 0.3 && b.pos(lid)[1] < 0.9),
   },
@@ -427,7 +500,12 @@ const components = [
       { id: `brakeline_${name}`, samples: box([Math.min(0.5 * sx, 0.72 * sx), 0.3, z - 0.25], [Math.max(0.5 * sx, 0.72 * sx), 0.6, z + 0.25]) },
     ];
   }),
-].map((c) => ({ ...c, ...component }));
+].map((c) => {
+  // Leak drips come from the component's place (web: coolant, oil and fuel drips and stains, §4.4).
+  const fluid = c.id.startsWith('radiator') || c.id === 'coolant_lines' ? 'coolant' : c.id === 'oil_sump' ? 'oil' : c.id === 'fuel_tank' ? 'fuel' : null;
+  const at = [0, 1, 2].map((k) => +(c.samples.reduce((sum, p) => sum + p[k], 0) / c.samples.length).toFixed(3));
+  return { ...c, ...component, ...(fluid ? { visual: { kind: 'component', fluid, at } } : {}) };
+});
 b.tagDamageGroups([...damageGroups.values()]);
 b.tagDamageGroups(components);  // from the beams the glass and lamps left
 // Leak rates [L/s] at full severity: a crushed radiator empties the 20 L circuit (three radiators) in under a minute.
@@ -448,6 +526,17 @@ const damageLinks = [
 // 991 Turbo: 67.5 L tank; dry-sump 3.8 L flat six with ≈ 9 L of oil; ≈ 20 L of coolant (three front radiators).
 vehicle.fluids = { coolantL: 20, oilL: 9, fuelL: 67.5, radiatorUA: 6000, heatCapacity: 1.6e5 };
 vehicle.damageLinks = damageLinks;
+// Render-only data (the core ignores it): the airbags' inflated shapes in the model frame — left-hand drive, the
+// driver on +X (left); bag centres and half sizes are estimates for the 991 cabin.
+const visual = {
+  parts: panelParts,  // hinged panels: their GLB paint pieces bind to their own nodes (web flexbody)
+  airbags: [
+    { bag: 'driver', at: [0.37, 0.82, 0.16], size: [0.28, 0.27, 0.17] },
+    { bag: 'passenger', at: [-0.37, 0.86, 0.28], size: [0.31, 0.29, 0.22] },
+    { bag: 'sideLeft', at: [0.6, 0.86, -0.25], size: [0.05, 0.2, 0.5] },
+    { bag: 'sideRight', at: [-0.6, 0.86, -0.25], size: [0.05, 0.2, 0.5] },
+  ],
+};
 
 const json = b.toJSON({
   header: {
@@ -470,6 +559,7 @@ json.sources = {
   skidpadG: 'estimate from magazine tests (≈ 1.0 g)',
   springs: 'estimate from 1.8 / 2.0 Hz ride frequencies',
 };
+json.visual = visual;
 fs.writeFileSync(outPath, JSON.stringify(json) + '\n');
 
 console.log(`${id}: ${b.nodes.length} explicit nodes (${b.lattice.length} lattice) + ${4 * 4 * segments} wheel nodes, ` +
@@ -482,6 +572,6 @@ for (const c of Object.values(corners)) {
     `${c.rackPoint ? 'rack' : 'toe'} point (${p.map((x) => x.toFixed(3)).join(', ')})`);
 }
 console.log(`collision hull: ${hullTriangles} triangles`);
-console.log('damage groups: ' + b.damageGroups.map((g) => `${g.id} (${g.visual?.pieces.length ?? 0} pieces, ` +
+console.log('damage groups: ' + b.damageGroups.map((g) => `${g.id} (${g.visual?.pieces?.length ?? 0} pieces, ` +
   `${b.beams.filter((beam) => beam[3]?.damage === g.id).length} beams, ${g.nodes?.length ?? 0} nodes)`).join(', '));
 console.log(`hull z ${zMin.toFixed(2)}…${zMax.toFixed(2)}, refs ${vehicle.refCenter} ${vehicle.refFront} ${vehicle.refLeft}, dist ${dist(b.pos(vehicle.refCenter), b.pos(vehicle.refFront)).toFixed(2)}`);

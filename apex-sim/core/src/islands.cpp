@@ -56,8 +56,6 @@ Body extract(const Body& src, const std::vector<int32_t>& nodes, const std::vect
   pick(b.patchNx, src.patchNx, nodes); pick(b.patchNy, src.patchNy, nodes); pick(b.patchNz, src.patchNz, nodes);
   pick(b.patchMaterial, src.patchMaterial, nodes);
   pick(b.contactLoad, src.contactLoad, nodes);
-  pick(b.contactDepth, src.contactDepth, nodes);
-  pick(b.contactDepthNext, src.contactDepthNext, nodes);
   const size_t n = nodes.size();
   for (auto* a : {&b.fx, &b.fy, &b.fz, &b.fdBeamX, &b.fdBeamY, &b.fdBeamZ, &b.fdContactX, &b.fdContactY, &b.fdContactZ,
                   &b.fdFrictionX, &b.fdFrictionY, &b.fdFrictionZ, &b.fdExternalX, &b.fdExternalY, &b.fdExternalZ}) {
@@ -85,6 +83,7 @@ Body extract(const Body& src, const std::vector<int32_t>& nodes, const std::vect
   pick(b.breakForce, src.breakForce, beams); pick(b.deformLimit, src.deformLimit, beams);
   pick(b.crushFloor, src.crushFloor, beams); pick(b.tearLength, src.tearLength, beams);
   pick(b.plasticDeformation, src.plasticDeformation, beams); pick(b.minLength, src.minLength, beams);
+  pick(b.fatigueLimit, src.fatigueLimit, beams); pick(b.fatigue, src.fatigue, beams); pick(b.plasticSign, src.plasticSign, beams);
   pick(b.maxLength, src.maxLength, beams); pick(b.breakGroup, src.breakGroup, beams); pick(b.broken, src.broken, beams);
   pick(b.compressionStiffness, src.compressionStiffness, beams); pick(b.hydroChannel, src.hydroChannel, beams);
   pick(b.hydroFactor, src.hydroFactor, beams); pick(b.hydroSpeed, src.hydroSpeed, beams);
@@ -140,6 +139,13 @@ Body extract(const Body& src, const std::vector<int32_t>& nodes, const std::vect
     b.triCrushArea2.push_back(src.triCrushArea2[static_cast<size_t>(t)]);
     b.triTorn.push_back(0);
   }
+  for (size_t k = 0; k < src.aeroCoefficient.size(); ++k) {  // a torn-off lid keeps catching the air
+    const int32_t* v = &src.aeroNode[k * 3];
+    if (!inside(v[0]) || !inside(v[1]) || !inside(v[2])) continue;
+    b.aeroNode.insert(b.aeroNode.end(), {map(v[0]), map(v[1]), map(v[2])});
+    b.aeroCoefficient.push_back(src.aeroCoefficient[k]);
+    b.aeroSuction.push_back(src.aeroSuction[k]);
+  }
   buildSurfaceTopology(b);
   b.brokenBeamCount = 0;
   b.islandCheckedAt = 0;
@@ -152,8 +158,10 @@ std::vector<Body> splitIslands(Body& b) {
   std::vector<Body> parts;
   const int n = b.nodeCount();
   UnionFind uf(n);
+  // Support beams resist compression only: they keep a panel from being pushed through the body, not on it.
   for (int i = 0; i < b.beamCount(); ++i)
-    if (!b.broken[static_cast<size_t>(i)]) uf.join(b.beamA[static_cast<size_t>(i)], b.beamB[static_cast<size_t>(i)]);
+    if (!b.broken[static_cast<size_t>(i)] && b.beamType[static_cast<size_t>(i)] != static_cast<uint8_t>(BeamType::kSupport))
+      uf.join(b.beamA[static_cast<size_t>(i)], b.beamB[static_cast<size_t>(i)]);
   for (int s = 0; s < b.sliderCount(); ++s) {
     if (b.sliderBroken[static_cast<size_t>(s)]) continue;
     uf.join(b.sliderNode[static_cast<size_t>(s)], b.sliderA[static_cast<size_t>(s)]);
@@ -223,7 +231,6 @@ std::vector<Body> splitIslands(Body& b) {
       b.mass[k] = 0.0f;
       b.vx[k] = b.vy[k] = b.vz[k] = 0.0f;
       b.anchorContact[k] = -1;
-      b.contactDepth[k] = b.contactDepthNext[k] = 0.0f;
       remap[k] = -1;
     }
   }

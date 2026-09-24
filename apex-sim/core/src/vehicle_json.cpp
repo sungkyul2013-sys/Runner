@@ -146,7 +146,7 @@ struct Loader {
   struct BeamProps {
     BeamType type = BeamType::kNormal;
     double k = 0.0, c = -1.0, zeta = -1.0;
-    double plastic = kInfiniteForce, hardening = 0.0, breakForce = kInfiniteForce, deform = kInfiniteForce;
+    double plastic = kInfiniteForce, hardening = 0.0, breakForce = kInfiniteForce, deform = kInfiniteForce, fatigue = kInfiniteForce;
     double crush = 0.95, tear = kInfiniteForce;
     double kc = -1.0;
     std::string breakGroup;
@@ -175,12 +175,36 @@ struct Loader {
     p.hardening = numberOr(obj, "hardening", p.hardening, path);
     p.breakForce = numberOr(obj, "breakForce", p.breakForce, path);
     p.deform = numberOr(obj, "deformLimit", p.deform, path);
+    p.fatigue = numberOr(obj, "fatigueLimit", p.fatigue, path);
     p.crush = numberOr(obj, "crushLimit", p.crush, path);
     p.tear = numberOr(obj, "tearLimit", p.tear, path);
     p.kc = numberOr(obj, "kc", p.kc, path);
     p.breakGroup = stringOr(obj, "breakGroup", p.breakGroup, path);
     p.damage = stringOr(obj, "damage", p.damage, path);
     p.damageStrain = numberOr(obj, "damageStrain", p.damageStrain, path);
+  }
+
+  // Aero panels: [a, b, c] or [a, b, c, C_N] (node ids; the side n = (b − a) × (c − a) does not matter).
+  void aeroPanels(Val arr) {
+    if (!arr) return;
+    array(arr, "aeroPanels");
+    size_t i, n;
+    Val item;
+    yyjson_arr_foreach(arr, i, n, item) {
+      const std::string path = "aeroPanels[" + std::to_string(i) + "]";
+      array(item, path);
+      const size_t count = yyjson_arr_size(item);
+      if (count < 3 || count > 5) fail(path, "expected [a, b, c, C_N?, C_S?]");
+      AeroPanelDesc a;
+      a.a = node(yyjson_arr_get(item, 0), path + "[0]");
+      a.b = node(yyjson_arr_get(item, 1), path + "[1]");
+      a.c = node(yyjson_arr_get(item, 2), path + "[2]");
+      if (count >= 4) a.normalCoefficient = static_cast<float>(number(yyjson_arr_get(item, 3), path + "[3]"));
+      if (count == 5) a.suctionCoefficient = static_cast<float>(number(yyjson_arr_get(item, 4), path + "[4]"));
+      if (!(a.normalCoefficient >= 0.0f)) fail(path, "C_N must be ≥ 0");
+      if (!(a.suctionCoefficient >= 0.0f)) fail(path, "C_S must be ≥ 0");
+      body().aeroPanels.push_back(a);
+    }
   }
 
   // Damage groups: [{"id", "strain"?, "visual"?}] ("visual" is render metadata the core does not read).
@@ -247,6 +271,7 @@ struct Loader {
       bd.hardening = static_cast<float>(p.hardening);
       bd.breakForce = static_cast<float>(p.breakForce);
       bd.deformLimit = static_cast<float>(p.deform);
+      bd.fatigueLimit = static_cast<float>(p.fatigue);
       if (!(p.crush > 0.0 && p.crush <= 1.0)) fail(path, "crushLimit must be in (0, 1]");
       if (!(p.tear > 0.0)) fail(path, "tearLimit must be > 0");
       bd.crushLimit = static_cast<float>(p.crush);
@@ -624,6 +649,7 @@ LoadedVehicle loadVehicleJson(std::string_view text, const VehicleSpawn& spawn) 
   l.sliders(member(root, "sliders"));
   l.torsionBars(member(root, "torsionBars"));
   l.triangles(member(root, "triangles"));
+  l.aeroPanels(member(root, "aeroPanels"));
 
   // Pressure wheels remember their axle nodes for the vehicle's wheel entries.
   if (const Val pw = member(root, "pressureWheels")) {
@@ -649,6 +675,8 @@ LoadedVehicle loadVehicleJson(std::string_view text, const VehicleSpawn& spawn) 
       if (yyjson_is_num(val)) l.out.targets.emplace_back(yyjson_get_str(key), yyjson_get_num(val));
     }
   }
+  l.out.breakGroupIds.resize(l.breakGroups.size());
+  for (const auto& [id, index] : l.breakGroups) l.out.breakGroupIds[static_cast<size_t>(index)] = id;
   placeVehicle(l.out.build, spawn);
   return std::move(l.out);
 }

@@ -65,10 +65,18 @@ inline float plasticReturn(Body& b, int i, float length, bool& broke, float k) {
       if (dl > 0.0f) {
         b.restLength[i] = densified ? b.crushFloor[i] : b.restLength[i] + s * dl;
         b.plasticDeformation[i] += dl;
+        // Low-cycle fatigue: an excursion of yielding against the previous one counts in full (plasticSign ±2), the
+        // first one does not (±1), nor does yielding on in the same direction after an elastic pause.
+        const int8_t sign = s > 0.0f ? 1 : -1;
+        const int8_t last = b.plasticSign[i];
+        if (last != 0 && (last > 0) != (sign > 0)) b.plasticSign[i] = static_cast<int8_t>(2 * sign);
+        else if (last == 0) b.plasticSign[i] = sign;
+        if (b.plasticSign[i] == 2 * sign) b.fatigue[i] += dl;
         b.losses.plastic += static_cast<double>((fy + 0.5f * plasticModulus * dl) * dl);
       }
       fe = densified ? k * (length - b.restLength[i]) : s * (fy + plasticModulus * dl);
-      if (b.plasticDeformation[i] > b.deformLimit[i] * b.initialRestLength[i] || b.restLength[i] > b.tearLength[i]) {
+      if (b.plasticDeformation[i] > b.deformLimit[i] * b.initialRestLength[i] || b.restLength[i] > b.tearLength[i] ||
+          b.fatigue[i] > b.fatigueLimit[i] * b.initialRestLength[i]) {
         broke = true;
       }
     }

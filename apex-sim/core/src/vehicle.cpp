@@ -212,6 +212,8 @@ Vehicle::Vehicle(const VehicleDesc& desc, int bodyIndex, const Body& body) : des
   fuelL_ = F.fuelL;
   coolantC_ = F.thermostatC;
   driveLost_.assign(desc.wheels.size(), 0);
+  sensorLong_.assign(100, 0.0);  // 50 ms at the 0.5 ms step (resized for other steps is not needed: dt is fixed)
+  sensorLat_.assign(100, 0.0);
   brakeFactor_.assign(desc.wheels.size(), 1.0);
   shares_.resize(desc.wheels.size());
   for (size_t i = 0; i < shares_.size(); ++i) shares_[i] = desc.wheels[i].driveShare;
@@ -360,6 +362,32 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   accelLong_ += accFilter * (dot(acc, fwd) - accelLong_);
   accelLat_ += accFilter * (dot(acc, left) - accelLat_);
   odometer_ += std::fabs(speed) * dt;
+
+  // ---- crash sensor and airbags (§4.4) ---------------------------------------------------------------------
+  // The sensor sits in the cabin (the reference node): 10 ms-average deceleration and 50 ms velocity change.
+  {
+    const size_t n = sensorLong_.size();
+    const DVec3 vs = vel(b, D.refCenter);
+    sensorLong_[sensorAt_] = dot(vs, fwd);
+    sensorLat_[sensorAt_] = dot(vs, left);
+    const size_t oldest = (sensorAt_ + 1) % n, recent = (sensorAt_ + n - n / 5) % n;  // 50 ms and 10 ms back
+    sensorFill_ = std::min(sensorFill_ + 1, n);
+    if (sensorFill_ == n) {
+      const double dvLong = sensorLong_[sensorAt_] - sensorLong_[oldest], dvLat = sensorLat_[sensorAt_] - sensorLat_[oldest];
+      const double g10 = std::hypot(sensorLong_[sensorAt_] - sensorLong_[recent], sensorLat_[sensorAt_] - sensorLat_[recent]) /
+                         (static_cast<double>(n / 5) * dt) / kStandardGravity;
+      const double dv = std::hypot(dvLong, dvLat);
+      if (dv > 2.2 && crashTime_ < 0.0) crashTime_ = world.time();  // 8 km/h within 50 ms: a crash
+      if (crashTime_ >= 0.0) {
+        crashPeakG_ = std::max(crashPeakG_, g10);
+        crashDeltaV_ = std::max(crashDeltaV_, dv);
+      }
+      if (-dvLong > 25.0 / 3.6) airbags_ |= airbag::kDriver | airbag::kPassenger;
+      if (dvLat < -15.0 / 3.6) airbags_ |= airbag::kSideLeft;   // pushed to the right: struck on the left
+      if (dvLat > 15.0 / 3.6) airbags_ |= airbag::kSideRight;
+    }
+    sensorAt_ = oldest;
+  }
 
   // ---- wheel kinematics and tyre contact patches -------------------------------------------------------------
   // Driveline speeds are measured against the body that carries the drive reaction (differential housing), so the
@@ -814,6 +842,10 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   telemetry_.engineWear = static_cast<float>(engineWear_);
   telemetry_.derate = static_cast<float>(derate_);
   telemetry_.faults = faults_;
+  telemetry_.airbags = airbags_;
+  telemetry_.crashTime = static_cast<float>(crashTime_);
+  telemetry_.crashPeakG = static_cast<float>(crashPeakG_);
+  telemetry_.crashDeltaV = static_cast<float>(crashDeltaV_);
   telemetry_.throttle = static_cast<float>(appliedThrottle);
   telemetry_.brake = static_cast<float>(pedal);
   telemetry_.steer = static_cast<float>(steer_);

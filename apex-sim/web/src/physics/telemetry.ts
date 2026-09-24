@@ -35,6 +35,10 @@ export const VT = {
   engineWear: 37,
   derate: 38,
   faults: 39, // core fault:: bits
+  airbags: 40, // core airbag:: bits
+  crashTime: 41,
+  crashPeakG: 42,
+  crashDeltaV: 43,
 } as const;
 
 /** Wheel field indices (Float32, relative to the wheel's record). */
@@ -101,7 +105,14 @@ export interface VehicleState {
   engineWear: number; // [0, 1]
   derate: number; // power available [0, 1]
   faults: number; // core fault:: bits (see FAULT)
+  airbags: number; // core airbag:: bits (see AIRBAG)
+  crashTime: number; // [s] first crash detection, −1: none
+  crashPeakG: number;
+  crashDeltaV: number; // [m/s] largest within 50 ms
 }
+
+/** Core airbag bits (sbc/vehicle.h airbag::). */
+export const AIRBAG = { driver: 1, passenger: 2, sideLeft: 4, sideRight: 8 } as const;
 
 /** Core fault bits (sbc/vehicle.h fault::). */
 export const FAULT = {
@@ -173,6 +184,10 @@ export function decodeVehicle(r: Float32Array, origin: V3): VehicleState {
     engineWear: r[VT.engineWear],
     derate: r[VT.derate],
     faults: Math.round(r[VT.faults]),
+    airbags: Math.round(r[VT.airbags]),
+    crashTime: r[VT.crashTime],
+    crashPeakG: r[VT.crashPeakG],
+    crashDeltaV: r[VT.crashDeltaV],
     wheels,
   };
 }

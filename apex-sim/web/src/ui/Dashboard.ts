@@ -1,6 +1,22 @@
-// Driving HUD (§18.4 계기): speed, gear, tachometer, pedals, driver aids. Numbers use the tabular mono face.
-import { gearLabel, type VehicleState } from '../physics/telemetry';
-import { t } from './i18n';
+// Driving HUD (§18.4 계기): speed, gear, tachometer, pedals, driver aids, and (§4.4) coolant temperature, oil
+// pressure and fuel with warning lights for the faults the damage links report. Failed electrics make the cluster
+// flicker. Numbers use the tabular mono face.
+import { FAULT, gearLabel, type VehicleState } from '../physics/telemetry';
+import { t, type StringKey } from './i18n';
+
+// Warning lights: fault bits → label (shown only while the fault is present).
+const WARNINGS: Array<[number, StringKey]> = [
+  [FAULT.engineFailed | FAULT.seized, 'warnEngine'],
+  [FAULT.overheat, 'warnTemp'],
+  [FAULT.coolantLeak, 'warnCoolant'],
+  [FAULT.oilPressure | FAULT.oilLeak, 'warnOil'],
+  [FAULT.outOfFuel | FAULT.fuelLeak, 'warnFuel'],
+  [FAULT.brakes, 'warnBrakes'],
+  [FAULT.steering, 'warnSteering'],
+  [FAULT.drive, 'warnDrive'],
+  [FAULT.gearbox, 'warnGearbox'],
+  [FAULT.electrical, 'warnBattery'],
+];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -26,6 +42,12 @@ export class Dashboard {
   private brake = el('i');
   private lamps = { tcs: el('span', 'lamp', 'TCS'), abs: el('span', 'lamp', 'ABS'), mode: el('span', 'lamp on', 'AUTO'), cam: el('span', 'lamp on', '') };
   private redline: number;
+  private temp = el('span', 'gauge', '');
+  private oil = el('span', 'gauge', '');
+  private fuel = el('span', 'gauge', '');
+  private warnings = el('div', 'dash-warn');
+  private warnLamps = WARNINGS.map(([, key]) => el('span', 'lamp warn', t(key)));
+  private flicker = 0;
 
   constructor(redlineRpm: number) {
     this.redline = redlineRpm;
@@ -47,7 +69,10 @@ export class Dashboard {
     main.append(pedals, speedBox, this.gear);
     const lamps = el('div', 'dash-lamps');
     lamps.append(this.lamps.mode, this.lamps.tcs, this.lamps.abs, this.lamps.cam);
-    this.root.append(rpm, main, lamps, el('div', 'dash-help', t('driveHelp')));
+    const gauges = el('div', 'dash-gauges');
+    gauges.append(this.temp, this.oil, this.fuel);
+    this.warnings.append(...this.warnLamps);
+    this.root.append(rpm, main, gauges, this.warnings, lamps, el('div', 'dash-help', t('driveHelp')));
     this.root.hidden = true;
   }
 
@@ -67,5 +92,21 @@ export class Dashboard {
     const absActive = v.wheels.some((w) => w.abs);
     this.lamps.abs.className = `lamp ${f.abs ? (absActive ? 'act' : 'on') : 'off'}`;
     this.lamps.cam.textContent = f.camera;
+    // §4.4 fluids and warnings
+    this.temp.textContent = `${t('gaugeTemp')} ${Math.round(v.coolantC)}°C`;
+    this.temp.className = `gauge ${v.faults & FAULT.overheat ? 'bad' : ''}`;
+    this.oil.textContent = `${t('gaugeOil')} ${v.oilBar.toFixed(1)} bar`;
+    this.oil.className = `gauge ${v.faults & FAULT.oilPressure ? 'bad' : ''}`;
+    this.fuel.textContent = `${t('gaugeFuel')} ${v.fuelL.toFixed(1)} L`;
+    this.fuel.className = `gauge ${v.faults & (FAULT.fuelLeak | FAULT.outOfFuel) ? 'bad' : ''}`;
+    WARNINGS.forEach(([bits], i) => (this.warnLamps[i].hidden = (v.faults & bits) === 0));
+    this.warnings.hidden = this.warnLamps.every((l) => l.hidden);
+    // Failed electrics: the cluster flickers.
+    if (v.faults & FAULT.electrical) {
+      this.flicker = (this.flicker + 1) % 997;
+      this.root.style.opacity = (this.flicker * 7919) % 13 < 3 ? '0.25' : '1';
+    } else {
+      this.root.style.opacity = '';
+    }
   }
 }

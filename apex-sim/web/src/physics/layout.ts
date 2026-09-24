@@ -65,7 +65,7 @@ export const B = {
 
 /** Vehicle telemetry records (core sbc.h SBC_VT_HEADER / SBC_VT_WHEEL), one per vehicle, fixed stride. */
 export const MAX_VEHICLES = 16;
-export const VT_HEADER = 40;
+export const VT_HEADER = 44;
 export const VT_WHEEL = 20;
 export const VT_MAX_WHEELS = 8;
 export const VT_STRIDE = VT_HEADER + VT_WHEEL * VT_MAX_WHEELS;

@@ -31,6 +31,9 @@ double constraintPotentialEnergy(const Body& body);
 
 // Breaks every intact beam whose breakGroup was triggered this step. Returns beams broken.
 int applyPendingBreakGroups(Body& body);
+// Flat-plate air forces on the body's aero panels (still air); external work when tracking energy.
+template <bool kTrack>
+void accumulateAeroPanels(Body& body, float airDensity);
 // Marks damage-group beams past their trigger strain (or broken) as damaged; returns how many were newly damaged.
 int updateDamageGroups(Body& body, int64_t step);
 
@@ -46,5 +49,7 @@ void buildSurfaceTopology(Body& body);
 // keeps the node slots, marked node_flag::kDetached, and drops everything that referred to them. Empty when the body
 // is still in one piece.
 std::vector<Body> splitIslands(Body& body);
+// Makes the contact pairs gathered this step the reference for the next (sorted, one entry per pair, deepest).
+void settleContactDepths(Body& body);
 
 }  // namespace sbc::detail

@@ -39,6 +39,8 @@ export class Debris {
     const geometry = new THREE.BoxGeometry(1, 0.35, 0.8);
     this.mesh = new THREE.InstancedMesh(geometry, kind.material, capacity);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // Per-shard colours (lamp lenses) must exist before the first draw (see Leaks).
+    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
     this.mesh.count = 0;
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = false;

@@ -2,6 +2,7 @@
 // The Porsche's glass and lamp groups (tools/vehicle-gen/porsche_911_turbo_991.mjs) must stay intact in hard driving
 // and break the way real cars do in wall crashes.
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <map>
@@ -325,5 +326,189 @@ TEST_CASE("broken half shafts, brake lines, steering, gearbox and electrics", "[
     }
     CHECK((car.tel().faults & fault::kElectrical) != 0u);
     CHECK(!abs);
+  }
+}
+
+TEST_CASE("the crash sensor fires the airbags in crashes, not in hard driving", "[damage][porsche][4.4]") {
+  auto after = [](DVec3 at, float yaw, float kmh, VehicleInput in, double s) {
+    SceneOptions so;
+    so.threads = 1;
+    auto w = makeScene("drive", so);
+    const LoadedVehicle car = loadVehicleJson(porscheJson(), {at, yaw, kmh / 3.6f});
+    const int v = w->addVehicle(w->addBody(car.build.body), car.build.vehicle);
+    w->setVehicleInput(v, in);
+    w->step(static_cast<int>(s / w->params().dt));
+    return w->vehicleTelemetry(v);
+  };
+  VehicleInput brake;
+  brake.brake = 1.0f;
+  const VehicleTelemetry braking = after({0.0, 0.0, 0.0}, 0.0f, 100.0f, brake, 4.0);
+  CHECK(braking.airbags == 0u);
+  CHECK(braking.crashTime < 0.0f);
+  const VehicleTelemetry slow = after({0.0, 0.0, 296.6}, 0.0f, 15.0f, VehicleInput{}, 2.0);
+  INFO("15 km/h: Δv " << slow.crashDeltaV * 3.6 << " km/h in 50 ms, peak " << slow.crashPeakG << " g");
+  CHECK(slow.airbags == 0u);  // below the no-fire threshold
+  const VehicleTelemetry hard = after({0.0, 0.0, 296.6}, 0.0f, 64.0f, VehicleInput{}, 2.0);
+  INFO("64 km/h: Δv " << hard.crashDeltaV * 3.6 << " km/h in 50 ms, peak " << hard.crashPeakG << " g");
+  CHECK(hard.airbags == (airbag::kDriver | airbag::kPassenger));
+  CHECK(hard.crashTime > 0.0f);
+  CHECK(hard.crashPeakG > 15.0f);
+  CHECK(hard.crashDeltaV * 3.6f > 30.0f);
+}
+
+TEST_CASE("a side impact fires the side airbag on the struck side", "[damage][porsche][4.4]") {
+  // A parked Porsche (facing +X, its left side toward −Z) is struck on the left by a second one at 50 km/h.
+  WorldParams wp;
+  wp.threadCount = 1;
+  World w(wp);
+  applyDefaultContactPairs(w);
+  w.addGroundPlane(0.0, material::kAsphalt);
+  const LoadedVehicle target = loadVehicleJson(porscheJson(), {{0.0, 0.0, 0.0}, 1.5707963f, 0.0f});
+  const int t = w.addVehicle(w.addBody(target.build.body), target.build.vehicle);
+  const LoadedVehicle bullet = loadVehicleJson(porscheJson(), {{0.0, 0.0, -4.0}, 0.0f, 50.0f / 3.6f});
+  w.addVehicle(w.addBody(bullet.build.body), bullet.build.vehicle);
+  w.step(3000);
+  const VehicleTelemetry& tel = w.vehicleTelemetry(t);
+  INFO("Δv " << tel.crashDeltaV * 3.6 << " km/h, airbags " << tel.airbags);
+  CHECK((tel.airbags & airbag::kSideLeft) != 0u);
+  CHECK((tel.airbags & airbag::kSideRight) == 0u);
+}
+
+namespace {
+
+// Break groups ("breakGroup" of the beams) of the Porsche that have broken, by name.
+std::vector<std::string> brokenGroups(const Body& b, const LoadedVehicle& car) {
+  std::vector<std::string> out;
+  for (size_t g = 0; g < car.breakGroupIds.size(); ++g) {
+    for (int i = 0; i < b.beamCount(); ++i) {
+      if (b.breakGroup[static_cast<size_t>(i)] == static_cast<int32_t>(g) && b.broken[static_cast<size_t>(i)]) {
+        out.push_back(car.breakGroupIds[g]);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+bool contains(const std::vector<std::string>& list, const std::string& s) {
+  return std::find(list.begin(), list.end(), s) != list.end();
+}
+
+// The Porsche's JSON with one latch already broken (its beams' break force 1 N): the panel is shut but free.
+std::string unlatched(const std::string& panel) {
+  std::string text = porscheJson();
+  const std::string key = "\"breakGroup\":\"" + panel + "_latch\"";
+  size_t at = 0;
+  int beams = 0;
+  while ((at = text.find(key, at)) != std::string::npos) {
+    const size_t open = text.rfind('{', at);
+    const size_t force = text.find("\"breakForce\":", open);
+    REQUIRE(force < at);
+    const size_t end = text.find_first_of(",}", force);
+    text.replace(force, end - force, "\"breakForce\":1");
+    at = open + 1;
+    at = text.find(key, at) + key.size();
+    ++beams;
+  }
+  REQUIRE(beams > 0);
+  return text;
+}
+
+int nodeIndex(const LoadedVehicle& car, const std::string& id) {
+  for (size_t i = 0; i < car.nodeIds.size(); ++i)
+    if (car.nodeIds[i] == id) return static_cast<int>(i);
+  FAIL("node " << id << " not found");
+  return -1;
+}
+
+}  // namespace
+
+TEST_CASE("Porsche 911 Turbo: hard driving keeps every latch and hinge", "[damage][porsche][4.4]") {
+  // The launch, the ABS stop, 1 g cornering and the speed bumps of the glass test: the doors and lids stay shut.
+  VehicleInput launch;
+  launch.throttle = 1.0f;
+  VehicleInput brake;
+  brake.brake = 1.0f;
+  VehicleInput corner;
+  corner.throttle = 0.35f;
+  corner.steer = 0.5f;
+  VehicleInput cruise;
+  cruise.throttle = 0.3f;
+  struct Case { const char* name; DVec3 at; float kmh; VehicleInput in; double seconds; };
+  for (const Case& c : {Case{"launch", {0.0, 0.0, 0.0}, 0.0f, launch, 6.0}, Case{"brake", {0.0, 0.0, 0.0}, 100.0f, brake, 4.0},
+                        Case{"corner", {0.0, 0.0, 200.0}, 60.0f, corner, 6.0}, Case{"bumps", {9.0, 0.0, 10.0}, 50.0f, cruise, 3.0},
+                        Case{"top speed", {9.0, 0.0, -150.0}, 250.0f, launch, 3.0}}) {
+    SceneOptions so;
+    so.threads = 1;
+    auto w = makeScene("drive", so);
+    const LoadedVehicle car = loadVehicleJson(porscheJson(), {c.at, 0.0, c.kmh / 3.6f});
+    const int body = w->addBody(car.build.body);
+    w->setVehicleInput(w->addVehicle(body, car.build.vehicle), c.in);
+    w->step(static_cast<int>(c.seconds / w->params().dt));
+    const std::vector<std::string> broken = brokenGroups(w->body(body), car);
+    INFO(c.name << ": " << broken.size() << " break groups broken" << (broken.empty() ? "" : ", first " + broken[0]));
+    CHECK(broken.empty());
+    CHECK(w->bodyCount() == 7);  // the drive scene's 6 static bodies + the car: nothing came off
+  }
+}
+
+TEST_CASE("Porsche 911 Turbo: a 64 km/h wall crash pops the front lid's latch, not its hinges", "[damage][porsche][crash][4.4]") {
+  // The nose crushes under the front lid: its latch (6 kN) tears, the hinges at the windscreen hold the bent lid.
+  SceneOptions so;
+  so.threads = 1;
+  auto w = makeScene("drive", so);
+  const LoadedVehicle car = loadVehicleJson(porscheJson(), {{0.0, 0.0, 250.0}, 0.0, 64.0f / 3.6f});
+  const int body = w->addBody(car.build.body);
+  w->setVehicleInput(w->addVehicle(body, car.build.vehicle), VehicleInput{});
+  w->step(8000);
+  const std::vector<std::string> broken = brokenGroups(w->body(body), car);
+  std::string list;
+  for (const std::string& g : broken) list += g + " ";
+  INFO("broken: " << list);
+  CHECK(contains(broken, "frontLid_latch"));
+  CHECK_FALSE(contains(broken, "frontLid_hinge0"));
+  CHECK_FALSE(contains(broken, "frontLid_hinge1"));
+  CHECK_FALSE(contains(broken, "doorLeft_latch"));   // the doors stay shut (FMVSS 206)
+  CHECK_FALSE(contains(broken, "doorRight_latch"));
+  CHECK_FALSE(contains(broken, "engineLid_latch"));
+}
+
+TEST_CASE("an unlatched front lid flies open at speed, flaps on its hinges, and tears off when fast enough", "[damage][porsche][4.4]") {
+  // §4.4 "문·후드·트렁크 래치 손상 → 주행 중 열려 펄럭이다 탈락". The flow over the closed lid lifts it (suction), the
+  // stream gets under its leading edge and throws it up against the windscreen. At 110 km/h it stays on its hinges
+  // and flaps (its seals cushion it); at 280 km/h the slam stretches the yielding hinges past their tear strain and
+  // the lid flies off as a part of its own.
+  const std::string text = unlatched("frontLid");
+  struct Case { float kmh; bool tornOff; };
+  for (const Case& c : {Case{110.0f, false}, Case{280.0f, true}}) {
+    SceneOptions so;
+    so.threads = 1;
+    auto w = makeScene("drive", so);
+    const LoadedVehicle car = loadVehicleJson(text, {{9.0, 0.0, -60.0}, 0.0, c.kmh / 3.6f});
+    const int body = w->addBody(car.build.body);
+    VehicleInput hold;
+    hold.throttle = 0.5f;
+    w->setVehicleInput(w->addVehicle(body, car.build.vehicle), hold);
+    const int lid = nodeIndex(car, "p_frontLid_1_0_0"), ref = nodeIndex(car, "c4_2_12");
+    auto lift = [&] { const Body& b = w->body(body); return b.nodePosition(lid).y - b.nodePosition(ref).y; };
+    const float closed = lift();
+    float highest = closed;
+    for (int k = 0; k < 40; ++k) {
+      w->step(100);
+      if (!(w->body(body).flags[static_cast<size_t>(lid)] & node_flag::kDetached)) highest = std::max(highest, lift());
+    }
+    const std::vector<std::string> broken = brokenGroups(w->body(body), car);
+    const bool detached = (w->body(body).flags[static_cast<size_t>(lid)] & node_flag::kDetached) != 0;
+    INFO(c.kmh << " km/h: lid edge rose " << highest - closed << " m, hinges broken " << contains(broken, "frontLid_hinge0")
+                << contains(broken, "frontLid_hinge1") << ", bodies " << w->bodyCount());
+    CHECK(highest - closed > 0.4);  // thrown open
+    CHECK(detached == c.tornOff);
+    if (c.tornOff) {
+      CHECK(w->bodyCount() == 8);   // the lid is a body of its own
+    } else {
+      CHECK(w->bodyCount() == 7);
+      CHECK_FALSE(contains(broken, "frontLid_hinge0"));
+      CHECK_FALSE(contains(broken, "frontLid_hinge1"));
+    }
   }
 }

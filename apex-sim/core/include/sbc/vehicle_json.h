@@ -16,6 +16,7 @@ struct LoadedVehicle {
   std::string modelGlb;                                  // model.glb (path relative to the web root)
   std::vector<std::pair<std::string, double>> targets;   // "targets" (reference values for tests, KICKOFF C7)
   std::vector<std::string> nodeIds;                      // node index → id ("" for generated wheel nodes)
+  std::vector<std::string> breakGroupIds;                // Body::breakGroup index → the beams' "breakGroup" name
 };
 
 // Parses an "apex-vehicle" JSON document (comments and trailing commas allowed) and places the vehicle at `spawn`.

@@ -177,4 +177,30 @@ double constraintPotentialEnergy(const Body& b) {
   return e;
 }
 
+template <bool kTrack>
+void accumulateAeroPanels(Body& b, float airDensity) {
+  for (size_t k = 0; k < b.aeroCoefficient.size(); ++k) {
+    const int32_t* n = &b.aeroNode[k * 3];
+    // Island split or tear: a panel whose nodes went elsewhere does nothing.
+    if ((b.flags[static_cast<size_t>(n[0])] | b.flags[static_cast<size_t>(n[1])] | b.flags[static_cast<size_t>(n[2])]) & node_flag::kDetached) continue;
+    const Vec3 pa = b.nodePosition(n[0]), pb = b.nodePosition(n[1]), pc = b.nodePosition(n[2]);
+    const Vec3 area2 = cross(pb - pa, pc - pa);  // 2·A·n
+    const float a2 = length(area2);
+    if (!(a2 > 0.0f)) continue;
+    const Vec3 nrm = area2 * (1.0f / a2);
+    const Vec3 v = (b.nodeVelocity(n[0]) + b.nodeVelocity(n[1]) + b.nodeVelocity(n[2])) * (1.0f / 3.0f);
+    const float vn = dot(v, nrm);
+    const Vec3 vt = v - nrm * vn;
+    const Vec3 f = nrm * (0.5f * airDensity * 0.5f * a2 / 3.0f *
+                          (b.aeroSuction[k] * dot(vt, vt) - b.aeroCoefficient[k] * std::fabs(vn) * vn));
+    for (int j = 0; j < 3; ++j) {
+      const size_t i = static_cast<size_t>(n[j]);
+      b.fx[i] += f.x; b.fy[i] += f.y; b.fz[i] += f.z;
+      if constexpr (kTrack) { b.fdExternalX[i] += f.x; b.fdExternalY[i] += f.y; b.fdExternalZ[i] += f.z; }
+    }
+  }
+}
+template void accumulateAeroPanels<true>(Body&, float);
+template void accumulateAeroPanels<false>(Body&, float);
+
 }  // namespace sbc::detail

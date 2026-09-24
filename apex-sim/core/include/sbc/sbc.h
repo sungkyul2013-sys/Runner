@@ -99,13 +99,14 @@ int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake
                           int mode, int shift, int aids);
 /* Packed telemetry: SBC_VT_HEADER floats, then SBC_VT_WHEEL floats per wheel (layout below). Returns the number of
    floats written, or −(floats needed) when capacity is too small. Positions are body-local (add sbc_body_origin). */
-#define SBC_VT_HEADER 40
+#define SBC_VT_HEADER 44
 #define SBC_VT_WHEEL 20
 /* header: 0 time, 1 speed [m/s], 2 engine rpm, 3 engine torque [N·m], 4 clutch torque, 5 gear (−1 R, 0 N),
    6 flags (1 shifting, 2 engine running, 4 TCS active), 7 throttle, 8 brake, 9 steer, 10 clutch, 11 accel long,
    12 accel lat [m/s²], 13 odometer [m], 14–16 chassis position, 17–19 forward, 20–22 up, 23–25 left,
    26–28 refCenter in the model frame, 29 wheel count, 30–31 reserved, §4.4: 32 coolant [°C], 33 coolant [L],
-   34 oil pressure [bar], 35 oil [L], 36 fuel [L], 37 engine wear [0, 1], 38 power available [0, 1], 39 fault bits
+   34 oil pressure [bar], 35 oil [L], 36 fuel [L], 37 engine wear [0, 1], 38 power available [0, 1], 39 fault bits,
+   40 airbag bits, 41 crash time [s] (−1: none), 42 crash peak [g], 43 crash Δv [m/s]
    wheel: 0 spin [rad/s], 1 spin angle [rad], 2 load [N], 3 slip ratio, 4 slip angle [rad], 5 Fx, 6 Fy [N],
    7 brake torque, 8 drive torque [N·m], 9 loaded radius [m], 10 flags (1 contact, 2 ABS active), 11–13 centre,
    14–16 axis (points left), 17 tyre radius [m], 18–19 reserved */
