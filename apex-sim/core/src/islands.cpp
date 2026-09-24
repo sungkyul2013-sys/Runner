@@ -55,6 +55,7 @@ Body extract(const Body& src, const std::vector<int32_t>& nodes, const std::vect
   pick(b.patchForce, src.patchForce, nodes);
   pick(b.patchNx, src.patchNx, nodes); pick(b.patchNy, src.patchNy, nodes); pick(b.patchNz, src.patchNz, nodes);
   pick(b.patchMaterial, src.patchMaterial, nodes);
+  pick(b.contactLoad, src.contactLoad, nodes);
   pick(b.contactDepth, src.contactDepth, nodes);
   pick(b.contactDepthNext, src.contactDepthNext, nodes);
   const size_t n = nodes.size();

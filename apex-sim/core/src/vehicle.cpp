@@ -197,6 +197,22 @@ Vehicle::Vehicle(const VehicleDesc& desc, int bodyIndex, const Body& body) : des
     require(desc.centre.minFront >= 0.0f && desc.centre.maxFront <= 1.0f && desc.centre.minFront <= desc.centre.maxFront,
             "centre coupling limits");
   }
+  for (const DamageLinkDesc& l : desc.damageLinks) {
+    require(l.group >= 0 && static_cast<size_t>(l.group) < body.damageGroups.size(), "damage link group out of range");
+    if (l.effect == DamageEffect::kDriveLoss || l.effect == DamageEffect::kBrakeLoss) {
+      require(l.wheel >= 0 && static_cast<size_t>(l.wheel) < desc.wheels.size(), "damage link wheel out of range");
+    }
+    require(l.rate >= 0.0f, "damage link rate must be ≥ 0");
+  }
+  const FluidsDesc& F = desc.fluids;
+  require(F.coolantL > 0.0f && F.oilL > 0.0f && F.fuelL > 0.0f && F.heatCapacity > 0.0f && F.efficiency > 0.0f,
+          "fluid capacities, heat capacity and efficiency must be > 0");
+  coolantL_ = F.coolantL;
+  oilL_ = F.oilL;
+  fuelL_ = F.fuelL;
+  coolantC_ = F.thermostatC;
+  driveLost_.assign(desc.wheels.size(), 0);
+  brakeFactor_.assign(desc.wheels.size(), 1.0);
   shares_.resize(desc.wheels.size());
   for (size_t i = 0; i < shares_.size(); ++i) shares_[i] = desc.wheels[i].driveShare;
   if (desc.centre.active) {
@@ -241,7 +257,12 @@ double Vehicle::engineTorque(double rpm, double throttle) const {
 
 void Vehicle::updateGearbox(double dt, double speed, double driveOmega) {
   const TransmissionDesc& t = desc_.transmission;
-  const int top = static_cast<int>(t.ratios.size());
+  // §4.4 a damaged gearbox has lost its top gears (engaged, it drops out of them).
+  const int top = std::max(1, static_cast<int>(t.ratios.size()) - gearsLost_);
+  if (gear_ > top && shiftTimer_ <= 0.0) {
+    pendingGear_ = top;
+    shiftTimer_ = t.shiftTime;
+  }
   sinceShift_ += dt;
   if (shiftTimer_ > 0.0) {
     shiftTimer_ -= dt;
@@ -261,6 +282,11 @@ void Vehicle::updateGearbox(double dt, double speed, double driveOmega) {
     case GearMode::kManual:
       if (gear_ <= 0) {
         target = speed > -1.0 ? 1 : 0;
+        // Engaging while rolling: the automatic picks the lowest gear that keeps the engine below its shift point (a
+        // car spawned or put into drive at speed must not be dropped into first gear and over-revved).
+        if (input_.mode == GearMode::kDrive && target == 1) {
+          while (target < top && std::fabs(driveOmega * gearRatio(target)) * kRadToRpm > 0.9 * t.upshiftRpm) ++target;
+        }
       } else if (input_.mode == GearMode::kManual) {
         if (input_.shiftRequest > 0 && gear_ < top) target = gear_ + 1;
         if (input_.shiftRequest < 0 && gear_ > 1) target = gear_ - 1;
@@ -471,9 +497,16 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     shares_[static_cast<size_t>(ra.leftWheel)] = shares_[static_cast<size_t>(ra.rightWheel)] = 0.5 * (1.0 - frontShare_);
   }
 
+  // ---- damage → function (§4.4) ------------------------------------------------------------------------------
+  updateDamage(b, dt, speed);
+
   // ---- steering ------------------------------------------------------------------------------------------------
   if (D.steeringChannel >= 0) {
-    const double target = clampd(input_.steer, -1.0, 1.0);
+    double target = clampd(input_.steer, -1.0, 1.0);
+    // A damaged rack: a dead band around the centre and a pull to one side; jammed, it stays where it is.
+    if (steerPlay_ > 0.0) target = std::copysign(std::max(0.0, std::fabs(target) - steerPlay_) / (1.0 - steerPlay_), target);
+    target = clampd(target + steerPull_, -1.0, 1.0);
+    if (steerJammed_) target = steer_;
     const double maxStep = D.steeringRate * dt;
     steer_ += clampd(target - steer_, -maxStep, maxStep);
     b.hydroInputs[static_cast<size_t>(D.steeringChannel)] = static_cast<float>(steer_);
@@ -510,7 +543,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   if (running_) {
     if (rpm < E.stallRpm && clutch_ > 0.3) running_ = false;
   } else if ((clutch_ < 0.05 || gear_ == 0) && throttleIn > 0.05) {
-    running_ = true;  // starter
+    running_ = !engineFailed_;  // starter (a ruined engine does not start)
     engineOmega_ = std::max(engineOmega_, E.idleRpm / kRadToRpm);
   }
   // Traction control (§9): a feed-forward engine torque limit from the driven wheels' measured loads at a nominal
@@ -529,7 +562,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   if (!std::isfinite(tractionTorque)) tractionTorque = 0.0;
   const double gearNow = gearRatio(gear_);
   double tcsClutchLimit = std::numeric_limits<double>::infinity();
-  if (D.electronics.tcs && input_.tcs && gear_ != 0 && gearNow != 0.0) {
+  if (D.electronics.tcs && input_.tcs && !electricalFailed_ && gear_ != 0 && gearNow != 0.0) {
     // Integral trim on the feed-forward limit: cut ≈ 3×/s per 0.1 excess slip, raise ≤ 2/s while the slip is below the
     // target. The feed-forward (µ·Fz at the weakest wheel) ignores load sensitivity, the slip curve and the engine's own
     // inertia, so the trim may raise it up to 1.5× — but only while the limit actually binds (no wind-up otherwise).
@@ -553,7 +586,9 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   } else {
     tcsFactor_ = 1.0;
   }
-  const double appliedThrottle = running_ ? (limiterCut_ ? 0.0 : std::max(throttle, idleThrottle)) : 0.0;
+  // Overheating derates the engine; a worn one has lost up to half its power.
+  const double health = derate_ * (1.0 - 0.5 * engineWear_);
+  const double appliedThrottle = running_ ? (limiterCut_ ? 0.0 : std::max(throttle * health, idleThrottle)) : 0.0;
   engineTorqueNet = engineTorque(engineOmega_ * kRadToRpm, appliedThrottle);
 
   const double G = gearRatio(gear_);
@@ -572,6 +607,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     }
   }
   engineOmega_ = std::max(0.0, engineOmega_ + (engineTorqueNet - clutchTorque) / E.inertia * dt);
+  lastPower_ = running_ ? std::max(0.0, engineTorqueNet * engineOmega_) : 0.0;
   if (G != 0.0) {
     const double power = clutchTorque * G * driveOmega;
     const double output = clutchTorque * G * (power >= 0.0 ? T.efficiency : 1.0 / T.efficiency);
@@ -588,7 +624,12 @@ void Vehicle::step(const World& world, Body& b, bool track) {
       WheelFrame& rr = frames_[static_cast<size_t>(ra.rightWheel)];
       const double cap = frontShare_ * std::fabs(output);
       const double c = std::min(cap / 0.3, 2000.0);  // full lock at 0.3 rad/s axle speed difference
-      const double coupling = clampd(c * (0.5 * (rl.spinDrive + rr.spinDrive - fl.spinDrive - fr.spinDrive)), -cap, cap);
+      double coupling = clampd(c * (0.5 * (rl.spinDrive + rr.spinDrive - fl.spinDrive - fr.spinDrive)), -cap, cap);
+      // §4.4 a broken rear half shaft: the open rear differential spins the broken side up, the coupling slips at its
+      // capacity and the front axle alone drives.
+      if (driveLost_[static_cast<size_t>(ra.leftWheel)] || driveLost_[static_cast<size_t>(ra.rightWheel)]) {
+        coupling = clampd(output, -cap, cap);
+      }
       fl.driveTorque = fr.driveTorque = 0.5 * coupling;
       rl.driveTorque = rr.driveTorque = 0.5 * (output - coupling);
     } else {
@@ -605,6 +646,12 @@ void Vehicle::step(const World& world, Body& b, bool track) {
       l.driveTorque -= lock;
       r.driveTorque += lock;
     }
+    // §4.4 a broken half shaft / CV joint: the axle's differential spins the broken side, neither wheel is driven.
+    for (const AxleDesc& a : D.axles) {
+      if (!driveLost_[static_cast<size_t>(a.leftWheel)] && !driveLost_[static_cast<size_t>(a.rightWheel)]) continue;
+      frames_[static_cast<size_t>(a.leftWheel)].driveTorque = 0.0;
+      frames_[static_cast<size_t>(a.rightWheel)].driveTorque = 0.0;
+    }
   }
 
   // ---- brakes with ABS ---------------------------------------------------------------------------------------
@@ -613,7 +660,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     const WheelDesc& wd = D.wheels[w];
     WheelFrame& f = frames_[w];
     WheelState& s = wheels_[w];
-    if (D.electronics.abs && input_.abs && pedal > 0.0 && f.contact && std::fabs(f.vx) > 2.0) {
+    if (D.electronics.abs && input_.abs && !electricalFailed_ && pedal > 0.0 && f.contact && std::fabs(f.vx) > 2.0) {
       // Slip-tracking modulator: pressure moves with the slip error around the target (integral action), and dumps
       // fast when the wheel heads for lock-up.
       const double error = s.kinematicSlip + D.electronics.absSlip;  // < 0: slipping more than the target
@@ -622,7 +669,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     } else {
       s.absFactor = 1.0;
     }
-    const double cap = wd.brakeTorque * pedal * s.absFactor + wd.handbrakeTorque * handbrake;
+    const double cap = wd.brakeTorque * pedal * s.absFactor * brakeFactor_[w] + wd.handbrakeTorque * handbrake;
     s.brakeAngle += f.spinRel * dt;
     double torque = -(D.brakes.stiffness * s.brakeAngle + D.brakes.damping * f.spinRel);
     if (std::fabs(torque) > cap) {
@@ -758,7 +805,15 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   telemetry_.gear = shiftTimer_ > 0.0 ? pendingGear_ : gear_;
   telemetry_.shifting = shiftTimer_ > 0.0;
   telemetry_.engineRunning = running_;
-  telemetry_.tcsActive = D.electronics.tcs && input_.tcs && throttle < std::min(throttleIn, 0.999);
+  telemetry_.tcsActive = D.electronics.tcs && input_.tcs && !electricalFailed_ && throttle < std::min(throttleIn, 0.999);
+  telemetry_.coolantC = static_cast<float>(coolantC_);
+  telemetry_.coolantL = static_cast<float>(coolantL_);
+  telemetry_.oilL = static_cast<float>(oilL_);
+  telemetry_.fuelL = static_cast<float>(fuelL_);
+  telemetry_.oilBar = static_cast<float>(oilBar_);
+  telemetry_.engineWear = static_cast<float>(engineWear_);
+  telemetry_.derate = static_cast<float>(derate_);
+  telemetry_.faults = faults_;
   telemetry_.throttle = static_cast<float>(appliedThrottle);
   telemetry_.brake = static_cast<float>(pedal);
   telemetry_.steer = static_cast<float>(steer_);

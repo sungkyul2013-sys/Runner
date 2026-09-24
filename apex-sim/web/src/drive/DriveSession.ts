@@ -8,6 +8,8 @@ import type { DebugBodies } from '../render/DebugBodies';
 import type { Viewer } from '../render/Viewer';
 import { Dashboard } from '../ui/Dashboard';
 import { t } from '../ui/i18n';
+import { decodeDamage, type DamageGroupDef } from '../vehicles/Damage';
+import { Debris, glassDebris, lampDebris } from '../vehicles/Debris';
 import { latticeCage, type CageNode, type VehicleJsonNode } from '../vehicles/Flexbody';
 import { loadVehicleModel } from '../vehicles/VehicleModel';
 import { ChaseCamera } from './ChaseCamera';
@@ -25,6 +27,9 @@ export class DriveSession {
   private state: VehicleState | null = null;
   private xray = false;
   private starting: Promise<void> | null = null;
+  // Glass granules and lamp shards (§4.3 side-effect particles).
+  readonly glassDebris: Debris = glassDebris();
+  readonly lampDebris: Debris = lampDebris();
 
   constructor(
     private readonly physics: PhysicsClient,
@@ -44,6 +49,10 @@ export class DriveSession {
     };
     window.addEventListener('keydown', (e) => {
       if (this.input.enabled && e.code === 'KeyP' && !e.repeat) this.onPauseToggle();
+    });
+    viewer.scene.add(this.glassDebris.group, this.lampDebris.group);
+    physics.onDamage(({ body, status }) => {
+      if (this.spawned && body === this.spawned.body) this.view?.flexbody?.setDamage(decodeDamage(status));
     });
   }
 
@@ -68,11 +77,13 @@ export class DriveSession {
     this.chase.reset();
     this.dashboard.root.hidden = false;
     this.physics.loadScene(DRIVE_SCENE);
+    this.glassDebris.clear();
+    this.lampDebris.clear();
     const modelPromise = this.vehicle.model && !this.view ? loadVehicleModel(this.vehicle.model) : null;
     // Worker URLs resolve against the worker script, not the page: send an absolute one.
     const src = this.vehicle.source;
     const source = src.kind === 'json' ? { kind: 'json' as const, url: new URL(src.url, document.baseURI).href } : src;
-    const cagePromise = modelPromise && source.kind === 'json' ? loadCage(source.url) : Promise.resolve(null);
+    const docPromise = modelPromise && source.kind === 'json' ? loadVehicleDoc(source.url) : Promise.resolve(null);
     try {
       this.spawned = await this.physics.spawnVehicle(source, this.pose, this.vehicle.id);
     } catch (err) {
@@ -81,14 +92,21 @@ export class DriveSession {
     }
     if (modelPromise) {
       try {
-        const [model, cage] = await Promise.all([modelPromise, cagePromise]);
-        this.view = new VehicleView(model, cage, this.spawned.body);
+        const [model, doc] = await Promise.all([modelPromise, docPromise]);
+        this.view = new VehicleView(model, doc?.cage ?? null, this.spawned.body, doc ? { defs: doc.damageGroups, nodeRest: doc.nodeRest } : null);
         this.viewer.scene.add(this.view.group);
+        const known = this.physics.damage.get(this.spawned.body);
+        if (known) this.view.flexbody?.setDamage(decodeDamage(known.status));
+        if (this.view.flexbody) {
+          this.view.flexbody.onBreak = (kind, points, velocities, colors) =>
+            (kind === 'glass' ? this.glassDebris : this.lampDebris).spawn(points, velocities, kind === 'glass' ? 1.2 : 1.8, kind === 'lamp' ? colors : undefined);
+        }
       } catch (err) {
         this.onError(`${t('vehicleFailed')}: ${(err as Error).message}`);
       }
     } else {
       this.view?.flexbody?.rebind(this.spawned.body); // respawned into a fresh world (same vehicle, same node order)
+      this.view?.flexbody?.setDamage([]);             // a new car: every pane and lamp intact
     }
     this.setXray(this.xray);
   }
@@ -115,6 +133,8 @@ export class DriveSession {
     if (!v) return;
     this.state = v;
     this.view?.update(v, frame, (b, n) => this.physics.locate(b, n), this.physics.islandVersion);
+    this.glassDebris.update(dt);
+    this.lampDebris.update(dt);
     this.chase.update(dt, v);
     this.physics.setVehicleInput(this.spawned.vehicle, this.input.update(dt, v.speed));
     const logic = this.input.logic;
@@ -127,10 +147,17 @@ export class DriveSession {
   }
 }
 
-/** Chassis lattice cage of an apex-vehicle JSON document (the flexbody's node binding). */
-async function loadCage(url: string): Promise<CageNode[] | null> {
+/** What the renderer needs from an apex-vehicle JSON document: the chassis lattice cage (flexbody), the damage groups
+ *  (glass and lamps) and the nodes' rest positions (model frame). */
+async function loadVehicleDoc(url: string): Promise<{ cage: CageNode[]; damageGroups: DamageGroupDef[]; nodeRest: (i: number) => [number, number, number] } | null> {
   const response = await fetch(url);
   if (!response.ok) return null;
-  const doc = (await response.json()) as { nodes?: VehicleJsonNode[] };
-  return doc.nodes ? latticeCage(doc.nodes) : null;
+  const doc = (await response.json()) as { nodes?: VehicleJsonNode[]; damageGroups?: DamageGroupDef[] };
+  if (!doc.nodes) return null;
+  const nodes = doc.nodes;
+  return {
+    cage: latticeCage(nodes),
+    damageGroups: doc.damageGroups ?? [],
+    nodeRest: (i) => (nodes[i] ? [nodes[i][1], nodes[i][2], nodes[i][3]] : [0, 0, 0]),
+  };
 }

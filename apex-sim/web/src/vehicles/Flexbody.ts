@@ -20,9 +20,17 @@
 // Tearing: a node that broke off with a part lives in another body (island split, §4.3). The texture carries each
 // node's piece (its current body); a vertex follows only the nodes in its nearest node's piece, and a triangle whose
 // corners ended up in different pieces is discarded, so the panel parts along the tear instead of stretching across it.
+//
+// Glass and lamps (§4.3, Damage.ts): glass and lamp vertices carry their damage group; per-group uniforms drive a
+// spider-web crack and an inward sag on laminated glass, discard shattered tempered glass and darken and hole broken
+// lenses. `onBreak` receives the fragments (sampled on the deformed pane) for the debris particles.
 import * as THREE from 'three/webgpu';
-import { Fn, attribute, float, int, ivec2, negateOnBackSide, textureLoad, transformNormalToView, varying, varyingProperty, vec2, vec3 } from 'three/tsl';
+import {
+  Fn, attribute, cross as crossNode, float, fract, int, ivec2, materialColor, materialOpacity, max, mix, negateOnBackSide, normalize, select, sin,
+  smoothstep, fwidth, textureLoad, transformNormalToView, uniformArray, varying, varyingProperty, vec2, vec3, vec4,
+} from 'three/tsl';
 import type { RenderFrame } from '../physics/PhysicsClient';
+import { matchPieces, panelLook, PanelState, rimDistance, splitPieces, type DamageGroupDef, type DamageStatus } from './Damage';
 
 type V3 = [number, number, number];
 type Frame = [V3, V3, V3]; // orthonormal columns e1, e2, e3
@@ -51,9 +59,14 @@ const TEX_WIDTH = 250;     // a multiple of TEXELS_PER_NODE: a node's texels sha
 const XYZW = ['x', 'y', 'z', 'w'] as const;
 const EPS = 1e-4;          // [m²] weight regulariser: w ∝ 1 / (d² + EPS)
 
+// A vec4 element of a uniform array (the typings leave its node type open).
+type Vec4Node = ReturnType<typeof vec4>;
+const element = (arr: ReturnType<typeof uniformArray>, i: ReturnType<typeof int>): Vec4Node => arr.element(i) as unknown as Vec4Node;
+
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const scale = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
 const length = (a: V3) => Math.hypot(a[0], a[1], a[2]);
@@ -175,13 +188,37 @@ export class Flexbody {
   private locatedVersion = -1;
   private readonly restFrames: Frame[];
   private readonly lastM: Float32Array; // last good rotation per cage node (9 floats), for degenerate moments
+  private prevP: Float32Array | null = null; // cage positions of the previous update (fragment velocities)
+  private prevTime = 0;
+  private lastTime = 0;
+  // Damage groups: definitions, per-group uniforms (state, crack radius, sag, seed | crack origin | sag direction)
+  // and, per group, the panel vertices (mesh, vertex) the looks and fragments are computed from.
+  private readonly defs: DamageGroupDef[];
+  private readonly nodeRest: (node: number) => V3;
+  private readonly panelState: THREE.Vector4[];
+  private readonly panelCrack: THREE.Vector4[];
+  private readonly panelSag: THREE.Vector4[];
+  private readonly panelVerts: Array<Array<{ mesh: THREE.Mesh; tris: number[] }>>;
+  private readonly states: PanelState[];
+  /** Called when a tempered pane shatters or a lamp breaks, with fragment points and velocities (render space). */
+  onBreak: ((kind: 'glass' | 'lamp', points: V3[], velocities: V3[], colors: THREE.Color[]) => void) | null = null;
 
   /**
    * @param root      the model's vehicle-frame root
    * @param bodyMesh  the body part of the model (wheels removed); its meshes move into `group`
    * @param cage      chassis lattice nodes of physics body `body`
+   * @param damage    the vehicle's damage groups and its nodes' rest positions (model frame), for glass and lamps
    */
-  constructor(root: THREE.Object3D, bodyMesh: THREE.Object3D, private readonly cage: CageNode[], private body: number) {
+  constructor(root: THREE.Object3D, bodyMesh: THREE.Object3D, private readonly cage: CageNode[], private body: number,
+              damage: { defs: DamageGroupDef[]; nodeRest: (node: number) => V3 } | null = null) {
+    this.defs = damage?.defs ?? [];
+    this.nodeRest = damage?.nodeRest ?? (() => [0, 0, 0]);
+    const groups = Math.max(this.defs.length, 1);
+    this.panelState = Array.from({ length: groups }, (_, g) => new THREE.Vector4(0, 0, 0, (g * 0.6180339887) % 1));
+    this.panelCrack = Array.from({ length: groups }, () => new THREE.Vector4());
+    this.panelSag = Array.from({ length: groups }, () => new THREE.Vector4(0, -1, 0, 0));
+    this.panelVerts = Array.from({ length: groups }, () => []);
+    this.states = Array.from({ length: groups }, () => PanelState.Intact);
     const rows = Math.ceil((cage.length * TEXELS_PER_NODE) / TEX_WIDTH);
     this.data = new Float32Array(TEX_WIDTH * rows * 4);
     this.texture = new THREE.DataTexture(this.data, TEX_WIDTH, rows, THREE.RGBAFormat, THREE.FloatType);
@@ -266,6 +303,9 @@ export class Flexbody {
       }
     }
     mesh.geometry = g;
+    const role = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material).userData?.apexRole as string | undefined;
+    const kind = role === 'glass' || role === 'tint' ? 'glass' : role === 'lamp' ? 'lamp' : null;
+    if (kind) this.bindPanels(mesh, kind);
     const pos = g.getAttribute('position');
     const n = pos.count;
     const ids = new Float32Array(n * K), weights = new Float32Array(n * K);
@@ -287,7 +327,7 @@ export class Flexbody {
       let f = materials.get(m);
       if (!f) {
         f = m.clone();
-        this.deformMaterial(f as THREE.MeshPhysicalNodeMaterial);
+        this.deformMaterial(f as THREE.MeshPhysicalNodeMaterial, kind);
         materials.set(m, f);
       }
       return f;
@@ -295,13 +335,65 @@ export class Flexbody {
     mesh.material = Array.isArray(mesh.material) ? flex : flex[0];
   }
 
-  private deformMaterial(mat: THREE.MeshPhysicalNodeMaterial): void {
+  /** Tags the glass / lamp vertices of a baked mesh with their damage group ('fbPanel', −1: none) and, for glass, their
+   *  distance from the pane's rim ('fbRim': the sag profile); records each group's triangles and sag direction. */
+  private bindPanels(mesh: THREE.Mesh, kind: 'glass' | 'lamp'): void {
+    const g = mesh.geometry;
+    const pos = g.getAttribute('position').array as Float32Array;
+    const index = g.index ? (g.index.array as ArrayLike<number>) : null;
+    const { triPiece, centroids } = splitPieces(pos, index);
+    const pieceGroup = matchPieces(centroids, this.defs, kind);
+    const n = pos.length / 3;
+    const panel = new Float32Array(n).fill(-1);
+    const vi = (t: number, k: number) => (index ? index[t * 3 + k] : t * 3 + k);
+    const trisOf = new Map<number, number[]>();
+    for (let t = 0; t < triPiece.length; t++) {
+      const grp = pieceGroup[triPiece[t]];
+      if (grp < 0) continue;
+      for (let k = 0; k < 3; k++) panel[vi(t, k)] = grp;
+      if (!trisOf.has(grp)) trisOf.set(grp, []);
+      trisOf.get(grp)!.push(t);
+    }
+    g.setAttribute('fbPanel', new THREE.BufferAttribute(panel, 1));
+    if (kind === 'glass') {
+      const rim = new Float32Array(n);
+      for (const [grp] of trisOf) {
+        const pieces = new Set<number>();
+        pieceGroup.forEach((pg, piece) => pg === grp && pieces.add(piece));
+        const d = rimDistance(pos, index, triPiece, pieces);
+        for (let i = 0; i < n; i++) if (panel[i] === grp) rim[i] = d[i];
+      }
+      g.setAttribute('fbRim', new THREE.BufferAttribute(rim, 1));
+    }
+    for (const [grp, tris] of trisOf) {
+      this.panelVerts[grp].push({ mesh, tris });
+      // Sag inward: against the pane's area-weighted normal, oriented away from the cabin centre.
+      const centre = centroids.reduce((best, c, piece) => (pieceGroup[piece] === grp ? c : best), [0, 0, 0] as V3);
+      const out = sub(centre, [0, 0.6, -0.2]);
+      const l = length(out) || 1;
+      this.panelSag[grp].set(-out[0] / l, -out[1] / l, -out[2] / l, 0);
+    }
+  }
+
+  private deformMaterial(mat: THREE.MeshPhysicalNodeMaterial, kind: 'glass' | 'lamp' | null): void {
     const tex = this.texture;
     const fetch = (node: ReturnType<typeof int>, k: number) => {
       const t = node.mul(TEXELS_PER_NODE).add(k);
       return textureLoad(tex, ivec2(t.mod(TEX_WIDTH), t.div(TEX_WIDTH)));
     };
-    const X = attribute('position', 'vec3');
+    const X0 = attribute('position', 'vec3');
+    const panelIndex = kind ? attribute('fbPanel', 'float') : float(-1);
+    const hasPanel = panelIndex.greaterThanEqual(0);
+    const pi = int(max(panelIndex, 0));
+    const stateArr = uniformArray(this.panelState, 'vec4');
+    const crackArr = uniformArray(this.panelCrack, 'vec4');
+    const sagArr = uniformArray(this.panelSag, 'vec4');
+    const panel = select(hasPanel, element(stateArr, pi), vec4(0));
+    // Laminated sag: the rest position moves inward by up to `sag` in the middle of the pane (0 at the rim) before
+    // it is deformed with the body.
+    const X = kind === 'glass'
+      ? X0.add(element(sagArr, pi).xyz.mul(panel.z.mul(attribute('fbRim', 'float').mul(float(2).sub(attribute('fbRim', 'float'))))))
+      : X0;
     const nodes = attribute('fbNodes', 'vec4');
     const w = attribute('fbWeights', 'vec4');
     const piece = fetch(int(nodes.x), 0).w;
@@ -342,8 +434,48 @@ export class Flexbody {
     mat.positionNode = deform();
     mat.normalNode = normal;
     if ('clearcoatNormalNode' in mat) mat.clearcoatNormalNode = normal;
-    mat.maskNode = pieceMoments.y.sub(pieceMoments.x.mul(pieceMoments.x)).abs().lessThan(1e-3);
+    const intact = pieceMoments.y.sub(pieceMoments.x.mul(pieceMoments.x)).abs().lessThan(1e-3);
+    mat.maskNode = intact;
     mat.needsUpdate = true;
+    if (!kind) return;
+    // Damaged glass and lamps (fragment terms on rest coordinates, so the pattern stays on the glass).
+    const vX = vec3(varying(X0, 'v_fbRest'));
+    const state = vec4(varying(panel, 'v_fbPanelState'));
+    const broken = state.x.greaterThan(1.5);
+    // Cell hash of the rest position (≈ 1.5 cm cells): which bits of a broken lens are missing.
+    const cell = vX.mul(66).floor();
+    const noise = fract(sin(cell.dot(vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
+    if (kind === 'lamp') {
+      mat.colorNode = materialColor.mul(select(broken, float(0.12), float(1)));
+      mat.maskNode = intact.and(broken.and(noise.greaterThan(0.55)).not());
+      mat.needsUpdate = true;
+      return;
+    }
+    // Tempered: gone. Laminated: a spider web — radial cracks and rings around the origin, a crushed star at its
+    // centre — fading out at the crack radius.
+    mat.maskNode = intact.and(broken.not());
+    const origin = vec3(varying(element(crackArr, pi).xyz, 'v_fbCrack'));
+    const radius = state.y, seed = state.w;
+    const d = vX.sub(origin);
+    const r = d.length();
+    const n0 = normalize(vec3(varying(attribute('normal', 'vec3'), 'v_fbRestNormal')));
+    const t1 = normalize(crossNode(n0, select(n0.y.abs().lessThan(0.9), vec3(0, 1, 0), vec3(1, 0, 0))));
+    const t2 = crossNode(n0, t1);
+    const theta = d.dot(t2).atan(d.dot(t1));
+    const spokes = 13;
+    const a = theta.div(2 * Math.PI).mul(spokes).add(seed.mul(7)).add(sin(r.mul(31).add(seed.mul(40))).mul(0.18));
+    const arc = fract(a.add(0.5)).sub(0.5).abs().mul((2 * Math.PI) / spokes).mul(r);
+    // Line widths: ≈ 1 mm on the glass, never thinner than a pixel (fwidth), so distant cracks do not alias to dots.
+    const spokeLine = float(1).sub(smoothstep(0.0005, max(0.0018, fwidth(arc).mul(1.5)), arc));
+    const ringStep = float(0.055).add(seed.mul(0.03));
+    const ring = fract(r.div(ringStep).add(sin(theta.mul(5).add(seed.mul(9))).mul(0.25))).sub(0.5).abs().mul(ringStep);
+    const ringLine = float(1).sub(smoothstep(0.0005, max(0.0016, fwidth(ring).mul(1.5)), ring)).mul(float(1).sub(smoothstep(radius.mul(0.5), radius.mul(0.8), r)));
+    const star = float(1).sub(smoothstep(0.012, 0.045, r));
+    const extent = float(1).sub(smoothstep(radius.mul(0.8), radius, r));
+    const crack = select(state.x.greaterThan(0.5), max(max(spokeLine, ringLine.mul(0.7)).mul(extent), star.mul(0.85)), float(0));
+    mat.colorNode = mix(materialColor, vec3(0.9, 0.93, 0.95), crack);
+    mat.opacityNode = max(materialOpacity, crack.mul(0.95));
+
   }
 
   private locateAll(locate: NodeLocator): void {
@@ -363,7 +495,14 @@ export class Flexbody {
   }
 
   /** Uploads the cage for this frame (positions in render space). */
-  update(frame: RenderFrame, locate: NodeLocator, islandVersion: number): void {
+  update(frame: RenderFrame, locate: NodeLocator, islandVersion: number, now = performance.now()): void {
+    this.prevP ??= new Float32Array(this.cage.length * 3);
+    for (let k = 0; k < this.cage.length; k++) {
+      const o = k * TEXELS_PER_NODE * 4;
+      this.prevP.set(this.data.subarray(o, o + 3), k * 3);
+    }
+    this.prevTime = this.lastTime;
+    this.lastTime = now;
     if (islandVersion !== this.locatedVersion) {
       this.locateAll(locate);
       this.locatedVersion = islandVersion;
@@ -399,6 +538,98 @@ export class Flexbody {
       }
     });
     this.texture.needsUpdate = true;
+  }
+
+  /** Current look of every damage group (index = group). */
+  get panelStates(): readonly PanelState[] {
+    return this.states;
+  }
+
+  /** Applies the core's damage-group state (sbc_body_damage_groups, in group order). */
+  setDamage(status: DamageStatus[], rand: () => number = Math.random): void {
+    this.defs.forEach((def, g) => {
+      const look = panelLook(def, status[g]);
+      const st = this.panelState[g];
+      st.x = look.state;
+      st.y = look.crackRadius;
+      st.z = look.sag;
+      const s = status[g];
+      if (look.state !== PanelState.Intact && s && this.states[g] === PanelState.Intact) {
+        // Crack origin: the panel vertex nearest the first damage (its beam's midpoint, or the struck node).
+        const a = this.nodeRest(s.nodeA), b = this.nodeRest(s.nodeB);
+        const at: V3 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+        let best: V3 = at, bestD = Infinity;
+        for (const { mesh } of this.panelVerts[g]) {
+          const pos = mesh.geometry.getAttribute('position');
+          const panel = mesh.geometry.getAttribute('fbPanel');
+          for (let i = 0; i < pos.count; i++) {
+            if (panel.getX(i) !== g) continue;
+            const d = (pos.getX(i) - at[0]) ** 2 + (pos.getY(i) - at[1]) ** 2 + (pos.getZ(i) - at[2]) ** 2;
+            if (d < bestD) { bestD = d; best = [pos.getX(i), pos.getY(i), pos.getZ(i)]; }
+          }
+        }
+        this.panelCrack[g].set(best[0], best[1], best[2], 0);
+      }
+      if (look.state === PanelState.Broken && this.states[g] !== PanelState.Broken && def.visual) this.shed(g, def.visual.kind, rand);
+      this.states[g] = look.state;
+    });
+  }
+
+  /** Fragments of a breaking pane or lens: random points on its deformed triangles, moving with the body there. */
+  private shed(g: number, kind: 'glass' | 'lamp', rand: () => number): void {
+    if (!this.onBreak) return;
+    const points: V3[] = [], velocities: V3[] = [], colors: THREE.Color[] = [];
+    const dt = this.lastTime > this.prevTime ? (this.lastTime - this.prevTime) / 1000 : 0;
+    let area = 0;
+    const tris: Array<{ mesh: THREE.Mesh; t: number; a: number }> = [];
+    const at = (mesh: THREE.Mesh, i: number) => this.deformedVertex(mesh, i);
+    const vi = (mesh: THREE.Mesh, t: number, k: number) => (mesh.geometry.index ? mesh.geometry.index.getX(t * 3 + k) : t * 3 + k);
+    for (const { mesh, tris: list } of this.panelVerts[g]) {
+      for (const t of list) {
+        const [a, b, c] = [0, 1, 2].map((k) => at(mesh, vi(mesh, t, k)).x);
+        const u = sub(b, a), v = sub(c, a);
+        const ar = length(cross3(u, v)) / 2;
+        area += ar;
+        tris.push({ mesh, t, a: ar });
+      }
+    }
+    if (area <= 0) return;
+    // Granules of tempered glass: ~ 2 cm spacing over the pane (at most 700); lens shards: one per 25 cm² (≤ 120).
+    const count = kind === 'glass' ? Math.min(700, Math.round(area / 4e-4)) : Math.min(120, Math.max(12, Math.round(area / 2.5e-3)));
+    for (let k = 0; k < count; k++) {
+      let pick = rand() * area, tri = tris[0];
+      for (const x of tris) { pick -= x.a; tri = x; if (pick <= 0) break; }
+      const corners = [0, 1, 2].map((c) => at(tri.mesh, vi(tri.mesh, tri.t, c)));
+      let r1 = rand(), r2 = rand();
+      if (r1 + r2 > 1) { r1 = 1 - r1; r2 = 1 - r2; }
+      const w = [1 - r1 - r2, r1, r2];
+      points.push([0, 1, 2].map((c) => corners[0].x[c] * w[0] + corners[1].x[c] * w[1] + corners[2].x[c] * w[2]) as V3);
+      velocities.push(dt > 0 ? ([0, 1, 2].map((c) => (corners[0].v[c] * w[0] + corners[1].v[c] * w[1] + corners[2].v[c] * w[2]) / dt) as V3) : [0, 0, 0]);
+      const color = tri.mesh.geometry.getAttribute('color');
+      const i0 = vi(tri.mesh, tri.t, 0);
+      colors.push(color ? new THREE.Color(color.getX(i0), color.getY(i0), color.getZ(i0)) : new THREE.Color(0xd8ecf2));
+    }
+    this.onBreak(kind, points, velocities, colors);
+  }
+
+  /** CPU copy of the vertex stage: deformed position of vertex `i` and its displacement since the previous update. */
+  private deformedVertex(mesh: THREE.Mesh, i: number): { x: V3; v: V3 } {
+    const g = mesh.geometry;
+    const pos = g.getAttribute('position'), nodes = g.getAttribute('fbNodes'), w = g.getAttribute('fbWeights');
+    const X: V3 = [pos.getX(i), pos.getY(i), pos.getZ(i)];
+    const x: V3 = [0, 0, 0], v: V3 = [0, 0, 0];
+    const d = this.data, prev = this.prevP;
+    for (let s = 0; s < K; s++) {
+      const k = nodes.getComponent(i, s), wk = w.getComponent(i, s);
+      const o = k * TEXELS_PER_NODE * 4;
+      const rel = [X[0] - d[o + 16], X[1] - d[o + 17], X[2] - d[o + 18]];
+      for (let c = 0; c < 3; c++) {
+        const xc = d[o + c] + d[o + 4 + c] * rel[0] + d[o + 8 + c] * rel[1] + d[o + 12 + c] * rel[2];
+        x[c] += wk * xc;
+        if (prev) v[c] += wk * (d[o + c] - prev[k * 3 + c]);
+      }
+    }
+    return { x, v };
   }
 
   set visible(on: boolean) {

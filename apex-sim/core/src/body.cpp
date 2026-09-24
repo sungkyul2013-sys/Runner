@@ -80,7 +80,7 @@ Body buildBody(const BodyDesc& desc) {
   resizeNodes(b.px, b.py, b.pz, b.vx, b.vy, b.vz, b.fx, b.fy, b.fz, b.sx, b.sy, b.sz, b.mass, b.invMass, b.radius, b.material,
               b.flags, b.fdBeamX, b.fdBeamY, b.fdBeamZ, b.fdContactX, b.fdContactY, b.fdContactZ, b.fdFrictionX,
               b.fdFrictionY, b.fdFrictionZ, b.fdExternalX, b.fdExternalY, b.fdExternalZ, b.stickX, b.stickY, b.stickZ,
-              b.patchForce, b.patchNx, b.patchNy, b.patchNz, b.patchMaterial);
+              b.patchForce, b.patchNx, b.patchNy, b.patchNz, b.patchMaterial, b.contactLoad);
   b.anchorContact.assign(n, -1);
 
   for (size_t i = 0; i < n; ++i) {
@@ -157,12 +157,21 @@ Body buildBody(const BodyDesc& desc) {
     b.hydroSpeed[k] = d.hydroSpeed;
     b.typeBegin[static_cast<int>(d.type) + 1]++;
   }
-  for (const DamageGroupDesc& g : desc.damageGroups) {
-    require(g.strain > 0.0f, "damage group \"" + g.id + "\" needs a positive trigger strain");
+  for (size_t gi = 0; gi < desc.damageGroups.size(); ++gi) {
+    const DamageGroupDesc& g = desc.damageGroups[gi];
+    require(g.strain > 0.0f && g.impactForce > 0.0f, "damage group \"" + g.id + "\" needs positive trigger values");
     DamageGroupState st;
     st.id = g.id;
+    for (const int32_t i : g.nodes) {
+      require(i >= 0 && static_cast<size_t>(i) < n, "damage group \"" + g.id + "\" has an invalid node");
+      b.damageNode.push_back(i);
+      b.damageNodeGroup.push_back(static_cast<int32_t>(gi));
+      b.damageNodeHit.push_back(0);
+    }
     b.damageGroups.push_back(st);
   }
+  b.damageImpact.clear();
+  for (const DamageGroupDesc& g : desc.damageGroups) b.damageImpact.push_back(g.impactForce);
   for (size_t k = 0; k < m; ++k) {  // in body beam order
     const BeamDesc& d = desc.beams[order[k]];
     if (d.damageGroup < 0) continue;

@@ -174,6 +174,7 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
         ++count;
       }
       b.anchorContact[i] = -1;
+      b.contactLoad[i] += total;
       b.patchForce[i] = total;
       b.patchNx[i] = weightedNormal.x; b.patchNy[i] = weightedNormal.y; b.patchNz[i] = weightedNormal.z;
       b.patchMaterial[i] = contacts[0].material;
@@ -185,6 +186,7 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
       continue;
     }
     Vec3 force{}, dissipativeNormal{}, friction{};
+    float normalLoad = 0.0f;
     for (int k = 0; k < n; ++k) {
       const Contact& c = contacts[k];
       const ContactPairParams& pp = w.contactPair(b.material[i], c.material);
@@ -225,6 +227,7 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
         ft = speed > kSlipEpsilon ? vt * (-std::min(ct, pp.kineticFriction * fn / speed)) : Vec3{};
       }
       force += c.normal * fn + ft;
+      normalLoad += fn;
       if constexpr (kTrack) {
         dissipativeNormal += c.normal * (fn - spring);
         friction += ft;
@@ -232,6 +235,7 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
       ++count;
     }
     b.fx[i] += force.x; b.fy[i] += force.y; b.fz[i] += force.z;
+    b.contactLoad[i] += normalLoad;
     if constexpr (kTrack) {
       b.fdContactX[i] += dissipativeNormal.x; b.fdContactY[i] += dissipativeNormal.y; b.fdContactZ[i] += dissipativeNormal.z;
       b.fdFrictionX[i] += friction.x; b.fdFrictionY[i] += friction.y; b.fdFrictionZ[i] += friction.z;
@@ -258,12 +262,11 @@ int ContactSolver::ccdStatic(World& w, int bodyIndex) {
     float bestT = 2.0f;
     Vec3 bestNormal{};
     float bestOffset = 0.0f;  // plane offset: d(p) = dot(p, n) − offset
-    const LocalTri* bestTri = nullptr;
     for (const LocalPlane& pl : s.planes) {
       const float d0 = x0.y - pl.height, d1 = x1.y - pl.height;
       if (d0 >= -kCcdSlop && d1 < 0.0f && d1 < d0) {
         const float t = std::max(0.0f, d0) / (d0 - d1);
-        if (t < bestT) { bestT = t; bestNormal = {0.0f, 1.0f, 0.0f}; bestOffset = pl.height; bestTri = nullptr; }
+        if (t < bestT) { bestT = t; bestNormal = {0.0f, 1.0f, 0.0f}; bestOffset = pl.height; }
       }
     }
     for (const LocalTri& t : s.tris) {
@@ -275,20 +278,15 @@ int ContactSolver::ccdStatic(World& w, int bodyIndex) {
       bestT = tt;
       bestNormal = t.normal;
       bestOffset = dot(t.v0, t.normal);
-      bestTri = &t;
     }
     if (bestT > 1.0f) continue;
-    // Land on the surface where the step ends: only the penetration is removed, the tangential part of the step is
-    // kept. (Rewinding to the time of impact also undid the tangential step: a node pressed onto the surface every
-    // step — a tyre tread node under a hard landing — stayed frozen in place while its tangential velocity kept
-    // growing under its beams, and beam damping pumped that into the whole vehicle.) The impact point is the
-    // fallback when the projected end point leaves the triangle.
-    Vec3 hit = x1 - bestNormal * (dot(x1, bestNormal) - bestOffset);
-    if (bestTri && !pointInTriangle(hit, *bestTri)) {
-      hit = x0 + (x1 - x0) * bestT;
-      const float behind = dot(hit, bestNormal) - bestOffset;
-      if (behind < 0.0f) hit = hit - bestNormal * behind;  // land on (not behind) the surface
-    }
+    // Land on the surface's plane where the step ends: only the penetration is removed, the tangential part of the
+    // step is kept — also when it carries the node past the triangle's edge (sliding over the edge of a kerb or a
+    // speed bump), where the plane extended beyond the edge is outside the solid. Rewinding to the time of impact
+    // undid the tangential step instead: a node pressed onto the surface every step — a tyre tread node under a hard
+    // landing, or one riding exactly on a bump's top edge — stayed frozen in place while its tangential velocity
+    // kept growing under its beams (the latter reached 500 m/s and blew the car up at 80 km/h).
+    const Vec3 hit = x1 - bestNormal * (dot(x1, bestNormal) - bestOffset);
     b.px[i] = hit.x; b.py[i] = hit.y; b.pz[i] = hit.z;
     const float vn = dot(v, bestNormal);
     if (vn < 0.0f) {

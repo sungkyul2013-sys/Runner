@@ -48,6 +48,8 @@ class Vehicle {
     }
     for (const uint8_t lost : wheelLost_) h.value(lost);
     h.value(wrecked_);
+    h.value(coolantL_); h.value(oilL_); h.value(fuelL_); h.value(coolantC_); h.value(engineWear_); h.value(lastPower_);
+    h.value(engineFailed_); h.value(faults_);
   }
 
  private:
@@ -60,6 +62,9 @@ class Vehicle {
     double kinematicSlip = 0.0;     // κ from wheel and ground speed (ABS sensor) [-]
   };
 
+  // §4.4: link severities from the body's damage groups, fluids, temperatures and engine wear for this step; sets the
+  // modifiers below (vehicle_damage.cpp).
+  void updateDamage(const Body& body, double dt, double speed);
   double gearRatio(int gear) const;  // incl. final drive; negative in reverse
   void updateGearbox(double dt, double speed, double wheelSideOmega);
   double engineTorque(double rpm, double throttle) const;  // net brake torque [N·m]
@@ -88,6 +93,18 @@ class Vehicle {
   // chassis reference (the car broke apart) switches the controller off.
   std::vector<uint8_t> wheelLost_;
   bool wrecked_ = false;
+
+  // §4.4 damage → function: fluids [L], coolant temperature [°C], engine wear [0, 1], last step's engine output [W],
+  // and the modifiers the damage links set each step.
+  double coolantL_ = 0.0, oilL_ = 0.0, fuelL_ = 0.0, coolantC_ = 0.0, engineWear_ = 0.0, lastPower_ = 0.0;
+  bool engineFailed_ = false;  // overheated, seized or out of fuel: will not start again
+  uint32_t faults_ = 0;
+  double derate_ = 1.0, oilBar_ = 0.0;
+  double steerPlay_ = 0.0, steerPull_ = 0.0;
+  bool steerJammed_ = false, electricalFailed_ = false;
+  int gearsLost_ = 0;
+  std::vector<uint8_t> driveLost_;   // per wheel
+  std::vector<double> brakeFactor_;  // per wheel
 
   // Per-step scratch (no allocation in step()).
   struct WheelFrame {

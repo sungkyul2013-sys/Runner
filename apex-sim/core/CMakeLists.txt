@@ -42,6 +42,7 @@ add_library(sbc STATIC
   src/job_system.cpp
   src/scenes.cpp
   src/vehicle.cpp
+    src/vehicle_damage.cpp
   src/proto_car.cpp
   src/vehicle_build.cpp
   src/vehicle_json.cpp
@@ -132,6 +133,7 @@ if(SBC_BUILD_TESTS)
     tests/test_contact.cpp
     tests/test_body_contact.cpp
     tests/test_islands.cpp
+    tests/test_damage.cpp
     tests/test_elements.cpp
     tests/test_vehicle.cpp
     tests/test_vehicle_json.cpp

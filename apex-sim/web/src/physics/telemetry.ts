@@ -26,6 +26,15 @@ export const VT = {
   refCenterModel: 26,
   wheelCount: 29,
   body: 30,
+  // §4.4 fluids and engine health
+  coolantC: 32,
+  coolantL: 33,
+  oilBar: 34,
+  oilL: 35,
+  fuelL: 36,
+  engineWear: 37,
+  derate: 38,
+  faults: 39, // core fault:: bits
 } as const;
 
 /** Wheel field indices (Float32, relative to the wheel's record). */
@@ -83,7 +92,34 @@ export interface VehicleState {
   left: V3;
   refCenterModel: V3; // the reference point's position in the model (GLB) frame
   wheels: WheelState[];
+  // §4.4 fluids and engine health
+  coolantC: number;
+  coolantL: number;
+  oilBar: number;
+  oilL: number;
+  fuelL: number;
+  engineWear: number; // [0, 1]
+  derate: number; // power available [0, 1]
+  faults: number; // core fault:: bits (see FAULT)
 }
+
+/** Core fault bits (sbc/vehicle.h fault::). */
+export const FAULT = {
+  coolantLeak: 1 << 0,
+  overheat: 1 << 1,
+  oilLeak: 1 << 2,
+  oilPressure: 1 << 3,
+  seized: 1 << 4,
+  fuelLeak: 1 << 5,
+  outOfFuel: 1 << 6,
+  steering: 1 << 7,
+  drive: 1 << 8,
+  brakes: 1 << 9,
+  gearbox: 1 << 10,
+  electrical: 1 << 11,
+  overrev: 1 << 12,
+  engineFailed: 1 << 13,
+} as const;
 
 const v3 = (r: ArrayLike<number>, i: number): V3 => [r[i], r[i + 1], r[i + 2]];
 
@@ -129,6 +165,14 @@ export function decodeVehicle(r: Float32Array, origin: V3): VehicleState {
     up: v3(r, VT.up),
     left: v3(r, VT.left),
     refCenterModel: v3(r, VT.refCenterModel),
+    coolantC: r[VT.coolantC],
+    coolantL: r[VT.coolantL],
+    oilBar: r[VT.oilBar],
+    oilL: r[VT.oilL],
+    fuelL: r[VT.fuelL],
+    engineWear: r[VT.engineWear],
+    derate: r[VT.derate],
+    faults: Math.round(r[VT.faults]),
     wheels,
   };
 }

@@ -3,6 +3,7 @@
 
 #include <yyjson.h>
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <stdexcept>
@@ -195,6 +196,14 @@ struct Loader {
       g.id = string(member(item, "id"), path + ".id");
       g.strain = floatOr(item, "strain", g.strain, path);
       if (!(g.strain > 0.0f)) fail(path, "strain must be > 0");
+      g.impactForce = floatOr(item, "impact", g.impactForce, path);
+      if (!(g.impactForce > 0.0f)) fail(path, "impact must be > 0");
+      if (const Val nodes = member(item, "nodes")) {
+        array(nodes, path + ".nodes");
+        size_t j, m;
+        Val id;
+        yyjson_arr_foreach(nodes, j, m, id) g.nodes.push_back(node(id, path + ".nodes[" + std::to_string(j) + "]"));
+      }
       if (!damageGroupIndex.emplace(g.id, static_cast<int32_t>(body().damageGroups.size())).second) fail(path, "duplicate id '" + g.id + "'");
       body().damageGroups.push_back(g);
     }
@@ -536,6 +545,51 @@ struct Loader {
       v.aero.liftAreaRear = floatOr(a, "liftAreaRear", v.aero.liftAreaRear, path);
       if (const Val f = member(a, "frontNodes")) v.aero.frontNodes = nodeList(f, path + ".frontNodes");
       if (const Val r = member(a, "rearNodes")) v.aero.rearNodes = nodeList(r, path + ".rearNodes");
+    }
+    if (const Val f = member(obj, "fluids")) {
+      const std::string path = "vehicle.fluids";
+      FluidsDesc& d = v.fluids;
+      for (auto [key, field] : std::initializer_list<std::pair<const char*, float*>>{
+               {"coolantL", &d.coolantL}, {"oilL", &d.oilL}, {"fuelL", &d.fuelL}, {"ambientC", &d.ambientC},
+               {"thermostatC", &d.thermostatC}, {"derateC", &d.derateC}, {"failC", &d.failC},
+               {"heatCapacity", &d.heatCapacity}, {"heatShare", &d.heatShare}, {"idleHeatW", &d.idleHeatW},
+               {"radiatorUA", &d.radiatorUA}, {"fanFlow", &d.fanFlow}, {"fullFlowSpeed", &d.fullFlowSpeed},
+               {"oilBarPer1000Rpm", &d.oilBarPer1000Rpm}, {"maxOilBar", &d.maxOilBar}, {"minOilBar", &d.minOilBar},
+               {"starveRpm", &d.starveRpm}, {"seizeRate", &d.seizeRate}, {"overrevRate", &d.overrevRate},
+               {"efficiency", &d.efficiency}, {"fuelEnergy", &d.fuelEnergy}, {"idleFuelLph", &d.idleFuelLph}}) {
+        *field = floatOr(f, key, *field, path);
+      }
+    }
+    if (const Val links = member(obj, "damageLinks")) {
+      array(links, "vehicle.damageLinks");
+      size_t li, ln;
+      Val link;
+      yyjson_arr_foreach(links, li, ln, link) {
+        const std::string path = "vehicle.damageLinks[" + std::to_string(li) + "]";
+        DamageLinkDesc l;
+        const std::string group = string(member(link, "group"), path + ".group");
+        const auto g = damageGroupIndex.find(group);
+        if (g == damageGroupIndex.end()) fail(path + ".group", "unknown damage group '" + group + "'");
+        l.group = g->second;
+        const std::string effect = string(member(link, "effect"), path + ".effect");
+        static const std::pair<const char*, DamageEffect> kEffects[] = {
+            {"coolantLeak", DamageEffect::kCoolantLeak}, {"oilLeak", DamageEffect::kOilLeak},
+            {"fuelLeak", DamageEffect::kFuelLeak},       {"steering", DamageEffect::kSteering},
+            {"driveLoss", DamageEffect::kDriveLoss},     {"brakeLoss", DamageEffect::kBrakeLoss},
+            {"gearbox", DamageEffect::kGearbox},         {"electrical", DamageEffect::kElectrical}};
+        const auto e = std::find_if(std::begin(kEffects), std::end(kEffects), [&](const auto& k) { return effect == k.first; });
+        if (e == std::end(kEffects)) fail(path + ".effect", "unknown effect '" + effect + "'");
+        l.effect = e->second;
+        if (const Val w = member(link, "wheel")) {
+          const std::string name = string(w, path + ".wheel");
+          const auto it = std::find_if(v.wheels.begin(), v.wheels.end(), [&](const WheelDesc& wd) { return wd.name == name; });
+          if (it == v.wheels.end()) fail(path + ".wheel", "unknown wheel '" + name + "'");
+          l.wheel = static_cast<int32_t>(it - v.wheels.begin());
+        }
+        l.rate = floatOr(link, "rate", 0.0f, path);
+        if ((l.effect == DamageEffect::kDriveLoss || l.effect == DamageEffect::kBrakeLoss) && l.wheel < 0) fail(path, "needs a wheel");
+        v.damageLinks.push_back(l);
+      }
     }
   }
 

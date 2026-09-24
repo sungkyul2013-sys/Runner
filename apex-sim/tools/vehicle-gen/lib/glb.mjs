@@ -54,6 +54,59 @@ export function meshGeometry(glb, nodeName) {
   return { positions, triangles, extras: glb.json.scenes[0].extras };
 }
 
+// Positions (model frame) and triangles of the primitive of mesh node `nodeName` whose material has apexRole `role`.
+export function primitiveGeometry(glb, nodeName, role) {
+  const node = glb.json.nodes.find((n) => n.name === nodeName);
+  if (!node) throw new Error(`GLB has no node '${nodeName}'`);
+  const t = node.translation || [0, 0, 0], s = node.scale || [1, 1, 1];
+  const prim = glb.json.meshes[node.mesh].primitives.find((p) => glb.json.materials[p.material]?.extras?.apexRole === role);
+  if (!prim) return { positions: [], triangles: [] };
+  const p = readAccessor(glb, prim.attributes.POSITION);
+  const positions = [];
+  for (let i = 0; i < p.length; i += 3) positions.push(p[i] * s[0] + t[0], p[i + 1] * s[1] + t[1], p[i + 2] * s[2] + t[2]);
+  return { positions, triangles: [...readAccessor(glb, prim.indices)] };
+}
+
+// Connected pieces of a primitive (triangles sharing a vertex, or a vertex position to 1 mm): the separate panes of a
+// glass primitive, the separate lamp units of a lamp primitive. Each piece: area-weighted centroid (the key the web
+// matches its own split of the same primitive against, web/src/vehicles/Flexbody.ts), mean normal, area, box and
+// sample points (vertices and triangle centroids). Sorted by area, largest first.
+export function connectedPieces({ positions, triangles }) {
+  const n = positions.length / 3;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (x) => { while (parent[x] !== x) x = parent[x] = parent[parent[x]]; return x; };
+  const join = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+  const at = new Map();
+  for (let i = 0; i < n; i++) {
+    const key = [0, 1, 2].map((c) => Math.round(positions[3 * i + c] * 1000)).join(',');
+    if (at.has(key)) join(i, at.get(key)); else at.set(key, i);
+  }
+  for (let t = 0; t < triangles.length; t += 3) { join(triangles[t], triangles[t + 1]); join(triangles[t], triangles[t + 2]); }
+  const P = (i) => [positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]];
+  const pieces = new Map();
+  for (let t = 0; t < triangles.length; t += 3) {
+    const r = find(triangles[t]);
+    if (!pieces.has(r)) pieces.set(r, { area: 0, c: [0, 0, 0], n: [0, 0, 0], lo: [Infinity, Infinity, Infinity], hi: [-Infinity, -Infinity, -Infinity], samples: [] });
+    const piece = pieces.get(r);
+    const [a, b, c] = [P(triangles[t]), P(triangles[t + 1]), P(triangles[t + 2])];
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const cr = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const area = Math.hypot(...cr) / 2;
+    piece.area += area;
+    const centre = [0, 1, 2].map((k) => (a[k] + b[k] + c[k]) / 3);
+    for (let k = 0; k < 3; k++) {
+      piece.c[k] += centre[k] * area;
+      piece.n[k] += cr[k] / 2;
+      for (const q of [a, b, c]) { piece.lo[k] = Math.min(piece.lo[k], q[k]); piece.hi[k] = Math.max(piece.hi[k], q[k]); }
+    }
+    piece.samples.push(a, centre);
+  }
+  return [...pieces.values()]
+    .filter((p) => p.area > 0)
+    .map((p) => ({ ...p, c: p.c.map((x) => x / p.area), n: p.n.map((x) => x / (Math.hypot(...p.n) || 1)) }))
+    .sort((a, b) => b.area - a.area);
+}
+
 // Surface samples: vertices, triangle centroids and edge midpoints (dense enough for 0.2 m voxel columns).
 export function surfaceSamples({ positions, triangles }) {
   const pts = [];

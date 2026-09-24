@@ -6,6 +6,7 @@
 import * as THREE from 'three/webgpu';
 import type { RenderFrame } from '../physics/PhysicsClient';
 import type { VehicleState, V3 } from '../physics/telemetry';
+import type { DamageGroupDef } from '../vehicles/Damage';
 import { Flexbody, type CageNode, type NodeLocator } from '../vehicles/Flexbody';
 import type { VehicleModel } from '../vehicles/VehicleModel';
 
@@ -36,12 +37,14 @@ export class VehicleView {
   private map: number[] | null = null; // physics wheel → model wheel
   readonly flexbody: Flexbody | null = null;
 
-  /** `cage`: the chassis lattice of physics body `body` (null: the body mesh stays rigid on the chassis frame). */
-  constructor(readonly model: VehicleModel, cage: CageNode[] | null = null, body = -1) {
+  /** `cage`: the chassis lattice of physics body `body` (null: the body mesh stays rigid on the chassis frame);
+   *  `damage`: the vehicle's damage groups and node rest positions (glass and lamps). */
+  constructor(readonly model: VehicleModel, cage: CageNode[] | null = null, body = -1,
+              damage: { defs: DamageGroupDef[]; nodeRest: (node: number) => [number, number, number] } | null = null) {
     this.group.add(model.root);
     model.root.matrixAutoUpdate = false;
     if (cage && cage.length > 0 && body >= 0) {
-      this.flexbody = new Flexbody(model.root, model.body, cage, body);
+      this.flexbody = new Flexbody(model.root, model.body, cage, body, damage);
       this.group.add(this.flexbody.group);
     }
     // Wheel mounts leave the body's hierarchy: they are placed in world space from the physics hubs.

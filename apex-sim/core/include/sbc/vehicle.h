@@ -113,6 +113,60 @@ struct ElectronicsDesc {
   float tcsSlip = 0.10f;          // driven-wheel κ above which TCS cuts engine torque [-]
 };
 
+// ---- damage → function (§4.4) --------------------------------------------------------------------------------------
+// Fluids and engine health (engineering models, parameters per vehicle). The engine heats its coolant with a share of
+// its output (plus idle heat); above the thermostat the radiator sheds heat in proportion to the temperature above
+// ambient, the airflow (ram air with speed, the fan at standstill) and the coolant left. Too hot, the engine
+// management derates power from `derateC` (down to 30 %); at `failC` the engine is ruined. Oil pressure follows engine speed and the
+// oil left; below `minOilBar` at speed the bearings wear, and a fully worn engine seizes. Over-revving past the
+// limiter (a missed downshift) wears it too. Fuel burns at the engine's output over its efficiency; empty, it stops.
+struct FluidsDesc {
+  float coolantL = 9.0f, oilL = 9.0f, fuelL = 68.0f;  // capacities, full at spawn [L]
+  float ambientC = 20.0f, thermostatC = 90.0f, derateC = 115.0f, failC = 135.0f;  // [°C]
+  float heatCapacity = 1.2e5f;    // engine block + coolant [J/K]
+  float heatShare = 0.9f;         // heat into the coolant per unit of engine output [-]
+  float idleHeatW = 3000.0f;      // [W]
+  float radiatorUA = 5000.0f;     // heat rejection at full airflow [W/K]
+  float fanFlow = 0.35f;          // airflow share the fan gives at standstill [-]
+  float fullFlowSpeed = 30.0f;    // [m/s] ram air reaches full flow
+  float oilBarPer1000Rpm = 0.9f;  // [bar per 1000 rpm], up to maxOilBar
+  float maxOilBar = 5.0f, minOilBar = 0.6f;  // [bar]
+  float starveRpm = 1500.0f;      // bearings wear without pressure above this speed [rpm]
+  float seizeRate = 0.25f;        // wear per second without oil pressure [1/s]
+  float overrevRate = 4.0f;       // wear per second per 10 % over the limiter [1/s]
+  float efficiency = 0.32f;       // fuel → brake power [-]
+  float fuelEnergy = 3.2e7f;      // [J/L] (petrol)
+  float idleFuelLph = 0.9f;       // [L/h]
+};
+
+// A damage group of the body (BodyDesc::damageGroups) wired to a function. A group's severity s ∈ [0, 1] is twice
+// its damaged share of beams plus 0.25 per impact, capped at 1.
+enum class DamageEffect : uint8_t {
+  kCoolantLeak,  // radiator / cooling lines: leaks `rate` L/s at s = 1
+  kOilLeak,      // oil pan / lines
+  kFuelLeak,     // tank / lines
+  kSteering,     // rack / tie rods: play (dead band) and a pull grow with s; the rack jams at s ≥ 0.9
+  kDriveLoss,    // half shaft / CV joint of wheel `wheel` breaks at s ≥ 0.4: its axle's open differential loses drive
+  kBrakeLoss,    // brake line of wheel `wheel`: brake torque × (1 − s), none from s ≥ 0.5 (the line drained)
+  kGearbox,      // the top ⌈3·s⌉ gears are lost
+  kElectrical,   // battery / wiring: from s ≥ 0.3 ABS, TCS and the lights fail
+};
+
+struct DamageLinkDesc {
+  int32_t group = -1;             // index into the body's damage groups
+  DamageEffect effect = DamageEffect::kCoolantLeak;
+  int32_t wheel = -1;             // kDriveLoss, kBrakeLoss
+  float rate = 0.0f;              // leaks: [L/s] at s = 1
+};
+
+// Vehicle faults (VehicleTelemetry::faults, dashboard warning lights).
+namespace fault {
+constexpr uint32_t kCoolantLeak = 1u << 0, kOverheat = 1u << 1, kOilLeak = 1u << 2, kOilPressure = 1u << 3,
+                   kSeized = 1u << 4, kFuelLeak = 1u << 5, kOutOfFuel = 1u << 6, kSteering = 1u << 7,
+                   kDrive = 1u << 8, kBrakes = 1u << 9, kGearbox = 1u << 10, kElectrical = 1u << 11,
+                   kOverrev = 1u << 12, kEngineFailed = 1u << 13;
+}
+
 struct AeroDesc {
   float airDensity = 1.225f;      // ρ [kg/m³] (ISA sea level)
   float dragArea = 0.7f;          // Cd·A [m²], acts at the mass centre
@@ -136,6 +190,8 @@ struct VehicleDesc {
   AeroDesc aero;
   int32_t steeringChannel = -1;   // hydro channel driven by the steering input (−1 = none)
   float steeringRate = 3.0f;      // max steering input change [1/s] (rack speed)
+  FluidsDesc fluids;
+  std::vector<DamageLinkDesc> damageLinks;
 };
 
 // ---- input / state / telemetry -----------------------------------------------------------------------------------
@@ -183,6 +239,13 @@ struct VehicleTelemetry {
   float odometer = 0.0f;     // [m]
   Vec3 position, forward, up, left;  // chassis frame (body-local position, unit axes)
   std::vector<WheelTelemetry> wheels;
+  // §4.4 fluids and engine health
+  float coolantC = 90.0f;    // coolant temperature [°C]
+  float coolantL = 0.0f, oilL = 0.0f, fuelL = 0.0f;  // [L]
+  float oilBar = 0.0f;       // oil pressure [bar]
+  float engineWear = 0.0f;   // [0, 1]: 1 = seized / ruined
+  float derate = 1.0f;       // engine power available [0, 1] (overheating)
+  uint32_t faults = 0;       // fault:: bits
 };
 
 }  // namespace sbc

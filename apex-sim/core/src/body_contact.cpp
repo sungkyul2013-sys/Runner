@@ -285,8 +285,14 @@ bool applyContact(const World& w, Body& A, const Side& a, Body& B, const Side& b
   const float ct = 2.0f * pp.tangentDampingRatio * m * kTwoPi * pp.tangentFrequencyHz;
   const Vec3 ft = speed > kSlipEpsilon ? vt * (-std::min(ct, pp.kineticFriction * fn / speed)) : Vec3{};
   const Vec3 f = n * fn + ft;
-  for (int k = 0; k < a.count; ++k) addNodeForce(A, a.node[k], f * a.w[k]);
-  for (int k = 0; k < b.count; ++k) addNodeForce(B, b.node[k], f * -b.w[k]);
+  for (int k = 0; k < a.count; ++k) {
+    addNodeForce(A, a.node[k], f * a.w[k]);
+    A.contactLoad[static_cast<size_t>(a.node[k])] += fn * a.w[k];
+  }
+  for (int k = 0; k < b.count; ++k) {
+    addNodeForce(B, b.node[k], f * -b.w[k]);
+    B.contactLoad[static_cast<size_t>(b.node[k])] += fn * b.w[k];
+  }
   if constexpr (kTrack) {
     const Vec3 dn = n * (fn - spring);
     for (int k = 0; k < a.count; ++k) {

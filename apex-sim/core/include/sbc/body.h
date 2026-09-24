@@ -113,9 +113,13 @@ struct CollisionTriDesc {
 // Damage group (§4.3 glass and lamps, §4.4 damage → function): a named set of beams watched for damage — the beams
 // around a windscreen, a lamp, a radiator. A beam counts as damaged once its length has left [1 − s, 1 + s]·L0,init
 // (elastically or plastically; s = its trigger strain) or it broke; the group's damage is the damaged share.
+// A group can also watch nodes for impacts: a node whose normal contact force in one step exceeds `impactForce`
+// damages the group (a stone on a windscreen, a lamp struck by a post).
 struct DamageGroupDesc {
   std::string id;
-  float strain = 0.01f;  // [-] default trigger strain of its beams
+  float strain = 0.01f;                   // [-] default trigger strain of its beams
+  float impactForce = kInfiniteForce;     // [N] contact force on one of its nodes that damages it
+  std::vector<int32_t> nodes;             // watched for impacts
 };
 
 struct DamageGroupState {
@@ -125,6 +129,8 @@ struct DamageGroupState {
   int64_t firstStep = -1;                    // step of the first damage (−1: intact)
   int32_t firstNodeA = -1, firstNodeB = -1;  // nodes of the first damaged beam (where a crack starts)
   float peakStrain = 0.0f;                   // [-] largest |L/L0,init − 1| seen on one of its beams
+  int32_t impacts = 0;                       // of its watched nodes, hit harder than its impact force so far
+  float peakImpact = 0.0f;                   // [N] largest contact force seen on one of its nodes
   float damage() const { return beams > 0 ? static_cast<float>(damaged) / static_cast<float>(beams) : 0.0f; }
 };
 
@@ -190,6 +196,8 @@ struct Body {
   std::vector<float> patchForce;
   std::vector<float> patchNx, patchNy, patchNz;
   std::vector<uint16_t> patchMaterial;
+  // Σ normal contact force on each node in the current step [N] (static, body and self contacts; damage groups).
+  std::vector<float> contactLoad;
 
   // ---- beams (sorted by type) ----
   std::vector<int32_t> beamA, beamB;
@@ -261,6 +269,9 @@ struct Body {
   std::vector<int32_t> damageBeam, damageBeamGroup;
   std::vector<float> damageBeamStrain;
   std::vector<uint8_t> damageBeamHit;
+  std::vector<int32_t> damageNode, damageNodeGroup;
+  std::vector<uint8_t> damageNodeHit;
+  std::vector<float> damageImpact;  // per group: impact force of its nodes [N]
   std::vector<DamageGroupState> damageGroups;
   // Island provenance (render binding of detached parts): the body this one was split from (−1: spawned) and, per
   // node, its index there. Not physics state (not hashed).

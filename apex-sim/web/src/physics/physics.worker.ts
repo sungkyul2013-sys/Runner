@@ -54,6 +54,7 @@ let rtf = 1;
 let overloaded = false;
 let publishSeq = 0;
 let knownBodies = 0;
+let damageSeen: number[] = []; // per body: Σ (damaged beams + impacts) last reported
 
 // scratch buffers inside WASM memory
 let scratch: Ptr = 0;
@@ -138,6 +139,7 @@ function loadScene(name: string, bodies = 16): void {
   dt = sbc._sbc_world_dt(world);
   simDebt = 0;
   knownBodies = 0;
+  damageSeen = [];
   announceNewBodies(true, name);
   publish();
 }
@@ -169,6 +171,24 @@ async function spawnVehicle(msg: Extract<ToWorker, { type: 'spawnVehicle' }>): P
     label: msg.label,
   });
   announceNewBodies(false, msg.label);
+}
+
+/** Posts the damage groups (§4.3 glass and lamps, §4.4) of every body whose damage changed since the last report. */
+function publishDamage(): void {
+  const count = sbc._sbc_world_body_count(world);
+  for (let b = 0; b < count; b++) {
+    const groups = sbc._sbc_body_damage_group_count(world, b);
+    if (groups === 0) continue;
+    const ptr = ensureScratch(groups * 8 * 4);
+    const n = sbc._sbc_body_damage_groups(world, b, ptr, groups * 8);
+    const status = new Float32Array(heap(), ptr, n).slice();
+    let seen = 0;
+    for (let g = 0; g < groups; g++) seen += status[g * 8 + 1] + status[g * 8 + 6];
+    if (seen === (damageSeen[b] ?? 0)) continue;
+    damageSeen[b] = seen;
+    const ids = Array.from({ length: groups }, (_, g) => readCString(heap(), sbc._sbc_body_damage_group_id(world, b, g)));
+    post({ type: 'damage', body: b, ids, status }, [status.buffer]);
+  }
 }
 
 function setVehicleInput(vehicle: number, i: VehicleInput): void {
@@ -265,6 +285,7 @@ function stepTimed(steps: number): number {
   stepMs = stepMs === 0 ? ms / steps : stepMs * (1 - EMA) + (ms / steps) * EMA;
   // Parts that broke loose during these steps are bodies of their own now (island split, §4.3).
   if (sbc._sbc_world_body_count(world) > knownBodies) announceNewBodies(false, 'island');
+  publishDamage();
   return ms;
 }
 

@@ -32,6 +32,9 @@ export interface SbcModule {
   _sbc_body_beam_count(w: Ptr, body: number): number;
   _sbc_body_topology_version(w: Ptr, body: number): number;
   _sbc_body_source(w: Ptr, body: number): number;
+  _sbc_body_damage_group_count(w: Ptr, body: number): number;
+  _sbc_body_damage_group_id(w: Ptr, body: number, group: number): Ptr;
+  _sbc_body_damage_groups(w: Ptr, body: number, out: Ptr, capacity: number): number;
   _sbc_body_source_nodes(w: Ptr, body: number): Ptr;
   _sbc_body_origin(w: Ptr, body: number, out3: Ptr): void;
   _sbc_body_px(w: Ptr, body: number): Ptr;

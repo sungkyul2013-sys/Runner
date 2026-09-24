@@ -18,6 +18,7 @@ export class VehicleBuilder {
     this.pressureWheels = [];
     this.triangles = [];       // collision surface: [a, b, c, group]
     this.lattice = [];         // ids of chassis lattice nodes
+    this.damageGroups = [];    // { id, strain, visual? } (§4.3 glass and lamps, §4.4 damage → function)
   }
 
   node(id, p, mass, { radius = 0.03, material = 'steel', flags } = {}) {
@@ -33,6 +34,33 @@ export class VehicleBuilder {
   beam(a, b, group, overrides) {
     if (!this.byId.has(a) || !this.byId.has(b)) throw new Error(`beam ${a}-${b}: unknown node`);
     this.beams.push(overrides ? [a, b, group, overrides] : [a, b, group]);
+  }
+
+  // Damage groups (§4.3, §4.4): each group watches the beams among `beamGroups` whose midpoint lies within `radius` of
+  // one of its sample points (a beam near several groups goes to the nearest) for plastic strain past `strain`, and the
+  // lattice nodes within `nodeRadius` of them for contact forces past `impact` [N].
+  // Beams already watched by an earlier call keep their group (a beam belongs to one group).
+  tagDamageGroups(groups, { beamGroups = ['chassis'], radius = 0.2, nodeRadius = 0.15 } = {}) {
+    const mid = (beam) => scale(add(this.pos(beam[0]), this.pos(beam[1])), 0.5);
+    const near = (p, g) => g.samples.some((s) => dist(p, s) < nodeRadius);
+    for (const g of groups) {
+      const nodes = g.impact ? this.lattice.filter((id) => near(this.pos(id), g)) : [];
+      this.damageGroups.push({ id: g.id, strain: g.strain, ...(g.impact ? { impact: g.impact, nodes } : {}), ...(g.visual ? { visual: g.visual } : {}) });
+    }
+    for (const beam of this.beams) {
+      if (!beamGroups.includes(beam[2]) || beam[3]?.damage) continue;
+      const m = mid(beam);
+      let best = null, bestD = radius;
+      for (const g of groups) {
+        for (const s of g.samples) {
+          const d = dist(m, s);
+          if (d < bestD) { bestD = d; best = g; }
+        }
+      }
+      if (!best) continue;
+      if (beam.length < 4) beam.push({});
+      beam[3].damage = best.id;
+    }
   }
 
   // Box lattice clipped to a hull: node (x_i, y_j, z_k) exists when `inside(p)`; 13 forward neighbour directions.
@@ -158,6 +186,7 @@ export class VehicleBuilder {
       sliders: this.sliders,
       torsionBars: this.torsionBars,
       triangles: this.triangles,
+      damageGroups: this.damageGroups,
       pressureWheels: this.pressureWheels,
       vehicle: meta.vehicle,
       targets: meta.targets,

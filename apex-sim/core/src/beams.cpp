@@ -267,23 +267,37 @@ int applyPendingBreakGroups(Body& b) {
 
 int updateDamageGroups(Body& b, int64_t step) {
   int hits = 0;
+  auto first = [&](DamageGroupState& g, int32_t a, int32_t c) {
+    if (g.firstStep >= 0) return;
+    g.firstStep = step;
+    g.firstNodeA = a;
+    g.firstNodeB = c;
+  };
+  // Beams: permanent (plastic) strain past the trigger, or broken. Elastic strain alone does not count: the lattice
+  // is compliant, and hard driving strains it by up to 2 % without harm.
   for (size_t k = 0; k < b.damageBeam.size(); ++k) {
-    const int i = b.damageBeam[k];
+    const size_t i = static_cast<size_t>(b.damageBeam[k]);
     DamageGroupState& g = b.damageGroups[static_cast<size_t>(b.damageBeamGroup[k])];
-    const float l0 = b.initialRestLength[static_cast<size_t>(i)];
-    const float strain = b.broken[static_cast<size_t>(i)]
-                             ? kInfiniteForce
-                             : std::fabs(length(b.nodePosition(b.beamB[static_cast<size_t>(i)]) - b.nodePosition(b.beamA[static_cast<size_t>(i)])) / l0 - 1.0f);
+    const float strain = b.broken[i] ? kInfiniteForce : std::fabs(b.restLength[i] / b.initialRestLength[i] - 1.0f);
     if (strain < kInfiniteForce) g.peakStrain = std::max(g.peakStrain, strain);
     if (b.damageBeamHit[k] || strain < b.damageBeamStrain[k]) continue;
     b.damageBeamHit[k] = 1;
     ++g.damaged;
     ++hits;
-    if (g.firstStep < 0) {
-      g.firstStep = step;
-      g.firstNodeA = b.beamA[static_cast<size_t>(i)];
-      g.firstNodeB = b.beamB[static_cast<size_t>(i)];
-    }
+    first(g, b.beamA[i], b.beamB[i]);
+  }
+  // Nodes: an impact harder than the group's impact force.
+  for (size_t k = 0; k < b.damageNode.size(); ++k) {
+    const int32_t i = b.damageNode[k];
+    const size_t gi = static_cast<size_t>(b.damageNodeGroup[k]);
+    DamageGroupState& g = b.damageGroups[gi];
+    const float load = b.contactLoad[static_cast<size_t>(i)];
+    g.peakImpact = std::max(g.peakImpact, load);
+    if (b.damageNodeHit[k] || load < b.damageImpact[gi]) continue;
+    b.damageNodeHit[k] = 1;
+    ++g.impacts;
+    ++hits;
+    first(g, i, i);
   }
   return hits;
 }

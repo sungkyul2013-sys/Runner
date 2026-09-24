@@ -87,7 +87,10 @@ export class PhysicsClient {
   private cur: Frame | null = null;
   private render: RenderFrame | null = null;
   private stats: FrameStats | null = null;
+  /** Latest damage-group state per body (§4.3, §4.4): group ids and 8 floats per group (sbc_body_damage_groups). */
+  readonly damage = new Map<number, { ids: string[]; status: Float32Array }>();
   private listeners = {
+    damage: [] as Listener<{ body: number; ids: string[]; status: Float32Array }>[],
     topology: [] as Listener<{ reset: boolean; added: BodyTopology[] }>[],
     stability: [] as Listener<Extract<FromWorker, { type: 'stability' }>>[],
     error: [] as Listener<string>[],
@@ -125,6 +128,7 @@ export class PhysicsClient {
   }
 
   onTopology(l: Listener<{ reset: boolean; added: BodyTopology[] }>) { this.listeners.topology.push(l); }
+  onDamage(l: Listener<{ body: number; ids: string[]; status: Float32Array }>) { this.listeners.damage.push(l); }
 
   /** Where a node is now: [body, node]. Parts that broke loose took their nodes into new bodies (§4.3 island split). */
   locate(body: number, node: number): [number, number] {
@@ -328,6 +332,7 @@ export class PhysicsClient {
       case 'topology':
         if (msg.reset) {
           this.topology.length = 0;
+          this.damage.clear();
           this.moved.clear();
           this.islandVersion++;
         }
@@ -360,6 +365,10 @@ export class PhysicsClient {
         r?.reject(new Error(msg.message));
         break;
       }
+      case 'damage':
+        this.damage.set(msg.body, { ids: msg.ids, status: msg.status });
+        this.listeners.damage.forEach((l) => l(msg));
+        break;
       default:
         break;
     }

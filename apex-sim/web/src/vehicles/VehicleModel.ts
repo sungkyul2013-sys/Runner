@@ -46,6 +46,12 @@ export interface VehicleModel {
 // Every car surface is double-sided (as in the user's Crash Lab renderer): scanned and converted models carry panels
 // with inconsistent winding, and single-sided they show holes — lamp housings, grille surrounds, bumper returns.
 function materialFor(role: string | undefined): THREE.Material {
+  const m = baseMaterial(role);
+  m.userData.apexRole = role; // the flexbody picks out glass and lamps by it
+  return m;
+}
+
+function baseMaterial(role: string | undefined): THREE.Material {
   const side = THREE.DoubleSide;
   switch (role) {
     case 'paint':

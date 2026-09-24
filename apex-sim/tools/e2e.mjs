@@ -156,10 +156,18 @@ async function main() {
         page.evaluate(() => {
           const d = window.__apex.drive;
           const e = d.physics.latestStats()?.energy;
+          const known = d.physics.damage.get(d.spawned.body);
+          const states = d.view.flexbody ? [...d.view.flexbody.panelStates] : [];
+          const look = (id) => (known ? states[known.ids.indexOf(id)] : -1);
           return {
             kmh: d.latest.speed * 3.6,
             z: d.latest.position[2],
             flexMeshes: d.view.flexbody ? d.view.flexbody.meshes.length : 0,
+            windscreen: look('glass_windscreen'),
+            headlamps: [look('lamp_front_left'), look('lamp_front_right')],
+            tailLamps: [look('lamp_rear_left'), look('lamp_rear_right')],
+            granules: d.glassDebris.alive,
+            shards: d.lampDebris.alive,
             plasticKJ: e ? e.plastic / 1e3 : 0,
             balance: e ? Math.abs(e.balance) / Math.max(Math.abs(e.external), 1) : 1,
           };
@@ -187,6 +195,11 @@ async function main() {
       if (s.plasticKJ < 50) failures.push(`crash: only ${s.plasticKJ.toFixed(1)} kJ absorbed plastically`);
       if (Math.abs(s.kmh) > 1) failures.push(`crash: the wreck still moves at ${s.kmh.toFixed(1)} km/h`);
       if (s.balance > 0.05) failures.push(`crash: energy balance error ${(100 * s.balance).toFixed(2)} %`);
+      // §4.3 glass and lamps: the windscreen cracks (1), the headlamps break (2) and shed shards, the tail lamps survive.
+      if (s.windscreen !== 1) failures.push(`crash: windscreen state ${s.windscreen}, expected cracked`);
+      if (s.headlamps.some((x) => x !== 2)) failures.push(`crash: headlamps ${s.headlamps}, expected broken`);
+      if (s.tailLamps.some((x) => x !== 0)) failures.push(`crash: tail lamps ${s.tailLamps}, expected intact`);
+      if (s.shards === 0) failures.push('crash: no lamp shards');
       const errors = await page.evaluate(() => window.__apex.errors);
       if (errors.length || consoleErrors.length) failures.push(`errors (crash): ${[...errors, ...consoleErrors].join(' | ')}`);
       await page.close();

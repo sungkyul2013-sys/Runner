@@ -60,4 +60,5 @@ export type FromWorker =
   | { type: 'hash'; stepIndex: number; hex: string }
   | { type: 'vehicle'; request: number; vehicle: number; body: number; wheels: number; label: string }
   | { type: 'vehicleFailed'; request: number; message: string }
+  | { type: 'damage'; body: number; ids: string[]; status: Float32Array } // damage groups changed (8 floats per group)
   | { type: 'error'; message: string };

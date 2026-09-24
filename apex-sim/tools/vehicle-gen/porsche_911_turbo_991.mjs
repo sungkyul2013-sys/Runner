@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readGlb, meshGeometry, surfaceSamples } from './lib/glb.mjs';
+import { readGlb, meshGeometry, surfaceSamples, primitiveGeometry, connectedPieces } from './lib/glb.mjs';
 import { VehicleBuilder, steeringFactor } from './lib/builder.mjs';
 import { add, sub, scale, norm, dist } from './lib/v3.mjs';
 
@@ -346,6 +346,109 @@ const vehicle = {
   },
 };
 
+// ---- glass and lamps (§4.3): damage groups over the lattice around each pane and lamp unit ----------------------
+// The GLB's glass and lamp primitives split into connected pieces (a pane is two shells, a lamp unit several pieces);
+// each piece is assigned to a panel by where it sits. A group watches the lattice beams within 0.2 m of its pieces for
+// permanent (plastic) strain — its frame bent — and the lattice nodes within 0.15 m for impacts (contact force in one
+// step). Laminated glass cracks from the first damage and sags when much of its frame is bent, tempered glass
+// shatters, a lamp's lens breaks and it goes dark (web/src/vehicles/Flexbody.ts). A lamp breaks only when struck (or
+// torn off): the lattice around the tail lamps also yields under the rear overhang's inertia in a frontal crash and on
+// hard landings (KNOWN_ISSUES), which does not break a lens. Thresholds: core/tests/test_damage.cpp.
+const sideOf = (c) => (c[0] > 0 ? 'left' : 'right'); // +X = left
+const glassPanel = ({ c, area }) => {
+  if (Math.abs(c[0]) < 0.3 && area < 0.02) return null;         // interior mirror
+  if (Math.abs(c[0]) < 0.3) return c[2] > 0 ? 'glass_windscreen' : 'glass_rear';
+  if (Math.abs(c[0]) > 0.8) return `glass_mirror_${sideOf(c)}`;
+  return c[2] < -0.5 ? `glass_quarter_${sideOf(c)}` : `glass_side_${sideOf(c)}`;
+};
+const lampUnit = ({ c }) => {
+  if (c[2] > 1.5) return `lamp_front_${sideOf(c)}`;
+  if (c[2] < -1.9) return Math.abs(c[0]) > 0.3 ? `lamp_rear_${sideOf(c)}` : 'lamp_rear_centre';
+  return null;                                                   // interior and trim parts sharing the lamp material
+};
+// Trigger values measured on this car (core/tests/test_damage.cpp): hard driving bends nothing permanently; the peak
+// plastic strain of the windscreen frame is 0.75 % in a 64 km/h frontal wall crash (1.2 % on a 60 km/h landing off
+// the 1.2 m ramp), of the side-window frames 1.1 % at 64 and 66 % at 100 km/h, of the rear-window frame 2.0 % at
+// 64 km/h; a 15 km/h wall hit puts 20 kN on a headlamp node, a traffic cone at 50 km/h 1 kN.
+const damage = {
+  windscreen: { strain: 0.006, impact: 3.0e4 },   // laminated [-] plastic strain of the frame, [N] contact force
+  side: { strain: 0.02, impact: 2.0e4 },          // tempered
+  quarter: { strain: 0.02, impact: 2.0e4 },
+  rear: { strain: 0.025, impact: 2.0e4 },
+  mirror: { strain: 0.05, impact: 8.0e3 },
+  lamp: { strain: 1e9, impact: 8.0e3 },           // struck (or torn off) only
+};
+const damageGroups = new Map();
+const addPiece = (id, piece, props, visual) => {
+  if (!damageGroups.has(id)) damageGroups.set(id, { id, ...props, visual: { ...visual, pieces: [] }, samples: [] });
+  const g = damageGroups.get(id);
+  g.visual.pieces.push(piece.c.map((x) => +x.toFixed(4)));
+  g.samples.push(...piece.samples);
+};
+for (const piece of connectedPieces(primitiveGeometry(glb, 'body', 'glass'))) {
+  const id = glassPanel(piece);
+  if (!id) continue;
+  const type = id === 'glass_windscreen' ? 'laminated' : 'tempered';
+  addPiece(id, piece, damage[id.split('_')[1]], { kind: 'glass', glass: type });
+}
+for (const piece of connectedPieces(primitiveGeometry(glb, 'body', 'lamp'))) {
+  const id = lampUnit(piece);
+  if (id) addPiece(id, piece, damage.lamp, { kind: 'lamp' });
+}
+// ---- components (§4.4 damage → function): damage groups at the parts' places, wired to what they do ------------
+// 991 Turbo layout (engineering estimates of positions): three coolant radiators behind the front intakes, coolant
+// lines along the floor to the rear engine, the sump under the engine behind the rear axle, the PDK ahead of it, the
+// fuel tank under the front luggage bay, the battery beside it, the steering rack on the front axle, a half shaft and
+// a brake line at every wheel. Each group: the lattice beams near its box (crushed: plastic strain past 4 %) and the
+// lattice nodes near it (struck harder than 25 kN). Hard driving, 50 km/h over the speed bumps and a traffic cone
+// damage nothing; a 15 km/h wall hit cracks the radiators; big jumps and crashes damage what they reach.
+const box = (lo, hi, step = 0.06) => {
+  const pts = [];
+  for (let x = lo[0]; x <= hi[0] + 1e-9; x += step) for (let y = lo[1]; y <= hi[1] + 1e-9; y += step)
+    for (let z = lo[2]; z <= hi[2] + 1e-9; z += step) pts.push([x, y, z]);
+  return pts;
+};
+const component = { strain: 0.04, impact: 2.5e4 };
+const hubX = (w) => (w.position[0] > 0 ? 1 : -1);
+const components = [
+  { id: 'radiator_left', samples: box([0.45, 0.2, 1.85], [0.75, 0.5, 2.1]) },
+  { id: 'radiator_right', samples: box([-0.75, 0.2, 1.85], [-0.45, 0.5, 2.1]) },
+  { id: 'radiator_centre', samples: box([-0.3, 0.2, 1.95], [0.3, 0.45, 2.15]) },
+  { id: 'coolant_lines', samples: box([-0.15, 0.12, -0.9], [0.15, 0.2, 1.8], 0.1) },
+  { id: 'oil_sump', samples: box([-0.35, 0.12, -1.95], [0.35, 0.3, -1.35]) },
+  { id: 'gearbox', samples: box([-0.3, 0.15, -1.15], [0.3, 0.45, -0.6]) },
+  { id: 'fuel_tank', samples: box([-0.5, 0.2, 0.65], [0.5, 0.5, 1.1]) },
+  { id: 'battery', samples: box([0.1, 0.25, 1.3], [0.45, 0.45, 1.6]) },
+  { id: 'steering_rack', samples: box([-0.45, 0.2, zF - 0.25], [0.45, 0.35, zF - 0.05]) },
+  ...wheelsModel.flatMap((w, i) => {
+    const name = ['FL', 'FR', 'RL', 'RR'][i], sx = hubX(w), z = w.position[2];
+    return [
+      { id: `halfshaft_${name}`, samples: box([Math.min(0.1 * sx, 0.6 * sx), 0.25, z - 0.08], [Math.max(0.1 * sx, 0.6 * sx), 0.42, z + 0.08]) },
+      { id: `brakeline_${name}`, samples: box([Math.min(0.5 * sx, 0.72 * sx), 0.3, z - 0.25], [Math.max(0.5 * sx, 0.72 * sx), 0.6, z + 0.25]) },
+    ];
+  }),
+].map((c) => ({ ...c, ...component }));
+b.tagDamageGroups([...damageGroups.values()]);
+b.tagDamageGroups(components);  // from the beams the glass and lamps left
+// Leak rates [L/s] at full severity: a crushed radiator empties the 20 L circuit (three radiators) in under a minute.
+const damageLinks = [
+  ...['radiator_left', 'radiator_right', 'radiator_centre'].map((group) => ({ group, effect: 'coolantLeak', rate: 0.35 })),
+  { group: 'coolant_lines', effect: 'coolantLeak', rate: 0.2 },
+  { group: 'oil_sump', effect: 'oilLeak', rate: 0.25 },
+  { group: 'gearbox', effect: 'gearbox' },
+  { group: 'fuel_tank', effect: 'fuelLeak', rate: 0.4 },
+  { group: 'battery', effect: 'electrical' },
+  { group: 'steering_rack', effect: 'steering' },
+  ...['FL', 'FR', 'RL', 'RR'].flatMap((wheel) => [
+    { group: `halfshaft_${wheel}`, effect: 'driveLoss', wheel },
+    { group: `brakeline_${wheel}`, effect: 'brakeLoss', wheel },
+  ]),
+];
+
+// 991 Turbo: 67.5 L tank; dry-sump 3.8 L flat six with ≈ 9 L of oil; ≈ 20 L of coolant (three front radiators).
+vehicle.fluids = { coolantL: 20, oilL: 9, fuelL: 67.5, radiatorUA: 6000, heatCapacity: 1.6e5 };
+vehicle.damageLinks = damageLinks;
+
 const json = b.toJSON({
   header: {
     id, name: 'Porsche 911 Turbo (991, 2014)',
@@ -379,4 +482,6 @@ for (const c of Object.values(corners)) {
     `${c.rackPoint ? 'rack' : 'toe'} point (${p.map((x) => x.toFixed(3)).join(', ')})`);
 }
 console.log(`collision hull: ${hullTriangles} triangles`);
+console.log('damage groups: ' + b.damageGroups.map((g) => `${g.id} (${g.visual?.pieces.length ?? 0} pieces, ` +
+  `${b.beams.filter((beam) => beam[3]?.damage === g.id).length} beams, ${g.nodes?.length ?? 0} nodes)`).join(', '));
 console.log(`hull z ${zMin.toFixed(2)}…${zMax.toFixed(2)}, refs ${vehicle.refCenter} ${vehicle.refFront} ${vehicle.refLeft}, dist ${dist(b.pos(vehicle.refCenter), b.pos(vehicle.refFront)).toFixed(2)}`);

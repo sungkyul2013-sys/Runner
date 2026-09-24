@@ -199,13 +199,15 @@ int sbc_body_damage_groups(sbc_world* w, int b, float* out, int capacity) {
   const auto& groups = w->world.body(b).damageGroups;
   int written = 0;
   for (const sbc::DamageGroupState& g : groups) {
-    if (written + 6 > capacity) break;
+    if (written + 8 > capacity) break;
     out[written++] = static_cast<float>(g.beams);
     out[written++] = static_cast<float>(g.damaged);
     out[written++] = g.firstStep < 0 ? -1.0f : static_cast<float>(static_cast<double>(g.firstStep) * w->world.params().dt);
     out[written++] = static_cast<float>(g.firstNodeA);
     out[written++] = static_cast<float>(g.firstNodeB);
     out[written++] = g.peakStrain;
+    out[written++] = static_cast<float>(g.impacts);
+    out[written++] = g.peakImpact;
   }
   return written;
 }
@@ -334,6 +336,15 @@ int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
   put3(23, t.left);
   put3(26, d.refCenterModel);
   out[29] = static_cast<float>(wheels);
+  // 30 body index (worker), 31 reserved; §4.4 fluids and engine health:
+  out[32] = t.coolantC;
+  out[33] = t.coolantL;
+  out[34] = t.oilBar;
+  out[35] = t.oilL;
+  out[36] = t.fuelL;
+  out[37] = t.engineWear;
+  out[38] = t.derate;
+  out[39] = static_cast<float>(t.faults);
   for (int i = 0; i < wheels; ++i) {
     const sbc::WheelTelemetry& wt = t.wheels[static_cast<size_t>(i)];
     float* o = out + SBC_VT_HEADER + SBC_VT_WHEEL * i;

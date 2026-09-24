@@ -277,6 +277,7 @@ void World::computeInternalForces(int bi) {
     b.fy[i] = m * g.y;
     b.fz[i] = m * g.z;
   }
+  std::fill(b.contactLoad.begin(), b.contactLoad.end(), 0.0f);
   if (params_.trackEnergy) {
     for (auto* a : {&b.fdBeamX, &b.fdBeamY, &b.fdBeamZ, &b.fdContactX, &b.fdContactY, &b.fdContactZ, &b.fdFrictionX,
                     &b.fdFrictionY, &b.fdFrictionZ, &b.fdExternalX, &b.fdExternalY, &b.fdExternalZ}) {
@@ -351,7 +352,7 @@ void World::integrateBody(int bi) {
 void World::finishBody(int bi) {
   Body& b = bodies_[bi];
   bodyStats_[bi].beamsBroken += detail::applyPendingBreakGroups(b);
-  if (!b.damageBeam.empty()) detail::updateDamageGroups(b, stepIndex_);
+  if (!b.damageGroups.empty()) detail::updateDamageGroups(b, stepIndex_);
 
   // Deterministic re-basing of the local frame by whole metres (A§4.4).
   double cx = 0.0, cy = 0.0, cz = 0.0;
@@ -421,7 +422,8 @@ uint64_t World::stateHash() const {
     h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags); h.vec(b.contactDepth);
     h.vec(b.hydroInputs);
     h.vec(b.damageBeamHit);
-    for (const DamageGroupState& g : b.damageGroups) { h.value(g.firstStep); h.value(g.peakStrain); }
+    h.vec(b.damageNodeHit);
+    for (const DamageGroupState& g : b.damageGroups) { h.value(g.firstStep); h.value(g.peakStrain); h.value(g.peakImpact); }
   }
   for (const auto& v : vehicles_) v->hashState(h);
   return h.h;
