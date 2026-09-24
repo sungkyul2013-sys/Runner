@@ -382,6 +382,39 @@ void Vehicle::step(const World& world, Body& b, bool track) {
         crashPeakG_ = std::max(crashPeakG_, g10);
         crashDeltaV_ = std::max(crashDeltaV_, dv);
       }
+      // Event log: open at 3 g (or the 8 km/h-in-50 ms crash criterion), close after 100 ms under 1 g.
+      const double absorbed = b.losses.plastic + b.losses.fracture;
+      if (!eventActive_ && (g10 > 3.0 || dv > 2.2)) {
+        eventActive_ = true;
+        ++crashEvents_;
+        eventPeakG_ = eventPeakForce_ = eventDeltaV_ = eventAbsorbed_ = eventQuiet_ = 0.0;
+        eventAbsorbed0_ = absorbed;
+        // When, where and how fast the cabin was as it began: at the last quiet sample (a soft first contact, e.g.
+        // a small overlap, builds up to 3 g over tens of ms) if recent, else 50 ms back.
+        if (quietTime_ >= 0.0 && world.time() - quietTime_ <= 0.2) {
+          eventStart_ = quietTime_;
+          eventVelocity_ = quietVelocity_;
+          eventPosition_ = quietPosition_;
+        } else {
+          eventStart_ = world.time() - 0.05;
+          eventVelocity_ = fwd * sensorLong_[oldest] + left * sensorLat_[oldest] + up * dot(vs, up);
+          eventPosition_ = b.origin + pos(b, D.refCenter);
+        }
+        eventSpeed_ = std::sqrt(dot(eventVelocity_, eventVelocity_));
+      }
+      if (!eventActive_ && g10 < 1.0) {
+        quietTime_ = world.time();
+        quietVelocity_ = vs;
+        quietPosition_ = b.origin + pos(b, D.refCenter);
+      }
+      if (eventActive_) {
+        eventPeakG_ = std::max(eventPeakG_, g10);
+        eventPeakForce_ = std::max(eventPeakForce_, totalMass * g10 * kStandardGravity);
+        eventDeltaV_ = std::max(eventDeltaV_, dv);
+        eventAbsorbed_ = absorbed - eventAbsorbed0_;
+        eventQuiet_ = g10 < 1.0 ? eventQuiet_ + dt : 0.0;
+        if (eventQuiet_ >= 0.1) eventActive_ = false;
+      }
       if (-dvLong > 25.0 / 3.6) airbags_ |= airbag::kDriver | airbag::kPassenger;
       if (dvLat < -15.0 / 3.6) airbags_ |= airbag::kSideLeft;   // pushed to the right: struck on the left
       if (dvLat > 15.0 / 3.6) airbags_ |= airbag::kSideRight;
@@ -846,6 +879,16 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   telemetry_.crashTime = static_cast<float>(crashTime_);
   telemetry_.crashPeakG = static_cast<float>(crashPeakG_);
   telemetry_.crashDeltaV = static_cast<float>(crashDeltaV_);
+  telemetry_.crashEvents = crashEvents_;
+  telemetry_.eventActive = eventActive_;
+  telemetry_.eventStart = static_cast<float>(eventStart_);
+  telemetry_.eventPeakG = static_cast<float>(eventPeakG_);
+  telemetry_.eventPeakForce = static_cast<float>(eventPeakForce_);
+  telemetry_.eventDeltaV = static_cast<float>(eventDeltaV_);
+  telemetry_.eventAbsorbed = static_cast<float>(eventAbsorbed_);
+  telemetry_.eventSpeed = static_cast<float>(eventSpeed_);
+  telemetry_.eventPosition = eventPosition_;
+  telemetry_.eventVelocity = toFloat(eventVelocity_);
   telemetry_.throttle = static_cast<float>(appliedThrottle);
   telemetry_.brake = static_cast<float>(pedal);
   telemetry_.steer = static_cast<float>(steer_);

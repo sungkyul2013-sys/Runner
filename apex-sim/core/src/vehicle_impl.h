@@ -52,6 +52,12 @@ class Vehicle {
     h.value(engineFailed_); h.value(faults_);
     for (size_t i = 0; i < sensorLong_.size(); ++i) { h.value(sensorLong_[i]); h.value(sensorLat_[i]); }
     h.value(sensorAt_); h.value(sensorFill_); h.value(airbags_); h.value(crashTime_); h.value(crashPeakG_); h.value(crashDeltaV_);
+    h.value(crashEvents_); h.value(eventActive_); h.value(eventStart_); h.value(eventPeakG_); h.value(eventPeakForce_);
+    h.value(eventDeltaV_); h.value(eventAbsorbed0_); h.value(eventAbsorbed_); h.value(eventQuiet_); h.value(eventSpeed_);
+    h.value(eventPosition_.x); h.value(eventPosition_.y); h.value(eventPosition_.z);
+    h.value(eventVelocity_.x); h.value(eventVelocity_.y); h.value(eventVelocity_.z);
+    h.value(quietTime_); h.value(quietPosition_.x); h.value(quietPosition_.y); h.value(quietPosition_.z);
+    h.value(quietVelocity_.x); h.value(quietVelocity_.y); h.value(quietVelocity_.z);
   }
 
  private:
@@ -113,6 +119,15 @@ class Vehicle {
   size_t sensorAt_ = 0, sensorFill_ = 0;
   uint32_t airbags_ = 0;
   double crashTime_ = -1.0, crashPeakG_ = 0.0, crashDeltaV_ = 0.0;
+  // Crash events (VehicleTelemetry::crashEvents …).
+  int32_t crashEvents_ = 0;
+  bool eventActive_ = false;
+  double eventStart_ = 0.0, eventPeakG_ = 0.0, eventPeakForce_ = 0.0, eventDeltaV_ = 0.0, eventAbsorbed0_ = 0.0;
+  double eventAbsorbed_ = 0.0, eventQuiet_ = 0.0, eventSpeed_ = 0.0;
+  DVec3 eventPosition_{}, eventVelocity_{};
+  // The last quiet sample (under 1 g) before an event: its onset, before a soft first contact slows the cabin.
+  double quietTime_ = -1.0;
+  DVec3 quietPosition_{}, quietVelocity_{};
 
   // Per-step scratch (no allocation in step()).
   struct WheelFrame {

@@ -12,11 +12,13 @@
     {
       "id": "porsche_911_turbo_991", "label": { "ko": "포르쉐 911 터보 (991)", "en": "Porsche 911 Turbo (991)" },
       "source": { "kind": "json", "url": "vehicles/porsche_911_turbo_991/vehicle.json" },
-      "model": "vehicles/porsche_911_turbo_991/porsche_911_turbo_991.glb", "redlineRpm": 7200
+      "model": "vehicles/porsche_911_turbo_991/porsche_911_turbo_991.glb", "redlineRpm": 7200,
+      "crash": { "front": 2.25, "width": 1.88 }
     },
     {
       "id": "apex_proto", "label": { "ko": "APEX Proto (절차 생성 기준차)", "en": "APEX Proto (procedural reference car)" },
-      "source": { "kind": "proto" }, "model": null, "redlineRpm": 7400
+      "source": { "kind": "proto" }, "model": null, "redlineRpm": 7400,
+      "crash": { "front": 2.0, "width": 1.9 }
     }
   ],
   "presets": [

@@ -251,6 +251,19 @@ struct VehicleTelemetry {
   float crashTime = -1.0f;   // [s] first crash detection (−1: none)
   float crashPeakG = 0.0f;   // peak 10 ms-average deceleration of the cabin [g]
   float crashDeltaV = 0.0f;  // largest velocity change within 50 ms [m/s]
+  // Crash events (§5.3 event log): the sensor opens one when the cabin's 10 ms-average deceleration exceeds 3 g (or
+  // it changes speed by 8 km/h within 50 ms) and closes it once that has stayed under 1 g for 100 ms. The latest
+  // event (the open one while eventActive):
+  int32_t crashEvents = 0;      // events so far
+  bool eventActive = false;
+  float eventStart = 0.0f;      // [s]
+  float eventPeakG = 0.0f;      // peak 10 ms-average deceleration [g]
+  float eventPeakForce = 0.0f;  // vehicle mass × peak deceleration [N]: the peak force the car took
+  float eventDeltaV = 0.0f;     // largest 50 ms velocity change [m/s]
+  float eventAbsorbed = 0.0f;   // work absorbed by the car's structure (plastic + fracture) during it [J]
+  float eventSpeed = 0.0f;      // [m/s] cabin speed at its start
+  DVec3 eventPosition;          // cabin (reference node) at its start, world frame [m]
+  Vec3 eventVelocity;           // cabin velocity at its start [m/s]
 };
 
 // Airbags (VehicleTelemetry::airbags): the front pair fires on a frontal velocity change over 25 km/h within 50 ms,

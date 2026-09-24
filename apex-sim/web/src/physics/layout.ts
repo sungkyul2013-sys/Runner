@@ -7,7 +7,7 @@ export const MAX_BODIES = 256;
 export const MAX_NODES = 1 << 17; // 131,072 nodes across all bodies
 export const MAX_BEAMS = 1 << 19; // 524,288 beams across all bodies
 
-export const HEADER_F64 = 32;
+export const HEADER_F64 = 40;
 export const BODY_STRIDE_F64 = 8;
 
 /** Header field indices (Float64). */
@@ -33,6 +33,7 @@ export const H = {
   hashLo: 29,
   publishSeq: 30,
   vehicleCount: 31,
+  momentum: 32, // linear xyz [kg·m/s], angular xyz about the world origin [kg·m²/s] (§5.3)
 } as const;
 
 export const ENERGY_FIELDS = [
@@ -65,7 +66,7 @@ export const B = {
 
 /** Vehicle telemetry records (core sbc.h SBC_VT_HEADER / SBC_VT_WHEEL), one per vehicle, fixed stride. */
 export const MAX_VEHICLES = 16;
-export const VT_HEADER = 44;
+export const VT_HEADER = 58;
 export const VT_WHEEL = 20;
 export const VT_MAX_WHEELS = 8;
 export const VT_STRIDE = VT_HEADER + VT_WHEEL * VT_MAX_WHEELS;

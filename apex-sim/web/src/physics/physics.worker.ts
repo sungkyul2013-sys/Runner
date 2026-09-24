@@ -259,6 +259,8 @@ function publish(): void {
   h[H.ccdClamps] = st[2];
   sbc._sbc_world_measure_energy(world, stats);
   h.set(new Float64Array(heap(), stats, ENERGY_FIELDS.length), H.energy);
+  sbc._sbc_world_measure_momentum(world, stats);
+  h.set(new Float64Array(heap(), stats, 6), H.momentum);
   h[H.simTime] = sbc._sbc_world_time(world);
   h[H.stepIndex] = sbc._sbc_world_step_index(world);
   h[H.rtf] = rtf;

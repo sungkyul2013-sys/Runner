@@ -11,6 +11,7 @@ export interface PanelActions {
   setShowNodes(on: boolean): void;
   setShowBeams(on: boolean): void;
   drive(vehicleId: string): void;
+  crash(vehicleId: string): void;
 }
 
 export const TIME_SCALES = [1, 0.5, 0.2, 0.1, 0.05, 0.01] as const; // §20: 슬로모션 1/2 ~ 1/100
@@ -67,12 +68,14 @@ export class SandboxPanel {
     for (const v of DRIVE_VEHICLES) vehicleSelect.append(el('option', { value: v.id }, tl(v.label)));
     const driveButton = el('button', { className: 'primary' }, t('startDrive'));
     driveButton.onclick = () => actions.drive(vehicleSelect.value);
+    const crashButton = el('button', {}, t('startCrash'));
+    crashButton.onclick = () => actions.crash(vehicleSelect.value);
 
     this.root = el(
       'aside',
       { className: 'panel' },
       el('div', { className: 'brand' }, el('b', {}, 'APEX_SIM'), el('span', {}, t('subtitle'))),
-      el('div', { className: 'section' }, el('h2', {}, t('drive')), vehicleSelect, driveButton),
+      el('div', { className: 'section' }, el('h2', {}, t('drive')), vehicleSelect, el('div', { className: 'row' }, driveButton, crashButton)),
       el('div', { className: 'section' }, el('h2', {}, t('scene')), this.sceneSelect),
       el('div', { className: 'section' }, el('h2', {}, t('spawn')), ...spawnButtons),
       el('div', { className: 'section' }, el('h2', {}, t('time')), el('div', { className: 'row' }, this.pauseButton, stepButton, resetButton), this.speedSelect),

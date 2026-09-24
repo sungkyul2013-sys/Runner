@@ -124,3 +124,36 @@ select { width: 100%; }
 .drivebar b { letter-spacing: 0.08em; font-size: 14px; }
 .drivebar span { color: var(--text-2); font-size: 13px; margin-right: 6px; }
 .drivebar button { padding: 6px 10px; font-size: 13px; }
+
+/* Crash lab (M2): controls and event log on the left, energy / momentum graphs along the bottom. */
+.crashpanel { width: 440px; max-height: calc(100vh - 32px); overflow-y: auto; }
+.crashpanel .field { display: grid; grid-template-columns: 76px 1fr auto; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; }
+.crashpanel .field small { color: var(--text-3); }
+.crashpanel input[type='number'] {
+  font: inherit; font-family: var(--font-num); color: var(--text); background: var(--surface-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-s); padding: 6px 8px; width: 100%;
+}
+.crashpanel .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.crashpanel button.chip { padding: 4px 10px; font-family: var(--font-num); font-size: 12px; }
+.crashpanel .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.crashpanel .row.controls select { width: auto; flex: 1 1 90px; }
+.eventlog { width: 100%; border-collapse: collapse; font-family: var(--font-num); font-size: 11px; font-variant-numeric: tabular-nums; }
+.eventlog th { color: var(--text-3); font-family: var(--font-ui); font-weight: 500; text-align: right; padding: 4px; border-bottom: 1px solid var(--border); }
+.eventlog th:nth-child(2), .eventlog td:nth-child(2) { text-align: left; }
+.eventlog td { text-align: right; padding: 4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.eventlog tr.live td { color: var(--warning); }
+.eventlog td.empty { text-align: left; color: var(--text-3); font-family: var(--font-ui); }
+.graphs { position: fixed; left: 472px; right: 16px; bottom: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; pointer-events: none; }
+.graph {
+  margin: 0; background: color-mix(in srgb, var(--surface) 85%, transparent); backdrop-filter: blur(14px); border: 1px solid var(--border);
+  border-radius: var(--radius-m); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;
+}
+.graph figcaption { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text-2); }
+.graph figcaption b { color: var(--text); font-weight: 600; margin-right: 4px; }
+.graph figcaption span::before { content: ''; display: inline-block; width: 10px; height: 2px; margin-right: 4px; vertical-align: middle; background: var(--c); }
+.graph canvas { width: 100%; height: 130px; }
+@media (max-width: 900px) {
+  .crashpanel { width: auto; left: 16px; right: 16px; max-height: 50vh; }
+  .graphs { left: 16px; grid-template-columns: 1fr; }
+  .graph canvas { height: 90px; }
+}

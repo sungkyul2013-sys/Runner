@@ -512,3 +512,61 @@ TEST_CASE("an unlatched front lid flies open at speed, flaps on its hinges, and 
     }
   }
 }
+
+TEST_CASE("the crash sensor logs a wall impact as one event with its speed, peak force and absorbed energy", "[damage][porsche][crash][5.3]") {
+  // §5.3 event log: the crash scene's barrier at 50 km/h, full width. One event; it starts at the impact speed near
+  // the barrier face (z = 0), takes the car's plastic and fracture work, and its peak force is the car's mass times
+  // its peak deceleration.
+  SceneOptions so;
+  so.threads = 1;
+  so.trackEnergy = true;
+  auto w = makeScene("crash", so);
+  REQUIRE(w);
+  const LoadedVehicle car = loadVehicleJson(porscheJson(), {{-3.0, 0.0, -6.0}, 0.0, 50.0f / 3.6f});
+  const int body = w->addBody(car.build.body);
+  const int v = w->addVehicle(body, car.build.vehicle);
+  VehicleInput neutral;
+  neutral.mode = GearMode::kNeutral;
+  w->setVehicleInput(v, neutral);
+  w->step(6000);  // 3 s: hit, rebound, rest
+  const VehicleTelemetry& t = w->vehicleTelemetry(v);
+  const Body& b = w->body(body);
+  double mass = 0.0;
+  for (int i = 0; i < b.nodeCount(); ++i) mass += b.mass[i];
+  INFO("events " << t.crashEvents << ", start " << t.eventStart << " s at z " << t.eventPosition.z << ", speed "
+                 << t.eventSpeed * 3.6 << " km/h, peak " << t.eventPeakG << " g / " << t.eventPeakForce / 1e3
+                 << " kN, Δv " << t.eventDeltaV * 3.6 << " km/h, absorbed " << t.eventAbsorbed / 1e3 << " kJ of "
+                 << (b.losses.plastic + b.losses.fracture) / 1e3);
+  CHECK(t.crashEvents == 1);
+  CHECK_FALSE(t.eventActive);
+  CHECK(std::fabs(t.eventSpeed * 3.6 - 50.0) < 6.0);
+  CHECK(t.eventPosition.z > -3.5);
+  CHECK(t.eventPosition.z < 0.0);
+  CHECK(t.eventDeltaV * 3.6 > 40.0);
+  CHECK(t.eventPeakG > 15.0);
+  CHECK(std::fabs(t.eventPeakForce - mass * t.eventPeakG * kStandardGravity) < 0.01 * t.eventPeakForce);
+  CHECK(t.eventAbsorbed > 0.5 * (b.losses.plastic + b.losses.fracture));
+  CHECK(t.eventAbsorbed <= b.losses.plastic + b.losses.fracture + 1.0);
+}
+
+TEST_CASE("a small-overlap impact is logged at its approach speed", "[damage][porsche][crash][5.3]") {
+  // 40 % of the width strikes the barrier's end (x ∈ [−6, 0]) at 56 km/h: the first contact is soft, so the event
+  // takes its start state from the onset rather than from the 3 g trigger.
+  SceneOptions so;
+  so.threads = 1;
+  auto w = makeScene("crash", so);
+  REQUIRE(w);
+  const double width = 1.88;
+  const LoadedVehicle car = loadVehicleJson(porscheJson(), {{width * (0.5 - 0.4), 0.0, -6.0}, 0.0, 56.0f / 3.6f});
+  const int v = w->addVehicle(w->addBody(car.build.body), car.build.vehicle);
+  VehicleInput neutral;
+  neutral.mode = GearMode::kNeutral;
+  w->setVehicleInput(v, neutral);
+  w->step(4000);
+  const VehicleTelemetry& t = w->vehicleTelemetry(v);
+  INFO("events " << t.crashEvents << ", start " << t.eventStart << " s at z " << t.eventPosition.z << ", speed "
+                 << t.eventSpeed * 3.6 << " km/h, peak " << t.eventPeakG << " g, Δv " << t.eventDeltaV * 3.6 << " km/h");
+  CHECK(t.crashEvents >= 1);
+  CHECK(std::fabs(t.eventSpeed * 3.6 - 56.0) < 4.0);
+  CHECK(t.eventPosition.z < 0.0);
+}

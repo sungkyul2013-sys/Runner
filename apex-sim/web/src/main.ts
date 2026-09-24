@@ -2,10 +2,16 @@
 //   /             interactive sandbox
 //   /?bench=1     automated benchmark (§2.5): pile of cubes, frame/physics timing JSON
 //   /?golden=1    determinism self-check: runs golden_m0 in the browser worker and compares with the native hashes
+//   /?drive=<id>  driving (see below)
+//   /?crash=<id>  crash lab: &kind=fullWall|offsetWall|carToCar &kmh= &b=<id> &kmhb= &angle= &offset= &overlap=
+//                 &go=1 launches at once
 import './ui/styles.css';
 import * as THREE from 'three/webgpu';
 import goldenText from '../../core/tests/golden/golden_m0.txt?raw';
 import { DRIVE_VEHICLES, resolveSpawn, SCENES, SPAWNS } from './app/presets';
+import { CrashLab } from './crash/CrashLab';
+import { CrashPanel } from './crash/CrashPanel';
+import type { CrashKind, CrashSpec } from './crash/scenario';
 import { DriveSession } from './drive/DriveSession';
 import { PhysicsClient } from './physics/PhysicsClient';
 import { DebugBodies } from './render/DebugBodies';
@@ -20,18 +26,19 @@ import { loadVehicleModel, VEHICLES } from './vehicles/VehicleModel';
 
 declare global {
   interface Window {
-    __apex?: { bench?: unknown; golden?: unknown; garage?: unknown; drive?: DriveSession; ready?: boolean; errors: string[] };
+    __apex?: { bench?: unknown; golden?: unknown; garage?: unknown; drive?: DriveSession; crash?: CrashLab; ready?: boolean; errors: string[] };
   }
 }
 window.__apex = { errors: [] };
 
 const params = new URLSearchParams(location.search);
 // Artifact build (VITE_APEX_ARTIFACT=1): the host passes no query string, only a bare #token — #drive (default,
-// #drive.<vehicle id> for another car), #garage or #sandbox — so modes switch by hash + reload.
+// #drive.<vehicle id> for another car), #crash[.<vehicle id>], #garage or #sandbox — so modes switch by hash + reload.
 const HASH_ROUTES = import.meta.env.VITE_APEX_ARTIFACT === '1';
 if (HASH_ROUTES) {
   const [route, arg] = (location.hash.slice(1) || 'drive').split('.');
   if (route === 'drive') params.set('drive', arg || 'porsche_911_turbo_991');
+  else if (route === 'crash') params.set('crash', arg || 'porsche_911_turbo_991');
   else if (route === 'garage') params.set('view', 'garage');
 }
 /** Reloads the page in the mode `next` describes (query string, or hash route in the Artifact build). */
@@ -40,7 +47,7 @@ function navigate(next: URLSearchParams): void {
     location.search = next.toString();
     return;
   }
-  location.hash = next.has('drive') ? `drive.${next.get('drive')}` : next.get('view') === 'garage' ? 'garage' : 'sandbox';
+  location.hash = next.has('drive') ? `drive.${next.get('drive')}` : next.has('crash') ? `crash.${next.get('crash')}` : next.get('view') === 'garage' ? 'garage' : 'sandbox';
   location.reload();
 }
 // Threaded module (SharedArrayBuffer, cross-origin isolated pages) and the single-thread fallback (KNOWN_ISSUES W8).
@@ -132,6 +139,12 @@ async function main(): Promise<void> {
       params.set('drive', id);
       navigate(params);
     },
+    crash: (id) => {
+      params.delete('scene');
+      params.delete('view');
+      params.set('crash', id);
+      navigate(params);
+    },
   });
   const hud = new Hud();
   const hint = Object.assign(document.createElement('div'), { className: 'hint' });
@@ -172,8 +185,58 @@ async function main(): Promise<void> {
     });
   }
 
+  // ---- crash lab (?crash=<vehicle id>) ----
+  const crashVehicle = !drive && params.has('crash') ? DRIVE_VEHICLES.find((v) => v.id === params.get('crash')) ?? DRIVE_VEHICLES[0] : null;
+  const crash = crashVehicle ? new CrashLab(physics, viewer, debug, fail) : null;
+  let crashLaunch: (() => void) | null = null;
+  if (crash && crashVehicle) {
+    window.__apex!.crash = crash;
+    panel.root.hidden = true;
+    hint.hidden = true;
+    const num = (key: string) => (params.has(key) ? Number(params.get(key)) : undefined);
+    const initial: Partial<CrashSpec> = {};
+    const kind = params.get('kind');
+    if (kind === 'fullWall' || kind === 'offsetWall' || kind === 'carToCar') initial.kind = kind as CrashKind;
+    for (const [key, field] of [['kmh', 'speedA'], ['kmhb', 'speedB'], ['angle', 'angle'], ['offset', 'offset']] as const) {
+      const v = num(key);
+      if (v !== undefined && Number.isFinite(v)) initial[field] = v;
+    }
+    const overlap = num('overlap');
+    if (overlap !== undefined && overlap > 0 && overlap <= 1) initial.overlap = overlap;
+    const vehicleB = DRIVE_VEHICLES.find((v) => v.id === params.get('b')) ?? crashVehicle;
+    const crashPanel = new CrashPanel(
+      {
+        launch: (spec, a, b) => {
+          setPaused(false);
+          void crash.launch(spec, a, b);
+        },
+        setTimeScale: (s) => physics.setTimeScale(s),
+        setXray: (on) => crash.setXray(on),
+        setFollow: (on) => (crash.follow = on),
+        back: () => {
+          params.delete('crash');
+          navigate(params);
+        },
+      },
+      initial,
+      [crash.energyGraph.root, crash.momentumGraph.root],
+      crashVehicle.id,
+      vehicleB.id,
+    );
+    crash.onLog = (rows) => crashPanel.setLog(rows);
+    crashLaunch = () => crashPanel.launch();
+    document.body.append(crashPanel.root, crashPanel.graphs);
+  }
+
   window.addEventListener('keydown', (e) => {
     if (drive) return; // the keys belong to the car (DriveInput)
+    if (crash) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setPaused(!paused); }
+      else if (e.key === 'r' || e.key === 'R') crashLaunch?.();
+      else if (e.key === 'h' || e.key === 'H') for (const n of document.querySelectorAll<HTMLElement>('.crashpanel, .graphs, .hud')) n.hidden = !n.hidden;
+      return;
+    }
     if (e.target instanceof HTMLSelectElement || e.repeat && e.code === 'Space') return;
     const preset = SPAWNS.find((p) => p.key === e.key);
     if (preset) physics.spawnLattice(resolveSpawn(preset, target()), tl(preset.label));
@@ -201,9 +264,13 @@ async function main(): Promise<void> {
   const sceneInfo = SCENES.find((s) => s.id === initialScene);
   if (mode === 'golden') setPaused(true); // must not advance before the hash comparison starts
   if (drive) await drive.start();
-  else if (mode !== 'garage') loadScene(initialScene, sceneInfo?.bodies);
+  else if (crash) {
+    physics.loadScene('crash');
+    viewer.focus(new THREE.Vector3(0, 0.8, -4), 14);
+    if (params.get('go') === '1') crashLaunch?.();
+  } else if (mode !== 'garage') loadScene(initialScene, sceneInfo?.bodies);
   else await showGarage(viewer);
-  if (mode === 'sandbox' && (initialScene === 'wall_crash' || initialScene === 'sandbox')) viewer.focus(new THREE.Vector3(6, 1, 0), 16);
+  if (mode === 'sandbox' && !drive && !crash && (initialScene === 'wall_crash' || initialScene === 'sandbox')) viewer.focus(new THREE.Vector3(6, 1, 0), 16);
 
   // ---- frame loop ----
   let last = performance.now();
@@ -220,6 +287,7 @@ async function main(): Promise<void> {
     grid.update(viewer.controls.target);
     const frame = physics.update(now);
     drive?.update(dt, frame);
+    crash?.update(dt, frame);
     debug.update(frame);
     viewer.render();
     const stats = physics.latestStats();

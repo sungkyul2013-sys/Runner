@@ -38,6 +38,7 @@ export interface FrameStats {
   ccdClamps: number;
   wasmMemoryMB: number;
   energy: Record<EnergyField, number>;
+  momentum: { linear: [number, number, number]; angular: [number, number, number] };
   hash: string;
 }
 
@@ -290,7 +291,7 @@ export class PhysicsClient {
       const body = Math.round(record[VT.body]);
       if (body < 0 || body >= count) continue;
       const row = body * BODY_STRIDE_F64;
-      f.vehicles.push(decodeVehicle(record, [s.bodies[row + B.originX] - rx, s.bodies[row + B.originY] - ry, s.bodies[row + B.originZ] - rz]));
+      f.vehicles.push(decodeVehicle(record, [s.bodies[row + B.originX] - rx, s.bodies[row + B.originY] - ry, s.bodies[row + B.originZ] - rz], [rx, ry, rz]));
     }
     return f;
   }
@@ -315,6 +316,10 @@ export class PhysicsClient {
       ccdClamps: h[H.ccdClamps],
       wasmMemoryMB: h[H.wasmMemoryMB],
       energy,
+      momentum: {
+        linear: [h[H.momentum], h[H.momentum + 1], h[H.momentum + 2]],
+        angular: [h[H.momentum + 3], h[H.momentum + 4], h[H.momentum + 5]],
+      },
       hash: (h[H.hashHi] >>> 0).toString(16).padStart(8, '0') + (h[H.hashLo] >>> 0).toString(16).padStart(8, '0'),
     };
   }

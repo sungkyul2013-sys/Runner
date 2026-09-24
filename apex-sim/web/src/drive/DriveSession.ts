@@ -8,16 +8,13 @@ import type { DebugBodies } from '../render/DebugBodies';
 import type { Viewer } from '../render/Viewer';
 import { Dashboard } from '../ui/Dashboard';
 import { t } from '../ui/i18n';
-import { decodeDamage, type DamageGroupDef } from '../vehicles/Damage';
 import { Debris, glassDebris, lampDebris } from '../vehicles/Debris';
-import { Leaks } from '../vehicles/Leaks';
-import { Airbags, type AirbagDef } from '../vehicles/Airbags';
-import { FAULT } from '../physics/telemetry';
-import { vehicleCage, type CageNode, type VehicleJsonNode, type VehiclePartDef } from '../vehicles/Flexbody';
-import { loadVehicleModel } from '../vehicles/VehicleModel';
+import type { Leaks } from '../vehicles/Leaks';
+import type { Airbags } from '../vehicles/Airbags';
+import { VehicleActor } from '../vehicles/VehicleActor';
+import type { VehicleView } from './VehicleView';
 import { ChaseCamera } from './ChaseCamera';
 import { DriveInput } from './DriveInput';
-import { VehicleView } from './VehicleView';
 
 export const DRIVE_SCENE = 'drive';
 
@@ -25,28 +22,25 @@ export class DriveSession {
   readonly dashboard: Dashboard;
   readonly input = new DriveInput();
   private chase: ChaseCamera;
-  private view: VehicleView | null = null;
-  private spawned: SpawnedVehicle | null = null;
-  private state: VehicleState | null = null;
+  private readonly actor: VehicleActor;
   private xray = false;
   private starting: Promise<void> | null = null;
   // Glass granules and lamp shards (§4.3 side-effect particles).
   readonly glassDebris: Debris = glassDebris();
   readonly lampDebris: Debris = lampDebris();
-  leaks: Leaks | null = null; // coolant, oil and fuel drips and stains (§4.4)
-  airbags: Airbags | null = null;
 
   constructor(
     private readonly physics: PhysicsClient,
     private readonly viewer: Viewer,
     private readonly debug: DebugBodies,
     readonly vehicle: DriveVehicle,
-    private readonly onError: (message: string) => void,
+    onError: (message: string) => void,
     private readonly onPauseToggle: () => void,
     private readonly pose: VehiclePose = { position: [0, 0, 0], yaw: 0, speed: 0 },
   ) {
     this.dashboard = new Dashboard(vehicle.redlineRpm);
     this.chase = new ChaseCamera(viewer.camera, viewer.controls);
+    this.actor = new VehicleActor(physics, viewer, vehicle, { glass: this.glassDebris, lamp: this.lampDebris }, onError);
     this.input.onAction = (a) => {
       if (a === 'camera') this.chase.toggle();
       else if (a === 'reset') void this.restart();
@@ -56,14 +50,27 @@ export class DriveSession {
       if (this.input.enabled && e.code === 'KeyP' && !e.repeat) this.onPauseToggle();
     });
     viewer.scene.add(this.glassDebris.group, this.lampDebris.group);
-    physics.onDamage(({ body, status }) => {
-      if (this.spawned && body === this.spawned.body) this.view?.flexbody?.setDamage(decodeDamage(status));
-    });
   }
 
   /** Latest (interpolated) vehicle state — for tests and tools. */
   get latest(): VehicleState | null {
-    return this.state;
+    return this.actor.state;
+  }
+
+  get spawned(): SpawnedVehicle | null {
+    return this.actor.spawned;
+  }
+
+  get view(): VehicleView | null {
+    return this.actor.view;
+  }
+
+  get leaks(): Leaks | null {
+    return this.actor.leaks;
+  }
+
+  get airbags(): Airbags | null {
+    return this.actor.airbags;
   }
 
   get flags() {
@@ -84,77 +91,31 @@ export class DriveSession {
     this.physics.loadScene(DRIVE_SCENE);
     this.glassDebris.clear();
     this.lampDebris.clear();
-    this.leaks?.clear();
-    this.airbags?.reset();
-    const modelPromise = this.vehicle.model && !this.view ? loadVehicleModel(this.vehicle.model) : null;
-    // Worker URLs resolve against the worker script, not the page: send an absolute one.
-    const src = this.vehicle.source;
-    const source = src.kind === 'json' ? { kind: 'json' as const, url: new URL(src.url, document.baseURI).href } : src;
-    const docPromise = modelPromise && source.kind === 'json' ? loadVehicleDoc(source.url) : Promise.resolve(null);
-    try {
-      this.spawned = await this.physics.spawnVehicle(source, this.pose, this.vehicle.id);
-    } catch (err) {
-      this.onError(`${t('vehicleFailed')}: ${(err as Error).message}`);
-      return;
-    }
-    if (modelPromise) {
-      try {
-        const [model, doc] = await Promise.all([modelPromise, docPromise]);
-        this.view = new VehicleView(model, doc?.cage ?? null, this.spawned.body,
-          doc ? { defs: doc.damageGroups, nodeRest: doc.nodeRest, parts: doc.parts } : null);
-        this.viewer.scene.add(this.view.group);
-        if (doc) {
-          this.leaks = new Leaks(doc.damageGroups);
-          this.viewer.scene.add(this.leaks.group);
-          this.airbags = new Airbags(doc.airbags);
-          model.root.add(this.airbags.group); // rides on the chassis frame
-        }
-        const known = this.physics.damage.get(this.spawned.body);
-        if (known) this.view.flexbody?.setDamage(decodeDamage(known.status));
-        if (this.view.flexbody) {
-          this.view.flexbody.onBreak = (kind, points, velocities, colors) =>
-            (kind === 'glass' ? this.glassDebris : this.lampDebris).spawn(points, velocities, kind === 'glass' ? 1.2 : 1.8, kind === 'lamp' ? colors : undefined);
-        }
-      } catch (err) {
-        this.onError(`${t('vehicleFailed')}: ${(err as Error).message}`);
-      }
-    } else {
-      this.view?.flexbody?.rebind(this.spawned.body); // respawned into a fresh world (same vehicle, same node order)
-      this.view?.flexbody?.setDamage([]);             // a new car: every pane and lamp intact
-    }
+    await this.actor.spawn(this.pose);
     this.setXray(this.xray);
   }
 
   async restart(): Promise<void> {
     this.starting = null;
-    this.spawned = null;
-    this.state = null;
     await this.start();
   }
 
   setXray(on: boolean): void {
     this.xray = on;
-    const hasModel = !!this.view;
+    const hasModel = this.actor.hasModel;
     this.debug.showBeams = on || !hasModel;
     this.debug.showNodes = on || !hasModel;
-    if (this.view) this.view.visible = !on;
+    this.actor.setXray(on);
   }
 
   /** Per rendered frame: pose the model, follow with the camera, send the driver's input. */
   update(dt: number, frame: RenderFrame | null): void {
-    if (!this.spawned || !frame) return;
-    const v = frame.vehicles.find((x) => x.body === this.spawned!.body) ?? null;
-    if (!v) return;
-    this.state = v;
-    this.view?.update(v, frame, (b, n) => this.physics.locate(b, n), this.physics.islandVersion);
+    const v = this.actor.update(dt, frame);
+    if (!v || !this.actor.spawned) return;
     this.glassDebris.update(dt);
     this.lampDebris.update(dt);
-    const known = this.physics.damage.get(this.spawned.body);
-    this.leaks?.update(dt, v, known ? decodeDamage(known.status) : null);
-    this.airbags?.update(v.airbags, dt);
-    if (this.view?.flexbody) this.view.flexbody.lights = (v.faults & FAULT.electrical) === 0;
     this.chase.update(dt, v);
-    this.physics.setVehicleInput(this.spawned.vehicle, this.input.update(dt, v.speed));
+    this.physics.setVehicleInput(this.actor.spawned.vehicle, this.input.update(dt, v.speed));
     const logic = this.input.logic;
     this.dashboard.update(v, {
       manual: logic.manual,
@@ -163,33 +124,4 @@ export class DriveSession {
       camera: this.chase.mode === 'chase' ? t('cameraChase') : t('cameraOrbit'),
     });
   }
-}
-
-/** What the renderer needs from an apex-vehicle JSON document: the flexbody cage (chassis lattice and hinged panels),
- *  the damage groups (glass, lamps, components), the hinged panels, the airbags and the nodes' rest positions (model
- *  frame). */
-async function loadVehicleDoc(url: string): Promise<{
-  cage: CageNode[];
-  parts: VehiclePartDef[];
-  damageGroups: DamageGroupDef[];
-  airbags: AirbagDef[];
-  nodeRest: (i: number) => [number, number, number];
-} | null> {
-  const response = await fetch(url);
-  if (!response.ok) return null;
-  const doc = (await response.json()) as {
-    nodes?: VehicleJsonNode[];
-    damageGroups?: DamageGroupDef[];
-    visual?: { airbags?: AirbagDef[]; parts?: VehiclePartDef[] };
-  };
-  if (!doc.nodes) return null;
-  const nodes = doc.nodes;
-  const parts = doc.visual?.parts ?? [];
-  return {
-    cage: vehicleCage(nodes, parts),
-    parts,
-    damageGroups: doc.damageGroups ?? [],
-    airbags: doc.visual?.airbags ?? [],
-    nodeRest: (i) => (nodes[i] ? [nodes[i][1], nodes[i][2], nodes[i][3]] : [0, 0, 0]),
-  };
 }

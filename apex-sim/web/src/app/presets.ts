@@ -26,6 +26,7 @@ export interface VehiclePreset {
   source: VehicleSource;
   model: string | null; // GLB visual (null: the node-beam debug view is the visual)
   redlineRpm: number;
+  crash: { front: number; width: number }; // [m] footprint for the crash launcher: origin to front bumper, width
 }
 
 export const SCENES = presetData.scenes as ScenePreset[];

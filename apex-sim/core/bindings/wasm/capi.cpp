@@ -349,6 +349,18 @@ int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
   out[41] = t.crashTime;
   out[42] = t.crashPeakG;
   out[43] = t.crashDeltaV;
+  out[44] = static_cast<float>(t.crashEvents);
+  out[45] = t.eventActive ? 1.0f : 0.0f;
+  out[46] = t.eventStart;
+  out[47] = t.eventPeakG;
+  out[48] = t.eventPeakForce;
+  out[49] = t.eventDeltaV;
+  out[50] = t.eventAbsorbed;
+  out[51] = t.eventSpeed;
+  out[52] = static_cast<float>(t.eventPosition.x);  // world frame
+  out[53] = static_cast<float>(t.eventPosition.y);
+  out[54] = static_cast<float>(t.eventPosition.z);
+  put3(55, t.eventVelocity);
   for (int i = 0; i < wheels; ++i) {
     const sbc::WheelTelemetry& wt = t.wheels[static_cast<size_t>(i)];
     float* o = out + SBC_VT_HEADER + SBC_VT_WHEEL * i;

@@ -39,6 +39,17 @@ export const VT = {
   crashTime: 41,
   crashPeakG: 42,
   crashDeltaV: 43,
+  // crash events (§5.3 event log), the latest one
+  crashEvents: 44,
+  eventActive: 45,
+  eventStart: 46,
+  eventPeakG: 47,
+  eventPeakForce: 48,
+  eventDeltaV: 49,
+  eventAbsorbed: 50,
+  eventSpeed: 51,
+  eventPosition: 52, // world frame
+  eventVelocity: 55,
 } as const;
 
 /** Wheel field indices (Float32, relative to the wheel's record). */
@@ -109,6 +120,17 @@ export interface VehicleState {
   crashTime: number; // [s] first crash detection, −1: none
   crashPeakG: number;
   crashDeltaV: number; // [m/s] largest within 50 ms
+  // Crash events (§5.3 event log): how many so far, and the latest (still open while eventActive).
+  crashEvents: number;
+  eventActive: boolean;
+  eventStart: number; // [s]
+  eventPeakG: number;
+  eventPeakForce: number; // [N]
+  eventDeltaV: number; // [m/s]
+  eventAbsorbed: number; // [J] plastic + fracture work in the car's structure
+  eventSpeed: number; // [m/s] at the start
+  eventPosition: V3; // render space, at the start
+  eventVelocity: V3; // [m/s] at the start
 }
 
 /** Core airbag bits (sbc/vehicle.h airbag::). */
@@ -134,8 +156,9 @@ export const FAULT = {
 
 const v3 = (r: ArrayLike<number>, i: number): V3 => [r[i], r[i + 1], r[i + 2]];
 
-/** Decodes one record; `origin` = body origin − render origin (added to the body-local positions). */
-export function decodeVehicle(r: Float32Array, origin: V3): VehicleState {
+/** Decodes one record; `origin` = body origin − render origin (added to the body-local positions); `renderOrigin`
+ *  (subtracted from world-frame positions). */
+export function decodeVehicle(r: Float32Array, origin: V3, renderOrigin: V3 = [0, 0, 0]): VehicleState {
   const flags = r[VT.flags];
   const wheelCount = Math.max(0, Math.min(Math.round(r[VT.wheelCount]), (r.length - VT_HEADER) / VT_WHEEL));
   const wheels: WheelState[] = [];
@@ -188,6 +211,16 @@ export function decodeVehicle(r: Float32Array, origin: V3): VehicleState {
     crashTime: r[VT.crashTime],
     crashPeakG: r[VT.crashPeakG],
     crashDeltaV: r[VT.crashDeltaV],
+    crashEvents: Math.round(r[VT.crashEvents]),
+    eventActive: r[VT.eventActive] > 0.5,
+    eventStart: r[VT.eventStart],
+    eventPeakG: r[VT.eventPeakG],
+    eventPeakForce: r[VT.eventPeakForce],
+    eventDeltaV: r[VT.eventDeltaV],
+    eventAbsorbed: r[VT.eventAbsorbed],
+    eventSpeed: r[VT.eventSpeed],
+    eventPosition: [r[VT.eventPosition] - renderOrigin[0], r[VT.eventPosition + 1] - renderOrigin[1], r[VT.eventPosition + 2] - renderOrigin[2]],
+    eventVelocity: v3(r, VT.eventVelocity),
     wheels,
   };
 }

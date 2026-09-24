@@ -95,7 +95,7 @@ void applyDefaultContactPairs(World& w) {
 }
 
 std::vector<std::string> sceneNames() {
-  return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0", "proto_drive", "drive"};
+  return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0", "proto_drive", "drive", "crash"};
 }
 
 std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o) {
@@ -147,6 +147,19 @@ std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o)
     const std::vector<int32_t> idx = {0, 1, 5, 0, 5, 4, 2, 4, 5, 2, 5, 3, 0, 4, 2, 1, 3, 5};
     w->addStaticMesh({}, v, idx, material::kConcrete);
     w->addStaticBox({0.0, 1.5, 300.0}, {15.0f, 1.5f, 0.5f}, 0.0, material::kConcrete);
+    return w;
+  }
+  if (name == "crash") {
+    // Crash test ground (M2 launch tool, §12.7 in part): asphalt, no car (the client launches them). A rigid concrete
+    // barrier 6 m wide, 2 m high, faces −Z at z = 0 and ends at x = 0, so a car at x = −3 hits it full width and one
+    // shifted toward +x overlaps it partly (offset tests). The open ground around x = 40 is for car-to-car runs.
+    WorldParams wp;
+    wp.threadCount = o.threads;
+    wp.trackEnergy = o.trackEnergy;
+    auto w = std::make_unique<World>(wp);
+    applyDefaultContactPairs(*w);
+    w->addGroundPlane(0.0, material::kAsphalt);
+    w->addStaticBox({-3.0, 1.0, 1.0}, {3.0f, 1.0f, 1.0f}, 0.0, material::kConcrete);
     return w;
   }
   if (name == "sandbox") {
