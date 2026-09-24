@@ -1096,6 +1096,16 @@ bool ccdNode(Body& A, int i, Body& B, const Pair& pr, const std::vector<int32_t>
   const float len = length(n);
   if (!(len > 1e-10f)) return false;
   n = n * (1.0f / len);
+  // Where it was in front of the surface at the step start: the sweep takes back this step's approach, not more (a
+  // node landed deep in the contact band would get a spring the step did not load, energy from nowhere).
+  float startGap = kCcdStandoff;
+  {
+    Vec3 p0[3];
+    for (int k = 0; k < 3; ++k) p0[k] = startPosition(B, tn[k], pr.offset);
+    Vec3 n0 = cross(p0[1] - p0[0], p0[2] - p0[0]);
+    const float l0 = length(n0);
+    if (l0 > 1e-10f) startGap = std::max(kCcdStandoff, dot(x0 - p0[0], n0 * (1.0f / l0)));
+  }
   Vec3 bary = barycentric(x1, a, b, c);
   bary = {std::clamp(bary.x, 0.0f, 1.0f), std::clamp(bary.y, 0.0f, 1.0f), std::clamp(bary.z, 0.0f, 1.0f)};
   const float bsum = bary.x + bary.y + bary.z;
@@ -1113,9 +1123,9 @@ bool ccdNode(Body& A, int i, Body& B, const Pair& pr, const std::vector<int32_t>
     return e;
   };
   const double before = kinetic(A, na) + kinetic(B, tb);
-  // Position: close the depth behind the mid-plane (plus the standoff), split by inverse mass (centre of mass
-  // unchanged).
-  const float depth = kCcdStandoff - dot(x1 - a, n);  // > 0
+  // Position: back to the start-of-step gap in front of the mid-plane (at least the standoff), split by inverse mass
+  // (centre of mass unchanged).
+  const float depth = startGap - dot(x1 - a, n);  // > 0
   auto move = [](Body& body, int node, Vec3 d) { body.px[node] += d.x; body.py[node] += d.y; body.pz[node] += d.z; };
   auto push = [](Body& body, int node, Vec3 dv) { body.vx[node] += dv.x; body.vy[node] += dv.y; body.vz[node] += dv.z; };
   if (depth > 0.0f) {
@@ -1235,6 +1245,14 @@ int ContactSolver::ccdBodies(World& w) {
     if (clamps == 0) break;
   }
   return total;
+}
+
+bool ContactSolver::ccdPossible(const World& w) {
+  bool any = false;
+  forEachPair(w.bodies_, 2.0f * w.params().dt, [&](int ia, int ib, const Pair&) {
+    if (w.bodies_[static_cast<size_t>(ia)].family != w.bodies_[static_cast<size_t>(ib)].family) any = true;
+  });
+  return any;
 }
 
 int ContactSolver::ccdPass(World& w, const std::vector<uint8_t>* active, std::vector<uint8_t>& moved) {

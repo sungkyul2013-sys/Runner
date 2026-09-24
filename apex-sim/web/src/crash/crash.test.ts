@@ -74,4 +74,15 @@ describe('collision event log', () => {
     expect(rows.map((r) => r.peakG[0])).toEqual([25, 5]);
     expect(rows.every((r) => r.cars.length === 1)).toBe(true);
   });
+
+  it('leaves out a settling bump after the crash (under 8 km/h, nothing absorbed) once it is over', () => {
+    const log = new EventLog();
+    log.observe('A', state({}));
+    log.observe('A', state({ crashEvents: 2, eventStart: 2.4, eventActive: true, eventDeltaV: 1.1, eventAbsorbed: 0, eventPeakG: 3.1 }));
+    expect(log.rows()).toHaveLength(2); // shown while open
+    log.observe('A', state({ crashEvents: 2, eventStart: 2.4, eventActive: false, eventDeltaV: 1.1, eventAbsorbed: 0, eventPeakG: 3.1 }));
+    const rows = log.rows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].peakG[0]).toBe(30);
+  });
 });

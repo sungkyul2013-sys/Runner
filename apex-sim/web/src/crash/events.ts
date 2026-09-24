@@ -30,6 +30,11 @@ export interface CollisionRow {
 }
 
 const PAIR_WINDOW = 0.03; // [s]
+// A car settling after the crash (its crushed nose dropping onto the road, a rebound bump) opens a sensor event too;
+// rows whose cars all changed speed by less than an event data recorder's threshold (Δv 8 km/h) and absorbed next to
+// nothing are bumps, not collisions, and are left out of the log.
+const MIN_DELTA_V = 8 / 3.6; // [m/s]
+const MIN_ABSORBED = 1000;   // [J]
 
 export class EventLog {
   private events: CarEvent[] = [];
@@ -75,6 +80,7 @@ export class EventLog {
       const partner = byTime.find((o) => !used.has(o) && o.car !== e.car && Math.abs(o.start - e.start) <= PAIR_WINDOW);
       if (partner) used.add(partner);
       const group = partner ? [e, partner] : [e];
+      if (!group.some((g) => g.active) && group.every((g) => g.deltaV < MIN_DELTA_V && g.absorbed < MIN_ABSORBED)) continue;
       const rel = partner
         ? Math.hypot(e.velocity[0] - partner.velocity[0], e.velocity[1] - partner.velocity[1], e.velocity[2] - partner.velocity[2])
         : e.speed;

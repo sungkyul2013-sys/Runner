@@ -283,10 +283,19 @@ void World::stepOnce() {
     // the constraint (§5.3 ledger), the kinetic energy they remove as CCD loss.
     // The springs are measured with the band continued behind the mid-plane, where this step's integration may have
     // carried nodes (the force law and the ledger at step ends never see them there).
-    const double before = params_.trackEnergy ? potentialEnergy(true) : 0.0;
+    // Nodes the sweeps could not bring back in front of a surface (sandwiched between two crushed hulls, the sweep
+    // iterations used up) keep their spring in this extended measure, but the force law holds a contact only in
+    // front of the mid-plane: at the step end those springs are released without doing work. Their energy is lost
+    // with the sweeps (booked as CCD loss; without it the ledger drifted by ≈ 10 % in some car-to-car crashes).
+    // (Measured only when the sweeps can act: two bodies of different families within reach.)
+    const double before = params_.trackEnergy && ContactSolver::ccdPossible(*this) ? potentialEnergy(true) : 0.0;
     const int clamps = ContactSolver::ccdBodies(*this);
     stats_.ccdClamps += clamps;
-    if (params_.trackEnergy && clamps > 0) bodies_[0].losses.external += potentialEnergy(true) - before;
+    if (params_.trackEnergy && clamps > 0) {
+      const double extended = ContactSolver::contactPotential(*this, true);
+      bodies_[0].losses.external += potentialEnergy(true) - before;
+      bodies_[0].losses.ccd += extended - ContactSolver::contactPotential(*this, false);
+    }
     jobs_->parallelFor(n, [this](int i) { finishBody(i); });
   } else {
     jobs_->parallelFor(n, [this](int i) {

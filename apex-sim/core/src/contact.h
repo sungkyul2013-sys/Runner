@@ -222,6 +222,8 @@ struct ContactSolver {
   // After integration: nodes whose centre crossed a moving triangle of another body during the step are put back on
   // it and lose their approaching normal velocity, with momentum-conserving corrections on both sides.
   static int ccdBodies(World& world);
+  // Whether any two bodies of different families are close enough for the sweep tests this step (ccdBodies can clamp).
+  static bool ccdPossible(const World& world);
   // One sweep over the body pairs; `active` (optional): only pairs with a body flagged there. Flags the bodies a
   // correction moved in `moved`.
   static int ccdPass(World& world, const std::vector<uint8_t>* active, std::vector<uint8_t>& moved);

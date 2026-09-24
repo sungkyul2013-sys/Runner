@@ -504,7 +504,9 @@ const wheel = (c, driveShare, brakeTorque, handbrakeTorque, nominalLoad, vertica
 });
 const ref = latticeId(0, 0.36, 0);
 const vehicle = {
-  refCenter: ref, refFront: latticeId(0, 0.36, 1.5), refLeft: latticeId(0.45, 0.36, 0),
+  // The chassis frame comes from nodes of the passenger cell (it keeps its shape in a crash; a reference in the
+  // crumple zone would turn the frame — and every wheel's alignment, the heading, the speed — as the nose folds).
+  refCenter: ref, refFront: latticeId(0, 0.36, 0.9), refLeft: latticeId(0.45, 0.36, 0),
   steering: { channel: hydroChannel, rate: 2.5 },
   wheels: [
     wheel(corners.FL, 0.15, 3000, 0, 3300, 2.8e5), wheel(corners.FR, 0.15, 3000, 0, 3300, 2.8e5),     // 245/35 ZR20

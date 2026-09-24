@@ -774,3 +774,32 @@ TEST_CASE("Porsche 911 Turbo: the powertrain rides on its mounts, stays on at 64
   CHECK(wall100.broken > 0);
   CHECK(wall100.mountDamage > 0.0f);
 }
+
+TEST_CASE("a head-on car-to-car crash as the crash lab launches it closes the energy balance", "[damage][porsche][crash][23.1]") {
+  // The web crash lab's head-on run (web/src/crash/scenario.ts: fronts 0.3 s apart at 64 km/h each, the 911's origin
+  // 2.25 m behind its front). Crushed nodes sandwiched between the two hulls stay behind a surface after the sweeps;
+  // the step-end force law releases their springs, which the ledger books as CCD loss (it drifted to −11 % before).
+  SceneOptions so;
+  so.threads = 1;
+  so.trackEnergy = true;
+  auto w = makeScene("crash", so);
+  VehicleInput neutral;
+  neutral.mode = GearMode::kNeutral;
+  const float speed = 64.0f / 3.6f;
+  const double gap = 2.25 + speed * 0.3;
+  for (const auto& [at, yaw] : {std::pair<DVec3, double>{{40.0, 0.0, -gap}, 0.0}, {{40.0, 0.0, gap}, 3.14159265358979323846}}) {
+    const LoadedVehicle car = loadVehicleJson(porscheJson(), {at, yaw, speed});
+    w->setVehicleInput(w->addVehicle(w->addBody(car.build.body), car.build.vehicle), neutral);
+  }
+  const double kinetic0 = w->measureEnergy().kinetic;
+  double worst = 0.0;
+  for (int k = 0; k < 30; ++k) {
+    w->step(100);
+    worst = std::max(worst, std::fabs(w->measureEnergy().balance()));
+  }
+  const EnergyReport e = w->measureEnergy();
+  INFO("KE0 " << kinetic0 / 1e3 << " kJ, worst |balance| " << worst / 1e3 << " kJ, plastic " << e.losses.plastic / 1e3
+              << " kJ, CCD " << e.losses.ccd / 1e3 << " kJ, bodies " << w->bodyCount());
+  CHECK(worst < 0.05 * kinetic0);
+  CHECK(e.losses.plastic > 0.4 * kinetic0);
+}

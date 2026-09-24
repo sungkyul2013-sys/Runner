@@ -52,7 +52,7 @@ const STRINGS = {
   logForce: { ko: '최대 힘 kN', en: 'Peak force kN' },
   logEnergy: { ko: '흡수 kJ', en: 'Absorbed kJ' },
   logG: { ko: '최대 감속 g', en: 'Peak g' },
-  logWorld: { ko: '벽', en: 'wall' },
+  logWorld: { ko: '벽·지면', en: 'barrier / ground' },
   wheelTitle: { ko: '휠 정렬 · 타이어', en: 'Wheel alignment · tyres' },
   wheelCar: { ko: '차', en: 'Car' },
   wheelWheel: { ko: '휠', en: 'Wheel' },
