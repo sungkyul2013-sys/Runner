@@ -156,8 +156,11 @@ struct SurfaceCache {
 struct SelfPairCache {
   int16_t g = -1, h = -1;
   std::vector<int32_t> tris;
-  Vec3 lo, hi;            // g's node box relative to g's centroid at the refresh
-  std::vector<Vec3> rel;  // nodes of h relative to g's centroid at the refresh
+  Vec3 lo, hi;             // g's node box relative to g's centroid at the refresh
+  std::vector<Vec3> rel;   // nodes of h relative to g's centroid at the refresh
+  std::vector<Vec3> relG;  // nodes of g relative to g's centroid at the refresh
+  std::vector<std::pair<int32_t, int32_t>> pairs;  // (node of g, triangle of h) candidates, built with kSelfMargin
+  bool pairsValid = false;
 };
 
 // Per-body candidate lists, rebuilt every step (the body is processed by one thread at a time).
