@@ -54,6 +54,8 @@ Body extract(const Body& src, const std::vector<int32_t>& nodes, const std::vect
   pick(b.patchForce, src.patchForce, nodes);
   pick(b.patchNx, src.patchNx, nodes); pick(b.patchNy, src.patchNy, nodes); pick(b.patchNz, src.patchNz, nodes);
   pick(b.patchMaterial, src.patchMaterial, nodes);
+  pick(b.contactDepth, src.contactDepth, nodes);
+  pick(b.contactDepthNext, src.contactDepthNext, nodes);
   const size_t n = nodes.size();
   for (auto* a : {&b.fx, &b.fy, &b.fz, &b.fdBeamX, &b.fdBeamY, &b.fdBeamZ, &b.fdContactX, &b.fdContactY, &b.fdContactZ,
                   &b.fdFrictionX, &b.fdFrictionY, &b.fdFrictionZ, &b.fdExternalX, &b.fdExternalY, &b.fdExternalZ}) {
@@ -219,6 +221,7 @@ std::vector<Body> splitIslands(Body& b) {
       b.mass[k] = 0.0f;
       b.vx[k] = b.vy[k] = b.vz[k] = 0.0f;
       b.anchorContact[k] = -1;
+      b.contactDepth[k] = b.contactDepthNext[k] = 0.0f;
       remap[k] = -1;
     }
   }

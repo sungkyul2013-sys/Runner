@@ -5,6 +5,9 @@
 //   sbc-cli stability <scene>
 //   sbc-cli golden <scene> [--seconds S] [--every-steps N] [--threads T]
 //   sbc-cli vehicle <vehicle.json> [--seconds S]   (load, stability check, settle on asphalt, report)
+//   sbc-cli crash-bench <vehicle.json> [--cars N] [--seconds S] [--threads T] [--out file.json]
+//                                       (§23.3: N cars in head-on pairs, 64 km/h each, crashing at once)
+#include <algorithm>
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
@@ -28,6 +31,7 @@ struct Args {
   double seconds = 2.0;
   int threads = 1;
   int bodies = 16;
+  int cars = 10;
   int everySteps = 1000;
   bool energy = false;
   std::string out;
@@ -37,7 +41,8 @@ bool parse(int argc, char** argv, Args& a) {
   if (argc < 2) return false;
   a.command = argv[1];
   int i = 2;
-  if ((a.command == "run" || a.command == "stability" || a.command == "golden" || a.command == "vehicle") && i < argc &&
+  if ((a.command == "run" || a.command == "stability" || a.command == "golden" || a.command == "vehicle" ||
+       a.command == "crash-bench") && i < argc &&
       argv[i][0] != '-') {
     a.scene = argv[i++];
   }
@@ -50,6 +55,7 @@ bool parse(int argc, char** argv, Args& a) {
     if (k == "--seconds") a.seconds = std::atof(next("--seconds"));
     else if (k == "--threads") a.threads = std::atoi(next("--threads"));
     else if (k == "--bodies") a.bodies = std::atoi(next("--bodies"));
+    else if (k == "--cars") a.cars = std::atoi(next("--cars"));
     else if (k == "--every-steps") a.everySteps = std::atoi(next("--every-steps"));
     else if (k == "--out") a.out = next("--out");
     else if (k == "--energy") a.energy = true;
@@ -129,6 +135,73 @@ int cmdBench(const Args& a) {
     if (!f) { std::fprintf(stderr, "cannot write %s\n", a.out.c_str()); return 1; }
     std::fprintf(f, "%s\n", buf);
     std::fclose(f);
+  }
+  return 0;
+}
+
+// §23.3 "10대 동시 충돌 씬": cars in head-on pairs 4 m apart sideways, each at 64 km/h, 5 m between bumpers at the
+// start, so every pair crashes in the same ~0.1 s. Measures the physics step (mean, worst, real-time factor) through
+// the whole crash and the wrecks settling, plus the energy ledger and the penetration count at the end.
+int cmdCrashBench(const Args& a) {
+  std::ifstream f(a.scene, std::ios::binary);
+  if (!f) { std::fprintf(stderr, "cannot read %s\n", a.scene.c_str()); return 2; }
+  std::stringstream text;
+  text << f.rdbuf();
+  sbc::WorldParams wp;
+  wp.threadCount = a.threads;
+  wp.trackEnergy = a.energy;
+  sbc::World w(wp);
+  sbc::applyDefaultContactPairs(w);
+  w.addGroundPlane(0.0, sbc::material::kAsphalt);
+  const float speed = 64.0f / 3.6f;
+  const int pairs = std::max(1, a.cars / 2);
+  for (int p = 0; p < pairs; ++p) {
+    const double x = 4.0 * (p - 0.5 * (pairs - 1));
+    for (int side = 0; side < 2; ++side) {
+      const sbc::LoadedVehicle car = sbc::loadVehicleJson(
+          text.str(), {{x, 0.0, side ? 9.4 : 0.0}, side ? 3.14159265358979323846 : 0.0, speed});
+      const int body = w.addBody(car.build.body);
+      const int v = w.addVehicle(body, car.build.vehicle);
+      sbc::VehicleInput in;
+      in.mode = sbc::GearMode::kNeutral;
+      w.setVehicleInput(v, in);
+    }
+  }
+  const int steps = static_cast<int>(a.seconds / w.params().dt + 0.5);
+  double worstStepMs = 0.0, totalMs = 0.0;
+  int maxContacts = 0;
+  for (int s = 0; s < steps; ++s) {
+    const auto t0 = Clock::now();
+    w.step(1);
+    const double ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+    totalMs += ms;
+    worstStepMs = std::max(worstStepMs, ms);
+    maxContacts = std::max(maxContacts, w.lastStepStats().bodyContacts);
+  }
+  int nodes, beams;
+  const int bodies = counts(w, nodes, beams);
+  const sbc::PenetrationReport pen = w.measurePenetration();
+  const sbc::EnergyReport e = w.measureEnergy();
+  char buf[1024];
+  std::snprintf(buf, sizeof buf,
+                "{\"bench\":\"crash%d\",\"platform\":\"%s\",\"threads\":%d,\"cars\":%d,\"bodies\":%d,\"nodes\":%d,"
+                "\"beams\":%d,\"steps\":%d,\"meanStepMs\":%.5f,\"worstStepMs\":%.5f,\"rtf\":%.3f,\"maxBodyContacts\":%d,"
+                "\"penetration\":%d,\"plasticKJ\":%.1f,\"hash\":\"%016" PRIx64 "\"}",
+                2 * pairs,
+#ifdef __EMSCRIPTEN__
+                "wasm",
+#else
+                "native",
+#endif
+                a.threads, 2 * pairs, bodies, nodes, beams, steps, totalMs / steps, worstStepMs,
+                (steps * static_cast<double>(w.params().dt)) / (totalMs / 1000.0), maxContacts, pen.total(),
+                e.losses.plastic / 1e3, w.stateHash());
+  std::printf("%s\n", buf);
+  if (!a.out.empty()) {
+    FILE* out = std::fopen(a.out.c_str(), "w");
+    if (!out) { std::fprintf(stderr, "cannot write %s\n", a.out.c_str()); return 1; }
+    std::fprintf(out, "%s\n", buf);
+    std::fclose(out);
   }
   return 0;
 }
@@ -243,6 +316,7 @@ int main(int argc, char** argv) {
   }
   if (a.command == "run") return cmdRun(a);
   if (a.command == "bench") return cmdBench(a);
+  if (a.command == "crash-bench") return cmdCrashBench(a);
   if (a.command == "stability") return cmdStability(a);
   if (a.command == "golden") return cmdGolden(a);
   if (a.command == "vehicle") return cmdVehicle(a);

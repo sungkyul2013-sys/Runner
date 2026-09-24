@@ -223,6 +223,9 @@ struct Body {
   std::vector<int32_t> edgeTri;      // 2 adjacent triangles per edge (−1 = none; non-manifold edges keep the first two)
   std::vector<int16_t> nodeGroup;    // group of the first grouped triangle using the node (−1 = none)
   std::vector<float> nodeSurface;    // number of intact collision triangles using the node (0 → it collides as a sphere)
+  // Deepest body/self contact penetration each node took part in, accepted in this step's forces [m], and the one
+  // being gathered (see ContactSolver: contacts grow continuously from the edge of the contact band).
+  std::vector<float> contactDepth, contactDepthNext;
   // Members of each self-collision group g ≥ 0 (CSR): nodes groupNodes[groupNodeBegin[g] … groupNodeBegin[g+1]),
   // triangles likewise.
   std::vector<int32_t> groupNodes, groupNodeBegin, groupTris, groupTriBegin2;

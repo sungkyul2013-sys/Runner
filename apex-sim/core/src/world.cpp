@@ -214,6 +214,11 @@ void World::stepOnce() {
     stats_.bodyContacts = params_.trackEnergy ? ContactSolver::bodyContacts<true>(*this)
                                               : ContactSolver::bodyContacts<false>(*this);
   }
+  // The contact depths just gathered become the reference for the next contacts (and the ledger at the step end).
+  for (Body& b : bodies_) {
+    b.contactDepth.swap(b.contactDepthNext);
+    std::fill(b.contactDepthNext.begin(), b.contactDepthNext.end(), 0.0f);
+  }
   if (n > 1) {
     jobs_->parallelFor(n, [this](int i) { integrateBody(i); });
     // Sweep tests between bodies (serial, deterministic pair order). Their position corrections move nodes without a
@@ -409,7 +414,7 @@ uint64_t World::stateHash() const {
     h.vec(b.vx); h.vec(b.vy); h.vec(b.vz);
     h.vec(b.stickX); h.vec(b.stickY); h.vec(b.stickZ); h.vec(b.anchorContact);
     h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.broken); h.vec(b.torsionBroken); h.vec(b.triTorn); h.vec(b.nodeSurface);
-    h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags);
+    h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags); h.vec(b.contactDepth);
     h.vec(b.hydroInputs);
   }
   for (const auto& v : vehicles_) v->hashState(h);

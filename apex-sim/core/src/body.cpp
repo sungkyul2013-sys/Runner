@@ -208,6 +208,8 @@ Body buildBody(const BodyDesc& desc) {
     b.triTorn.push_back(0);
   }
   detail::buildSurfaceTopology(b);
+  b.contactDepth.assign(n, 0.0f);
+  b.contactDepthNext.assign(n, 0.0f);
 
   for (size_t k = 0; k < desc.torsionBars.size(); ++k) {
     const TorsionBarDesc& d = desc.torsionBars[k];

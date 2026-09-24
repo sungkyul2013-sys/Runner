@@ -202,6 +202,38 @@ Side edgeSide(const Body& b, int e, float s) {
 
 inline void addNodeForce(Body& b, int i, Vec3 f) { b.fx[i] += f.x; b.fy[i] += f.y; b.fz[i] += f.z; }
 
+// Contacts grow continuously from the edge of the contact band (§5.3 energy ledger): a new contact may be only as
+// deep as the two sides could have come together during the last step, plus what its nodes were already pressed in
+// by other contacts (sliding over a triangle edge onto the neighbour hands the depth on). A node that turns up deep
+// inside a band sideways — a crushed hull folding over it, a node crossing into another triangle's prism behind
+// its face — is not grabbed by a spring that would appear with ½k·p² out of nowhere; between bodies the sweep
+// tests keep such a node from getting through, within a body the neighbouring contacts do.
+constexpr float kEntryTolerance = 2e-3f;  // [m]
+constexpr float kEntrySteps = 2.0f;       // [-] steps of approach a new contact may have covered
+
+float priorDepth(const Body& A, const Side& a, const Body& B, const Side& b) {
+  float prior = 0.0f;
+  for (int k = 0; k < a.count; ++k) prior = std::max(prior, A.contactDepth[static_cast<size_t>(a.node[k])]);
+  for (int k = 0; k < b.count; ++k) prior = std::max(prior, B.contactDepth[static_cast<size_t>(b.node[k])]);
+  return prior;
+}
+
+bool admissible(const Body& A, const Side& a, const Body& B, const Side& b, Vec3 n, float p, float dt) {
+  const float approach = std::max(0.0f, -dot(a.velocity(A) - b.velocity(B), n));
+  return p <= priorDepth(A, a, B, b) + approach * dt * kEntrySteps + kEntryTolerance;
+}
+
+void recordDepth(Body& A, const Side& a, Body& B, const Side& b, float p) {
+  for (int k = 0; k < a.count; ++k) {
+    float& d = A.contactDepthNext[static_cast<size_t>(a.node[k])];
+    d = std::max(d, p);
+  }
+  for (int k = 0; k < b.count; ++k) {
+    float& d = B.contactDepthNext[static_cast<size_t>(b.node[k])];
+    d = std::max(d, p);
+  }
+}
+
 // Effective mass of the two contact points, m = 1 / (Σ w_i²/m_i + Σ w_j²/m_j); 0 when both are anchored.
 float contactMass(const Body& A, const Side& a, const Body& B, const Side& b) {
   const float inv = a.inverseMass(A) + b.inverseMass(B);
@@ -626,7 +658,7 @@ namespace {
 // and node spheres wherever no surface covers them (bodies without triangles, unmeshed fringes, retired triangles).
 template <typename Bodies, typename Scratch, typename Surfaces>
 void gatherBodyContacts(Bodies& bodies, Scratch&& scratchOf, Surfaces&& surfaceOf, std::vector<ContactRecord>& out,
-                        bool extendedBand = false) {
+                        float dt, bool extendedBand = false) {
   out.clear();
   forEachPair(bodies, 0.0f, [&](int ia, int ib, const Pair& pr) {
     const Body& A = bodies[ia];
@@ -635,8 +667,10 @@ void gatherBodyContacts(Bodies& bodies, Scratch&& scratchOf, Surfaces&& surfaceO
     SurfaceCache& nA = surfaceOf(ia);
     SurfaceCache& nB = surfaceOf(ib);
     auto add = [&](int bodyA, const Side& a, int bodyB, const Side& b, Vec3 n, float p) {
-      const float m = contactMass(bodies[bodyA], a, bodies[bodyB], b);
-      if (m > 0.0f) out.push_back({bodyA, bodyB, a, b, n, p, m});
+      const Body& X = bodies[bodyA];
+      const Body& Y = bodies[bodyB];
+      const float m = contactMass(X, a, Y, b);
+      if (m > 0.0f && admissible(X, a, Y, b, n, p, dt)) out.push_back({bodyA, bodyB, a, b, n, p, m});
     };
     if (B.triangleCount() > 0) {
       forEachNodeTriangle(A, B, pr, nB, s, false, [&](int i, const TriHit& h) {
@@ -670,7 +704,10 @@ template <bool kTrack>
 int ContactSolver::bodyContacts(World& w) {
   std::vector<ContactRecord>& recs = w.scratch_[0].records;
   gatherBodyContacts(w.bodies_, [&](int i) -> ContactScratch& { return w.scratch_[static_cast<size_t>(i)]; },
-                     [&](int i) -> SurfaceCache& { return w.scratch_[static_cast<size_t>(i)].surface; }, recs);
+                     [&](int i) -> SurfaceCache& { return w.scratch_[static_cast<size_t>(i)].surface; }, recs,
+                     w.params().dt);
+  for (const ContactRecord& r : recs)
+    recordDepth(w.bodies_[static_cast<size_t>(r.bodyA)], r.a, w.bodies_[static_cast<size_t>(r.bodyB)], r.b, r.p);
   if (recs.empty()) return 0;
   std::vector<std::vector<float>>& load = w.scratch_[0].bodyLoad;
   if (load.size() != w.bodies_.size()) load = makeLoads(w.bodies_);
@@ -781,11 +818,15 @@ int ContactSolver::selfContacts(World& w, int bodyIndex) {
   ContactScratch& s = w.scratch_[bodyIndex];
   std::vector<ContactRecord>& recs = s.selfRecords;
   recs.clear();
+  const float dt = w.params().dt;
   forEachSelfContact(b, s.surface, s, [&](int i, const TriHit& hit) {
     const Side a = nodeSide(i), t = triSide(b, hit.tri, hit.bary);
     const float m = contactMass(b, a, b, t);
-    if (m > 0.0f) recs.push_back({0, 0, a, t, hit.normal, hit.penetration, m});
+    if (m > 0.0f && admissible(b, a, b, t, hit.normal, hit.penetration, dt)) {
+      recs.push_back({0, 0, a, t, hit.normal, hit.penetration, m});
+    }
   });
+  for (const ContactRecord& r : recs) recordDepth(b, r.a, b, r.b, r.p);
   if (recs.empty()) return 0;
   if (s.selfLoad.size() != 1) s.selfLoad.assign(1, {});
   s.selfLoad[0].resize(static_cast<size_t>(b.nodeCount()), 0.0f);
@@ -1065,7 +1106,8 @@ double ContactSolver::bodyContactPotential(const World& w, bool extendedBand) {
   std::vector<std::vector<float>> load = makeLoads(w.bodies_);
   auto bodyOf = [&](int i) -> const Body& { return w.bodies_[static_cast<size_t>(i)]; };
   gatherBodyContacts(w.bodies_, [&](int i) -> ContactScratch& { return scratch[static_cast<size_t>(i)]; },
-                     [&](int i) -> SurfaceCache& { return scratch[static_cast<size_t>(i)].surface; }, recs, extendedBand);
+                     [&](int i) -> SurfaceCache& { return scratch[static_cast<size_t>(i)].surface; }, recs,
+                     w.params().dt, extendedBand);
   budgetContacts(recs, bodyOf, load);
   for (const ContactRecord& r : recs) e += contactEnergy(w, bodyOf(r.bodyA), r.a, bodyOf(r.bodyB), r.b, r.p, r.m);
   for (size_t bi = 0; bi < w.bodies_.size(); ++bi) {
@@ -1075,7 +1117,9 @@ double ContactSolver::bodyContactPotential(const World& w, bool extendedBand) {
     forEachSelfContact(b, scratch[bi].surface, scratch[bi], [&](int i, const TriHit& hit) {
       const Side a = nodeSide(i), t = triSide(b, hit.tri, hit.bary);
       const float m = contactMass(b, a, b, t);
-      if (m > 0.0f) recs.push_back({static_cast<int32_t>(bi), static_cast<int32_t>(bi), a, t, hit.normal, hit.penetration, m});
+      if (m > 0.0f && admissible(b, a, b, t, hit.normal, hit.penetration, w.params().dt)) {
+        recs.push_back({static_cast<int32_t>(bi), static_cast<int32_t>(bi), a, t, hit.normal, hit.penetration, m});
+      }
     });
     budgetContacts(recs, bodyOf, load);
     for (const ContactRecord& r : recs) e += contactEnergy(w, b, r.a, b, r.b, r.p, r.m);
