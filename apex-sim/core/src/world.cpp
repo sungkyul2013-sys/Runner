@@ -356,7 +356,7 @@ uint64_t World::stateHash() const {
     h.vec(b.px); h.vec(b.py); h.vec(b.pz);
     h.vec(b.vx); h.vec(b.vy); h.vec(b.vz);
     h.vec(b.stickX); h.vec(b.stickY); h.vec(b.stickZ); h.vec(b.anchorContact);
-    h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.broken);
+    h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.broken); h.vec(b.torsionBroken);
     h.vec(b.hydroInputs);
   }
   for (const auto& v : vehicles_) v->hashState(h);

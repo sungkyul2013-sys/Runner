@@ -146,6 +146,7 @@ struct Loader {
     BeamType type = BeamType::kNormal;
     double k = 0.0, c = -1.0, zeta = -1.0;
     double plastic = kInfiniteForce, hardening = 0.0, breakForce = kInfiniteForce, deform = kInfiniteForce;
+    double crush = 0.95, tear = kInfiniteForce;
     double kc = -1.0;
     std::string breakGroup;
   };
@@ -171,6 +172,8 @@ struct Loader {
     p.hardening = numberOr(obj, "hardening", p.hardening, path);
     p.breakForce = numberOr(obj, "breakForce", p.breakForce, path);
     p.deform = numberOr(obj, "deformLimit", p.deform, path);
+    p.crush = numberOr(obj, "crushLimit", p.crush, path);
+    p.tear = numberOr(obj, "tearLimit", p.tear, path);
     p.kc = numberOr(obj, "kc", p.kc, path);
     p.breakGroup = stringOr(obj, "breakGroup", p.breakGroup, path);
   }
@@ -213,6 +216,10 @@ struct Loader {
       bd.hardening = static_cast<float>(p.hardening);
       bd.breakForce = static_cast<float>(p.breakForce);
       bd.deformLimit = static_cast<float>(p.deform);
+      if (!(p.crush > 0.0 && p.crush <= 1.0)) fail(path, "crushLimit must be in (0, 1]");
+      if (!(p.tear > 0.0)) fail(path, "tearLimit must be > 0");
+      bd.crushLimit = static_cast<float>(p.crush);
+      bd.tearLimit = static_cast<float>(p.tear);
       bd.compressionStiffness = static_cast<float>(p.kc);
       if (!p.breakGroup.empty()) {
         bd.breakGroup = breakGroups.emplace(p.breakGroup, static_cast<int32_t>(breakGroups.size())).first->second;
@@ -266,6 +273,8 @@ struct Loader {
       t.arm2 = node(member(item, "arm2"), path + ".arm2");
       t.stiffness = floatOr(item, "k", 0.0f, path);
       t.damping = floatOr(item, "c", 0.0f, path);
+      t.breakTwist = floatOr(item, "breakTwist", t.breakTwist, path);
+      if (!(t.breakTwist > 0.0f)) fail(path, "breakTwist must be > 0");
       body().torsionBars.push_back(t);
     }
   }

@@ -59,7 +59,7 @@ Body buildBody(const BodyDesc& desc) {
   const size_t m = desc.beams.size();
   auto resizeBeams = [m](auto&... arrays) { (arrays.assign(m, {}), ...); };
   resizeBeams(b.beamA, b.beamB, b.beamType, b.stiffness, b.damping, b.restLength, b.initialRestLength,
-              b.plasticForce, b.hardening, b.breakForce, b.deformLimit, b.plasticDeformation, b.minLength,
+              b.plasticForce, b.hardening, b.breakForce, b.deformLimit, b.crushFloor, b.tearLength, b.plasticDeformation, b.minLength,
               b.maxLength, b.breakGroup, b.broken, b.compressionStiffness, b.hydroChannel, b.hydroFactor,
               b.hydroSpeed);
   require(desc.hydroChannels >= 0, "negative hydroChannels");
@@ -90,6 +90,10 @@ Body buildBody(const BodyDesc& desc) {
     b.hardening[k] = d.hardening;
     b.breakForce[k] = d.breakForce;
     b.deformLimit[k] = d.deformLimit;
+    require(d.crushLimit > 0.0f && d.crushLimit <= 1.0f, tag + " crushLimit must be in (0, 1]");
+    require(d.tearLimit > 0.0f, tag + " tearLimit must be > 0");
+    b.crushFloor[k] = (1.0f - d.crushLimit) * rest;
+    b.tearLength[k] = std::isfinite(d.tearLimit) ? (1.0f + d.tearLimit) * rest : kInfiniteForce;
     b.minLength[k] = d.minLength;
     b.maxLength[k] = d.maxLength;
     b.breakGroup[k] = d.breakGroup;
@@ -146,6 +150,17 @@ Body buildBody(const BodyDesc& desc) {
     b.torsionDamping.push_back(d.damping);
     b.torsionRestAngle.push_back(0.0);
     b.torsionRestAngle.back() = detail::torsionBarAngle(b, static_cast<int>(k));
+    require(d.breakTwist > 0.0f, "torsion bar " + std::to_string(k) + " breakTwist must be > 0");
+    b.torsionBreakTwist.push_back(d.breakTwist);
+    const auto lever2 = [&](int32_t arm, int32_t p, int32_t q) {
+      const Vec3 axis = b.nodePosition(q) - b.nodePosition(p);
+      const Vec3 r = b.nodePosition(arm) - b.nodePosition(p);
+      const Vec3 perp = r - axis * (dot(r, axis) / std::max(dot(axis, axis), 1e-12f));
+      return 0.25f * dot(perp, perp);  // (½·initial length)²
+    };
+    b.torsionMinLever1.push_back(lever2(d.arm1, d.pivot1, d.pivot2));
+    b.torsionMinLever2.push_back(lever2(d.arm2, d.pivot2, d.pivot1));
+    b.torsionBroken.push_back(0);
   }
   return b;
 }

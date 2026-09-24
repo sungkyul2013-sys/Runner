@@ -53,6 +53,12 @@ struct BeamDesc {
   float hardening = 0.0f;              // [-] post-yield slope as a fraction of k (0 = perfectly plastic)
   float breakForce = kInfiniteForce;   // [N] elastic force magnitude at which the beam breaks
   float deformLimit = kInfiniteForce;  // [-] accumulated plastic strain at which the beam breaks
+  // [-] fraction of the initial length a beam can be plastically crushed: the rest length never yields below
+  // (1 − crushLimit)·L0,init. Crushed sheet metal and tube stacks densify rather than vanish, so from there the beam
+  // stays elastic (and keeps the two nodes apart) instead of yielding further.
+  float crushLimit = 0.95f;
+  // [-] net plastic elongation (L0 − L0,init)/L0,init at which the beam tears (ductile tensile rupture).
+  float tearLimit = kInfiniteForce;
   float minLength = 0.0f;              // [m] kBounded only
   float maxLength = 0.0f;              // [m] kBounded only
   int32_t breakGroup = -1;             // beams sharing a group break together (§4.3)
@@ -85,6 +91,9 @@ struct TorsionBarDesc {
   int32_t arm1 = -1, pivot1 = -1, pivot2 = -1, arm2 = -1;
   float stiffness = 0.0f;  // [N·m/rad]
   float damping = 0.0f;    // [N·m·s/rad]
+  // The bar or its end links fail (crash damage, §4.3) when the relative twist exceeds this [rad], or when a lever is
+  // folded onto the pivot axis (its perpendicular length below half the initial one: the lever geometry is gone).
+  float breakTwist = 1.0f;
 };
 
 struct BodyDesc {
@@ -154,6 +163,8 @@ struct Body {
   std::vector<float> restLength;        // current (plastically updated) rest length [m]
   std::vector<float> initialRestLength; // [m]
   std::vector<float> plasticForce, hardening, breakForce, deformLimit;
+  std::vector<float> crushFloor;        // [m] lowest plastic rest length, (1 − crushLimit)·L0,init
+  std::vector<float> tearLength;        // [m] plastic rest length at which the beam tears, (1 + tearLimit)·L0,init
   std::vector<float> plasticDeformation; // accumulated |Δ rest length| [m]
   std::vector<float> minLength, maxLength;
   std::vector<int32_t> breakGroup;
@@ -180,6 +191,9 @@ struct Body {
   std::vector<int32_t> torsionArm1, torsionPivot1, torsionPivot2, torsionArm2;
   std::vector<float> torsionStiffness, torsionDamping;
   std::vector<double> torsionRestAngle;       // [rad]
+  std::vector<float> torsionBreakTwist;       // [rad]
+  std::vector<float> torsionMinLever1, torsionMinLever2;  // [m²] squared perpendicular lever length at which it fails
+  std::vector<uint8_t> torsionBroken;
 
   // ---- bookkeeping ----
   EnergyLosses losses;

@@ -115,9 +115,17 @@ void accumulateConstraintForces(Body& b) {
 
   // Torsion bars: restoring torque on the relative twist of the two levers.
   for (int i = 0; i < b.torsionBarCount(); ++i) {
+    if (b.torsionBroken[i]) continue;
     const TorsionGeometry t = torsionGeometry(b, i);
-    if (!t.valid) continue;
-    const double twist = wrapAngle(t.angle - b.torsionRestAngle[i]);
+    const double twist = t.valid ? wrapAngle(t.angle - b.torsionRestAngle[i]) : 0.0;
+    // Failure (§4.3): twisted beyond its limit, or a lever folded onto the axis. Its elastic energy is released.
+    if (!t.valid || std::fabs(twist) > b.torsionBreakTwist[i] || dot(t.r1, t.r1) < b.torsionMinLever1[i] ||
+        dot(t.r2, t.r2) < b.torsionMinLever2[i]) {
+      b.torsionBroken[i] = 1;
+      b.losses.fracture += 0.5 * b.torsionStiffness[i] * twist * twist;
+      b.topologyVersion++;
+      continue;
+    }
     const int a1 = b.torsionArm1[i], p1 = b.torsionPivot1[i], p2 = b.torsionPivot2[i], a2 = b.torsionArm2[i];
     const double l1 = dot(t.r1, t.r1), l2 = dot(t.r2, t.r2);
     const double w1 = dot(t.axis, cross(t.r1, dvel(b, a1) - dvel(b, p1))) / l1;
@@ -158,6 +166,7 @@ double constraintPotentialEnergy(const Body& b) {
     if (v > 1e-9) e += -(absolute0 * v0 * std::log(v / v0) - ambient * (v - v0));
   }
   for (int i = 0; i < b.torsionBarCount(); ++i) {
+    if (b.torsionBroken[i]) continue;
     const double twist = wrapAngle(torsionBarAngle(b, i) - b.torsionRestAngle[i]);
     e += 0.5 * b.torsionStiffness[i] * twist * twist;
   }

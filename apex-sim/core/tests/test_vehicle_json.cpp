@@ -58,6 +58,9 @@ struct Porsche {
   void input(const VehicleInput& in) { world->setVehicleInput(vehicle, in); }
   DVec3 center() const { return world->body(body).nodeWorldPosition(car.build.vehicle.refCenter); }
   double seconds(double s) { const int n = static_cast<int>(s / world->params().dt + 0.5); world->step(n); return n * world->params().dt; }
+  // Work absorbed by plastic yielding so far [J]: driving loads must stay below every yield force (§4.3 crash
+  // structure only yields in a crash).
+  double plastic() const { return world->body(body).losses.plastic; }
 };
 
 }  // namespace
@@ -163,6 +166,7 @@ TEST_CASE("Porsche 911 Turbo: ABS stop from 100 km/h within the §23.2 band", "[
   CHECK(distance >= 35.0);
   CHECK(distance <= 42.0);
   CHECK(std::fabs(p.tel().forward.x) < 0.02);  // straight
+  CHECK(p.plastic() == 0.0);
 }
 
 TEST_CASE("Porsche 911 Turbo: 0-100 km/h within 5 % of the target", "[vehicle_json][porsche][23.2]") {
@@ -176,6 +180,7 @@ TEST_CASE("Porsche 911 Turbo: 0-100 km/h within 5 % of the target", "[vehicle_js
   const double goal = target(p.car, "zeroTo100");
   INFO("0-100 " << t << " s (target " << goal << " s)");
   CHECK(std::fabs(t - goal) <= 0.05 * goal);
+  CHECK(p.plastic() == 0.0);
 }
 
 TEST_CASE("Porsche 911 Turbo: coastdown 99 to 80 km/h within 5 % of the road-load model", "[vehicle_json][porsche][23.2]") {
@@ -236,6 +241,7 @@ TEST_CASE("Porsche 911 Turbo: steady skidpad (R 30.5 m) grip of a sports car", "
   INFO("max steady lateral acceleration " << best << " g (target " << target(p.car, "skidpadG") << " g)");
   CHECK(best >= 0.95);
   CHECK(best <= 1.1);
+  CHECK(p.plastic() == 0.0);
 }
 
 TEST_CASE("Porsche 911 Turbo: handbrake holds on a 30 % slope", "[vehicle_json][porsche][23.1]") {
@@ -277,12 +283,14 @@ TEST_CASE("Porsche 911 Turbo: no wheel hop at 200+ km/h under full throttle", "[
     CHECK(lo[i] > 0.6 * 0.5 * (lo[i] + hi[i]));
     CHECK(hi[i] < 1.4 * 0.5 * (lo[i] + hi[i]));
   }
+  CHECK(p.plastic() == 0.0);
 }
 
 TEST_CASE("Porsche 911 Turbo: a wall crash in the drive scene keeps the energy books", "[vehicle_json][porsche][crash]") {
-  // The web drive scene: 90 km/h at full throttle into the end wall, bounce and landing. The car is elastic until
-  // the M2 crumple model, so it rebounds — but no energy may appear from nowhere. (A tread node pressed onto the
-  // ground once froze under the CCD clamp and pumped 23 MJ into the car within 0.1 s.)
+  // The web drive scene: 90 km/h at full throttle into the end wall (≈ 110 km/h at impact), crush, bounce and landing.
+  // No energy may appear from nowhere. (A tread node pressed onto the ground once froze under the CCD clamp and pumped
+  // 23 MJ into the car within 0.1 s; an anti-roll-bar lever folded onto its pivot axis flung the pivot node at
+  // 180 m/s before torsion bars could fail.)
   SceneOptions so;
   so.threads = 1;
   so.trackEnergy = true;
@@ -303,4 +311,71 @@ TEST_CASE("Porsche 911 Turbo: a wall crash in the drive scene keeps the energy b
   INFO("worst |balance| " << worst / 1e3 << " kJ, peak kinetic " << peakKinetic / 1e3 << " kJ");
   CHECK(w->vehicleTelemetry(v).speed < 5.0f);  // it did hit the wall
   CHECK(worst < 0.03 * peakKinetic);
+}
+
+TEST_CASE("Porsche 911 Turbo: 64 km/h rigid-wall crash crumples the nose and closes the energy balance",
+          "[vehicle_json][porsche][crash][23.1]") {
+  // §23.1 energy balance with a real vehicle (KICKOFF C3: engine and brakes off): the 1,595 kg car at 64 km/h
+  // (17.78 m/s, 252 kJ + wheel spin) into the drive scene's concrete wall. Balance = ΔKE + ΔPE + plastic + damping +
+  // friction + fracture + CCD − external work must close within 5 %. The crash structure (generator: section yield
+  // forces) must crush the nose by a realistic amount at a realistic pulse while the passenger cell stays intact.
+  SceneOptions so;
+  so.threads = 1;
+  so.trackEnergy = true;
+  auto w = makeScene("drive", so);
+  const float v0 = 64.0f / 3.6f;
+  const LoadedVehicle car = loadVehicleJson(porscheJson(), {{0.0, 0.0, 296.6}, 0.0, v0});
+  const int body = w->addBody(car.build.body);
+  const int v = w->addVehicle(body, car.build.vehicle);
+  VehicleInput in;
+  in.mode = GearMode::kNeutral;
+  w->setVehicleInput(v, in);
+  const Body& b = w->body(body);
+  auto node = [&](const char* id) {
+    for (int i = 0; i < b.nodeCount(); ++i)
+      if (car.nodeIds[i] == id) return i;
+    FAIL("no node " << id);
+    return -1;
+  };
+  // Nose: front-most lattice layer relative to the centre reference; cell: floor nodes 0.9 m ahead of / behind centre.
+  const int centre = car.build.vehicle.refCenter, cellFront = node("c4_1_10"), cellRear = node("c4_1_4");
+  auto noseLength = [&] {
+    double zMax = -1e9;
+    for (int i = 0; i < b.nodeCount(); ++i)
+      if (!car.nodeIds[i].empty() && car.nodeIds[i][0] == 'c') zMax = std::max(zMax, b.nodeWorldPosition(i).z);
+    return zMax - b.nodeWorldPosition(centre).z;
+  };
+  auto cellLength = [&] { return length(b.nodePosition(cellFront) - b.nodePosition(cellRear)); };
+  double mass = 0.0;
+  for (int i = 0; i < b.nodeCount(); ++i) mass += b.mass[i];
+  auto meanVz = [&] {
+    double p = 0.0;
+    for (int i = 0; i < b.nodeCount(); ++i) p += b.mass[i] * b.vz[i];
+    return p / mass;
+  };
+  const double kinetic0 = w->measureEnergy().kinetic, nose0 = noseLength(), cell0 = cellLength();
+  double worst = 0.0, minNose = nose0, peakDecel = 0.0, rebound = 0.0, prevV = meanVz();
+  const int window = 10;  // 5 ms mean deceleration (a CFC-60-like filter of the pulse)
+  for (int k = 0; k < 300; ++k) {
+    w->step(window);
+    const double vz = meanVz();
+    peakDecel = std::max(peakDecel, (prevV - vz) / (window * w->params().dt) / kStandardGravity);
+    prevV = vz;
+    rebound = std::max(rebound, -vz);
+    minNose = std::min(minNose, noseLength());
+    worst = std::max(worst, std::abs(w->measureEnergy().balance()));
+  }
+  const EnergyReport e = w->measureEnergy();
+  INFO("KE0 " << kinetic0 / 1e3 << " kJ, worst |balance| " << worst / 1e3 << " kJ, plastic " << e.losses.plastic / 1e3
+              << " kJ, dynamic crush " << nose0 - minNose << " m, residual " << nose0 - noseLength() << " m, cell "
+              << cell0 - cellLength() << " m shorter, peak " << peakDecel << " g, rebound " << rebound * 3.6
+              << " km/h");
+  CHECK(worst < 0.05 * kinetic0);                        // §23.1
+  CHECK(e.losses.plastic > 0.4 * kinetic0);              // most of the energy goes into crushing metal
+  CHECK(nose0 - minNose > 0.4);                          // crumple zone [m]
+  CHECK(nose0 - minNose < 0.9);
+  CHECK(cell0 - cellLength() < 0.03);                    // passenger cell intact
+  CHECK(peakDecel > 20.0);
+  CHECK(peakDecel < 60.0);
+  CHECK(rebound < 0.25 * v0);                            // mostly plastic, not an elastic bounce
 }

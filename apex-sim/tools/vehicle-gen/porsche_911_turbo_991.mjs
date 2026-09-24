@@ -87,6 +87,53 @@ const inside = (p) => {
 b.buildLattice({ xs, ys, zs, inside, axialStiffness: 1.8e5 });
 const latticeId = (x, y, z) => `c${xs.indexOf(x)}_${ys.indexOf(y)}_${zs.indexOf(z)}`;
 
+// ---- crash structure (§4.3): yield, densification and tearing of the lattice ------------------------------------
+// Each lattice beam yields at the force that makes its cross-section (plane z = const) crush at the section force
+// below: F_beam = F_section(z) / Σ|cos θ| over the beams crossing that plane. Crumple zones ahead of the front axle
+// (luggage bay, fuel tank) and behind the rear axle (engine bay) are soft; the passenger cell between the axles is
+// ≈ 3× stronger, so a frontal crash crushes the nose and leaves the cell intact. Engineering estimates for a
+// 1.6 t sports car: 64 km/h into a rigid wall (262 kJ) at an average crush force of ≈ 400 kN gives ≈ 0.6 m of crush
+// and ≈ 25 g mean deceleration, in line with published full-width rigid-barrier pulses (NHTSA NCAP, 56 km/h: 20–30 g).
+const crash = {
+  front: 3.0e5,    // [N] section yield force of the front crumple zone
+  cabin: 9.0e5,    // [N] passenger cell
+  rear: 4.0e5,     // [N] engine bay
+  blend: 0.15,     // [m] linear blend between zones
+  hardening: 0.05, // [-] post-yield slope (fraction of k): progressive crush, no snap-through
+  crushLimit: 0.7, // [-] crushed sheet metal densifies at ≈ 30 % of its length
+  tearLimit: 0.35, // [-] ductile tearing at 35 % net elongation (deep-drawing steel: 30–40 % elongation at break)
+};
+const zoneForce = (z) => {
+  const ramp = (a, b0, t) => a + (b0 - a) * Math.min(1, Math.max(0, t));
+  const fFront = zF - 0.15, fRear = zR + 0.15;  // zone boundaries: just inside each axle
+  if (z > fFront) return ramp(crash.cabin, crash.front, (z - fFront) / crash.blend);
+  if (z < fRear) return ramp(crash.cabin, crash.rear, (fRear - z) / crash.blend);
+  return crash.cabin;
+};
+{
+  const latticeBeams = b.beams.filter(([, , g]) => g === 'chassis');
+  const sectionCos = (z) => {
+    let s = 0;
+    for (const [a, c] of latticeBeams) {
+      const pa = b.pos(a), pc = b.pos(c);
+      if ((pa[2] - z) * (pc[2] - z) < 0) s += Math.abs(pc[2] - pa[2]) / dist(pa, pc);
+    }
+    return s;
+  };
+  const cosCache = new Map();
+  for (const beam of latticeBeams) {
+    const pa = b.pos(beam[0]), pc = b.pos(beam[1]);
+    // Section through the beam's midpoint, nudged off node layers (a plane through a layer crosses no beam).
+    const zm = Math.round(((pa[2] + pc[2]) / 2) * 1000) / 1000;
+    const zc = zs.includes(zm) ? zm + 0.15 * Math.sign(-zm || 1) : zm;
+    if (!cosCache.has(zc)) cosCache.set(zc, sectionCos(zc));
+    const yieldForce = zoneForce((pa[2] + pc[2]) / 2) / cosCache.get(zc);
+    Object.assign(beam[3], {
+      plasticForce: Math.round(yieldForce), hardening: crash.hardening, crushLimit: crash.crushLimit, tearLimit: crash.tearLimit,
+    });
+  }
+}
+
 // ---- suspension ------------------------------------------------------------------------------------------------
 const hydroChannel = 0, steeringLock = 0.49;  // [rad] ≈ 10.6 m turning circle
 const ride = { front: { freq: 1.8, zeta: 0.3 }, rear: { freq: 2.0, zeta: 0.3 } };

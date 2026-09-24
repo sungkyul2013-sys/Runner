@@ -8,7 +8,6 @@ namespace sbc::detail {
 namespace {
 
 constexpr float kDegenerateLength2 = 1e-12f;   // [m²] beams shorter than 1 µm exert no force this step
-constexpr float kMinRestFraction = 0.05f;      // [-] a beam crushed below 5 % of its initial rest length breaks
 
 struct Geometry {
   float length;         // current length L [m]
@@ -47,6 +46,8 @@ inline void applyBeamForce(Body& b, int a, int c, const Geometry& g, float force
 //   yield force  F_y(δp) = F_y0 + H·δp,   H = k·h/(1−h)  (plastic modulus for tangent slope h·k)
 //   trial force  f = k(L − L0); if |f| > F_y: Δλ = (|f| − F_y)/(k + H), L0 += sign(f)·Δλ
 // Plastic work ΔW = (F_y + ½HΔλ)·Δλ is booked as absorbed energy (§4.3, §5.3).
+// Crushing stops at the densification floor (crushFloor): the rest length never yields below it, and the beam is
+// elastic about the floor from there on. Stretching past tearLength tears the beam (ductile rupture).
 // Returns the corrected elastic force; sets `broke` when a break criterion is met.
 inline float plasticReturn(Body& b, int i, float length, bool& broke, float k) {
   float fe = k * (length - b.restLength[i]);
@@ -57,14 +58,17 @@ inline float plasticReturn(Body& b, int i, float length, bool& broke, float k) {
     const float fy = fy0 + plasticModulus * b.plasticDeformation[i];
     const float magnitude = std::fabs(fe);
     if (magnitude > fy) {
-      const float dl = (magnitude - fy) / (k + plasticModulus);
+      float dl = (magnitude - fy) / (k + plasticModulus);
       const float s = fe > 0.0f ? 1.0f : -1.0f;
-      b.restLength[i] += s * dl;
-      b.plasticDeformation[i] += dl;
-      b.losses.plastic += static_cast<double>((fy + 0.5f * plasticModulus * dl) * dl);
-      fe = s * (fy + plasticModulus * dl);
-      const float initial = b.initialRestLength[i];
-      if (b.plasticDeformation[i] > b.deformLimit[i] * initial || b.restLength[i] < kMinRestFraction * initial) {
+      const bool densified = s < 0.0f && b.restLength[i] - dl < b.crushFloor[i];
+      if (densified) dl = std::max(0.0f, b.restLength[i] - b.crushFloor[i]);
+      if (dl > 0.0f) {
+        b.restLength[i] = densified ? b.crushFloor[i] : b.restLength[i] + s * dl;
+        b.plasticDeformation[i] += dl;
+        b.losses.plastic += static_cast<double>((fy + 0.5f * plasticModulus * dl) * dl);
+      }
+      fe = densified ? k * (length - b.restLength[i]) : s * (fy + plasticModulus * dl);
+      if (b.plasticDeformation[i] > b.deformLimit[i] * b.initialRestLength[i] || b.restLength[i] > b.tearLength[i]) {
         broke = true;
       }
     }
