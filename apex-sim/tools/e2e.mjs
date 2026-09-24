@@ -96,7 +96,10 @@ async function main() {
       await page.close();
       console.log('screenshots → docs/screenshots/');
     }
-    // 2b. driving: keyboard in, telemetry out (the car is the physics vehicle; the view is its GLB bound to it)
+    // 2b. driving: keyboard in, telemetry out (the car is the physics vehicle; the view is its GLB bound to it).
+    // Headless SwiftShader renders about one frame per second and input travels once per frame, so each phase is
+    // ended by telemetry (speed, heading) rather than by wall time — otherwise the car keeps its last input for
+    // seconds of sim time and ends at the far wall.
     {
       const dir = join(root, 'docs', 'screenshots');
       const { page, consoleErrors } = await openPage(browser, '?drive=porsche_911_turbo_991');
@@ -104,33 +107,40 @@ async function main() {
       const tel = () =>
         page.evaluate(() => {
           const s = window.__apex.drive.latest;
-          return { kmh: s.speed * 3.6, gear: s.gear, up: s.up[1], fwd: [s.forward[0], s.forward[2]], pos: s.position };
+          return { kmh: s.speed * 3.6, gear: s.gear, up: s.up[1], heading: Math.atan2(s.forward[0], s.forward[2]) };
         });
+      const until = async (test, maxMs) => {
+        const t0 = Date.now();
+        let s = await tel();
+        while (!test(s) && Date.now() - t0 < maxMs) {
+          await page.waitForTimeout(100);
+          s = await tel();
+        }
+        return s;
+      };
+      let minUp = 1;
+      const track = (s) => ((minUp = Math.min(minUp, s.up)), s);
       await page.waitForTimeout(2000);
-      const rest = await tel();
+      const rest = track(await tel());
       await page.keyboard.down('KeyW');
-      await page.waitForTimeout(5000);
-      const launched = await tel();
+      const launched = track(await until((s) => s.kmh > 80, 20000));
+      await page.keyboard.up('KeyW');
       await page.screenshot({ path: join(dir, 'M1-drive-launch.png') });
       await page.keyboard.down('KeyA');
-      await page.waitForTimeout(1500);
+      const turned = track(await until((s) => Math.abs(s.heading - launched.heading) > 0.15, 10000));
       await page.keyboard.up('KeyA');
-      await page.keyboard.up('KeyW');
-      const turned = await tel();
       await page.screenshot({ path: join(dir, 'M1-drive-turn.png') });
       await page.keyboard.down('KeyS');
-      await page.waitForTimeout(5000);
+      const braked = track(await until((s) => s.kmh < 5, 15000)); // release before the stop: held S at rest selects reverse
       await page.keyboard.up('KeyS');
-      const stopped = await tel();
-      const heading = (f) => Math.atan2(f[0], f[1]);
-      const turn = Math.abs(heading(turned.fwd) - heading(launched.fwd));
-      console.log('drive:', JSON.stringify({ rest: rest.kmh, launched: launched.kmh, gear: launched.gear, turnRad: turn, stopped: stopped.kmh }));
+      const turn = Math.abs(turned.heading - launched.heading);
+      console.log('drive:', JSON.stringify({ rest: rest.kmh, launched: launched.kmh, gear: launched.gear, turnRad: turn, braked: braked.kmh, minUp }));
       if (Math.abs(rest.kmh) > 2) failures.push(`drive: the car creeps at rest (${rest.kmh.toFixed(1)} km/h)`);
-      if (launched.kmh < 40) failures.push(`drive: only ${launched.kmh.toFixed(1)} km/h after 5 s of throttle`);
+      if (launched.kmh < 80) failures.push(`drive: only ${launched.kmh.toFixed(1)} km/h after 20 s of throttle`);
       if (launched.gear < 2) failures.push('drive: the automatic did not upshift');
-      if (turn < 0.1) failures.push(`drive: steering left turned the car by only ${turn.toFixed(3)} rad`);
-      if (Math.abs(stopped.kmh) > 3) failures.push(`drive: still ${stopped.kmh.toFixed(1)} km/h after 5 s of braking`);
-      if (Math.min(rest.up, launched.up, turned.up, stopped.up) < 0.9) failures.push('drive: the car tipped over');
+      if (turn < 0.15) failures.push(`drive: steering left turned the car by only ${turn.toFixed(3)} rad`);
+      if (braked.kmh > 5) failures.push(`drive: still ${braked.kmh.toFixed(1)} km/h after 15 s of braking`);
+      if (minUp < 0.9) failures.push('drive: the car tipped over');
       const errors = await page.evaluate(() => window.__apex.errors);
       if (errors.length || consoleErrors.length) failures.push(`errors (drive): ${[...errors, ...consoleErrors].join(' | ')}`);
       await page.close();

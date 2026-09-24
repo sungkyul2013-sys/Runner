@@ -26,7 +26,7 @@ class JobSystem {
   void parallelFor(int count, const std::function<void(int)>& fn);
 
  private:
-  void workerLoop();
+  void workerLoop(unsigned seen);
   void runItems();
 
   std::vector<std::thread> workers_;

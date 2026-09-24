@@ -14,7 +14,11 @@ constexpr int kSpinPolls = 200000;
 JobSystem::JobSystem(int threadCount) {
   const int extra = std::max(0, threadCount - 1);
   workers_.reserve(static_cast<size_t>(extra));
-  for (int i = 0; i < extra; ++i) workers_.emplace_back([this] { workerLoop(); });
+  // Workers start from the generation of *now*, not from whatever they read once scheduled: a first parallelFor
+  // issued before a new thread ran would otherwise already be counted as seen, and the caller would wait for that
+  // worker forever (a hang that showed on a loaded machine).
+  const unsigned start = generation_.load(std::memory_order_acquire);
+  for (int i = 0; i < extra; ++i) workers_.emplace_back([this, start] { workerLoop(start); });
 }
 
 JobSystem::~JobSystem() {
@@ -58,8 +62,7 @@ void JobSystem::parallelFor(int count, const std::function<void(int)>& fn) {
   fn_ = nullptr;
 }
 
-void JobSystem::workerLoop() {
-  unsigned seen = generation_.load(std::memory_order_acquire);
+void JobSystem::workerLoop(unsigned seen) {
   for (;;) {
     int polls = 0;
     while (generation_.load(std::memory_order_acquire) == seen && polls < kSpinPolls) ++polls;
