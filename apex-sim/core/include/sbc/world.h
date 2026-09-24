@@ -26,6 +26,7 @@ struct WorldParams {
   bool trackEnergy = false;                      // per-category dissipation bookkeeping (§5.3)
   float airDensity = 1.225f;                     // ρ [kg/m³] acting on bodies' aero panels (ISA sea level; 0: no air)
   Vec3 wind;                                     // [m/s] steady wind (§10 crosswind), world frame
+  bool staticBvh = true;                         // static broadphase through the BVH (false: linear scan; same result)
 };
 
 // §10 slipstream: the wake a moving vehicle drags behind it (Jensen's top-hat wake with a soft edge). Behind the car
@@ -117,6 +118,8 @@ struct TetherState {
   float tension = 0.0f;      // [N]
   DVec3 nodePosition, anchorPosition;
 };
+
+class StaticBvh;
 
 class World {
  public:
@@ -235,6 +238,9 @@ class World {
   std::vector<std::vector<int>> bodyVehicles_;  // vehicle ids per body
   std::vector<Tether> tethers_;
   std::vector<VehicleWake> wakes_;  // this step's (updated before the forces)
+  std::unique_ptr<StaticBvh> staticBvh_;  // over staticTris_: rebuilt at the next step after geometry was added
+  bool staticBvhDirty_ = false;           // (until then queries scan linearly — the same result)
+  void rebuildStaticBvh();
 
   friend struct ContactSolver;
 };

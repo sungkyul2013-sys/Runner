@@ -7,6 +7,7 @@
 //  • CCD:      a node centre that crosses a static surface during a step is put back on the surface and
 //              loses its inward normal velocity (§5.2 tunnelling guard at 83 m/s ≈ 4.2 cm per step).
 #include "contact.h"
+#include "static_bvh.h"
 
 #include <algorithm>
 #include <cmath>
@@ -124,13 +125,28 @@ void ContactSolver::gatherStaticCandidates(const World& w, const Body& b, Contac
     const float h = static_cast<float>(w.planes_[p].height - b.origin.y);
     if (lo.y < h) s.planes.push_back({h, kPlaneIdBase + static_cast<int32_t>(p), w.planes_[p].material});
   }
-  for (size_t k = 0; k < w.staticTris_.size(); ++k) {
+  auto test = [&](size_t k) {
     const auto& t = w.staticTris_[k];
     const Vec3 offset = toFloat(t.origin - b.origin);
     const Vec3 bmin = t.boundsMin + offset, bmax = t.boundsMax + offset;
-    if (bmax.x < lo.x || bmin.x > hi.x || bmax.y < lo.y || bmin.y > hi.y || bmax.z < lo.z || bmin.z > hi.z) continue;
+    if (bmax.x < lo.x || bmin.x > hi.x || bmax.y < lo.y || bmin.y > hi.y || bmax.z < lo.z || bmin.z > hi.z) return;
     s.tris.push_back({t.v0 + offset, t.v1 + offset, t.v2 + offset, t.normal, bmin, bmax, static_cast<int32_t>(k),
                       t.material});
+  };
+  if (w.params_.staticBvh && !w.staticBvhDirty_ && w.staticBvh_ && !w.staticBvh_->empty()) {
+    // The BVH narrows the map down to the triangles whose world bounds meet the body's (a millimetre wider than the
+    // float test that follows, in index order: the same list as the scan below).
+    constexpr double kSlack = 1e-3;
+    StaticBvh::Box q;
+    const double o[3] = {b.origin.x, b.origin.y, b.origin.z}, l[3] = {lo.x, lo.y, lo.z}, h[3] = {hi.x, hi.y, hi.z};
+    for (int a = 0; a < 3; ++a) {
+      q.lo[a] = o[a] + l[a] - kSlack;
+      q.hi[a] = o[a] + h[a] + kSlack;
+    }
+    w.staticBvh_->query(q, s.staticHits);
+    for (const int32_t k : s.staticHits) test(static_cast<size_t>(k));
+  } else {
+    for (size_t k = 0; k < w.staticTris_.size(); ++k) test(k);
   }
 }
 

@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "contact.h"
+#include "static_bvh.h"
 #include "internal.h"
 #include "sbc/det_math.h"
 #include "sbc/job_system.h"
@@ -114,7 +115,24 @@ int World::addStaticMesh(DVec3 origin, const std::vector<float>& vertices, const
     tri.material = material;
     staticTris_.push_back(tri);
   }
+  staticBvhDirty_ = true;  // rebuilt once, at the next step (a map adds many meshes)
   return first;
+}
+
+void World::rebuildStaticBvh() {
+  std::vector<StaticBvh::Box> bounds(staticTris_.size());
+  for (size_t k = 0; k < staticTris_.size(); ++k) {
+    const StaticTri& t = staticTris_[k];
+    const double lo[3] = {t.boundsMin.x, t.boundsMin.y, t.boundsMin.z}, hi[3] = {t.boundsMax.x, t.boundsMax.y, t.boundsMax.z};
+    const double o[3] = {t.origin.x, t.origin.y, t.origin.z};
+    for (int a = 0; a < 3; ++a) {
+      bounds[k].lo[a] = o[a] + lo[a];
+      bounds[k].hi[a] = o[a] + hi[a];
+    }
+  }
+  if (!staticBvh_) staticBvh_ = std::make_unique<StaticBvh>();
+  staticBvh_->build(bounds);
+  staticBvhDirty_ = false;
 }
 
 int World::addStaticBox(DVec3 center, Vec3 half, double yaw, uint16_t material) {
@@ -209,6 +227,7 @@ void World::step(int count) {
 
 void World::stepOnce() {
   const int n = bodyCount();
+  if (staticBvhDirty_ && params_.staticBvh) rebuildStaticBvh();
   updateWakes();
   jobs_->parallelFor(n, [this](int i) { computeInternalForces(i); });
   if (!tethers_.empty()) applyTethers();

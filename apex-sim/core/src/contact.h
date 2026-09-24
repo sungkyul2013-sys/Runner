@@ -167,6 +167,7 @@ struct ContactScratch {
   SurfaceCache surface;                              // the body's collision triangles this step
   std::vector<std::pair<uint64_t, int32_t>> cells;   // spatial hash (cell key, item), sorted
   std::vector<int32_t> items;                        // candidate buffer
+  std::vector<int32_t> staticHits;                   // static BVH query result
   std::vector<int32_t> tri;                          // candidate triangles of one pass
   std::vector<std::pair<Vec3, Vec3>> boxes;          // their inflated boxes
   std::vector<std::pair<int32_t, int32_t>> pairs;    // (node, triangle) candidates

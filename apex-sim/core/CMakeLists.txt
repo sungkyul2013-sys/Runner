@@ -38,6 +38,7 @@ add_library(sbc STATIC
   src/islands.cpp
   src/tethers.cpp
   src/world.cpp
+  src/static_bvh.cpp
   src/builder.cpp
   src/stability.cpp
   src/job_system.cpp
@@ -143,6 +144,7 @@ if(SBC_BUILD_TESTS)
     tests/test_tethers.cpp
     tests/test_tyres.cpp
     tests/test_aero.cpp
+    tests/test_static_bvh.cpp
   )
   target_link_libraries(sbc_tests PRIVATE sbc Catch2::Catch2WithMain)
   target_compile_options(sbc_tests PRIVATE ${SBC_FP_FLAGS})
