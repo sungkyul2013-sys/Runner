@@ -210,6 +210,7 @@ void World::step(int count) {
 void World::stepOnce() {
   const int n = bodyCount();
   jobs_->parallelFor(n, [this](int i) { computeInternalForces(i); });
+  if (!tethers_.empty()) applyTethers();
   stats_ = {};
   if (n > 1) {
     stats_.bodyContacts = params_.trackEnergy ? ContactSolver::bodyContacts<true>(*this)
@@ -268,6 +269,7 @@ void World::stepOnce() {
     bodyVehicles_.emplace_back();
     stats_.islandsSplit++;
   }
+  if (!parts.empty() && !tethers_.empty()) rebindTethers(n);
   for (const StepStats& s : bodyStats_) {  // serial reduction in body order
     stats_.staticContacts += s.staticContacts;
     stats_.selfContacts += s.selfContacts;
@@ -454,6 +456,11 @@ uint64_t World::stateHash() const {
     for (const DamageGroupState& g : b.damageGroups) { h.value(g.firstStep); h.value(g.peakStrain); h.value(g.peakImpact); }
   }
   for (const auto& v : vehicles_) v->hashState(h);
+  for (const Tether& t : tethers_) {
+    h.value(t.active); h.value(t.desc.body); h.value(t.desc.node); h.value(t.desc.anchorBody); h.value(t.desc.anchorNode);
+    h.value(t.desc.anchor.x); h.value(t.desc.anchor.y); h.value(t.desc.anchor.z);
+    h.value(t.length); h.value(t.targetLength); h.value(t.tension);
+  }
   return h.h;
 }
 

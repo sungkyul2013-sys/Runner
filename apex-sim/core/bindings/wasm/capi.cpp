@@ -141,6 +141,56 @@ int sbc_world_add_body_velocity(sbc_world* w, int body, float dvx, float dvy, fl
   return 0;
 }
 
+int sbc_world_add_tether(sbc_world* w, int body, int node, int anchorBody, int anchorNode, double x, double y, double z,
+                         float length, int rope, float maxForce, float reelSpeed) {
+  if (!w) return -1;
+  return guarded([&] {
+    sbc::TetherDesc d;
+    d.body = body;
+    d.node = node;
+    d.anchorBody = anchorBody;
+    d.anchorNode = anchorNode;
+    d.anchor = {x, y, z};
+    d.length = length;
+    d.rope = rope != 0;
+    d.maxForce = maxForce;
+    d.reelSpeed = reelSpeed;
+    return w->world.addTether(d);
+  });
+}
+
+static bool validTether(sbc_world* w, int id) { return w && id >= 0 && id < w->world.tetherCount(); }
+
+int sbc_world_set_tether_anchor(sbc_world* w, int id, double x, double y, double z) {
+  if (!validTether(w, id)) return -1;
+  w->world.setTetherAnchor(id, {x, y, z});
+  return 0;
+}
+
+int sbc_world_set_tether_length(sbc_world* w, int id, float length) {
+  if (!validTether(w, id)) return -1;
+  w->world.setTetherTargetLength(id, length);
+  return 0;
+}
+
+int sbc_world_remove_tether(sbc_world* w, int id) {
+  if (!validTether(w, id)) return -1;
+  w->world.removeTether(id);
+  return 0;
+}
+
+int sbc_world_tether_count(sbc_world* w) { return w ? w->world.tetherCount() : 0; }
+
+int sbc_world_tether_state(sbc_world* w, int id, double* out) {
+  if (!validTether(w, id) || !out) return -1;
+  const sbc::TetherState s = w->world.tether(id);
+  const double v[SBC_TETHER_STATE] = {s.active ? 1.0 : 0.0, static_cast<double>(s.body), static_cast<double>(s.node),
+                                      s.length, s.targetLength, s.tension, s.nodePosition.x, s.nodePosition.y,
+                                      s.nodePosition.z, s.anchorPosition.x, s.anchorPosition.y, s.anchorPosition.z};
+  std::copy(v, v + SBC_TETHER_STATE, out);
+  return SBC_TETHER_STATE;
+}
+
 void sbc_world_step(sbc_world* w, int steps) {
   if (w && steps > 0) w->world.step(steps);
 }

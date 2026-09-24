@@ -15,7 +15,37 @@ export type ToWorker =
   | { type: 'step'; steps: number }
   | { type: 'hash' }
   | { type: 'spawnVehicle'; request: number; source: VehicleSource; pose: VehiclePose; label: string }
-  | { type: 'vehicleInput'; vehicle: number; input: VehicleInput };
+  | { type: 'vehicleInput'; vehicle: number; input: VehicleInput }
+  | { type: 'tether'; request: number; desc: TetherDesc }
+  | { type: 'tetherAnchor'; id: number; anchor: [number, number, number] }
+  | { type: 'tetherLength'; id: number; length: number }
+  | { type: 'tetherRemove'; id: number };
+
+/** §20 tether (core TetherDesc): a grab (pulls its node toward `anchor`, saturating at maxForce) or a rope/winch
+ *  (pulls only, above its length). anchorBody −1: the anchor is the world point. */
+export interface TetherDesc {
+  body: number;
+  node: number;
+  anchorBody: number;
+  anchorNode: number;
+  anchor: [number, number, number]; // world [m]
+  length: number;
+  rope: boolean;
+  maxForce: number; // [N] 0: unlimited, < 0: −maxForce × the tied body's weight
+  reelSpeed: number; // [m/s]
+}
+
+/** Published tether state (world frame). */
+export interface TetherState {
+  id: number;
+  body: number;
+  node: number;
+  length: number;
+  targetLength: number;
+  tension: number; // [N]
+  nodePosition: [number, number, number];
+  anchorPosition: [number, number, number];
+}
 
 /** A vehicle's physics definition: an "apex-vehicle" JSON document (fetched by the worker) or the built-in Proto. */
 export type VehicleSource = { kind: 'json'; url: string } | { kind: 'proto' };
@@ -61,4 +91,6 @@ export type FromWorker =
   | { type: 'vehicle'; request: number; vehicle: number; body: number; wheels: number; label: string }
   | { type: 'vehicleFailed'; request: number; message: string }
   | { type: 'damage'; body: number; ids: string[]; status: Float32Array } // damage groups changed (8 floats per group)
+  | { type: 'tether'; request: number; id: number } // −1: rejected (not a free node)
+  | { type: 'tethers'; states: TetherState[] } // the active tethers, with each published frame while any exist
   | { type: 'error'; message: string };

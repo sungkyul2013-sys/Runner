@@ -157,3 +157,7 @@ select { width: 100%; }
   .graphs { left: 16px; grid-template-columns: 1fr; }
   .graph canvas { height: 90px; }
 }
+
+/* §20 tools (grab, crane / winch) */
+.panel .tools .row button.active { border-color: var(--accent); color: var(--accent); }
+.panel .toolhelp { color: var(--text-3); font-size: 11px; line-height: 1.4; }

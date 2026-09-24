@@ -82,6 +82,31 @@ struct StepStats {
 
 inline constexpr int kMaxMaterials = 64;  // material ids are < kMaxMaterials
 
+// §20 sandbox tools: a spring-damper from a node to an anchor — a world point the caller moves (node grab, crane hook)
+// or a node of another body (tow rope). A grab pulls its node toward the point in every direction and saturates at
+// `maxForce` (its strength). A rope (`rope`) only pulls, above its length; a winch reels that length toward a target at
+// `reelSpeed` while the tension stays under `maxForce` (its capacity) and pays out above it. The tether is an outside
+// agent: the work of its force is booked as external (§5.3).
+struct TetherDesc {
+  int body = -1, node = -1;
+  int anchorBody = -1, anchorNode = -1;  // −1: the anchor is the world point `anchor`
+  DVec3 anchor;
+  float length = 0.0f;        // [m] rope length (a grab ignores it)
+  bool rope = false;
+  float stiffness = 0.0f;     // [N/m] 0: the stiffest the tied node takes stably (k·dt²/m = 0.05)
+  float dampingRatio = 1.0f;  // of the tied node on the spring
+  float maxForce = 0.0f;      // [N] grab strength / winch capacity (0: unlimited; < 0: −maxForce × the tied body's weight)
+  float reelSpeed = 0.5f;     // [m/s]
+};
+
+struct TetherState {
+  bool active = false;
+  int body = -1, node = -1;  // where the tied node is now (it follows the node into a part that broke off)
+  float length = 0.0f, targetLength = 0.0f;
+  float tension = 0.0f;      // [N]
+  DVec3 nodePosition, anchorPosition;
+};
+
 class World {
  public:
   explicit World(const WorldParams& params = {});
@@ -129,6 +154,14 @@ class World {
   const VehicleInput& vehicleInput(int vehicle) const;
   const VehicleTelemetry& vehicleTelemetry(int vehicle) const;
 
+  // ---- tethers (§20 node grab, crane / winch, tow rope) ----
+  int addTether(const TetherDesc& desc);  // returns its id (ids are never reused)
+  void setTetherAnchor(int id, DVec3 anchor);  // world-point anchors only
+  void setTetherTargetLength(int id, float length);
+  void removeTether(int id);
+  int tetherCount() const { return static_cast<int>(tethers_.size()); }
+  TetherState tether(int id) const;
+
   // ---- stepping ----
   void step(int count = 1);
   uint64_t stepIndex() const { return stepIndex_; }
@@ -154,12 +187,20 @@ class World {
     double height = 0.0;
     uint16_t material = 0;
   };
+  struct Tether {
+    TetherDesc desc;
+    bool active = false;
+    double stiffness = 0.0, damping = 0.0;
+    double length = 0.0, targetLength = 0.0, tension = 0.0;
+  };
 
   void stepOnce();
   double potentialEnergy(bool extendedBand) const;  // gravity + elastic + contact [J]
   void computeInternalForces(int bodyIndex);
   void integrateBody(int bodyIndex);
   void finishBody(int bodyIndex);
+  void applyTethers();
+  void rebindTethers(int firstPart);
 
   WorldParams params_;
   std::unique_ptr<JobSystem> jobs_;
@@ -173,6 +214,7 @@ class World {
   std::vector<ContactScratch> scratch_;  // one per body
   std::vector<std::unique_ptr<Vehicle>> vehicles_;
   std::vector<std::vector<int>> bodyVehicles_;  // vehicle ids per body
+  std::vector<Tether> tethers_;
 
   friend struct ContactSolver;
 };

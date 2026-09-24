@@ -12,7 +12,7 @@ import {
   type EnergyField,
   type SlotViews,
 } from './layout';
-import type { BodyTopology, FromWorker, ToWorker, Transport, VehicleInput, VehiclePose, VehicleSource } from './messages';
+import type { BodyTopology, FromWorker, TetherDesc, TetherState, ToWorker, Transport, VehicleInput, VehiclePose, VehicleSource } from './messages';
 import { packLattice, type LatticeParams } from './sbc';
 import { blendVehicle, decodeVehicle, VT, type VehicleState } from './telemetry';
 
@@ -98,6 +98,9 @@ export class PhysicsClient {
   };
   private pending = new Map<string, (msg: FromWorker) => void>();
   private vehicleRequests = new Map<number, { resolve: (v: SpawnedVehicle) => void; reject: (e: Error) => void }>();
+  private tetherRequests = new Map<number, (id: number) => void>();
+  /** Active tethers (§20 grab, crane / winch), render space; refreshed with the published frames. */
+  tethers: TetherState[] = [];
   private nextRequest = 1;
 
   /** True when the page may share memory with the worker (cross-origin isolated): threaded WASM + SAB frames. */
@@ -165,6 +168,23 @@ export class PhysicsClient {
   setVehicleInput(vehicle: number, input: VehicleInput): void {
     this.send({ type: 'vehicleInput', vehicle, input });
   }
+  /** Ties a node to an anchor (§20); `desc.anchor` in render space. Resolves to the tether id (−1: rejected). */
+  addTether(desc: TetherDesc): Promise<number> {
+    const request = this.nextRequest++;
+    const [rx, ry, rz] = this.renderOrigin;
+    const anchor: [number, number, number] = [desc.anchor[0] + rx, desc.anchor[1] + ry, desc.anchor[2] + rz];
+    return new Promise((resolve) => {
+      this.tetherRequests.set(request, resolve);
+      this.send({ type: 'tether', request, desc: { ...desc, anchor } });
+    });
+  }
+  /** Moves a tether's world-point anchor (render space). */
+  moveTether(id: number, anchor: [number, number, number]): void {
+    const [rx, ry, rz] = this.renderOrigin;
+    this.send({ type: 'tetherAnchor', id, anchor: [anchor[0] + rx, anchor[1] + ry, anchor[2] + rz] });
+  }
+  setTetherLength(id: number, length: number): void { this.send({ type: 'tetherLength', id, length }); }
+  removeTether(id: number): void { this.send({ type: 'tetherRemove', id }); }
   setPaused(paused: boolean): void { this.send({ type: 'setPaused', paused }); }
   setTimeScale(scale: number): void { this.send({ type: 'setTimeScale', scale }); }
 
@@ -339,6 +359,7 @@ export class PhysicsClient {
           this.topology.length = 0;
           this.damage.clear();
           this.moved.clear();
+          this.tethers = [];
           this.islandVersion++;
         }
         for (const t of msg.bodies) {
@@ -368,6 +389,18 @@ export class PhysicsClient {
         const r = this.vehicleRequests.get(msg.request);
         this.vehicleRequests.delete(msg.request);
         r?.reject(new Error(msg.message));
+        break;
+      }
+      case 'tether': {
+        const r = this.tetherRequests.get(msg.request);
+        this.tetherRequests.delete(msg.request);
+        r?.(msg.id);
+        break;
+      }
+      case 'tethers': {
+        const [rx, ry, rz] = this.renderOrigin;
+        const local = (p: [number, number, number]): [number, number, number] => [p[0] - rx, p[1] - ry, p[2] - rz];
+        this.tethers = msg.states.map((t) => ({ ...t, nodePosition: local(t.nodePosition), anchorPosition: local(t.anchorPosition) }));
         break;
       }
       case 'damage':

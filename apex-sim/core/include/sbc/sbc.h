@@ -38,6 +38,20 @@ int sbc_world_static_triangles(sbc_world* w, int first, int count, float* out);
 int sbc_world_spawn_lattice(sbc_world* w, const double* params, int count);
 int sbc_world_add_body_velocity(sbc_world* w, int body, float dvx, float dvy, float dvz);
 
+/* §20 tethers — node grab, crane / winch, tow rope (World::addTether). anchorBody −1: the anchor is the world point
+ * (x, y, z). rope 0: grab (pulls toward the point, saturating at maxForce); 1: rope/winch (pulls only, above its
+ * length; the length reels toward the target at reelSpeed while the tension stays under maxForce). maxForce 0:
+ * unlimited, < 0: −maxForce × the tied body's weight. Returns the tether id, or −1 (not a free node). */
+int sbc_world_add_tether(sbc_world* w, int body, int node, int anchorBody, int anchorNode, double x, double y, double z,
+                         float length, int rope, float maxForce, float reelSpeed);
+int sbc_world_set_tether_anchor(sbc_world* w, int id, double x, double y, double z);
+int sbc_world_set_tether_length(sbc_world* w, int id, float length);
+int sbc_world_remove_tether(sbc_world* w, int id);
+int sbc_world_tether_count(sbc_world* w);
+/* active, body, node, length, target length, tension [N], node xyz, anchor xyz (world) */
+#define SBC_TETHER_STATE 12
+int sbc_world_tether_state(sbc_world* w, int id, double* out);
+
 void sbc_world_step(sbc_world* w, int steps);
 double sbc_world_time(sbc_world* w);
 double sbc_world_step_index(sbc_world* w);

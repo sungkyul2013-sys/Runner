@@ -7,6 +7,7 @@
 //   3. short benchmark run → bench/results/ (GPU-less CI machines render on SwiftShader: frame times there are
 //      NOT representative of real hardware; physics timings are)
 //   2d. crash lab (M2): a car-to-car run and an offset wall run from the launcher; event log and graphs
+//   2e. tools (§20): mouse grab lifts a cube, the crane reels it up
 // Usage: npm run build && node tools/e2e.mjs [--no-bench] [--only <steps>] [--chromium /path/to/chrome]
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -21,7 +22,7 @@ const chromiumPath =
     ? args[args.indexOf('--chromium') + 1]
     : process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const runBench = !args.includes('--no-bench');
-// --only golden,sandbox,drive,crash,crashlab,bench runs just those steps.
+// --only golden,sandbox,drive,crash,crashlab,tools,bench runs just those steps.
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1].split(',') : null;
 const want = (step) => !only || only.includes(step);
 const PORT = 4179;
@@ -279,6 +280,69 @@ async function main() {
       if (wall.balance > 0.05) failures.push(`crash lab (offset): energy balance error ${(100 * wall.balance).toFixed(2)} %`);
       const errors = await page.evaluate(() => window.__apex.errors);
       if (errors.length || consoleErrors.length) failures.push(`errors (crash lab): ${[...errors, ...consoleErrors].join(' | ')}`);
+      await page.close();
+    }
+    // 2e. §20 tools: grab a settled cube's top node with the mouse and lift it, let go, then hook it to the crane and
+    //     reel it up with PageUp.
+    if (want('tools')) {
+      const dir = join(root, 'docs', 'screenshots');
+      const { page, consoleErrors } = await openPage(browser, '?scene=cube_drop');
+      await page.waitForFunction(() => (window.__apex.tools?.physics.latestStats()?.simTime ?? 0) > 2.5, null, { timeout: 60000 });
+      // Screen position and height of the cube's top node.
+      const top = () =>
+        page.evaluate(() => {
+          const tools = window.__apex.tools, f = tools.frame, cam = tools.viewer.camera;
+          const n = f.nodeCount[0], p = f.positions;
+          let best = 0;
+          for (let i = 1; i < n; i++) if (p[i * 3 + 1] > p[best * 3 + 1] + 1e-4) best = i;
+          const v = cam.position.clone().set(p[best * 3], p[best * 3 + 1], p[best * 3 + 2]).project(cam);
+          const r = tools.canvas.getBoundingClientRect();
+          let low = Infinity;
+          for (let i = 0; i < n; i++) low = Math.min(low, p[i * 3 + 1]);
+          return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height, height: p[best * 3 + 1], low };
+        });
+      const tethers = () => page.evaluate(() => window.__apex.tools.physics.tethers.map((t) => ({ length: t.length, tension: t.tension, y: t.nodePosition[1] })));
+      await page.click('.panel .tools button:nth-child(1)'); // grab
+      const start = await top();
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      await page.mouse.move(start.x, start.y - 140, { steps: 4 });
+      let held = [];
+      for (let t0 = Date.now(); Date.now() - t0 < 30000; ) {
+        held = await tethers();
+        if (held.length === 1 && held[0].y > start.height + 0.8) break;
+        await page.waitForTimeout(250);
+      }
+      const lifted = await top();
+      await page.screenshot({ path: join(dir, 'M2-tools-grab.png') });
+      await page.mouse.up();
+      await page.waitForFunction(() => window.__apex.tools.physics.tethers.length === 0, null, { timeout: 20000 });
+      console.log('grab:', JSON.stringify({ start, lifted, held }));
+      if (held.length !== 1) failures.push('tools: the grab made no tether');
+      else if (lifted.low < 0.3) failures.push(`tools: the grabbed cube did not leave the ground (lowest node ${lifted.low.toFixed(2)} m)`);
+      // Crane: let the cube land, hook its top node, reel in for a while.
+      await page.waitForTimeout(3000);
+      await page.click('.panel .tools button:nth-child(2)'); // crane
+      const rest = await top();
+      await page.mouse.click(rest.x, rest.y);
+      await page.waitForFunction(() => window.__apex.tools.physics.tethers.length === 1, null, { timeout: 20000 });
+      const hooked = (await tethers())[0];
+      await page.keyboard.down('PageUp');
+      let reeled = hooked;
+      for (let t0 = Date.now(); Date.now() - t0 < 40000; ) {
+        reeled = (await tethers())[0] ?? reeled;
+        if (reeled.length < hooked.length - 1.5) break;
+        await page.waitForTimeout(250);
+      }
+      await page.keyboard.up('PageUp');
+      await page.waitForTimeout(1500);
+      const hanging = await top();
+      await page.screenshot({ path: join(dir, 'M2-tools-crane.png') });
+      console.log('crane:', JSON.stringify({ hooked, reeled, hanging }));
+      if (reeled.length > hooked.length - 1.5) failures.push(`tools: the winch reeled only ${(hooked.length - reeled.length).toFixed(2)} m`);
+      if (hanging.low < 0.5) failures.push(`tools: the crane did not lift the cube (lowest node ${hanging.low.toFixed(2)} m)`);
+      const errors = await page.evaluate(() => window.__apex.errors);
+      if (errors.length || consoleErrors.length) failures.push(`errors (tools): ${[...errors, ...consoleErrors].join(' | ')}`);
       await page.close();
     }
     // 3. benchmark

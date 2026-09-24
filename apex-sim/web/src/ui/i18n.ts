@@ -3,7 +3,7 @@ export type Lang = 'ko' | 'en';
 export type Localized = Record<Lang, string>;
 
 const STRINGS = {
-  subtitle: { ko: 'M1 물리 샌드박스 · 주행', en: 'M1 physics sandbox · driving' },
+  subtitle: { ko: 'M2 물리 샌드박스 · 주행 · 충돌', en: 'M2 physics sandbox · driving · crashes' },
   drive: { ko: '주행', en: 'Drive' },
   startDrive: { ko: '주행장에서 운전', en: 'Drive on the test ground' },
   driveHelp: {
@@ -17,6 +17,16 @@ const STRINGS = {
   backToSandbox: { ko: '샌드박스로', en: 'Sandbox' },
   restart: { ko: '재시작', en: 'Restart' },
   crashTitle: { ko: '충돌 시험', en: 'Crash lab' },
+  tools: { ko: '도구', en: 'Tools' },
+  toolGrab: { ko: '잡기', en: 'Grab' },
+  toolGrabHelp: { ko: '노드를 끌어 당기거나 들어 올리기', en: 'Drag a node to pull or lift it' },
+  toolCrane: { ko: '크레인', en: 'Crane' },
+  toolCraneHelp: { ko: '노드를 눌러 4 m 위 갈고리에 걸기', en: 'Click a node to hook it to a crane 4 m above' },
+  toolReelUp: { ko: '감기 (PageUp)', en: 'Reel in (PageUp)' },
+  toolReelStop: { ko: '멈춤', en: 'Stop' },
+  toolReelDown: { ko: '풀기 (PageDown)', en: 'Pay out (PageDown)' },
+  toolRelease: { ko: '모두 풀어주기', en: 'Release all' },
+  toolHelp: { ko: '잡기: 노드를 끌기(바디 무게의 2배까지) · 크레인: 노드 클릭 후 ▲▼ 또는 PageUp/PageDown(40 kN, 0.6 m/s)', en: 'Grab: drag a node (up to twice the body weight) · Crane: click a node, then ▲▼ or PageUp/PageDown (40 kN, 0.6 m/s)' },
   startCrash: { ko: '충돌 시험장', en: 'Crash lab' },
   crashScenario: { ko: '시나리오', en: 'Scenario' },
   crashFullWall: { ko: '고정벽 정면(풀랩)', en: 'Rigid wall, full width' },

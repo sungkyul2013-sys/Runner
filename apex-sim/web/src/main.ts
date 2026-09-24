@@ -18,6 +18,7 @@ import { DebugBodies } from './render/DebugBodies';
 import { GridGround } from './render/GridGround';
 import { StaticGeometry } from './render/StaticGeometry';
 import { Viewer } from './render/Viewer';
+import { tetherControls, TetherTool } from './tools/TetherTool';
 import { Hud } from './ui/Hud';
 import { t, tl } from './ui/i18n';
 import { SandboxPanel, TIME_SCALES } from './ui/SandboxPanel';
@@ -26,7 +27,7 @@ import { loadVehicleModel, VEHICLES } from './vehicles/VehicleModel';
 
 declare global {
   interface Window {
-    __apex?: { bench?: unknown; golden?: unknown; garage?: unknown; drive?: DriveSession; crash?: CrashLab; ready?: boolean; errors: string[] };
+    __apex?: { bench?: unknown; golden?: unknown; garage?: unknown; drive?: DriveSession; crash?: CrashLab; tools?: TetherTool; ready?: boolean; errors: string[] };
   }
 }
 window.__apex = { errors: [] };
@@ -228,6 +229,14 @@ async function main(): Promise<void> {
     document.body.append(crashPanel.root, crashPanel.graphs);
   }
 
+  // §20 tools: node grab and crane / winch (sandbox and crash lab).
+  const tools = drive ? null : new TetherTool(physics, viewer, canvas);
+  if (tools) {
+    window.__apex!.tools = tools;
+    const section = tetherControls(tools);
+    (crash ? document.querySelector('.crashpanel') : panel.root)?.append(section);
+  }
+
   window.addEventListener('keydown', (e) => {
     if (drive) return; // the keys belong to the car (DriveInput)
     if (crash) {
@@ -288,6 +297,7 @@ async function main(): Promise<void> {
     const frame = physics.update(now);
     drive?.update(dt, frame);
     crash?.update(dt, frame);
+    tools?.update(frame);
     debug.update(frame);
     viewer.render();
     const stats = physics.latestStats();

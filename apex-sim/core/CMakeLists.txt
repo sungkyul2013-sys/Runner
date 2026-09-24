@@ -36,6 +36,7 @@ add_library(sbc STATIC
   src/contact.cpp
   src/body_contact.cpp
   src/islands.cpp
+  src/tethers.cpp
   src/world.cpp
   src/builder.cpp
   src/stability.cpp
@@ -137,6 +138,7 @@ if(SBC_BUILD_TESTS)
     tests/test_elements.cpp
     tests/test_vehicle.cpp
     tests/test_vehicle_json.cpp
+    tests/test_tethers.cpp
   )
   target_link_libraries(sbc_tests PRIVATE sbc Catch2::Catch2WithMain)
   target_compile_options(sbc_tests PRIVATE ${SBC_FP_FLAGS})

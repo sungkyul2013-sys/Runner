@@ -6,7 +6,7 @@ import {
   B, BODY_STRIDE_F64, ENERGY_FIELDS, H, MAX_BEAMS, MAX_BODIES, MAX_NODES, MAX_VEHICLES, SLOT_BYTES, slotViews, TripleBufferWriter,
   VT_HEADER, VT_MAX_WHEELS, VT_STRIDE, VT_WHEEL, type SlotViews,
 } from './layout';
-import type { BodyTopology, FromWorker, ToWorker, Transport, VehicleInput } from './messages';
+import type { BodyTopology, FromWorker, TetherState, ToWorker, Transport, VehicleInput } from './messages';
 import { LATTICE_PARAM_COUNT, readCString, type Ptr, type SbcFactory, type SbcModule } from './sbc';
 
 const ITERATION_PERIOD_MS = 4; // target loop period (≈ 250 Hz publishing)
@@ -214,6 +214,33 @@ function publishVehicles(s: SlotViews): number {
   return count;
 }
 
+/** Posts the active tethers' states (§20 tools) with each published frame while any exist. */
+let tethersShown = false;
+function publishTethers(): void {
+  const count = sbc._sbc_world_tether_count(world);
+  if (count === 0 && !tethersShown) return;
+  const ptr = ensureScratch(12 * 8);
+  const states: TetherState[] = [];
+  for (let id = 0; id < count; id++) {
+    if (sbc._sbc_world_tether_state(world, id, ptr) <= 0) continue;
+    const r = new Float64Array(heap(), ptr, 12);
+    if (r[0] < 0.5) continue;
+    states.push({
+      id,
+      body: r[1],
+      node: r[2],
+      length: r[3],
+      targetLength: r[4],
+      tension: r[5],
+      nodePosition: [r[6], r[7], r[8]],
+      anchorPosition: [r[9], r[10], r[11]],
+    });
+  }
+  if (states.length === 0 && !tethersShown) return;
+  tethersShown = states.length > 0;
+  post({ type: 'tethers', states });
+}
+
 function publish(): void {
   const s = backSlot();
   if (!s) return;
@@ -278,6 +305,7 @@ function publish(): void {
   h[H.vehicleCount] = publishVehicles(s);
   h[H.publishSeq] = ++publishSeq;
   commit();
+  publishTethers();
 }
 
 function stepTimed(steps: number): number {
@@ -376,6 +404,23 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
         return;
       case 'vehicleInput':
         setVehicleInput(msg.vehicle, msg.input);
+        return;
+      case 'tether': {
+        const d = msg.desc;
+        const id = world
+          ? sbc._sbc_world_add_tether(world, d.body, d.node, d.anchorBody, d.anchorNode, d.anchor[0], d.anchor[1], d.anchor[2], d.length, d.rope ? 1 : 0, d.maxForce, d.reelSpeed)
+          : -1;
+        post({ type: 'tether', request: msg.request, id });
+        return;
+      }
+      case 'tetherAnchor':
+        if (world) sbc._sbc_world_set_tether_anchor(world, msg.id, msg.anchor[0], msg.anchor[1], msg.anchor[2]);
+        return;
+      case 'tetherLength':
+        if (world) sbc._sbc_world_set_tether_length(world, msg.id, msg.length);
+        return;
+      case 'tetherRemove':
+        if (world) sbc._sbc_world_remove_tether(world, msg.id);
         return;
       case 'hash': {
         const hi = sbc._sbc_world_state_hash_hi(world) >>> 0;
