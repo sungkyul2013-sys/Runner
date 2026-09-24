@@ -56,6 +56,10 @@ struct PressureWheelParams {
   // centre reaches the road is clamped by CCD instead of being pushed by its contact spring.
   float treadNodeRadius = 0.04f, rimNodeRadius = 0.02f;  // [m]
   float rimStiffness = 1.0e5f;   // rim rings [N/m]
+  // Rim rings and cross beams yield above this force (a kerb strike bends the rim: vibration, slow leak, §6);
+  // 0 = elastic. Post-yield slope = rimHardening · k.
+  float rimYieldForce = 0.0f;    // [N]
+  float rimHardening = 0.1f;     // [-]
   // Spokes (rim nodes to both axle nodes) [N/m]; ≤ 0 → rimStiffness. They hold the rim's centrifugal load: at
   // 250 km/h every rim node pulls outward with ≈ 3 kN, plus its tread node's pull through the sidewall.
   float spokeStiffness = -1.0f;

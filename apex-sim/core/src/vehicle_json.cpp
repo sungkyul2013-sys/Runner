@@ -398,6 +398,8 @@ struct Loader {
       p.treadNodeRadius = floatOr(item, "treadNodeRadius", p.treadNodeRadius, path);
       p.rimNodeRadius = floatOr(item, "rimNodeRadius", p.rimNodeRadius, path);
       p.rimStiffness = floatOr(item, "rimStiffness", p.rimStiffness, path);
+      p.rimYieldForce = floatOr(item, "rimYieldForce", p.rimYieldForce, path);
+      p.rimHardening = floatOr(item, "rimHardening", p.rimHardening, path);
       p.spokeStiffness = floatOr(item, "spokeStiffness", p.spokeStiffness, path);
       p.treadStiffness = floatOr(item, "treadStiffness", p.treadStiffness, path);
       p.treadBendStiffness = floatOr(item, "treadBendStiffness", p.treadBendStiffness, path);
@@ -446,6 +448,10 @@ struct Loader {
     t.lowSpeed = floatOr(obj, "lowSpeed", t.lowSpeed, path);
     t.verticalStiffness = floatOr(obj, "verticalStiffness", t.verticalStiffness, path);
     t.radialDamping = floatOr(obj, "radialDamping", t.radialDamping, path);
+    t.pressure = floatOr(obj, "pressure", t.pressure, path);
+    t.pinchForce = floatOr(obj, "pinchForce", t.pinchForce, path);
+    t.blowoutForce = floatOr(obj, "blowoutForce", t.blowoutForce, path);
+    t.shredDistance = floatOr(obj, "shredDistance", t.shredDistance, path);
   }
 
   std::vector<float> floats(Val v, const std::string& path) {

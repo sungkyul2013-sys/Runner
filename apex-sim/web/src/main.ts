@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   const debug = new DebugBodies(viewer.scene, physics.topology);
   physics.onTopology(() => {
     debug.topologyChanged();
-    statics.set(physics.staticTriangles, physics.renderOrigin);
+    statics.set(physics.staticTriangles, physics.renderOrigin, physics.staticMaterials);
   });
   physics.onStability((s) => {
     if (s.beamViolations + s.nodeViolations > 0) {

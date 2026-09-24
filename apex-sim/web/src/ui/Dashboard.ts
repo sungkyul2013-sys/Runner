@@ -1,7 +1,7 @@
 // Driving HUD (§18.4 계기): speed, gear, tachometer, pedals, driver aids, and (§4.4) coolant temperature, oil
 // pressure and fuel with warning lights for the faults the damage links report. Failed electrics make the cluster
 // flicker. Numbers use the tabular mono face.
-import { FAULT, gearLabel, type VehicleState } from '../physics/telemetry';
+import { FAULT, gearLabel, TYRE, type VehicleState } from '../physics/telemetry';
 import { t, type StringKey } from './i18n';
 
 // Warning lights: fault bits → label (shown only while the fault is present).
@@ -17,6 +17,9 @@ const WARNINGS: Array<[number, StringKey]> = [
   [FAULT.gearbox, 'warnGearbox'],
   [FAULT.electrical, 'warnBattery'],
 ];
+
+// Wheel order of the vehicle description (the generator's: front left, front right, rear left, rear right).
+const WHEEL_NAMES = ['FL', 'FR', 'RL', 'RR'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -47,6 +50,7 @@ export class Dashboard {
   private fuel = el('span', 'gauge', '');
   private warnings = el('div', 'dash-warn');
   private warnLamps = WARNINGS.map(([, key]) => el('span', 'lamp warn', t(key)));
+  private tyreLamp = el('span', 'lamp warn', t('warnTyre')); // §6 tyre pressure (TPMS)
   private flicker = 0;
 
   constructor(redlineRpm: number) {
@@ -71,7 +75,7 @@ export class Dashboard {
     lamps.append(this.lamps.mode, this.lamps.tcs, this.lamps.abs, this.lamps.cam);
     const gauges = el('div', 'dash-gauges');
     gauges.append(this.temp, this.oil, this.fuel);
-    this.warnings.append(...this.warnLamps);
+    this.warnings.append(...this.warnLamps, this.tyreLamp);
     this.root.append(rpm, main, gauges, this.warnings, lamps, el('div', 'dash-help', t('driveHelp')));
     this.root.hidden = true;
   }
@@ -100,7 +104,11 @@ export class Dashboard {
     this.fuel.textContent = `${t('gaugeFuel')} ${v.fuelL.toFixed(1)} L`;
     this.fuel.className = `gauge ${v.faults & (FAULT.fuelLeak | FAULT.outOfFuel) ? 'bad' : ''}`;
     WARNINGS.forEach(([bits], i) => (this.warnLamps[i].hidden = (v.faults & bits) === 0));
-    this.warnings.hidden = this.warnLamps.every((l) => l.hidden);
+    // Tyre pressure: any wheel under 80 % of its pressure, or off its rim; the lamp names the wheels.
+    const low = v.wheels.map((w, i) => ((w.tyreFlags & TYRE.shredded) || w.pressure < 0.8 * w.nominalPressure ? i : -1)).filter((i) => i >= 0);
+    this.tyreLamp.hidden = low.length === 0;
+    if (low.length) this.tyreLamp.textContent = `${t('warnTyre')} ${low.map((i) => `${WHEEL_NAMES[i] ?? i} ${v.wheels[i].pressure.toFixed(1)}`).join(' · ')}`;
+    this.warnings.hidden = this.warnLamps.every((l) => l.hidden) && this.tyreLamp.hidden;
     // Failed electrics: the cluster flickers.
     if (v.faults & FAULT.electrical) {
       this.flicker = (this.flicker + 1) % 997;

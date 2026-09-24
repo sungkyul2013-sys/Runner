@@ -8,6 +8,7 @@
 //      NOT representative of real hardware; physics timings are)
 //   2d. crash lab (M2): a car-to-car run and an offset wall run from the launcher; event log and graphs
 //   2e. tools (§20): mouse grab lifts a cube, the crane reels it up
+//   2f. tyres (§6): the spike strip punctures all four tyres, they deflate, the pressure warning comes on
 // Usage: npm run build && node tools/e2e.mjs [--no-bench] [--only <steps>] [--chromium /path/to/chrome]
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -22,7 +23,7 @@ const chromiumPath =
     ? args[args.indexOf('--chromium') + 1]
     : process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const runBench = !args.includes('--no-bench');
-// --only golden,sandbox,drive,crash,crashlab,tools,bench runs just those steps.
+// --only golden,sandbox,drive,crash,crashlab,tyres,tools,bench runs just those steps.
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1].split(',') : null;
 const want = (step) => !only || only.includes(step);
 const PORT = 4179;
@@ -280,6 +281,46 @@ async function main() {
       if (wall.balance > 0.05) failures.push(`crash lab (offset): energy balance error ${(100 * wall.balance).toFixed(2)} %`);
       const errors = await page.evaluate(() => window.__apex.errors);
       if (errors.length || consoleErrors.length) failures.push(`errors (crash lab): ${[...errors, ...consoleErrors].join(' | ')}`);
+      await page.close();
+    }
+    // 2f. §6 tyre damage: the Porsche coasts over the drive scene's spike strip (tyre lane, x = −24): all four tyres
+    //     punctured, deflating, the pressure warning on; then a screenshot of the flat tyres.
+    if (want('tyres')) {
+      const dir = join(root, 'docs', 'screenshots');
+      const { page, consoleErrors } = await openPage(browser, '?drive=porsche_911_turbo_991&at=-24,0&kmh=45');
+      await page.waitForFunction(() => window.__apex?.drive?.latest != null && window.__apex.drive.view != null, null, { timeout: 120000 });
+      const state = () =>
+        page.evaluate(() => {
+          const d = window.__apex.drive, v = d.latest;
+          return {
+            z: v.position[2],
+            kmh: v.speed * 3.6,
+            flags: v.wheels.map((w) => w.tyreFlags),
+            bar: v.wheels.map((w) => w.pressure),
+            lamp: [...document.querySelectorAll('.dash-warn .lamp')].filter((l) => !l.hidden).map((l) => l.textContent),
+            tyresShown: d.view.model.tyres.map((t) => t.group.visible),
+          };
+        });
+      let s = await state();
+      for (let t0 = Date.now(); (s.bar.some((b) => b > 0.6) || s.kmh > 1) && Date.now() - t0 < 120000; ) {
+        await page.waitForTimeout(500);
+        s = await state();
+      }
+      await page.keyboard.press('KeyC'); // orbit camera, low at the front right wheel
+      await page.evaluate(() => {
+        const d = window.__apex.drive, p = d.latest.position, f = d.latest.forward, l = d.latest.left;
+        d.viewer.controls.target.set(p[0] + f[0] * 1.2 - l[0] * 0.8, 0.3, p[2] + f[2] * 1.2 - l[2] * 0.8);
+        d.viewer.camera.position.set(p[0] + f[0] * 3.2 - l[0] * 3.0, 0.9, p[2] + f[2] * 3.2 - l[2] * 3.0);
+        d.viewer.controls.update();
+      });
+      await page.waitForTimeout(1500);
+      await page.screenshot({ path: join(dir, 'M2-tyres-flat.png') });
+      console.log('tyres:', JSON.stringify(s));
+      if (s.flags.some((f) => (f & 1) === 0)) failures.push(`tyres: not every tyre punctured by the spike strip (flags ${s.flags})`);
+      if (s.bar.some((b) => b > 0.6)) failures.push(`tyres: still ${s.bar.map((b) => b.toFixed(2))} bar`);
+      if (!s.lamp.some((l) => l.includes('타이어') || l.toLowerCase().includes('tyre'))) failures.push(`tyres: no pressure warning (${s.lamp})`);
+      const errors = await page.evaluate(() => window.__apex.errors);
+      if (errors.length || consoleErrors.length) failures.push(`errors (tyres): ${[...errors, ...consoleErrors].join(' | ')}`);
       await page.close();
     }
     // 2e. §20 tools: grab a settled cube's top node with the mouse and lift it, let go, then hook it to the crane and

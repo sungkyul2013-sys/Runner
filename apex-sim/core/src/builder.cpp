@@ -198,10 +198,17 @@ PressureWheelNodes addPressureWheel(BodyDesc& d, const PressureWheelParams& p) {
   const float shrink = p.structuralPressure > 0.0f ? hoop / p.treadStiffness : 0.0f;
   for (int j = 0; j < n; ++j) {
     // rim: rings, across, diagonals, spokes to both axle nodes
-    beam(rimA(j), rimA(j + 1), p.rimStiffness, p.rimDampingRatio);
-    beam(rimB(j), rimB(j + 1), p.rimStiffness, p.rimDampingRatio);
-    beam(rimA(j), rimB(j), p.rimStiffness, p.rimDampingRatio);      // zig-zag across the staggered rows
-    beam(rimB(j), rimA(j + 1), p.rimStiffness, p.rimDampingRatio);
+    auto rimBeam = [&](int a, int b2) {
+      beam(a, b2, p.rimStiffness, p.rimDampingRatio);
+      if (p.rimYieldForce > 0.0f) {
+        d.beams.back().plasticForce = p.rimYieldForce;
+        d.beams.back().hardening = p.rimHardening;
+      }
+    };
+    rimBeam(rimA(j), rimA(j + 1));
+    rimBeam(rimB(j), rimB(j + 1));
+    rimBeam(rimA(j), rimB(j));      // zig-zag across the staggered rows
+    rimBeam(rimB(j), rimA(j + 1));
     const float spoke = p.spokeStiffness > 0.0f ? p.spokeStiffness : p.rimStiffness;
     beam(rimA(j), p.axleRight, spoke, p.rimDampingRatio);
     beam(rimA(j), p.axleLeft, spoke, p.rimDampingRatio);

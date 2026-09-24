@@ -54,6 +54,9 @@ const tyreRear = { width: 0.26, rimWidth: 0.25, treadMass: 0.24, rimMass: 0.30 }
 // Tread contact spheres of 5 cm: static deflection (≈ 1.2 cm) + centrifugal growth (≈ 2.5 cm at 280 km/h) must stay
 // inside the sphere, or CCD clamps the node.
 const wheelSpokes = { spokeStiffness: 2.5e5, treadNodeRadius: 0.05 };
+// §6 bent rims: the rim rings yield at 2.2 kN (normal driving ≤ 0.1 kN, 5 cm bumps at 100 km/h ≤ 0.6 kN, a 15 cm
+// square kerb at 60 km/h 2.1 kN, a 20 cm one at 40–80 km/h 2.6–2.8 kN — measured, test_tyres.cpp).
+const rimYield = { rimYieldForce: 2200, rimHardening: 0.1 };
 const hubNodeMass = 4.8;  // [kg] axle nodes: Σk ≈ 48 spokes + the knuckle beams
 const segments = 24;
 
@@ -232,7 +235,7 @@ function pressureWheel(name, W, s, axleRight, axleLeft, t) {
   b.pressureWheels.push({
     id: name, axleRight, axleLeft, center: W, segments,
     tyreRadius: R, treadWidth: t.width, rimRadius: 0.26, rimWidth: t.rimWidth,
-    treadNodeMass: t.treadMass, rimNodeMass: t.rimMass, ...wheelSpokes,
+    treadNodeMass: t.treadMass, rimNodeMass: t.rimMass, ...wheelSpokes, ...rimYield,
     treadMaterial: 'rubber', rimMaterial: 'steel', collisionGroup: b.pressureWheels.length + 1,
   });
 }

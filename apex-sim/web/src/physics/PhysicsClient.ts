@@ -75,6 +75,7 @@ export class PhysicsClient {
   islandVersion = 0;
   private moved = new Map<number, Map<number, [number, number]>>(); // body → node → [part body, part node]
   staticTriangles: Float32Array = new Float32Array(0);
+  staticMaterials: Uint8Array = new Uint8Array(0); // core material id per static triangle
   threads = 1;
   /** Rendering is done relative to this world point (floating origin for large maps, M6). */
   renderOrigin: [number, number, number] = [0, 0, 0];
@@ -371,6 +372,7 @@ export class PhysicsClient {
           this.islandVersion++;
         }
         this.staticTriangles = msg.staticTriangles;
+        this.staticMaterials = msg.staticMaterials;
         this.listeners.topology.forEach((l) => l({ reset: msg.reset, added: msg.bodies }));
         break;
       case 'stability':

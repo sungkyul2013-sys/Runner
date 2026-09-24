@@ -18,6 +18,7 @@ const STRINGS = {
   restart: { ko: '재시작', en: 'Restart' },
   crashTitle: { ko: '충돌 시험', en: 'Crash lab' },
   tools: { ko: '도구', en: 'Tools' },
+  warnTyre: { ko: '타이어 공기압', en: 'Tyre pressure' },
   toolGrab: { ko: '잡기', en: 'Grab' },
   toolGrabHelp: { ko: '노드를 끌어 당기거나 들어 올리기', en: 'Drag a node to pull or lift it' },
   toolCrane: { ko: '크레인', en: 'Crane' },

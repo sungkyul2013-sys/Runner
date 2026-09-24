@@ -92,6 +92,9 @@ void applyDefaultContactPairs(World& w) {
   steelAsphalt.staticFriction = 0.55f;
   steelAsphalt.kineticFriction = 0.45f;
   w.setContactPair(material::kSteel, material::kAsphalt, steelAsphalt);
+  // Spike strip / sharp debris (§6): steel spikes. The tread rolls over it like over steel and is punctured.
+  w.setContactPair(material::kRubber, material::kSpikes, rubberSteel);
+  w.setContactPair(material::kSteel, material::kSpikes, steelSteel);
 }
 
 std::vector<std::string> sceneNames() {
@@ -116,9 +119,9 @@ std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o)
   if (name == "drive") {
     // Driving ground (M1e, web): asphalt, no car (the client spawns one from its vehicle JSON at the origin facing
     // +Z). The straight lane (x ≈ 0) is free for 300 m up to a concrete wall. To the right (−X): a slalom of light
-    // knock-over cones (3 kg rubber lattices — rigid posts narrower than a car's node pitch slip between its nodes
-    // until node↔triangle contact arrives in M2, KNOWN_ISSUES P1). To the left (+X): three 5 cm speed bumps and a
-    // 1.2 m jump ramp.
+    // knock-over cones (3 kg rubber lattices) at x = −12, and a tyre test lane at x = −24 (§6): a spike strip across
+    // it at z = 40 and a 12 cm square-edged step under its right wheels at z = 160. To the left (+X): three 5 cm speed
+    // bumps and a 1.2 m jump ramp.
     WorldParams wp;
     wp.threadCount = o.threads;
     wp.trackEnergy = o.trackEnergy;
@@ -146,6 +149,8 @@ std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o)
     // behind it too (tread nodes rolling past would be pushed down into the road).
     const std::vector<int32_t> idx = {0, 1, 5, 0, 5, 4, 2, 4, 5, 2, 5, 3, 0, 4, 2, 1, 3, 5};
     w->addStaticMesh({}, v, idx, material::kConcrete);
+    w->addStaticBox({-24.0, 0.01, 40.0}, {3.0f, 0.01f, 0.2f}, 0.0, material::kSpikes);    // spike strip
+    w->addStaticBox({-24.8, 0.06, 160.0}, {0.5f, 0.06f, 0.15f}, 0.0, material::kConcrete);  // square-edged step
     w->addStaticBox({0.0, 1.5, 300.0}, {15.0f, 1.5f, 0.5f}, 0.0, material::kConcrete);
     return w;
   }

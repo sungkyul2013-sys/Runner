@@ -362,20 +362,50 @@ void World::integrateBody(int bi) {
     b.py[i] += b.vy[i] * dt;
     b.pz[i] += b.vz[i] * dt;
   }
-  // Static sweep tests (CCD): their position corrections move nodes without a force doing the work. The kinetic
-  // energy they remove is CCD loss; the potential energy they change (a node set back onto a wall against the beams
-  // that pushed it in, its contact spring) is measured and booked as work of the constraint, as for the sweeps
-  // between bodies (§5.3 ledger).
+  // Static sweep tests (CCD). A clamp replaces the node's step: the ledger books it as a constraint that took the
+  // node from where the step began to where it lands — the potential energy that move changes (gravity, the beams
+  // and constraints it pulls on with the other nodes where this step left them, its contact spring) as work of the
+  // constraint, and the kinetic energy it lost against the step's start as CCD loss (§5.3). Where the integration
+  // carried the node before the clamp is no state and is not measured: pinned against a face by a crushing
+  // structure it is pushed in and set back every step, and near an edge the nearest-face depth there can jump by the
+  // whole face size.
   const int clamps = ContactSolver::ccdStatic(*this, bi);
   bodyStats_[bi].ccdClamps = clamps;
   if (clamps == 0) return;
+  if (!params_.trackEnergy) {
+    ContactSolver::applyCcdStatic(*this, bi);
+    return;
+  }
+  const std::vector<ContactScratch::StaticCorrection>& corrections = scratch_[static_cast<size_t>(bi)].corrections;
   auto potential = [&] {
-    return gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b) + detail::constraintPotentialEnergy(b) +
-           ContactSolver::staticContactPotential(*this, bi);
+    double e = gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b) + detail::constraintPotentialEnergy(b);
+    for (const ContactScratch::StaticCorrection& c : corrections) {
+      e += ContactSolver::staticNodePotential(*this, bi, c.node, b.nodePosition(c.node));
+    }
+    return e;
   };
-  const double before = params_.trackEnergy ? potential() : 0.0;
-  ContactSolver::applyCcdStatic(*this, bi);
-  if (params_.trackEnergy) b.losses.external += potential() - before;
+  // Start-of-step state of the clamped nodes: positions saved before the integration, velocities recovered from it
+  // (v₁ = v₀ + F·dt/m).
+  double kineticBefore = 0.0, kineticAfter = 0.0, clampLoss = 0.0;
+  std::vector<Vec3> integrated(corrections.size());
+  for (size_t k = 0; k < corrections.size(); ++k) {
+    const size_t i = static_cast<size_t>(corrections[k].node);
+    integrated[k] = b.nodePosition(corrections[k].node);
+    const float step = dt * b.invMass[i];
+    const Vec3 v0{b.vx[i] - b.fx[i] * step, b.vy[i] - b.fy[i] * step, b.vz[i] - b.fz[i] * step};
+    kineticBefore += 0.5 * b.mass[i] * static_cast<double>(dot(v0, v0));
+    kineticAfter += 0.5 * b.mass[i] * static_cast<double>(dot(corrections[k].velocity, corrections[k].velocity));
+    clampLoss += corrections[k].kineticLoss;
+    b.px[i] = b.sx[i]; b.py[i] = b.sy[i]; b.pz[i] = b.sz[i];
+  }
+  const double before = potential();
+  for (size_t k = 0; k < corrections.size(); ++k) {
+    const size_t i = static_cast<size_t>(corrections[k].node);
+    b.px[i] = integrated[k].x; b.py[i] = integrated[k].y; b.pz[i] = integrated[k].z;
+  }
+  ContactSolver::applyCcdStatic(*this, bi);  // books clampLoss as CCD loss; replaced by the start-based loss below
+  b.losses.external += potential() - before;
+  b.losses.ccd += (kineticBefore - kineticAfter) - clampLoss;
 }
 
 void World::finishBody(int bi) {

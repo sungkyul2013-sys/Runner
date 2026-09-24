@@ -9,6 +9,7 @@ import type { Viewer } from '../render/Viewer';
 import { Dashboard } from '../ui/Dashboard';
 import { t } from '../ui/i18n';
 import { Debris, glassDebris, lampDebris } from '../vehicles/Debris';
+import { Sparks } from '../vehicles/Sparks';
 import type { Leaks } from '../vehicles/Leaks';
 import type { Airbags } from '../vehicles/Airbags';
 import { VehicleActor } from '../vehicles/VehicleActor';
@@ -28,6 +29,7 @@ export class DriveSession {
   // Glass granules and lamp shards (§4.3 side-effect particles).
   readonly glassDebris: Debris = glassDebris();
   readonly lampDebris: Debris = lampDebris();
+  readonly sparks = new Sparks();
 
   constructor(
     private readonly physics: PhysicsClient,
@@ -40,7 +42,7 @@ export class DriveSession {
   ) {
     this.dashboard = new Dashboard(vehicle.redlineRpm);
     this.chase = new ChaseCamera(viewer.camera, viewer.controls);
-    this.actor = new VehicleActor(physics, viewer, vehicle, { glass: this.glassDebris, lamp: this.lampDebris }, onError);
+    this.actor = new VehicleActor(physics, viewer, vehicle, { glass: this.glassDebris, lamp: this.lampDebris, sparks: this.sparks }, onError);
     this.input.onAction = (a) => {
       if (a === 'camera') this.chase.toggle();
       else if (a === 'reset') void this.restart();
@@ -49,7 +51,7 @@ export class DriveSession {
     window.addEventListener('keydown', (e) => {
       if (this.input.enabled && e.code === 'KeyP' && !e.repeat) this.onPauseToggle();
     });
-    viewer.scene.add(this.glassDebris.group, this.lampDebris.group);
+    viewer.scene.add(this.glassDebris.group, this.lampDebris.group, this.sparks.group);
   }
 
   /** Latest (interpolated) vehicle state — for tests and tools. */
@@ -91,6 +93,7 @@ export class DriveSession {
     this.physics.loadScene(DRIVE_SCENE);
     this.glassDebris.clear();
     this.lampDebris.clear();
+    this.sparks.clear();
     await this.actor.spawn(this.pose);
     this.setXray(this.xray);
   }
@@ -114,6 +117,7 @@ export class DriveSession {
     if (!v || !this.actor.spawned) return;
     this.glassDebris.update(dt);
     this.lampDebris.update(dt);
+    this.sparks.update(dt);
     this.chase.update(dt, v);
     this.physics.setVehicleInput(this.actor.spawned.vehicle, this.input.update(dt, v.speed));
     const logic = this.input.logic;

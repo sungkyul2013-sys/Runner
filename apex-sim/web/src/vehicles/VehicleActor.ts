@@ -12,6 +12,8 @@ import { decodeDamage, type DamageGroupDef } from './Damage';
 import type { Debris } from './Debris';
 import { vehicleCage, type CageNode, type VehicleJsonNode, type VehiclePartDef } from './Flexbody';
 import { Leaks } from './Leaks';
+import { LooseParts } from './LooseParts';
+import type { Sparks } from './Sparks';
 import { loadVehicleModel } from './VehicleModel';
 
 export class VehicleActor {
@@ -20,13 +22,15 @@ export class VehicleActor {
   state: VehicleState | null = null;
   leaks: Leaks | null = null; // coolant, oil and fuel drips and stains (§4.4)
   airbags: Airbags | null = null;
+  readonly loose = new LooseParts(); // torn-off parts the model does not cover (a shredded tyre's carcass)
+  private looseVersion = -1;
   private xray = false;
 
   constructor(
     private readonly physics: PhysicsClient,
     private readonly viewer: Viewer,
     readonly vehicle: VehiclePreset,
-    private readonly debris: { glass: Debris; lamp: Debris },
+    private readonly debris: { glass: Debris; lamp: Debris; sparks?: Sparks },
     private readonly onError: (message: string) => void,
   ) {
     physics.onDamage(({ body, status }) => {
@@ -61,7 +65,7 @@ export class VehicleActor {
         const [model, doc] = await Promise.all([modelPromise, docPromise]);
         this.view = new VehicleView(model, doc?.cage ?? null, this.spawned.body,
           doc ? { defs: doc.damageGroups, nodeRest: doc.nodeRest, parts: doc.parts } : null);
-        this.viewer.scene.add(this.view.group);
+        this.viewer.scene.add(this.view.group, this.loose.group);
         if (doc) {
           this.leaks = new Leaks(doc.damageGroups);
           this.viewer.scene.add(this.leaks.group);
@@ -89,6 +93,7 @@ export class VehicleActor {
   dispose(): void {
     this.view?.group.removeFromParent();
     this.leaks?.dispose();
+    this.loose.dispose();
     this.view = null;
     this.spawned = null;
     this.state = null;
@@ -97,6 +102,7 @@ export class VehicleActor {
   setXray(on: boolean): void {
     this.xray = on;
     if (this.view) this.view.visible = !on;
+    this.loose.group.visible = !on; // x-ray shows every node anyway
   }
 
   /** Per rendered frame: the vehicle's latest state, its model posed and its damage shown. Null before it exists. */
@@ -110,6 +116,18 @@ export class VehicleActor {
     this.leaks?.update(dt, v, known ? decodeDamage(known.status) : null);
     this.airbags?.update(v.airbags, dt);
     if (this.view?.flexbody) this.view.flexbody.lights = (v.faults & FAULT.electrical) === 0;
+    // §6 rim sparks: from each scraping rim, thrown back along the road at about half the car's speed.
+    const sparks = this.debris.sparks;
+    if (sparks) {
+      const base: [number, number, number] = [v.forward[0] * v.speed * 0.5, v.forward[1] * v.speed * 0.5, v.forward[2] * v.speed * 0.5];
+      for (const w of v.wheels) if (w.sparks > 0.01) sparks.emit(w.sparkPoint, base, w.sparks, dt);
+    }
+    // Loose parts: re-found when the islands change (the flexbody has located its cage by now).
+    if (this.view && this.physics.islandVersion !== this.looseVersion) {
+      this.looseVersion = this.physics.islandVersion;
+      this.loose.setBodies(LooseParts.find(this.physics.topology, this.spawned.body, this.view.flexbody?.bodies ?? new Set([this.spawned.body])));
+    }
+    this.loose.update(frame, this.physics.topology);
     return v;
   }
 }

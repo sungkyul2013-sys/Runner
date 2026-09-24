@@ -188,7 +188,7 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
       }
       continue;
     }
-    Vec3 force{}, dissipativeNormal{}, friction{};
+    Vec3 force{}, dissipativeNormal{}, friction{}, weightedNormal{};
     float normalLoad = 0.0f;
     for (int k = 0; k < n; ++k) {
       const Contact& c = contacts[k];
@@ -231,6 +231,7 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
       }
       force += c.normal * fn + ft;
       normalLoad += fn;
+      weightedNormal += c.normal * fn;
       if constexpr (kTrack) {
         dissipativeNormal += c.normal * (fn - spring);
         friction += ft;
@@ -239,6 +240,10 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
     }
     b.fx[i] += force.x; b.fy[i] += force.y; b.fz[i] += force.z;
     b.contactLoad[i] += normalLoad;
+    // Contact report for the vehicle (rim on the road, §6): normal load, load-weighted normal, primary material.
+    b.patchForce[i] = normalLoad;
+    b.patchNx[i] = weightedNormal.x; b.patchNy[i] = weightedNormal.y; b.patchNz[i] = weightedNormal.z;
+    b.patchMaterial[i] = contacts[0].material;
     if constexpr (kTrack) {
       b.fdContactX[i] += dissipativeNormal.x; b.fdContactY[i] += dissipativeNormal.y; b.fdContactZ[i] += dissipativeNormal.z;
       b.fdFrictionX[i] += friction.x; b.fdFrictionY[i] += friction.y; b.fdFrictionZ[i] += friction.z;
@@ -337,6 +342,24 @@ double ContactSolver::staticContactPotential(const World& w, int bodyIndex) {
       const double share = tread ? pp.treadShare : 1.0;
       e += 0.5 * share * static_cast<double>(b.mass[i]) * omega * omega * contacts[k].penetration * contacts[k].penetration;
     }
+  }
+  return e;
+}
+
+double ContactSolver::staticNodePotential(const World& w, int bodyIndex, int node, Vec3 position) {
+  const Body& b = w.bodies_[static_cast<size_t>(bodyIndex)];
+  const ContactScratch& s = w.scratch_[static_cast<size_t>(bodyIndex)];
+  const size_t i = static_cast<size_t>(node);
+  if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) return 0.0;
+  Contact contacts[kMaxContactsPerNode];
+  const int n = collectStaticContacts(s, position, b.radius[i], contacts);
+  const bool tread = (b.flags[i] & node_flag::kTread) != 0;
+  double e = 0.0;
+  for (int k = 0; k < n; ++k) {
+    const ContactPairParams& pp = w.contactPair(b.material[i], contacts[k].material);
+    const float omega = kTwoPi * pp.normalFrequencyHz;
+    const double share = tread ? pp.treadShare : 1.0;
+    e += 0.5 * share * static_cast<double>(b.mass[i]) * omega * omega * contacts[k].penetration * contacts[k].penetration;
   }
   return e;
 }

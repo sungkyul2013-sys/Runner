@@ -2,6 +2,7 @@
 // The physics body drives these meshes from M1 (node binding) and M2 (GPU flexbody deformation).
 import * as THREE from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { max, positionLocal, uniform, vec3 } from 'three/tsl';
 
 export interface VehicleWheelMeta {
   position: [number, number, number]; // [m] hub centre, vehicle frame (+Z forward, +Y up, +X left)
@@ -40,6 +41,7 @@ export interface VehicleModel {
   root: THREE.Group; // vehicle frame
   body: THREE.Object3D;
   wheels: THREE.Object3D[]; // one pivot per wheel (rotate about local X to spin)
+  tyres: WheelTyre[]; // per wheel: its tyre, which does not spin (it is round) and flattens where it meets the road
   meta: VehicleMeta;
 }
 
@@ -79,6 +81,43 @@ function baseMaterial(role: string | undefined): THREE.Material {
     default:
       return new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15, side });
   }
+}
+
+/** A wheel's tyre: moved off the spinning part (a tyre is round, so it need not spin) into its own group, with its
+ *  geometry in the wheel frame and a material that flattens it at `floor` (the road below the hub, −loaded radius):
+ *  vertices below the road line sit on it (§6 flat tyre, and the few centimetres of a loaded one). */
+export interface WheelTyre {
+  group: THREE.Group;
+  floor: { value: number };
+  radius: number;
+}
+
+function tyreOf(spin: THREE.Object3D, mount: THREE.Object3D, radius: number): WheelTyre {
+  const group = new THREE.Group();
+  mount.add(group);
+  const floor = uniform(-radius * 2);
+  const meshes: THREE.Mesh[] = [];
+  spin.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh && ((m.material as THREE.Material).userData?.apexRole === 'tire' || m.userData.apexTyre)) meshes.push(m);
+  });
+  mount.updateMatrixWorld(true); // not in the scene yet: its world matrix is its own
+  const toMount = new THREE.Matrix4();
+  for (const m of meshes) {
+    // Geometry into the wheel (mount) frame: its own copy, the clone shares it with the other wheels.
+    toMount.copy(m.matrixWorld).premultiply(new THREE.Matrix4().copy(mount.matrixWorld).invert());
+    const geometry = m.geometry.clone();
+    geometry.applyMatrix4(toMount);
+    const material = (m.material as THREE.Material).clone() as THREE.MeshStandardNodeMaterial;
+    // Squashed onto the road line, the rubber bulges out sideways (a flat tyre's sidewalls).
+    const squash = max(floor.sub(positionLocal.y), 0);
+    material.positionNode = vec3(positionLocal.x.mul(squash.mul(1.6 / radius).add(1)), max(positionLocal.y, floor), positionLocal.z);
+    const flat = new THREE.Mesh(geometry, material);
+    flat.castShadow = true;
+    m.removeFromParent();
+    group.add(flat);
+  }
+  return { group, floor, radius };
 }
 
 /** Torus-like tyre around the X axis (for bakes whose wheel mesh has no tyre). */
@@ -132,6 +171,7 @@ function proceduralWheel(rimRadius: number, outerRadius: number, width: number, 
   const inner = new THREE.MeshStandardNodeMaterial({ color: st.inner, roughness: 0.55, metalness: 0.6, side: THREE.DoubleSide });
   const rubber = new THREE.MeshStandardNodeMaterial({ color: 0x141619, roughness: 0.93 });
   const tyre = new THREE.Mesh(tyreGeometry(rimRadius, outerRadius, width), rubber);
+  tyre.userData.apexTyre = true;
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(rimRadius, rimRadius, width * 0.86, 48, 1, true).rotateZ(Math.PI / 2), inner);
   const lip = new THREE.Mesh(new THREE.TorusGeometry(rimRadius * 0.99, rimRadius * 0.03, 8, 64).rotateY(Math.PI / 2), face);
   lip.position.x = width * 0.43;
@@ -244,6 +284,7 @@ export async function loadVehicleModel(source: string | ArrayBuffer): Promise<Ve
   }
 
   const wheels: THREE.Object3D[] = [];
+  const tyres: WheelTyre[] = [];
   for (const w of meta.wheels) {
     const mount = new THREE.Group(); // steering pivot (M1: rotate about Y)
     mount.position.fromArray(w.position);
@@ -259,11 +300,12 @@ export async function loadVehicleModel(source: string | ArrayBuffer): Promise<Ve
       mount.add(pw.fixed);
     }
     if (caliperTemplate) mount.add(caliperTemplate.clone()); // calipers steer but do not spin
+    tyres.push(tyreOf(spin, mount, w.radius ?? meta.wheel?.radius ?? 0.33));
     if (mirror) mount.scale.x = -1;
     root.add(mount);
     wheels.push(spin);
   }
-  return { root, body: bodyNode, wheels, meta };
+  return { root, body: bodyNode, wheels, tyres, meta };
 }
 
 export const VEHICLES = [

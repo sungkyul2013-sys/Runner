@@ -84,7 +84,7 @@ export interface BodyTopology {
 export type FromWorker =
   | { type: 'ready'; threads: number }
   | { type: 'frame'; buffer: ArrayBuffer }
-  | { type: 'topology'; reset: boolean; bodies: BodyTopology[]; staticTriangles: Float32Array }
+  | { type: 'topology'; reset: boolean; bodies: BodyTopology[]; staticTriangles: Float32Array; staticMaterials: Uint8Array }
   | { type: 'stability'; body: number; label: string; minCriticalDtMs: number; beamViolations: number; nodeViolations: number }
   | { type: 'stepped'; stepIndex: number }
   | { type: 'hash'; stepIndex: number; hex: string }

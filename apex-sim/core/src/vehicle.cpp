@@ -14,6 +14,7 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kRadToRpm = 60.0 / (2.0 * kPi);
+constexpr double kBearingDragTorque = 40.0;  // [N·m] drag of a fully damaged hub bearing (§6)
 
 double len(DVec3 v) { return std::sqrt(dot(v, v)); }
 DVec3 normalized(DVec3 v) {
@@ -118,12 +119,13 @@ void applySpinTorque(Body& b, const std::vector<int32_t>& nodes, DVec3 center, D
 // the rotating nodes, the spin component as an axle-line torque on them, and the off-axis moment on the carrier,
 // which it reaches through the bearing anyway. Every part pairs exactly with the quantities the vehicle measures
 // (mean velocity, axial spin, carrier rotation), so its power is consistent and slip forces are always dissipative.
-void applyAtWheel(Body& b, const WheelDesc& wd, const RigidFit& wheel, const RigidFit& carrier, DVec3 axis,
-                  double axialInertia, DVec3 force, DVec3 moment, bool track, Ledger ledger) {
+void applyAtWheel(Body& b, const std::vector<int32_t>& spinning, const WheelDesc& wd, const RigidFit& wheel,
+                  const RigidFit& carrier, DVec3 axis, double axialInertia, DVec3 force, DVec3 moment, bool track,
+                  Ledger ledger) {
   const DVec3 perKg = force * (1.0 / wheel.mass);
-  for (const int32_t i : wd.rotatingNodes) addForce(b, i, perKg * static_cast<double>(b.mass[i]), track, ledger);
+  for (const int32_t i : spinning) addForce(b, i, perKg * static_cast<double>(b.mass[i]), track, ledger);
   const double spinMoment = dot(moment, axis);
-  applySpinTorque(b, wd.rotatingNodes, wheel.center, axis, axialInertia, spinMoment, track, ledger);
+  applySpinTorque(b, spinning, wheel.center, axis, axialInertia, spinMoment, track, ledger);
   applyCouple(b, wd.carrierNodes, carrier, moment - axis * spinMoment, track, ledger);
 }
 
@@ -230,6 +232,7 @@ Vehicle::Vehicle(const VehicleDesc& desc, int bodyIndex, const Body& body) : des
     wheels_[i].peakY = magicFormulaPeak(t.By, t.Cy, t.Ey);
   }
   engineOmega_ = desc.engine.idleRpm / kRadToRpm;
+  initTyres(body);
 }
 
 double Vehicle::gearRatio(int gear) const {
@@ -330,9 +333,11 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   }
   for (size_t w = 0; w < nw; ++w) {
     const WheelDesc& wd = D.wheels[w];
-    // Hub torn from the knuckle (axle nodes gone) or the wheel off its hub (its rim and tyre gone).
-    if (!wheelLost_[w] && (detached(wd.axleLeft) || detached(wd.axleRight) || detached(wd.rotatingNodes.front()) ||
-                           detached(wd.treadNodes.front()))) {
+    // Hub torn from the knuckle (axle nodes gone) or the wheel off its hub (its rim gone). A tyre torn off alone
+    // leaves the wheel on its rim (updateTyres).
+    const std::vector<int32_t>& rim = tyres_[w].rimNodes;
+    if (!wheelLost_[w] && (detached(wd.axleLeft) || detached(wd.axleRight) ||
+                           detached(rim.empty() ? wd.rotatingNodes.front() : rim.front()))) {
       wheelLost_[w] = 1;
     }
   }
@@ -362,6 +367,9 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   accelLong_ += accFilter * (dot(acc, fwd) - accelLong_);
   accelLat_ += accFilter * (dot(acc, left) - accelLat_);
   odometer_ += std::fabs(speed) * dt;
+
+  // ---- §6 tyre damage: triggers, deflation, shredding (sets the tyre-model scales used below) -------------------
+  updateTyres(world, b, dt, speed, track);
 
   // ---- crash sensor and airbags (§4.4) ---------------------------------------------------------------------
   // The sensor sits in the cabin (the reference node): 10 ms-average deceleration and 50 ms velocity change.
@@ -437,7 +445,9 @@ void Vehicle::step(const World& world, Body& b, bool track) {
       f.axis = normalized(pos(b, wd.axleLeft) - pos(b, wd.axleRight));
       continue;
     }
-    f.wheel = fitNodes(b, wd.rotatingNodes);
+    const std::vector<int32_t>& spinning = *spinNodes_[w];
+    const TyreState& ty = tyres_[w];
+    f.wheel = fitNodes(b, spinning);
     f.carrier = fitNodes(b, wd.carrierNodes);
     f.axis = normalized(pos(b, wd.axleLeft) - pos(b, wd.axleRight));
     f.axlePoint = (pos(b, wd.axleLeft) + pos(b, wd.axleRight)) * 0.5;
@@ -447,7 +457,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     // across the stiff bearing between wheel and knuckle).
     {
       double momentum = 0.0, inertia = 0.0;
-      for (const int32_t i : wd.rotatingNodes) {
+      for (const int32_t i : spinning) {
         const DVec3 d = pos(b, i) - f.wheel.center;
         const DVec3 r = d - f.axis * dot(d, f.axis);
         momentum += b.mass[i] * dot(cross(r, vel(b, i) - f.wheel.velocity), f.axis);
@@ -467,6 +477,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     double load = 0.0, mu = 0.0, crr = 0.0, nodeShare = 0.0;
     DVec3 normal, road;
     for (const int32_t i : wd.treadNodes) {
+      if (ty.flags & tyre_flag::kShredded) break;  // on the rim: the ordinary contact model carries it
       const double fn = b.patchForce[i];
       if (!(fn > 0.0)) continue;
       const DVec3 weighted{b.patchNx[i], b.patchNy[i], b.patchNz[i]};
@@ -509,7 +520,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
         f.patch = f.axlePoint - f.normal * height;
         const double deflection = r0 - height;
         const double wheelShare = 1.0 - nodeShare / load;
-        const double k = wheelShare * wd.tyre.verticalStiffness;
+        const double k = wheelShare * wd.tyre.verticalStiffness * ty.radialScale;
         f.radialForce = deflection > 0.0 ? k * deflection : 0.0;
         f.radialDamping = 2.0 * wd.tyre.radialDamping * std::sqrt(k * f.wheel.mass);
         f.load = f.radialForce + nodeShare;
@@ -782,8 +793,10 @@ void Vehicle::step(const World& world, Body& b, bool track) {
 
     const double fz0 = t.nominalLoad;
     const double loadFactor = clampd(1.0 - t.loadSensitivity * (f.load - fz0) / fz0, 0.6, 1.3);
-    const double peakForce = t.mu * f.mu * loadFactor * f.load;
-    const double nx = sx / s.peakX, ny = sy / s.peakY;
+    const TyreState& ty = tyres_[w];
+    const double peakForce = t.mu * ty.muScale * f.mu * loadFactor * f.load;
+    // A soft tyre builds its force over more slip (lower cornering and braking stiffness).
+    const double nx = sx * ty.slipScale / s.peakX, ny = sy * ty.slipScale / s.peakY;
     const double rho = std::sqrt(nx * nx + ny * ny);
     double fx = 0.0, fy = 0.0;
     if (rho > 1e-12) {
@@ -807,14 +820,14 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     // (Applying it to the sliding tread nodes instead would do work at their kinematic radius, not the rolling radius
     // the slip is defined with, and inject energy under drive.)
     const DVec3 force = f.xDir * fx + f.yDir * fy;
-    applyAtWheel(b, wd, f.wheel, f.carrier, f.axis, f.axialInertia, force, cross(f.contactPoint - f.wheel.center, force),
-                 track, Ledger::kFriction);
+    applyAtWheel(b, *spinNodes_[w], wd, f.wheel, f.carrier, f.axis, f.axialInertia, force,
+                 cross(f.contactPoint - f.wheel.center, force), track, Ledger::kFriction);
     // Rolling resistance acts as a moment against the spin (offset normal force), not as a patch force.
     const double spinDir = clampd(f.spinAbs * f.rollRadius / 0.05, -1.0, 1.0);
-    const double rollingMoment = -t.rollingResistance * f.crr * f.load * f.loadedRadius * spinDir;
+    const double rollingMoment = -t.rollingResistance * ty.crrScale * f.crr * f.load * f.loadedRadius * spinDir;
     // Self-aligning moment from the pneumatic trail (fades out towards the lateral peak).
     const double trail = t.pneumaticTrail * std::max(0.0, 1.0 - std::fabs(ny));
-    applySpinTorque(b, wd.rotatingNodes, f.wheel.center, f.axis, f.axialInertia, rollingMoment, track, Ledger::kFriction);
+    applySpinTorque(b, *spinNodes_[w], f.wheel.center, f.axis, f.axialInertia, rollingMoment, track, Ledger::kFriction);
     applyCouple(b, wd.carrierNodes, f.carrier, f.normal * -(trail * fy), track, Ledger::kFriction);
     tel.forceX = static_cast<float>(fx);
     tel.forceY = static_cast<float>(fy);
@@ -825,13 +838,20 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   for (size_t w = 0; w < nw; ++w) {
     const WheelDesc& wd = D.wheels[w];
     const WheelFrame& f = frames_[w];
+    const std::vector<int32_t>& spinning = *spinNodes_[w];
     if (f.driveTorque != 0.0) {
-      applySpinTorque(b, wd.rotatingNodes, f.wheel.center, f.axis, f.axialInertia, f.driveTorque, track, Ledger::kExternal);
+      applySpinTorque(b, spinning, f.wheel.center, f.axis, f.axialInertia, f.driveTorque, track, Ledger::kExternal);
       driveReaction += f.axis * -f.driveTorque;
     }
     if (f.brakeTorque != 0.0) {
-      applySpinTorque(b, wd.rotatingNodes, f.wheel.center, f.axis, f.axialInertia, f.brakeTorque, track, Ledger::kFriction);
+      applySpinTorque(b, spinning, f.wheel.center, f.axis, f.axialInertia, f.brakeTorque, track, Ledger::kFriction);
       applyCouple(b, wd.carrierNodes, f.carrier, f.axis * -f.brakeTorque, track, Ledger::kFriction);
+    }
+    // §6 damaged hub bearing: a drag couple between wheel and carrier against the relative spin.
+    if (tyres_[w].bearing > 0.0 && !wheelLost_[w] && f.carrier.valid) {
+      const double drag = -clampd(f.spinRel / 2.0, -1.0, 1.0) * tyres_[w].bearing * kBearingDragTorque;
+      applySpinTorque(b, spinning, f.wheel.center, f.axis, f.axialInertia, drag, track, Ledger::kFriction);
+      applyCouple(b, wd.carrierNodes, f.carrier, f.axis * -drag, track, Ledger::kFriction);
     }
   }
   if (!D.driveReactionNodes.empty()) applyCouple(b, D.driveReactionNodes, reactionFit, driveReaction, track, Ledger::kExternal);
@@ -920,6 +940,12 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     tel.absActive = s.absFactor < 0.999;
     tel.center = toFloat((pos(b, wd.axleLeft) + pos(b, wd.axleRight)) * 0.5);
     tel.axis = toFloat(f.axis);
+    const TyreState& ty = tyres_[w];
+    tel.pressure = static_cast<float>(wd.tyre.pressure * ty.inflation);
+    tel.tyreFlags = ty.flags;
+    tel.sparks = static_cast<float>(ty.sparks);
+    tel.sparkPoint = toFloat(ty.sparkPoint);
+    tel.rimBend = static_cast<float>(ty.rimBend);
   }
 }
 

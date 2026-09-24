@@ -16,6 +16,7 @@ inline constexpr uint16_t kSteel = 0;     // lattice nodes
 inline constexpr uint16_t kConcrete = 1;  // ground, walls
 inline constexpr uint16_t kRubber = 2;    // tyre tread
 inline constexpr uint16_t kAsphalt = 3;   // road surface (§11.1: new dry asphalt µ ≈ 1.0, Crr ≈ 0.012)
+inline constexpr uint16_t kSpikes = 4;    // spike strip / sharp debris: punctures the tyres that roll over it (§6)
 }  // namespace material
 
 // Contact laws used by every reference scene (M0 placeholders until §11 surfaces land in M3).

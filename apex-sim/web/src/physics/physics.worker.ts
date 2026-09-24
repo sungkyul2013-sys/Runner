@@ -108,6 +108,14 @@ function staticTriangles(): Float32Array {
   return new Float32Array(heap(), ptr, count * 9).slice();
 }
 
+function staticMaterials(): Uint8Array {
+  const count = sbc._sbc_world_static_triangle_count(world);
+  if (count === 0) return new Uint8Array(0);
+  const ptr = ensureScratch(count * 4);
+  sbc._sbc_world_static_triangle_materials(world, 0, count, ptr);
+  return Uint8Array.from(new Int32Array(heap(), ptr, count));
+}
+
 function reportStability(b: number, label: string): void {
   const out = ensureScratch(3 * 8);
   sbc._sbc_body_check_stability(world, b, 0.8, out);
@@ -124,7 +132,8 @@ function announceNewBodies(reset: boolean, label: string): void {
   }
   knownBodies = count;
   const tris = staticTriangles();
-  post({ type: 'topology', reset, bodies, staticTriangles: tris }, [tris.buffer]);
+  const mats = staticMaterials();
+  post({ type: 'topology', reset, bodies, staticTriangles: tris, staticMaterials: mats }, [tris.buffer, mats.buffer]);
 }
 
 function loadScene(name: string, bodies = 16): void {

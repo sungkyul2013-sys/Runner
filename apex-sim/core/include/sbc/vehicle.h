@@ -39,7 +39,29 @@ struct TyreParams {
   float lowSpeed = 2.5f;            // [m/s] below this the contact deflection is extra damped (standstill stability)
   float verticalStiffness = 2.5e5f; // radial tyre rate [N/m]: from the hub height above the road, acts on the hub
   float radialDamping = 0.15f;      // ζ of the tyre's radial damper (against the wheel mass)
+  // §6 damage. The pressure is the nominal (cold) inflation, for display and the pressure warning; deflation scales
+  // the tyre's air-borne stiffness (cavity gauge, sidewall compression, radial rate), grip, cornering stiffness and
+  // rolling resistance. A tyre that bottoms out on an obstacle is pinched against its rim: a puncture when a loaded
+  // tread node comes within 5 mm of the rim radius, a blowout when it is pushed 2.5 cm past it, and the same when the
+  // rim itself strikes (pinchForce, blowoutForce). A flat tyre driven on shreds after shredDistance of speed-weighted
+  // running ((v / 20 m/s)² per metre) and comes off the rim.
+  float pressure = 2.5f;            // [bar] nominal gauge
+  float pinchForce = 3000.0f;       // [N] rim contact force through the tyre that punctures it
+  float blowoutForce = 25000.0f;    // [N]
+  float shredDistance = 1500.0f;    // [m]
 };
+
+// §6 tyre and wheel damage (WheelTelemetry::tyreFlags).
+namespace tyre_flag {
+constexpr uint32_t kPuncture = 1u << 0,     // leaking (sharp object, pinch, bent rim)
+                   kBlowout = 1u << 1,      // lost its air at once
+                   kBeadUnseated = 1u << 2, // slipped off the rim bead (low pressure, hard cornering)
+                   kFlat = 1u << 3,         // under 15 % of its pressure
+                   kRimContact = 1u << 4,   // the rim touches the ground or an obstacle (sparks)
+                   kShredded = 1u << 5,     // the tyre came off: running on the rim
+                   kRimBent = 1u << 6,      // rim plastically deformed (vibration, slow leak)
+                   kBearing = 1u << 7;      // hub bearing damaged (drag)
+}
 
 // ---- wheel ------------------------------------------------------------------------------------------------------
 struct WheelDesc {
@@ -222,6 +244,12 @@ struct WheelTelemetry {
   bool absActive = false;
   Vec3 center;              // body-local wheel centre [m]
   Vec3 axis;                // body-local unit spin axis (points left)
+  // §6 tyre damage
+  float pressure = 0.0f;    // [bar] gauge
+  uint32_t tyreFlags = 0;   // tyre_flag:: bits
+  float sparks = 0.0f;      // rim-on-ground spark intensity [0, 1] (contact force × sliding speed)
+  Vec3 sparkPoint;          // body-local [m]
+  float rimBend = 0.0f;     // largest plastic strain of the rim [-]
 };
 
 struct VehicleTelemetry {

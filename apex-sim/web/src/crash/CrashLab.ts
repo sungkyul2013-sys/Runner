@@ -10,6 +10,7 @@ import type { Viewer } from '../render/Viewer';
 import { tl } from '../ui/i18n';
 import { TimeGraph } from '../ui/TimeGraph';
 import { Debris, glassDebris, lampDebris } from '../vehicles/Debris';
+import { Sparks } from '../vehicles/Sparks';
 import { VehicleActor } from '../vehicles/VehicleActor';
 import { EventLog, type CollisionRow } from './events';
 import { crashLaunch, type CrashSpec } from './scenario';
@@ -22,6 +23,7 @@ export class CrashLab {
   readonly log = new EventLog();
   readonly glassDebris: Debris = glassDebris();
   readonly lampDebris: Debris = lampDebris();
+  readonly sparks = new Sparks();
   readonly energyGraph = new TimeGraph('에너지 · Energy', [
     { label: '운동', color: '#3d8bff' },
     { label: '탄성·접촉', color: '#fbbf24' },
@@ -49,7 +51,7 @@ export class CrashLab {
     private readonly debug: DebugBodies,
     private readonly onError: (message: string) => void,
   ) {
-    viewer.scene.add(this.glassDebris.group, this.lampDebris.group);
+    viewer.scene.add(this.glassDebris.group, this.lampDebris.group, this.sparks.group);
   }
 
   /** Vehicles of the current run (tests). */
@@ -73,12 +75,13 @@ export class CrashLab {
     this.momentumGraph.clear();
     this.glassDebris.clear();
     this.lampDebris.clear();
+    this.sparks.clear();
     const wanted = spec.kind === 'carToCar' ? [vehicleA, vehicleB] : [vehicleA];
     // Reuse a slot's actor (and its bound model) while its vehicle stays the same.
     for (let i = 0; i < Math.max(wanted.length, this.actors.length); i++) {
       const keep = i < wanted.length && this.actors[i]?.vehicle.id === wanted[i].id;
       if (!keep && this.actors[i]) this.actors[i].dispose();
-      if (i < wanted.length && !keep) this.actors[i] = new VehicleActor(this.physics, this.viewer, wanted[i], { glass: this.glassDebris, lamp: this.lampDebris }, this.onError);
+      if (i < wanted.length && !keep) this.actors[i] = new VehicleActor(this.physics, this.viewer, wanted[i], { glass: this.glassDebris, lamp: this.lampDebris, sparks: this.sparks }, this.onError);
     }
     this.actors.length = wanted.length;
     const plan = crashLaunch(spec, vehicleA.crash, vehicleB.crash);
@@ -142,6 +145,7 @@ export class CrashLab {
     });
     this.glassDebris.update(dt);
     this.lampDebris.update(dt);
+    this.sparks.update(dt);
     this.followCars(dt);
     const s = this.physics.latestStats();
     if (s && this.actors.some((a) => a.state)) {

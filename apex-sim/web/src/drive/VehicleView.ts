@@ -5,7 +5,7 @@
 //            without one (the rigid fallback), the chassis frame
 import * as THREE from 'three/webgpu';
 import type { RenderFrame } from '../physics/PhysicsClient';
-import type { VehicleState, V3 } from '../physics/telemetry';
+import { TYRE, type VehicleState, type V3 } from '../physics/telemetry';
 import type { DamageGroupDef } from '../vehicles/Damage';
 import { Flexbody, type CageNode, type NodeLocator, type VehiclePartDef } from '../vehicles/Flexbody';
 import type { VehicleModel } from '../vehicles/VehicleModel';
@@ -104,6 +104,13 @@ export class VehicleView {
       mount.matrix.compose(new THREE.Vector3(...w.center), basis(axis, up, fwd), this.mountScale[j]);
       mount.matrixWorldNeedsUpdate = true;
       this.model.wheels[j].rotation.x = w.angle; // positive about the left-pointing axis = rolling forward
+      // §6: the tyre flattens where it meets the road by the physics deflection; a shredded one is gone (rim only).
+      const tyre = this.model.tyres[j];
+      if (tyre) {
+        tyre.group.visible = (w.tyreFlags & TYRE.shredded) === 0;
+        const deflection = w.contact ? Math.max(0, w.tyreRadius - w.loadedRadius) : 0;
+        tyre.floor.value = deflection > 0.002 ? -(tyre.radius - deflection) : -2 * tyre.radius;
+      }
     });
   }
 

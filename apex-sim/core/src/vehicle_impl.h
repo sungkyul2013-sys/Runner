@@ -47,6 +47,9 @@ class Vehicle {
       h.value(w.rhoX); h.value(w.rhoY); h.value(w.brakeAngle); h.value(w.absFactor); h.value(w.angle);
     }
     for (const uint8_t lost : wheelLost_) h.value(lost);
+    for (const TyreState& t : tyres_) {
+      h.value(t.inflation); h.value(t.leak); h.value(t.flatRun); h.value(t.rimBend); h.value(t.bearing); h.value(t.applied); h.value(t.flags);
+    }
     h.value(wrecked_);
     h.value(coolantL_); h.value(oilL_); h.value(fuelL_); h.value(coolantC_); h.value(engineWear_); h.value(lastPower_);
     h.value(engineFailed_); h.value(faults_);
@@ -73,6 +76,10 @@ class Vehicle {
   // §4.4: link severities from the body's damage groups, fluids, temperatures and engine wear for this step; sets the
   // modifiers below (vehicle_damage.cpp).
   void updateDamage(const Body& body, double dt, double speed);
+  // §6 tyre damage (vehicle_tyres.cpp): the wheels' tyre topology (constructor), then each step the damage triggers,
+  // deflation and its effects on the body (cavity gauge, sidewall stiffness; energy booked), shredding.
+  void initTyres(const Body& body);
+  void updateTyres(const World& world, Body& body, double dt, double speed, bool track);
   double gearRatio(int gear) const;  // incl. final drive; negative in reverse
   void updateGearbox(double dt, double speed, double wheelSideOmega);
   double engineTorque(double rpm, double throttle) const;  // net brake torque [N·m]
@@ -101,6 +108,29 @@ class Vehicle {
   // chassis reference (the car broke apart) switches the controller off.
   std::vector<uint8_t> wheelLost_;
   bool wrecked_ = false;
+
+  // §6 tyre state per wheel, its topology in the body, and the scales deflation sets for the tyre model.
+  struct TyreState {
+    double inflation = 1.0;   // [0, 1] of the nominal pressure
+    double leak = 0.0;        // [1/s] fraction of the nominal pressure lost per second
+    double flatRun = 0.0;     // speed-weighted distance run flat [m]
+    double rimBend = 0.0;     // [-]
+    double bearing = 0.0;     // [0, 1]
+    double applied = 1.0;     // structural scale last written to the body
+    uint32_t flags = 0;
+    // topology
+    std::vector<int32_t> rimNodes, sidewall, carcass, rimBeams;
+    std::vector<float> sidewallK0;
+    int group = -1;
+    float gauge0 = 0.0f;
+    double rimRadius = 0.0;  // mean radial distance of the rim nodes from the axle line [m]
+    // this step
+    double muScale = 1.0, slipScale = 1.0, crrScale = 1.0, radialScale = 1.0;
+    double sparks = 0.0;
+    DVec3 sparkPoint;
+  };
+  std::vector<TyreState> tyres_;
+  std::vector<const std::vector<int32_t>*> spinNodes_;  // rotating nodes, or the rim alone once the tyre is gone
 
   // §4.4 damage → function: fluids [L], coolant temperature [°C], engine wear [0, 1], last step's engine output [W],
   // and the modifiers the damage links set each step.

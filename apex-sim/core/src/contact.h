@@ -203,6 +203,8 @@ struct ContactSolver {
   static void applyCcdStatic(World& world, int bodyIndex);
   // Potential energy of one body's springs against static geometry (as contactPotential counts it).
   static double staticContactPotential(const World& world, int bodyIndex);
+  // The same for one node of the body at `position` (body-local), against this step's static candidates.
+  static double staticNodePotential(const World& world, int bodyIndex, int node, Vec3 position);
   // Contacts between different bodies (serial phase, deterministic pair order): node↔triangle and edge↔edge when
   // both bodies have a collision surface, node spheres otherwise.
   template <bool kTrack>

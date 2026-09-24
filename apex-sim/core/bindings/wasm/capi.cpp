@@ -96,6 +96,13 @@ int sbc_world_add_static_box(sbc_world* w, double cx, double cy, double cz, floa
 
 int sbc_world_static_triangle_count(sbc_world* w) { return w ? w->world.staticTriangleCount() : 0; }
 
+int sbc_world_static_triangle_materials(sbc_world* w, int first, int count, int* out) {
+  if (!w || first < 0 || !out) return -1;
+  int written = 0;
+  for (int t = first; t < first + count && t < w->world.staticTriangleCount(); ++t) out[written++] = w->world.staticTriangleMaterial(t);
+  return written;
+}
+
 int sbc_world_static_triangles(sbc_world* w, int first, int count, float* out) {
   if (!w || first < 0) return -1;
   int written = 0;
@@ -428,6 +435,12 @@ int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
     o[11] = wt.center.x; o[12] = wt.center.y; o[13] = wt.center.z;
     o[14] = wt.axis.x; o[15] = wt.axis.y; o[16] = wt.axis.z;
     o[17] = d.wheels[static_cast<size_t>(i)].tyre.radius;
+    o[18] = wt.pressure;
+    o[19] = static_cast<float>(wt.tyreFlags);
+    o[20] = wt.sparks;
+    o[21] = wt.sparkPoint.x; o[22] = wt.sparkPoint.y; o[23] = wt.sparkPoint.z;
+    o[24] = wt.rimBend;
+    o[25] = d.wheels[static_cast<size_t>(i)].tyre.pressure;
   }
   return needed;
 }

@@ -133,6 +133,7 @@ class World {
   int staticTriangleCount() const { return static_cast<int>(staticTris_.size()); }
   // World-space vertices of static triangle t (for rendering / debug views).
   std::array<DVec3, 3> staticTriangleWorld(int t) const;
+  uint16_t staticTriangleMaterial(int t) const { return staticTris_.at(static_cast<size_t>(t)).material; }
 
   // ---- bodies ----
   int addBody(const BodyDesc& desc);

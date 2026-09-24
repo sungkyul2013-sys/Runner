@@ -43,6 +43,7 @@ add_library(sbc STATIC
   src/job_system.cpp
   src/scenes.cpp
   src/vehicle.cpp
+  src/vehicle_tyres.cpp
     src/vehicle_damage.cpp
   src/proto_car.cpp
   src/vehicle_build.cpp
@@ -139,6 +140,7 @@ if(SBC_BUILD_TESTS)
     tests/test_vehicle.cpp
     tests/test_vehicle_json.cpp
     tests/test_tethers.cpp
+    tests/test_tyres.cpp
   )
   target_link_libraries(sbc_tests PRIVATE sbc Catch2::Catch2WithMain)
   target_compile_options(sbc_tests PRIVATE ${SBC_FP_FLAGS})

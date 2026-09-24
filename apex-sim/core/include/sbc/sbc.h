@@ -29,6 +29,8 @@ int sbc_world_static_triangle_count(sbc_world* w);
 /* Copies static triangles [first, first+count) as 9 floats each (world-space vertices, relative to the world
  * origin, float) into out. Returns the number written. */
 int sbc_world_static_triangles(sbc_world* w, int first, int count, float* out);
+/* Material ids of static triangles first … first + count − 1 (render colours). Returns the number written. */
+int sbc_world_static_triangle_materials(sbc_world* w, int first, int count, int* out);
 
 /* Lattice parameters, in this order (see LatticeParams in sbc/builder.h):
  *  0-2 center xyz [m]   3-5 size xyz [m]   6-8 nodes per axis   9 total mass [kg]   10 node radius [m]
@@ -114,7 +116,7 @@ int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake
 /* Packed telemetry: SBC_VT_HEADER floats, then SBC_VT_WHEEL floats per wheel (layout below). Returns the number of
    floats written, or −(floats needed) when capacity is too small. Positions are body-local (add sbc_body_origin). */
 #define SBC_VT_HEADER 58
-#define SBC_VT_WHEEL 20
+#define SBC_VT_WHEEL 26
 /* header: 0 time, 1 speed [m/s], 2 engine rpm, 3 engine torque [N·m], 4 clutch torque, 5 gear (−1 R, 0 N),
    6 flags (1 shifting, 2 engine running, 4 TCS active), 7 throttle, 8 brake, 9 steer, 10 clutch, 11 accel long,
    12 accel lat [m/s²], 13 odometer [m], 14–16 chassis position, 17–19 forward, 20–22 up, 23–25 left,
@@ -125,7 +127,8 @@ int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake
    [J], 51 speed at the start [m/s], 52–54 position at the start (world frame), 55–57 velocity at the start
    wheel: 0 spin [rad/s], 1 spin angle [rad], 2 load [N], 3 slip ratio, 4 slip angle [rad], 5 Fx, 6 Fy [N],
    7 brake torque, 8 drive torque [N·m], 9 loaded radius [m], 10 flags (1 contact, 2 ABS active), 11–13 centre,
-   14–16 axis (points left), 17 tyre radius [m], 18–19 reserved */
+   14–16 axis (points left), 17 tyre radius [m], 18 tyre pressure [bar], 19 tyre flags (tyre_flag::), 20 rim sparks
+   [0, 1], 21–23 spark point (body-local), 24 rim bend (plastic strain), 25 nominal pressure [bar] */
 int sbc_vehicle_telemetry(sbc_world* w, int vehicle, float* out, int capacity);
 
 #ifdef __cplusplus

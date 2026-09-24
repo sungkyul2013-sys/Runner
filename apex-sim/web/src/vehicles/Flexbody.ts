@@ -540,8 +540,12 @@ export class Flexbody {
 
   }
 
+  /** Bodies that carry cage nodes now (the vehicle and the parts that broke off it with some of its lattice). */
+  readonly bodies = new Set<number>();
+
   private locateAll(locate: NodeLocator): void {
     const L = this.located;
+    this.bodies.clear();
     this.cage.forEach((c, k) => {
       const at = (node: number, slot: number) => {
         const [b, n] = locate(this.body, node);
@@ -549,6 +553,7 @@ export class Flexbody {
         L[k * 10 + slot * 2 + 1] = n;
       };
       at(c.index, 0);
+      this.bodies.add(L[k * 10]);
       for (let j = 0; j < 2; j++) {
         at(c.x[j]?.node ?? c.index, 1 + j);
         at(c.z[j]?.node ?? c.index, 3 + j);

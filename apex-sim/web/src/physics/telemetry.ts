@@ -68,6 +68,25 @@ export const VW = {
   center: 11,
   axis: 14,
   tyreRadius: 17,
+  // §6 tyre damage
+  pressure: 18,
+  tyreFlags: 19,
+  sparks: 20,
+  sparkPoint: 21,
+  rimBend: 24,
+  nominalPressure: 25,
+} as const;
+
+/** Core tyre_flag:: bits (sbc/vehicle.h). */
+export const TYRE = {
+  puncture: 1 << 0,
+  blowout: 1 << 1,
+  beadUnseated: 1 << 2,
+  flat: 1 << 3,
+  rimContact: 1 << 4,
+  shredded: 1 << 5,
+  rimBent: 1 << 6,
+  bearing: 1 << 7,
 } as const;
 
 export type V3 = [number, number, number];
@@ -84,6 +103,13 @@ export interface WheelState {
   axis: V3; // unit, points to the vehicle's left
   tyreRadius: number;
   loadedRadius: number;
+  // §6 tyre damage
+  pressure: number; // [bar]
+  nominalPressure: number; // [bar]
+  tyreFlags: number; // TYRE bits
+  sparks: number; // rim-on-ground spark intensity [0, 1]
+  sparkPoint: V3; // render space
+  rimBend: number; // plastic strain of the rim [-]
 }
 
 export interface VehicleState {
@@ -177,6 +203,12 @@ export function decodeVehicle(r: Float32Array, origin: V3, renderOrigin: V3 = [0
       axis: v3(r, o + VW.axis),
       tyreRadius: r[o + VW.tyreRadius],
       loadedRadius: r[o + VW.loadedRadius],
+      pressure: r[o + VW.pressure],
+      nominalPressure: r[o + VW.nominalPressure],
+      tyreFlags: Math.round(r[o + VW.tyreFlags]),
+      sparks: r[o + VW.sparks],
+      sparkPoint: [origin[0] + r[o + VW.sparkPoint], origin[1] + r[o + VW.sparkPoint + 1], origin[2] + r[o + VW.sparkPoint + 2]],
+      rimBend: r[o + VW.rimBend],
     });
   }
   return {

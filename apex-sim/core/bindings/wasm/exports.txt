@@ -7,6 +7,7 @@ _sbc_world_add_ground_plane
 _sbc_world_add_static_box
 _sbc_world_static_triangle_count
 _sbc_world_static_triangles
+_sbc_world_static_triangle_materials
 _sbc_world_spawn_lattice
 _sbc_world_add_body_velocity
 _sbc_world_add_tether
