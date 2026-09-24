@@ -21,10 +21,14 @@
 | `beamGroups` | 객체 | 빔 속성 묶음(이름 → 속성) |
 | `beams` | 배열 | 빔 목록 |
 | `sliders`, `torsionBars` | 배열 | 선택 |
+| `triangles` | 배열 | 충돌 표면 삼각형(M2) |
+| `aeroPanels` | 배열 | 경첩 패널 공력 삼각형(M2) |
+| `damageGroups` | 배열 | 손상 감시 그룹(유리·램프·부품, M2) |
 | `pressureWheels` | 배열 | 압력 휠 생성 블록(코어가 펼친다) |
 | `vehicle` | 객체 | 차량 컨트롤러. 없으면 일반 노드-빔 소품으로 취급한다 |
 | `targets` | 객체(숫자) | 시험 목표값(KICKOFF C7): `mass`, `frontWeightFraction`, `zeroTo100`, `topSpeed`, `braking100`, `skidpadG` … |
 | `sources` | 객체(문자열) | 목표값·추정치의 출처 설명(로더는 읽지 않는다) |
+| `visual` | 객체 | 렌더 메타데이터(코어는 읽지 않는다): `parts`(경첩 패널 GLB 조각 → 패널 노드 접두사), `airbags`(위치·크기) |
 
 ## 노드
 
@@ -57,10 +61,14 @@
 | `k` | 강성 [N/m] (필수, > 0) |
 | `c` 또는 `zeta` | 감쇠 [N·s/m], 또는 감쇠비 ζ → `c = 2ζ√(k·m_r)`(양 끝 노드의 환산 질량) |
 | `plasticForce`, `hardening` | 항복 시작 힘 [N], 항복 후 기울기(k 대비) |
-| `breakForce`, `deformLimit`, `breakGroup` | 파단 힘, 누적 소성 변형 한계, 함께 끊어지는 그룹 이름 |
+| `breakForce`, `deformLimit`, `breakGroup` | 파단 힘, 누적 소성 변형 한계, 함께 끊어지는 그룹 이름(한 빔이 끊어지면 그룹 전체가 끊어진다 → 부품 분리) |
+| `crushLimit` | 소성으로 줄어들 수 있는 초기 길이의 비율(기본 0.95). 그 아래에서는 탄성으로 남아 두 노드를 떼어 놓는다(찌그러진 판재의 밀착) |
+| `tearLimit` | 순 소성 신장률 (L0 − L0,init)/L0,init이 이 값을 넘으면 찢어진다(연성 인장 파단) |
+| `fatigueLimit` | 방향이 뒤바뀐 누적 소성 변형률 한계(저사이클 피로): 앞뒤로 흔들린 경첩은 찢어지고, 한 번 굽은 것은 버틴다 |
+| `damage`, `damageStrain` | 이 빔을 감시하는 손상 그룹 id, 그 빔의 발동 변형률(없으면 그룹 값) |
 | `rest` / `restOffset` | 휴지 길이 절댓값 / 초기 길이 + 오프셋(스프링 예압). 없으면 초기 길이 |
 | `min`·`max` / `minOffset`·`maxOffset` | `bounded` 범위(절댓값 / 초기 길이 기준) |
-| `hydro` | `{channel, factor, speed}`: `L0 = L0,init·(1 + factor·입력)`, 속도 제한 |
+| `hydro` | `{channel, factor, speed}`: `L0 = L0,init·(1 + factor·입력) + 소성 오프셋`, 속도 제한. hydro 빔도 `plasticForce`로 항복한다(휜 타이로드: 소성 변화가 오프셋으로 남는다) |
 
 빔 항목의 넷째 요소(선택)는 그룹 속성을 덮어쓴다.
 
@@ -71,7 +79,20 @@
 "torsionBars": [{ "arm1": "FL_kl", "pivot1": "FL_arb", "pivot2": "FR_arb", "arm2": "FR_kl", "k": 2600, "c": 8 }]
 ```
 
-슬라이더는 노드를 두 레일 노드를 지나는 직선에 묶는다(맥퍼슨 스트럿의 톱 마운트). 토션 바는 두 레버의 피벗 축 둘레 상대 비틀림에 저항한다(안티롤바).
+슬라이더는 노드를 두 레일 노드를 지나는 직선에 묶는다(맥퍼슨 스트럿의 톱 마운트). 토션 바는 두 레버의 피벗 축 둘레 상대 비틀림에 저항한다(안티롤바). 토션 바의 `breakTwist` [rad](기본 1)를 넘게 비틀리거나 레버가 피벗 축 위로 접히면 끊어진다.
+
+## 충돌 삼각형·공력 패널·손상 그룹 (M2)
+
+```jsonc
+"triangles":   [["c1_1_12", "c2_1_12", "c2_2_12", 0], …],          // [a, b, c, group?] 밖에서 보아 반시계
+"aeroPanels":  [["p_frontLid_0_1_0", "p_frontLid_1_1_0", "p_frontLid_1_2_0", 1.2, 0.3], …],  // [a, b, c, C_N?, C_S?]
+"damageGroups": [{ "id": "glass_windscreen", "strain": 0.006, "impact": 30000, "nodes": ["c1_3_8", …],
+                   "visual": { "kind": "glass", "glass": "laminated", "pieces": [[0, 0.929, 0.530], …] } }]
+```
+
+- `triangles`: 충돌 표면. 두께의 절반은 세 노드 반경의 평균이다. `group` ≥ 0이면 자기충돌 그룹이다. 그룹 g의 노드는 같은 바디의 다른 그룹(≥ 0) 삼각형과 부딪힌다(휠 ↔ 휠하우스). −1(기본)이면 다른 바디하고만 부딪힌다. 차량 외피 그룹은 삼각형 공력(`vehicle.aero.surfaceGroups`)도 받는다.
+- `aeroPanels`: 열린 후드·도어처럼 바람에 펄럭이는 판. 법선력 `C_N`(기본 1.2)과 바깥면 흡입 `C_S`(기본 0)를 가진다(A§4.9).
+- `damageGroups`: 감시하는 빔 묶음(빔의 `damage` 키). 빔 길이가 [1 − s, 1 + s]·L0,init을 벗어나거나 끊어지면 손상이다. 그룹 손상 = 손상된 빔의 비율이다. `impact` [N]은 `nodes`의 노드 하나에 걸린 접촉 힘이 이 값을 넘으면 손상으로 치는 기준이다. `visual`은 렌더러만 읽는다: `kind`(`glass`·`lamp`·`component`), 유리 종류(`laminated` 금이 감 / `tempered` 산산조각), 조각 기준점 `pieces`.
 
 ## 압력 휠
 
@@ -81,7 +102,7 @@
   "treadNodeMass": 0.20, "rimNodeMass": 0.25, "treadMaterial": "rubber", "rimMaterial": "steel" }
 ```
 
-코어의 `addPressureWheel`이 림 2열과 트레드 2열(반 세그먼트 엇갈림), 스포크, 사이드월, 벨트, 공동 압력 그룹을 만든다. 나머지 키(`rimStiffness`, `spokeStiffness`, `sidewallStiffness`, `sidewallTensionStiffness`, `treadStiffness`, `treadNodeRadius`, `structuralPressure`, 감쇠비 …)의 기본값은 `core/include/sbc/builder.h`의 `PressureWheelParams`를 따른다. 스핀 축은 `axleLeft − axleRight`이고 차량 왼쪽을 향한다.
+코어의 `addPressureWheel`이 림 2열과 트레드 2열(반 세그먼트 엇갈림), 스포크, 사이드월, 벨트, 공동 압력 그룹을 만든다. M2 키: `rimYieldForce` [N](림 빔 항복 힘, 0이면 탄성 — 연석·포트홀에 림이 휜다)과 `rimHardening`(항복 후 기울기, k 대비), `collisionSurface`(기본 true: 트레드·사이드월 충돌 삼각형), `collisionGroup`(자기충돌 그룹). 나머지 키(`rimStiffness`, `spokeStiffness`, `sidewallStiffness`, `sidewallTensionStiffness`, `treadStiffness`, `treadNodeRadius`, `structuralPressure`, 감쇠비 …)의 기본값은 `core/include/sbc/builder.h`의 `PressureWheelParams`를 따른다. 스핀 축은 `axleLeft − axleRight`이고 차량 왼쪽을 향한다.
 
 ## 차량 (`vehicle`)
 
@@ -102,7 +123,12 @@
                     "upshiftRpm": 7000, "downshiftRpm": 4000, "launchRpm": 4500 },
   "brakes": { "stiffness": 1e5, "damping": 40 },
   "electronics": { "abs": true, "absSlip": 0.13, "tcs": true, "tcsSlip": 0.10 },
-  "aero": { "dragArea": 0.65, "liftAreaFront": 0.03, "liftAreaRear": 0.06, "frontNodes": […], "rearNodes": […] }
+  "aero": { "dragArea": 0.65, "liftAreaFront": 0.03, "liftAreaRear": 0.06, "frontNodes": […], "rearNodes": […],
+            "surfaceGroups": [0], "baseSuction": 0.25, "skinFriction": 0.004,
+            "wings": [{ "name": "rearSpoiler", "nodes": ["c6_3_1", "c2_3_1", "c2_3_0", "c6_3_0"], "area": 0.3,
+                        "aspectRatio": 3.9, "zeroLiftAngle": 0.05, "angle": 0.1, "stallAngle": 0.26, "cd0": 0.03, "oswald": 0.8 }] },
+  "fluids": { "coolantL": 20, "oilL": 9, "fuelL": 67.5, "radiatorUA": 6000, "heatCapacity": 160000 },
+  "damageLinks": [{ "group": "radiator_left", "effect": "coolantLeak", "rate": 0.35 }, …]
 }
 ```
 
@@ -111,6 +137,10 @@
 - `driveShare`: 변속기 출력 토크 중 이 휠의 몫이다(합 ≤ 1, 오픈 디퍼렌셜). `axles`의 LSD가 좌우 차이를 옮긴다.
 - `centreCoupling`(선택): 능동 센터 커플링(PTM/할덱스형 다판 클러치). 켜면 `driveShare` 대신 변속기가 `rearAxle`을 직접 돌리고, 클러치가 frontShare·|토크|까지를 `frontAxle`로 넘긴다(빠른 쪽 → 느린 쪽으로만). frontShare는 두 축의 하중 비율을 따라 [minFront, maxFront] 안에서 초당 `rate`까지 움직인다. `frontAxle`·`rearAxle`은 `axles` 배열의 번호다.
 - `driveReaction`: 구동 토크 반력을 받는 차체 노드(3개 이상, 한 직선 위에 있으면 안 됨).
+- `tyre`의 M2 손상 키: `pressure` [bar](기준 공기압, 표시·경고용), `pinchForce` [N](타이어를 거쳐 림에 걸린 힘이 이를 넘으면 핀치 펑크), `blowoutForce` [N](블로우아웃), `shredDistance` [m](펑크 난 채로 달린 속도 가중 거리가 이를 넘으면 타이어가 찢겨 떨어진다). 동작은 A§4.7.
+- `aero`: `surfaceGroups`가 있으면 그 충돌 그룹의 삼각형마다 공력을 건다(바람받이 압력, 바람그늘 흡입 `baseSuction`, 표면 마찰 `skinFriction`). `dragArea`·`liftArea*`는 온전한 차의 목표 합계이고, 생성 시 보정해 맞춘다(A§4.9). `wings`: 네 노드(앞 왼쪽, 앞 오른쪽, 뒤 오른쪽, 뒤 왼쪽) 사각형 날개. 받음각은 노드 형상 + `angle` + 실행 중 조절값이다.
+- `fluids`: 냉각수·오일·연료량 [L], 온도 모델(`ambientC`, `thermostatC`, `derateC`, `failC`, `heatCapacity`, `heatShare`, `idleHeatW`, `radiatorUA`, `fanFlow`, `fullFlowSpeed`), 유압(`oilBarPer1000Rpm`, `maxOilBar`, `minOilBar`, `starveRpm`), 엔진 손상 속도(`seizeRate`, `overrevRate`), 연료(`efficiency`, `fuelEnergy`, `idleFuelLph`). 기본값은 `FluidsDesc`(`core/include/sbc/vehicle.h`).
+- `damageLinks`: 손상 그룹 → 기능 효과. `effect`는 `coolantLeak`·`oilLeak`·`fuelLeak`(`rate` [L/s]를 손상 비율로 곱함), `steering`, `driveLoss`·`brakeLoss`(`wheel` 필수), `gearbox`, `electrical`이다.
 
 ## 생성기
 
