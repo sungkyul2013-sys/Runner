@@ -7,6 +7,7 @@ import { abs, color, mix, normalWorld, smoothstep, texture, uniform, vec3 } from
 import type { MapData } from './builder';
 import { mapCanvas } from './MapUI';
 import type { Localized as Label } from '../ui/i18n';
+import { accentHex } from '../ui/settings';
 
 export interface DioramaPin {
   id: string;
@@ -39,7 +40,7 @@ export class MapDiorama {
   readonly base = BASE;
   private selected = '';
   private readonly pinMat = new THREE.MeshStandardNodeMaterial({ color: 0xf2f4f7, roughness: 0.3, emissive: 0x9aa4b4, emissiveIntensity: 0.25 });
-  private readonly pinActive = new THREE.MeshStandardNodeMaterial({ color: 0xff6b2c, roughness: 0.3, emissive: 0xff6b2c, emissiveIntensity: 1.4 });
+  private readonly pinActive = new THREE.MeshStandardNodeMaterial({ color: accentHex(), roughness: 0.3, emissive: accentHex(), emissiveIntensity: 1.4 });
   private readonly disposables: Array<{ dispose(): void }> = [this.pinMat, this.pinActive];
   private t = 0;
 
@@ -386,8 +387,8 @@ function addBase(d: MapDiorama, side: number): void {
   block.position.y = BASE / 2;
   block.receiveShadow = true;
   d.group.add(block);
-  const glow = d.track(new THREE.MeshBasicNodeMaterial({ color: 0xff6b2c }));
-  glow.colorNode = color(0xff6b2c).mul(1.6);
+  const glow = d.track(new THREE.MeshBasicNodeMaterial({ color: accentHex() }));
+  glow.colorNode = color(accentHex()).mul(1.6);
   const L = side + 0.26;
   for (const [x, z, w, dd] of [[0, L / 2, L, 0.012], [0, -L / 2, L, 0.012], [L / 2, 0, 0.012, L], [-L / 2, 0, 0.012, L]] as const) {
     const e = new THREE.Mesh(d.track(new THREE.BoxGeometry(w, 0.012, dd)), glow);

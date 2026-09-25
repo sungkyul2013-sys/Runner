@@ -13,9 +13,10 @@ import { Sparks } from '../vehicles/Sparks';
 import type { Leaks } from '../vehicles/Leaks';
 import type { Airbags } from '../vehicles/Airbags';
 import { VehicleActor } from '../vehicles/VehicleActor';
-import type { VehicleView } from './VehicleView';
+import { spawnPoseOf, type VehicleView } from './VehicleView';
 import { ChaseCamera } from './ChaseCamera';
 import { DriveInput } from './DriveInput';
+import { sound } from '../audio/Sound';
 
 export const DRIVE_SCENE = 'drive';
 
@@ -23,7 +24,8 @@ export class DriveSession {
   readonly dashboard: Dashboard;
   readonly input = new DriveInput();
   private chase: ChaseCamera;
-  private readonly actor: VehicleActor;
+  private actor: VehicleActor;
+
   private xray = false;
   private starting: Promise<void> | null = null;
   // Glass granules and lamp shards (§4.3 side-effect particles).
@@ -45,24 +47,28 @@ export class DriveSession {
     private readonly physics: PhysicsClient,
     private readonly viewer: Viewer,
     private readonly debug: DebugBodies,
-    readonly vehicle: DriveVehicle,
-    onError: (message: string) => void,
+    public vehicle: DriveVehicle,
+    private readonly onError: (message: string) => void,
     private readonly onPauseToggle: () => void,
     public pose: VehiclePose = { position: [0, 0, 0], yaw: 0, speed: 0 },
     readonly sceneId: string | null = DRIVE_SCENE,
   ) {
     this.dashboard = new Dashboard(vehicle.redlineRpm);
     this.chase = new ChaseCamera(viewer.camera, viewer.controls);
-    this.actor = new VehicleActor(physics, viewer, vehicle, { glass: this.glassDebris, lamp: this.lampDebris, sparks: this.sparks }, onError);
+    this.actor = this.makeActor(vehicle);
     this.input.onAction = (a) => {
-      if (a === 'camera') this.chase.toggle();
-      else if (a === 'reset') void this.restart();
+      if (a === 'camera') this.toggleCamera();
+      else if (a === 'reset') void this.resetCar().then(() => this.onReset?.());
       else if (a === 'xray') this.setXray(!this.xray);
     };
     window.addEventListener('keydown', (e) => {
       if (this.input.enabled && e.code === 'KeyP' && !e.repeat) this.onPauseToggle();
     });
     viewer.scene.add(this.glassDebris.group, this.lampDebris.group, this.sparks.group);
+  }
+
+  private makeActor(v: DriveVehicle): VehicleActor {
+    return new VehicleActor(this.physics, this.viewer, v, { glass: this.glassDebris, lamp: this.lampDebris, sparks: this.sparks }, this.onError);
   }
 
   /** Latest (interpolated) vehicle state — for tests and tools. */
@@ -106,8 +112,60 @@ export class DriveSession {
     this.glassDebris.clear();
     this.lampDebris.clear();
     this.sparks.clear();
-    await this.actor.spawn(this.pose);
+    await this.placeCar(this.pose);
+  }
+
+  private async placeCar(pose: VehiclePose): Promise<void> {
+    sound?.setEngine(this.vehicle.engineSound ?? {});
+    await this.actor.spawn(pose);
     this.setXray(this.xray);
+  }
+
+  /** The car where it stands as a spawn pose (upright, on the ground, lifted by `lift`); null before it is out. */
+  currentPose(lift = 0.3): VehiclePose | null {
+    return this.state ? spawnPoseOf(this.state, lift) : null;
+  }
+
+  /** Replaces the car by a fresh one at `pose` without rebuilding the world: the old one (and every part that broke
+   *  off it) is retired below the world. `vehicle` changes the car. */
+  async respawn(pose: VehiclePose, vehicle: DriveVehicle = this.vehicle): Promise<void> {
+    if (!this.actor.spawned) {
+      this.pose = pose;
+      if (vehicle !== this.vehicle) this.swapActor(vehicle);
+      return this.restart();
+    }
+    await this.starting;
+    this.physics.retireFamily(this.actor.spawned.body);
+    if (vehicle !== this.vehicle) this.swapActor(vehicle);
+    this.glassDebris.clear();
+    this.lampDebris.clear();
+    this.sparks.clear();
+    this.input.logic.reset();
+    this.chase.reset();
+    await this.placeCar(pose);
+  }
+
+  private swapActor(vehicle: DriveVehicle): void {
+    this.actor.dispose();
+    this.vehicle = vehicle;
+    this.actor = this.makeActor(vehicle);
+    this.dashboard.setRedline(vehicle.redlineRpm);
+  }
+
+  /** A new car where this one stands (the map and every other object stay as they are). */
+  async repair(): Promise<void> {
+    const pose = this.currentPose();
+    await this.respawn(pose ?? this.pose);
+  }
+
+  /** A new car at the start point (the world is not rebuilt). */
+  async resetCar(): Promise<void> {
+    await this.respawn(this.pose);
+  }
+
+  /** Another car, carrying on from where this one stands. */
+  async swapVehicle(vehicle: DriveVehicle): Promise<void> {
+    await this.respawn(this.currentPose(0.45) ?? this.pose, vehicle);
   }
 
   async restart(): Promise<void> {
@@ -123,6 +181,9 @@ export class DriveSession {
     return this.xray;
   }
 
+  /** Called after the reset key put the car back (the shell announces it). */
+  onReset: (() => void) | null = null;
+
   /** Another view owns the camera (the free-roam overview map): the chase camera stands by. */
   holdCamera = false;
 
@@ -136,13 +197,25 @@ export class DriveSession {
     this.input.enabled = on;
     this.dashboard.root.hidden = !on;
     this.viewer.freeMove = !on;
-    if (!on) this.viewer.controls.enabled = true;
+    if (!on) {
+      this.viewer.controls.enabled = true;
+      this.chase.release();
+    }
     else this.chase.reset();
+  }
+
+  /** The camera's name for the HUD and toasts. */
+  get cameraLabel(): string {
+    return this.chase.mode === 'chase' ? t('cameraChase') : this.chase.mode === 'roof' ? t('cameraRoof') : t('cameraOrbit');
   }
 
   toggleCamera(): void {
     this.chase.toggle();
+    this.onCamera?.(this.cameraLabel);
   }
+
+  /** Called when the camera changes (the shell announces it). */
+  onCamera: ((label: string) => void) | null = null;
 
   setXray(on: boolean): void {
     this.xray = on;
@@ -165,19 +238,25 @@ export class DriveSession {
     this.glassDebris.update(dt);
     this.lampDebris.update(dt);
     this.sparks.update(dt);
+    const stats = this.physics.latestStats();
+    sound?.update(this.active ? v : null, stats?.timeScale ?? 1, stats?.paused ?? false);
     if (!this.active) {
       // Parked: handbrake on, foot on the brake.
       this.physics.setVehicleInput(this.actor.spawned.vehicle, { throttle: 0, brake: 1, steer: 0, handbrake: 1, mode: 0, shift: 0, abs: true, tcs: true });
       return;
     }
-    if (!this.holdCamera) this.chase.update(dt, v);
+    if (!this.holdCamera) {
+      const short = innerHeight < 520 && innerWidth > innerHeight;
+      this.chase.lift = this.dashboard.root.hidden || this.dashboard.root.classList.contains('hud-off') ? 0 : short ? 0.15 : innerHeight > innerWidth ? 0.07 : 0.1;
+      this.chase.update(dt, v);
+    } else this.chase.release();
     this.physics.setVehicleInput(this.actor.spawned.vehicle, this.input.update(dt, v.speed));
     const logic = this.input.logic;
     this.dashboard.update(v, {
       manual: logic.manual,
       abs: logic.abs,
       tcs: logic.tcs,
-      camera: this.chase.mode === 'chase' ? t('cameraChase') : t('cameraOrbit'),
+      camera: this.cameraLabel,
     });
   }
 }

@@ -14,6 +14,9 @@ import { Sparks } from '../vehicles/Sparks';
 import { VehicleActor } from '../vehicles/VehicleActor';
 import { EventLog, type CollisionRow } from './events';
 import { crashLaunch, type CrashSpec } from './scenario';
+import { sound } from '../audio/Sound';
+import { DumpTrucks, cameraPreset, type CameraPreset } from './CrashExtras';
+import { spawnPoseOf } from '../drive/VehicleView';
 
 export const CRASH_SCENE = 'crash';
 
@@ -55,6 +58,10 @@ export class CrashLab {
   private launching: Promise<void> | null = null;
   /** Follow camera: eases its orbit centre toward the cars' centre and backs off to keep them all in view. */
   follow = true;
+  /** Camera locked: it stays exactly where it is (no following, no framing on launch, no orbiting). */
+  private camLocked = false;
+  private readonly trucks: DumpTrucks;
+  private focus = new THREE.Vector3(0, 0.8, -4);
   private logChanged = false;
   onLog: ((rows: CollisionRow[]) => void) | null = null;
   onWheels: ((rows: WheelRow[]) => void) | null = null;
@@ -68,6 +75,39 @@ export class CrashLab {
     private readonly onError: (message: string) => void,
   ) {
     viewer.scene.add(this.glassDebris.group, this.lampDebris.group, this.sparks.group);
+    this.trucks = new DumpTrucks(physics, viewer.scene);
+  }
+
+  get cameraLocked(): boolean {
+    return this.camLocked;
+  }
+
+  /** Locks or frees the camera (locked: the view stays put; nothing moves it, not even a drag). */
+  setCameraLock(on: boolean): void {
+    this.camLocked = on;
+    this.viewer.controls.enabled = !on;
+  }
+
+  /** Moves the camera to a preset angle around the test's point of impact. */
+  viewFrom(p: CameraPreset): void {
+    const { position, target } = cameraPreset(p, this.focus);
+    this.viewer.controls.target.copy(target);
+    this.viewer.camera.position.copy(position);
+    this.viewer.controls.update();
+  }
+
+  /** Repairs the cars where they stand (fresh cars in the same world; the old ones are retired below it). */
+  async repair(): Promise<void> {
+    for (const a of this.actors) {
+      const s = a.state;
+      if (!a.spawned || !s) continue;
+      this.physics.retireFamily(a.spawned.body);
+      const ok = await a.spawn(spawnPoseOf(s, 0.2), a.vehicle.id);
+      if (ok) this.physics.setVehicleInput(a.spawned!.vehicle, NEUTRAL);
+    }
+    this.glassDebris.clear();
+    this.lampDebris.clear();
+    this.setXray(this.xray);
   }
 
   /** Camber, toe and tyre pressure of every wheel of the current run. */
@@ -100,8 +140,12 @@ export class CrashLab {
     return this.launching;
   }
 
+  private runId = 0;
+
   private async run(spec: CrashSpec, vehicleA: VehiclePreset, vehicleB: VehiclePreset, staged: boolean): Promise<void> {
+    const id = ++this.runId; // a newer launch supersedes this one (its spawns are dropped by the worker)
     this.lastSpec = spec;
+    this.trucks.clear();
     // Hold the clock until every car is in place: the first car must not set off while the second one loads.
     this.physics.setPaused(true);
     this.physics.loadScene(CRASH_SCENE);
@@ -128,13 +172,17 @@ export class CrashLab {
     const poses = staged ? [still(plan.a), still(plan.b)] : [plan.a, plan.b];
     for (let i = 0; i < this.actors.length; i++) {
       const ok = await this.actors[i].spawn(poses[i]!, `${i === 0 ? 'A' : 'B'}:${wanted[i].id}`);
+      if (id !== this.runId) return;
       if (ok) this.physics.setVehicleInput(this.actors[i].spawned!.vehicle, NEUTRAL);
     }
+    if (id !== this.runId) return;
+    if (spec.kind === 'crush' && !staged) this.trucks.start(0);
     this.physics.setPaused(false);
-    const hasModels = this.actors.every((a) => a.hasModel);
-    this.debug.showBeams = !hasModels;
-    this.debug.showNodes = !hasModels;
+    this.focus.set(plan.focus[0], plan.focus[1], plan.focus[2]);
+    // X-ray survives a launch: the reused and the new cars both follow it (the models see-through, beams shown).
+    this.setXray(this.xray);
     this.viewer.freeMove = true;
+    if (this.camLocked) return; // the camera stays where the player put it
     if (staged) {
       // The ready shot: behind and to the right of car A, the barrier (or the other car) beyond it.
       const a = poses[0]!.position;
@@ -160,7 +208,10 @@ export class CrashLab {
     await this.launching;
   }
 
+  private xray = false;
+
   setXray(on: boolean): void {
+    this.xray = on;
     const hasModels = this.actors.length > 0 && this.actors.every((a) => a.hasModel);
     this.debug.showBeams = on || !hasModels;
     this.debug.showNodes = on || !hasModels;
@@ -169,7 +220,7 @@ export class CrashLab {
 
   private followCars(dt: number): void {
     const cars = this.actors.filter((a) => a.state).map((a) => a.state!.position);
-    if (!this.follow || cars.length === 0) return;
+    if (!this.follow || this.camLocked || cars.length === 0) return;
     const centre = new THREE.Vector3();
     for (const p of cars) centre.add(new THREE.Vector3(p[0], 0.5, p[2]));
     centre.divideScalar(cars.length);
@@ -196,6 +247,8 @@ export class CrashLab {
     this.sparks.update(dt);
     this.followCars(dt);
     const s = this.physics.latestStats();
+    this.trucks.update(s?.simTime ?? 0, frame);
+    sound?.update(this.actors[0]?.state ?? null, s?.timeScale ?? 1, s?.paused ?? false);
     if (s && this.actors.some((a) => a.state)) {
       const e = s.energy;
       this.energyGraph.push(s.simTime, [

@@ -85,10 +85,20 @@ inline uint64_t packCell(int64_t cx, int64_t cy, int64_t cz) {
 struct Hash {
   std::vector<std::pair<uint64_t, int32_t>>& cells;
   float inv;
+  // A box spanning more cells than this per axis only comes from a body that has blown apart (a node flung
+  // kilometres): it is clipped to that span so the step goes on (and the stability report names the body) instead of
+  // the hash growing without bound.
+  static constexpr int32_t kMaxSpan = 64;
+  static bool usable(const Box& box) {
+    return std::isfinite(box.lo.x) && std::isfinite(box.lo.y) && std::isfinite(box.lo.z) && std::isfinite(box.hi.x) &&
+           std::isfinite(box.hi.y) && std::isfinite(box.hi.z) && std::fabs(box.lo.x) < 1e7f && std::fabs(box.lo.y) < 1e7f &&
+           std::fabs(box.lo.z) < 1e7f && std::fabs(box.hi.x) < 1e7f && std::fabs(box.hi.y) < 1e7f && std::fabs(box.hi.z) < 1e7f;
+  }
   void insert(const Box& box, int32_t id) {
-    const int32_t x0 = cellCoord(box.lo.x, inv), x1 = cellCoord(box.hi.x, inv);
-    const int32_t y0 = cellCoord(box.lo.y, inv), y1 = cellCoord(box.hi.y, inv);
-    const int32_t z0 = cellCoord(box.lo.z, inv), z1 = cellCoord(box.hi.z, inv);
+    if (!usable(box)) return;
+    const int32_t x0 = cellCoord(box.lo.x, inv), x1 = std::min(cellCoord(box.hi.x, inv), x0 + kMaxSpan);
+    const int32_t y0 = cellCoord(box.lo.y, inv), y1 = std::min(cellCoord(box.hi.y, inv), y0 + kMaxSpan);
+    const int32_t z0 = cellCoord(box.lo.z, inv), z1 = std::min(cellCoord(box.hi.z, inv), z0 + kMaxSpan);
     for (int32_t x = x0; x <= x1; ++x)
       for (int32_t y = y0; y <= y1; ++y)
         for (int32_t z = z0; z <= z1; ++z) cells.push_back({packCell(x, y, z), id});
@@ -97,9 +107,10 @@ struct Hash {
   // Appends the ids stored in every cell overlapped by `box` to `out` (sorted, unique).
   void query(const Box& box, std::vector<int32_t>& out) const {
     out.clear();
-    const int32_t x0 = cellCoord(box.lo.x, inv), x1 = cellCoord(box.hi.x, inv);
-    const int32_t y0 = cellCoord(box.lo.y, inv), y1 = cellCoord(box.hi.y, inv);
-    const int32_t z0 = cellCoord(box.lo.z, inv), z1 = cellCoord(box.hi.z, inv);
+    if (!usable(box)) return;
+    const int32_t x0 = cellCoord(box.lo.x, inv), x1 = std::min(cellCoord(box.hi.x, inv), x0 + kMaxSpan);
+    const int32_t y0 = cellCoord(box.lo.y, inv), y1 = std::min(cellCoord(box.hi.y, inv), y0 + kMaxSpan);
+    const int32_t z0 = cellCoord(box.lo.z, inv), z1 = std::min(cellCoord(box.hi.z, inv), z0 + kMaxSpan);
     for (int32_t x = x0; x <= x1; ++x)
       for (int32_t y = y0; y <= y1; ++y)
         for (int32_t z = z0; z <= z1; ++z) {

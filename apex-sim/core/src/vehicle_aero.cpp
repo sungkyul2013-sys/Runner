@@ -163,6 +163,32 @@ Vehicle::AxleLine Vehicle::axleLine(const Body& b, DVec3 fwd) const {
 }
 
 void Vehicle::applyAero(const World& world, Body& b, bool track, DVec3 pc, DVec3 fwd, DVec3 up, DVec3 vcm) {
+  // The air loads change on the scale of tens of milliseconds: they are evaluated every kAeroInterval steps and the
+  // per-node forces held in between (a quarter of the cost; the panels are the car's surface triangles).
+  constexpr uint64_t kAeroInterval = 4;
+  if (world.stepIndex() % kAeroInterval != 0 && aeroNodesCached_ == b.nodeCount()) {
+    for (const AeroLoad& l : aeroLoads_) addExternal(b, l.node, l.force, track);
+    return;
+  }
+  aeroLoads_.clear();
+  if (aeroSum_.size() != static_cast<size_t>(b.nodeCount())) aeroSum_.assign(static_cast<size_t>(b.nodeCount()), DVec3{});
+  aeroNodesCached_ = b.nodeCount();
+  auto addExternal = [&](Body& body, int32_t i, DVec3 f, bool trk) {
+    ::sbc::addExternal(body, i, f, trk);
+    DVec3& sum = aeroSum_[static_cast<size_t>(i)];
+    if (sum.x == 0.0 && sum.y == 0.0 && sum.z == 0.0) aeroLoads_.push_back({i, {}});
+    sum += f;
+  };
+  struct Flush {  // moves the summed forces into the held list (and clears the dense scratch) on every return
+    std::vector<AeroLoad>& loads;
+    std::vector<DVec3>& sum;
+    ~Flush() {
+      for (AeroLoad& l : loads) {
+        l.force = sum[static_cast<size_t>(l.node)];
+        sum[static_cast<size_t>(l.node)] = {};
+      }
+    }
+  } flush{aeroLoads_, aeroSum_};
   const AeroDesc& A = desc_.aero;
   const double rho = A.airDensity;
   const AxleLine axles = axleLine(b, fwd);

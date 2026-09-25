@@ -119,7 +119,8 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
     session.pose = poseAt({ x: px, z: pz, yaw: pyaw });
     closeMap();
     ctx.toast(t('teleported'));
-    void session.restart().then(() => replan());
+    // Only the car moves: the old one is retired and a fresh one placed (the map is not rebuilt).
+    void session.respawn(session.pose).then(() => replan());
   };
   const worldMap = new WorldMap(map, relief, {
     teleport,

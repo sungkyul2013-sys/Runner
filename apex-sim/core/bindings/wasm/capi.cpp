@@ -184,6 +184,11 @@ int sbc_world_add_body_velocity(sbc_world* w, int body, float dvx, float dvy, fl
   return 0;
 }
 
+int sbc_world_retire_family(sbc_world* w, int body) {
+  if (!validBody(w, body)) return -1;
+  return w->world.retireFamily(body);
+}
+
 int sbc_world_add_tether(sbc_world* w, int body, int node, int anchorBody, int anchorNode, double x, double y, double z,
                          float length, int rope, float maxForce, float reelSpeed) {
   if (!w) return -1;

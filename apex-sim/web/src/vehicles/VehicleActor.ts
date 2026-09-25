@@ -16,6 +16,7 @@ import { Leaks } from './Leaks';
 import { LooseParts } from './LooseParts';
 import type { Sparks } from './Sparks';
 import { loadVehicleModel } from './VehicleModel';
+import { sound } from '../audio/Sound';
 
 export class VehicleActor {
   view: VehicleView | null = null;
@@ -59,7 +60,8 @@ export class VehicleActor {
     try {
       this.spawned = await this.physics.spawnVehicle(source, pose, label);
     } catch (err) {
-      this.onError(`${t('vehicleFailed')}: ${(err as Error).message}`);
+      // A newer world replaced the one this car was meant for (a relaunch): nothing to report.
+      if ((err as Error).message !== 'superseded') this.onError(`${t('vehicleFailed')}: ${(err as Error).message}`);
       return false;
     }
     if (modelPromise) {
@@ -79,8 +81,10 @@ export class VehicleActor {
         const known = this.physics.damage.get(this.spawned.body);
         if (known) this.view.flexbody?.setDamage(decodeDamage(known.status));
         if (this.view.flexbody) {
-          this.view.flexbody.onBreak = (kind, points, velocities, colors) =>
+          this.view.flexbody.onBreak = (kind, points, velocities, colors) => {
             (kind === 'glass' ? this.debris.glass : this.debris.lamp).spawn(points, velocities, kind === 'glass' ? 1.2 : 1.8, kind === 'lamp' ? colors : undefined);
+            sound?.glass(kind === 'glass' ? 1 : 0.5);
+          };
         }
       } catch (err) {
         this.onError(`${t('vehicleFailed')}: ${(err as Error).message}`);

@@ -189,7 +189,8 @@ async function main() {
         await page.waitForTimeout(250);
         s = await state();
       }
-      await page.keyboard.press('KeyC'); // orbit camera: look at the crushed nose from the front left
+      await page.keyboard.press('KeyC'); // chase → roof → orbit camera: look at the crushed nose from the front left
+      await page.keyboard.press('KeyC');
       await page.evaluate(() => {
         const d = window.__apex.drive, p = d.latest.position;
         d.viewer.controls.target.set(p[0], p[1], p[2] + 1.0);
@@ -313,7 +314,8 @@ async function main() {
         await page.waitForTimeout(500);
         s = await state();
       }
-      await page.keyboard.press('KeyC'); // orbit camera, low at the front right wheel
+      await page.keyboard.press('KeyC'); // chase → roof → orbit camera, low at the front right wheel
+      await page.keyboard.press('KeyC');
       await page.evaluate(() => {
         const d = window.__apex.drive, p = d.latest.position, f = d.latest.forward, l = d.latest.left;
         d.viewer.controls.target.set(p[0] + f[0] * 1.2 - l[0] * 0.8, 0.3, p[2] + f[2] * 1.2 - l[2] * 0.8);

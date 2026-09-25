@@ -103,6 +103,14 @@ class Vehicle {
   void applyAero(const World& world, Body& body, bool track, DVec3 pc, DVec3 fwd, DVec3 up, DVec3 vcm);
   std::vector<int> surfaceTris_;
   std::vector<double> wingExtra_;
+  // Air loads held between evaluations (applyAero): per-node forces, and a dense scratch to sum them.
+  struct AeroLoad {
+    int32_t node;
+    DVec3 force;
+  };
+  std::vector<AeroLoad> aeroLoads_;
+  std::vector<DVec3> aeroSum_;
+  int aeroNodesCached_ = -1;
   double aeroScale_ = 1.0, liftResidualFront_ = 0.0, liftResidualRear_ = 0.0;
   double wakeDiameter_ = 1.8, wakeHalfLength_ = 2.2;
   double gearRatio(int gear) const;  // incl. final drive; negative in reverse

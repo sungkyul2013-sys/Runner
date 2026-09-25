@@ -49,7 +49,10 @@ int collectStaticContacts(const ContactScratch& s, Vec3 x, float r, Contact* out
     const float d = x.y - pl.height;
     if (d < r && n < kMaxCandidates) cand[n++] = {{0.0f, 1.0f, 0.0f}, r - d, pl.id, pl.material};
   }
-  for (const LocalTri& t : s.tris) {
+  const bool nearAny = x.x + r >= s.trisLo.x && x.x - r <= s.trisHi.x && x.y + r >= s.trisLo.y && x.y - r <= s.trisHi.y &&
+                       x.z + r >= s.trisLo.z && x.z - r <= s.trisHi.z;
+  for (size_t k = 0; nearAny && k < s.tris.size(); ++k) {
+    const LocalTri& t = s.tris[k];
     if (n >= kMaxCandidates) break;
     if (x.x + r < t.boundsMin.x || x.x - r > t.boundsMax.x || x.y + r < t.boundsMin.y || x.y - r > t.boundsMax.y ||
         x.z + r < t.boundsMin.z || x.z - r > t.boundsMax.z) {
@@ -149,6 +152,12 @@ void ContactSolver::gatherStaticCandidates(const World& w, const Body& b, Contac
     for (size_t k = 0; k < w.staticTris_.size(); ++k) test(k);
   }
   if (w.heightfield_.nx > 0) gatherHeightfield(w, b, lo, hi, s);
+  s.trisLo = {1e30f, 1e30f, 1e30f};
+  s.trisHi = {-1e30f, -1e30f, -1e30f};
+  for (const LocalTri& t : s.tris) {
+    s.trisLo = {std::min(s.trisLo.x, t.boundsMin.x), std::min(s.trisLo.y, t.boundsMin.y), std::min(s.trisLo.z, t.boundsMin.z)};
+    s.trisHi = {std::max(s.trisHi.x, t.boundsMax.x), std::max(s.trisHi.y, t.boundsMax.y), std::max(s.trisHi.z, t.boundsMax.z)};
+  }
 }
 
 // Terrain cells under the body's query box, as local triangles (cells ascending, lower-left triangle first).
@@ -345,7 +354,14 @@ int ContactSolver::ccdStatic(World& w, int bodyIndex) {
         if (t < bestT) { bestT = t; bestNormal = {0.0f, 1.0f, 0.0f}; bestOffset = pl.height; bestMaterial = pl.material; }
       }
     }
-    for (const LocalTri& t : s.tris) {
+    // A crossing point lies on the step's segment and inside a triangle: a segment clear of the triangles' union
+    // box (with 5 mm for the inside tolerance) crosses none.
+    constexpr float kSweepSlack = 0.005f;
+    const bool nearAny = std::max(x0.x, x1.x) + kSweepSlack >= s.trisLo.x && std::min(x0.x, x1.x) - kSweepSlack <= s.trisHi.x &&
+                         std::max(x0.y, x1.y) + kSweepSlack >= s.trisLo.y && std::min(x0.y, x1.y) - kSweepSlack <= s.trisHi.y &&
+                         std::max(x0.z, x1.z) + kSweepSlack >= s.trisLo.z && std::min(x0.z, x1.z) - kSweepSlack <= s.trisHi.z;
+    for (size_t k = 0; nearAny && k < s.tris.size(); ++k) {
+      const LocalTri& t = s.tris[k];
       const float d0 = dot(x0 - t.v0, t.normal), d1 = dot(x1 - t.v0, t.normal);
       if (!(d0 >= -kCcdSlop && d1 < 0.0f && d1 < d0)) continue;
       const float tt = std::max(0.0f, d0) / (d0 - d1);
@@ -442,7 +458,7 @@ double ContactSolver::contactPotential(const World& w, bool extendedBand) {
     std::vector<float>& cap = capacity[bi];
     cap.resize(static_cast<size_t>(b.nodeCount()));
     for (int i = 0; i < b.nodeCount(); ++i) cap[static_cast<size_t>(i)] = contactCapacity(b.mass[i], 0);
-    if (s.tris.empty() && s.planes.empty()) continue;
+    if (!b.enabled || (s.tris.empty() && s.planes.empty())) continue;  // a retired body touches nothing
     for (int i = 0; i < b.nodeCount(); ++i) {
       if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) continue;
       const int n = collectStaticContacts(s, b.nodePosition(i), b.radius[i], contacts);

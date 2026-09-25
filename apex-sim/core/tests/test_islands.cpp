@@ -162,3 +162,37 @@ TEST_CASE("Porsche 911 Turbo: a wheel torn off rolls away as its own body, the c
   CHECK(y > -0.05);                                 // lying or rolling on the road, not through it
   CHECK(std::isfinite(w.vehicleTelemetry(v).speed));
 }
+
+TEST_CASE("a retired family is parked below the world and no longer stepped", "[islands][retire]") {
+  WorldParams wp;
+  wp.trackEnergy = true;
+  World w(wp);
+  applyDefaultContactPairs(w);
+  w.addGroundPlane(0.0, material::kConcrete);
+  w.addBody(tiedCubes(800.0f, -1, {6.0f, 0.0f, 0.0f}));  // tears in two: body 1 is a part of body 0's family
+  for (int s = 0; s < 400; ++s) w.step();
+  REQUIRE(w.bodyCount() == 2);
+  LatticeParams p;
+  p.size = {0.5f, 0.5f, 0.5f};
+  p.nx = p.ny = p.nz = 2;
+  p.totalMass = 20.0f;
+  p.axialStiffness = 2.0e5f;
+  p.center = {-3.0, 0.4, 0.0};
+  const int other = w.addBody(makeLattice(p));
+  const double y0 = w.body(other).origin.y + w.body(other).py[0];
+  CHECK(w.retireFamily(0) == 2);
+  CHECK(!w.body(0).enabled);
+  CHECK(!w.body(1).enabled);
+  CHECK(w.body(other).enabled);
+  const float px = w.body(1).px[0];
+  const double origin = w.body(0).origin.y;
+  for (int s = 0; s < 400; ++s) w.step();
+  CHECK(w.body(1).px[0] == px);                        // frozen
+  CHECK(w.body(0).origin.y == origin);                 // parked where it was put
+  CHECK(origin < -World::kParkDepth + 10.0);
+  CHECK(w.body(other).origin.y + w.body(other).py[0] < y0);  // the rest of the world goes on (it settles)
+  CHECK(w.retireFamily(0) == 0);                      // already retired
+  const EnergyReport e = w.measureEnergy();
+  INFO("balance " << e.balance() << " J");
+  CHECK(std::fabs(e.balance()) < 20.0);
+}

@@ -150,7 +150,9 @@ export class Environment {
 
   /** Rebuilds the reflection map when the sky has changed enough (a quarter hour, a weather step). */
   private updateReflections(day: number): void {
-    const key = `${Math.round(this.hour * 4)}|${Math.round(this.cur.cloud * 8)}|${Math.round(this.cur.fog / 500)}`;
+    // Half-hour steps: at the default day speed that is one rebuild a minute, into the same small target (the car
+    // paint blurs the sky anyway), so the rebuild is short and allocates nothing.
+    const key = `${Math.round(this.hour * 2)}|${Math.round(this.cur.cloud * 6)}|${Math.round(this.cur.fog / 800)}`;
     const now = performance.now();
     if (key === this.envKey || now - this.envAt < 1500) return;
     this.envKey = key;
@@ -163,10 +165,10 @@ export class Environment {
     this.dome.position.set(0, 0, 0);
     this.envScene.add(this.sky, this.dome);
     try {
-      const rt = this.pmrem.fromScene(this.envScene, 0.02, 1, 60000);
+      const rt = this.pmrem.fromScene(this.envScene, 0.02, 1, 60000, { size: 128, renderTarget: this.envRT });
       if (this.envNode) this.envNode.value = rt.texture;
       else this.envNode = pmremTexture(rt.texture);
-      this.envRT?.dispose();
+      if (this.envRT && this.envRT !== rt) this.envRT.dispose();
       this.envRT = rt;
     } catch {
       // No reflection map on this backend: the lights alone.

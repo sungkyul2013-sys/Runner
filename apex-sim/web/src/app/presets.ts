@@ -37,6 +37,8 @@ export interface VehiclePreset {
   redlineRpm: number;
   crash: { front: number; width: number }; // [m] footprint for the crash launcher: origin to front bumper, width
   specs?: VehicleSpecs;
+  /** Engine voice (§17): cylinders (four-stroke firing order), forced induction, idle and redline [rpm]. */
+  engineSound?: { cylinders?: number; turbo?: boolean; idleRpm?: number; redlineRpm?: number };
 }
 
 /** A car on the main menu's turntable: a drivable one (`drive`: its vehicle preset) or a visual-only model. */

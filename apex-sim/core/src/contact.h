@@ -186,6 +186,8 @@ struct ContactScratch {
     float kineticLoss;  // [J]
   };
   std::vector<StaticCorrection> corrections;  // this step's static CCD clamps (ccdStatic, applied by applyCcdStatic)
+  // Union of the bounds of `tris`: a node whose sphere (or step) stays outside it cannot touch (or cross) any of them.
+  Vec3 trisLo{1e30f, 1e30f, 1e30f}, trisHi{-1e30f, -1e30f, -1e30f};
 };
 
 // Explicit stability of all contacts on one node (§4.2, see body_contact.cpp budgetContacts): Σ w·m_contact over its

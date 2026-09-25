@@ -163,8 +163,32 @@ export function mapCanvas(map: MapData, px: number, night = false): HTMLCanvasEl
 }
 
 /** Draws roads, POIs, route and car on a 2D context whose transform maps world metres to pixels. */
-function drawVectors(g: CanvasRenderingContext2D, map: MapData, pxPerM: number, opts: { route?: RoutePlan | null; waypoint?: { x: number; z: number } | null; pois?: boolean; labels?: boolean; carSize?: number }): void {
+const boundsCache = new WeakMap<object, [number, number, number, number]>();
+/** World bounds of a polyline (cached per object). */
+function boundsOf(o: object, xs: ArrayLike<number>, zs: ArrayLike<number>): [number, number, number, number] {
+  let b = boundsCache.get(o);
+  if (!b) {
+    b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < xs.length; i++) {
+      b[0] = Math.min(b[0], xs[i]);
+      b[1] = Math.min(b[1], zs[i]);
+      b[2] = Math.max(b[2], xs[i]);
+      b[3] = Math.max(b[3], zs[i]);
+    }
+    boundsCache.set(o, b);
+  }
+  return b;
+}
+
+function drawVectors(g: CanvasRenderingContext2D, map: MapData, pxPerM: number, opts: { route?: RoutePlan | null; waypoint?: { x: number; z: number } | null; pois?: boolean; labels?: boolean; carSize?: number; clip?: [number, number, number, number]; roads?: boolean }): void {
   const scale = Math.max(pxPerM, 0.05);
+  const c = opts.clip;
+  const outside = (o: object, xs: ArrayLike<number>, zs: ArrayLike<number>, pad: number) => {
+    if (!c) return false;
+    const b = boundsOf(o, xs, zs);
+    return b[2] < c[0] - pad || b[0] > c[2] + pad || b[3] < c[1] - pad || b[1] > c[3] + pad;
+  };
+  if (opts.roads !== false) {
   g.lineCap = 'round';
   g.lineJoin = 'round';
   // Casing then fill, by class (highways on top).
@@ -172,6 +196,8 @@ function drawVectors(g: CanvasRenderingContext2D, map: MapData, pxPerM: number, 
   g.fillStyle = 'rgba(96,100,108,0.95)';
   for (const a of map.render.areas) {
     if (a.look === 'terrain') continue;
+    if (c && !boundsCache.has(a.outline)) boundsOf(a.outline, a.outline.map((q) => q[0]), a.outline.map((q) => q[1]));
+    if (outside(a.outline, [], [], 4)) continue;
     g.beginPath();
     a.outline.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
     g.closePath();
@@ -179,6 +205,7 @@ function drawVectors(g: CanvasRenderingContext2D, map: MapData, pxPerM: number, 
   }
   for (const pass of [0, 1]) {
     for (const l of map.render.lines) {
+      if (outside(l, l.xs, l.zs, 30)) continue;
       const [col, width] = ROAD_STYLE[l.cls] ?? ['#ddd', 2];
       g.strokeStyle = pass === 0 ? 'rgba(10,12,16,0.75)' : col;
       g.lineWidth = Math.max((width * (pass === 0 ? 1.8 : 1)) / scale, (pass === 0 ? 1.6 : 1) * Math.min(width * 0.6, 2.6));
@@ -197,13 +224,14 @@ function drawVectors(g: CanvasRenderingContext2D, map: MapData, pxPerM: number, 
       g.lineWidth = Math.max((width * (pass === 0 ? 1.8 : 1)) / scale, (pass === 0 ? 1.6 : 1) * Math.min(width * 0.6, 2.6)) ;
       g.beginPath();
       for (const e of map.graph.edges) {
-        if (e.cls !== cls) continue;
+        if (e.cls !== cls || outside(e, e.xs, e.zs, 30)) continue;
         g.moveTo(e.xs[0], e.zs[0]);
         for (let i = 1; i < e.xs.length; i++) g.lineTo(e.xs[i], e.zs[i]);
       }
       // Test tracks and pads (not in the route graph) come from the road list when present.
       g.stroke();
     }
+  }
   }
   if (opts.route) {
     const p = opts.route.points;
@@ -292,7 +320,12 @@ export class Minimap {
   private readonly relief: HTMLCanvasElement;
   private readonly res = 8;
   rotate = true;
-  private zoom = 1.6; // px per metre ×10 (smoothed)
+  private zoom = 0.95; // px per metre (smoothed)
+  /** The relief and the road network are drawn once into square tiles (LRU); each frame only places the tiles and
+   *  draws the route, points of interest and the car on top. */
+  private readonly tiles = new Map<string, HTMLCanvasElement>();
+  private static readonly TILE_M = 128;
+  private static readonly TILE_PX = 256;
 
   constructor(private readonly map: MapData, relief: HTMLCanvasElement, onOpen: () => void) {
     this.root.className = 'minimap';
@@ -314,7 +347,7 @@ export class Minimap {
       this.canvas.width = this.canvas.height = Math.round(size * dpr);
     }
     const g = this.g;
-    const target = 1.5 - Math.min(speed / 60, 1) * 0.9; // px per metre
+    const target = 0.95 - Math.min(speed / 60, 1) * 0.5; // px per metre (≈ ±85 m at rest, ±180 m at speed)
     this.zoom += (target - this.zoom) * 0.05;
     const s = this.zoom * dpr;
     g.setTransform(1, 0, 0, 1, 0, 0);
@@ -325,10 +358,13 @@ export class Minimap {
     g.rotate(rot);
     g.scale(s, s);
     g.translate(-x, -z);
-    const t = this.map.terrain;
     g.imageSmoothingEnabled = true;
-    g.drawImage(this.relief, t.originX, t.originZ, this.relief.width * this.res, this.relief.height * this.res);
-    drawVectors(g, this.map, s, { route, waypoint, pois: true });
+    const M = Minimap.TILE_M;
+    const reach = (Math.hypot(this.canvas.width, this.canvas.height) * 0.62) / s;
+    for (let iz = Math.floor((z - reach) / M); iz <= Math.floor((z + reach) / M); iz++) {
+      for (let ix = Math.floor((x - reach) / M); ix <= Math.floor((x + reach) / M); ix++) g.drawImage(this.tile(ix, iz), ix * M, iz * M, M, M);
+    }
+    drawVectors(g, this.map, s, { route, waypoint, pois: true, roads: false });
     g.setTransform(1, 0, 0, 1, 0, 0);
     drawCar(g, this.canvas.width / 2, this.canvas.height * (this.rotate ? 0.62 : 0.5), this.rotate ? 0 : heading, 9 * dpr);
     const n = this.root.querySelector<HTMLElement>('.mm-n')!;
@@ -339,6 +375,33 @@ export class Minimap {
     const nx = Math.sin(rot) * -r, ny = -Math.cos(rot) * r;
     n.style.transform = `translate(${size / 2 + nx - 7}px, ${size * (this.rotate ? 0.62 : 0.5) + ny - 8}px)`;
     n.hidden = !this.rotate;
+  }
+
+  private tile(ix: number, iz: number): HTMLCanvasElement {
+    const key = `${ix},${iz}`;
+    let c = this.tiles.get(key);
+    if (c) {
+      this.tiles.delete(key); // most recently used last
+      this.tiles.set(key, c);
+      return c;
+    }
+    const M = Minimap.TILE_M, P = Minimap.TILE_PX, k = P / M;
+    c = document.createElement('canvas');
+    c.width = c.height = P;
+    const g = c.getContext('2d')!;
+    const t = this.map.terrain;
+    const x0 = ix * M, z0 = iz * M;
+    g.fillStyle = '#0B0D10';
+    g.fillRect(0, 0, P, P);
+    g.imageSmoothingEnabled = true;
+    g.setTransform(k, 0, 0, k, -x0 * k, -z0 * k);
+    // The relief texel covering this tile (plus a texel around it so the smoothing matches across tile seams).
+    const sx = (x0 - t.originX) / this.res - 1, sz = (z0 - t.originZ) / this.res - 1, sw = M / this.res + 2;
+    g.drawImage(this.relief, sx, sz, sw, sw, x0 - this.res, z0 - this.res, sw * this.res, sw * this.res);
+    drawVectors(g, this.map, 1.2, { clip: [x0, z0, x0 + M, z0 + M] });
+    this.tiles.set(key, c);
+    if (this.tiles.size > 72) this.tiles.delete(this.tiles.keys().next().value!);
+    return c;
   }
 }
 

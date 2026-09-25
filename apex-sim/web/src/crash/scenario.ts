@@ -7,7 +7,7 @@ import type { Localized } from '../ui/i18n';
 import type { VehiclePose } from '../physics/messages';
 
 export type V3 = [number, number, number];
-export type CrashKind = 'fullWall' | 'offsetWall' | 'carToCar' | 'pole' | 'rollover' | 'drop';
+export type CrashKind = 'fullWall' | 'offsetWall' | 'carToCar' | 'pole' | 'rollover' | 'drop' | 'crush';
 
 export interface CrashSpec {
   kind: CrashKind;
@@ -33,6 +33,7 @@ export const POLE: V3 = [-25, 0, 25];
 export const ROLLOVER_X = -45;      // the kicker's inner edge is 0.2 m right of a car centred here
 export const ROLLOVER_Z = 20;       // where the kicker starts
 export const DROP_POINT: V3 = [-60, 0, 0];
+export const CRUSH_POINT: V3 = [-90, 0, 0]; // the dump-truck crush test's parked car (crash/CrashExtras.ts)
 const G = 9.81;
 const LEAD_TIME = 0.3; // [s] of travel before the impact
 const MIN_RUNUP = 1.5; // [m]
@@ -56,6 +57,10 @@ export function crashLaunch(spec: CrashSpec, dimsA: CarDims, dimsB: CarDims = di
   if (spec.kind === 'rollover') {
     const z = ROLLOVER_Z - dimsA.front - Math.max(4, vA * 0.6);
     return { a: { position: [ROLLOVER_X, 0, z], yaw: 0, speed: vA }, b: null, focus: [ROLLOVER_X, 0.8, ROLLOVER_Z + 3] };
+  }
+  if (spec.kind === 'crush') {
+    // Parked; the dump trucks come down on it (CrashLab releases them after the launch).
+    return { a: { position: [CRUSH_POINT[0], 0.05, CRUSH_POINT[2]], yaw: 0, speed: 0 }, b: null, focus: [CRUSH_POINT[0], 1.2, CRUSH_POINT[2]] };
   }
   if (spec.kind === 'drop') {
     // Falls flat from the height that gives the set impact speed: h = v² / 2g.
@@ -112,4 +117,5 @@ export const CRASH_PRESETS: CrashPreset[] = [
   { id: 'rollover', label: { ko: '전복 램프', en: 'Rollover ramp' }, note: { ko: '한쪽 바퀴 킥커 · 60 km/h', en: 'One-side kicker · 60 km/h' }, spec: { kind: 'rollover', speedA: 60 } },
   { id: 'drop', label: { ko: '낙하', en: 'Drop' }, note: { ko: '착지 32 km/h (4 m)', en: 'Lands at 32 km/h (4 m)' }, spec: { kind: 'drop', speedA: 32 } },
   { id: 'highSpeed', label: { ko: '초고속 벽', en: 'High-speed wall' }, note: { ko: '고정벽 · 200 km/h', en: 'Rigid wall · 200 km/h' }, spec: { kind: 'fullWall', speedA: 200 } },
+  { id: 'crush', label: { ko: '덤프트럭 압착', en: 'Dump-truck crush' }, note: { ko: '16 t 트럭 두 대가 덮침', en: 'Two 16 t trucks come down' }, spec: { kind: 'crush', speedA: 0 } },
 ];

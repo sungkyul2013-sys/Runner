@@ -250,6 +250,24 @@ void World::addBodyVelocity(int bodyIndex, Vec3 dv) {
   b.losses.external += kineticEnergy(b) - before;
 }
 
+int World::retireFamily(int body) {
+  if (body < 0 || body >= bodyCount()) throw std::out_of_range("retireFamily: body index");
+  const int32_t family = bodies_[static_cast<size_t>(body)].family;
+  int count = 0;
+  for (Body& b : bodies_) {
+    if (b.family != family || !b.enabled) continue;
+    const double before = kineticEnergy(b) + gravityPotential(b, params_.gravity);
+    std::fill(b.vx.begin(), b.vx.end(), 0.0f);
+    std::fill(b.vy.begin(), b.vy.end(), 0.0f);
+    std::fill(b.vz.begin(), b.vz.end(), 0.0f);
+    b.origin.y -= kParkDepth;
+    b.enabled = false;
+    b.losses.external += kineticEnergy(b) + gravityPotential(b, params_.gravity) - before;
+    ++count;
+  }
+  return count;
+}
+
 int World::addVehicle(int body, const VehicleDesc& desc) {
   if (body < 0 || body >= bodyCount()) throw std::out_of_range("addVehicle: body index");
   vehicles_.push_back(std::make_unique<Vehicle>(desc, body, bodies_[static_cast<size_t>(body)]));
@@ -369,6 +387,7 @@ void World::computeInternalForces(int bi) {
   Body& b = bodies_[bi];
   StepStats& st = bodyStats_[bi];
   st = {};
+  if (!b.enabled) return;
   const Vec3 g = params_.gravity;
   const int n = b.nodeCount();
   for (int i = 0; i < n; ++i) {
@@ -409,6 +428,7 @@ void World::computeInternalForces(int bi) {
 
 void World::integrateBody(int bi) {
   Body& b = bodies_[bi];
+  if (!b.enabled) return;
   const float dt = params_.dt;
   const int n = b.nodeCount();
   if (params_.trackEnergy) {
@@ -496,6 +516,7 @@ void World::integrateBody(int bi) {
 
 void World::finishBody(int bi) {
   Body& b = bodies_[bi];
+  if (!b.enabled) return;
   bodyStats_[bi].beamsBroken += detail::applyPendingBreakGroups(b);
   if (!b.damageGroups.empty()) detail::updateDamageGroups(b, stepIndex_);
 

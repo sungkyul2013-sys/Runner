@@ -13,6 +13,7 @@ import type { Environment } from './Environment';
 import { POI_COLOR } from './MapUI';
 import type { MapView } from './MapView';
 import type { RoutePlan } from './Route';
+import { accentHex } from '../ui/settings';
 
 export interface OverviewActions {
   car(): { x: number; y: number; z: number; heading: number };
@@ -78,13 +79,13 @@ export class Overview3D {
   private fly: Flight | null = null;
   private saved: { near: number; far: number; minD: number; maxD: number; maxP: number; pan: boolean; ssp: boolean; shadowHalf: number } | null = null;
   private readonly marks = new THREE.Group();
-  private readonly carBeacon = beacon(0xff6b2c, 420);
+  private readonly carBeacon = beacon(accentHex(), 420);
   private readonly wpBeacon = beacon(0xf4475c, 420);
   private readonly spotBeacon = beacon(0x3d8bff, 260);
   private routeMesh: THREE.Mesh | null = null;
   private routeRef: RoutePlan | null = null;
   private routeW = 0;
-  private readonly routeMat = new THREE.MeshBasicNodeMaterial({ color: 0xff6b2c, transparent: true, opacity: 0.92, depthWrite: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  private readonly routeMat = new THREE.MeshBasicNodeMaterial({ color: accentHex(), transparent: true, opacity: 0.92, depthWrite: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
   private readonly labels: Label[] = [];
   private readonly carLabel: Label;
   private readonly layer = el('div', 'ov3-labels');

@@ -315,6 +315,9 @@ struct Body {
   // interpenetrating each other (World::measurePenetration).
   int32_t family = -1;
   std::vector<int32_t> sourceNode;
+  // A retired body (World::retireFamily: a car that was repaired, reset or swapped): parked far below the world,
+  // frozen, and skipped by every step phase. Its index stays valid.
+  bool enabled = true;
 
   int nodeCount() const { return static_cast<int>(px.size()); }
   int beamCount() const { return static_cast<int>(beamA.size()); }

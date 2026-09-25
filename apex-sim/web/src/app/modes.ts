@@ -6,6 +6,7 @@ import { DRIVE_VEHICLES, resolveSpawn, SCENES, SPAWNS, type VehiclePreset } from
 import { CrashLab } from '../crash/CrashLab';
 import { CrashPanel } from '../crash/CrashPanel';
 import { CRASH_PRESETS, type CrashKind, type CrashSpec } from '../crash/scenario';
+import { CrashBackdrop, type Backdrop, type CameraPreset } from '../crash/CrashExtras';
 import { DriveSession } from '../drive/DriveSession';
 import type { PhysicsClient, RenderFrame } from '../physics/PhysicsClient';
 import type { VehiclePose } from '../physics/messages';
@@ -16,9 +17,9 @@ import { t, tl } from '../ui/i18n';
 import { icon } from '../ui/icons';
 import { settings, type HudPreset } from '../ui/settings';
 import { SettingsView } from '../ui/SettingsView';
-import { Shell } from '../ui/Shell';
+import { Shell, type ShellActions } from '../ui/Shell';
+import { notify, tipOf } from '../ui/feedback';
 import { DEFAULT_TOUCH_LAYOUT, isTouchDevice, normalizeLayout, TouchControls } from '../ui/TouchControls';
-import { TIME_SCALES } from '../ui/SandboxPanel';
 import { loadVehicleModel, VEHICLES } from '../vehicles/VehicleModel';
 
 export type Route = 'menu' | 'freeroam' | 'drive' | 'crash' | 'sandbox' | 'garage' | 'bench' | 'golden';
@@ -36,6 +37,10 @@ export interface AppContext {
   isPaused(): boolean;
   setStatsVisible(on: boolean): void;
   statsVisible(): boolean;
+  /** The debug grid (a mode may swap it for other scenery). */
+  grid?: { visible: boolean };
+  /** The driven car changed (in game): the app keeps the URL and the menu in step. */
+  onVehicle?(v: VehiclePreset): void;
 }
 
 export interface ModeRuntime {
@@ -59,6 +64,33 @@ function button(label: string, onClick: () => void, className = ''): HTMLButtonE
 }
 
 const HUD_CYCLE: HudPreset[] = ['racing', 'minimal', 'none', 'engineer'];
+
+/** The shell's time capsule on the physics world. */
+export function timeHost(ctx: AppContext): NonNullable<ShellActions['time']> {
+  return {
+    isPaused: () => ctx.isPaused(),
+    setPaused: (p) => ctx.setPaused(p),
+    setTimeScale: (s) => ctx.physics.setTimeScale(s),
+    step: (n) => void ctx.physics.step(n),
+  };
+}
+
+/** The car list of the panel: every drivable car; the current one marked. */
+function carPicker(session: DriveSession, onSwap: (v: VehiclePreset) => void): HTMLElement {
+  const list = el('div', 'car-list');
+  const render = () => list.replaceChildren(...DRIVE_VEHICLES.map((v) => {
+    const on = v.id === session.vehicle.id;
+    const b = el('button', on ? 'tile active' : 'tile', el('b', '', tl(v.label)), el('small', '', v.specs ? `${v.specs.powerKw} kW · ${v.specs.massKg.toLocaleString('en-US')} kg · ${v.specs.drive}` : t('carDrivable')));
+    b.onclick = () => {
+      if (on) return;
+      onSwap(v);
+      setTimeout(render, 0);
+    };
+    return b;
+  }));
+  render();
+  return list;
+}
 
 /** Touch controls for the driving modes (§15.4): on touch devices by default, or as set. */
 function touchControls(session: DriveSession, shell: Shell): TouchControls | null {
@@ -93,14 +125,35 @@ function touchControls(session: DriveSession, shell: Shell): TouchControls | nul
 
 /** Common driving frame: shell, dashboard, touch controls, top-bar actions and the "car" sheet section. */
 export function drivingShell(ctx: AppContext, session: DriveSession, title: string, restart: () => void, sheetOpen?: boolean): Shell {
-  const shell = new Shell(title, tl(session.vehicle.label), { mainMenu: () => ctx.go('menu'), restart, setPaused: (p) => ctx.setPaused(p) }, sheetOpen);
+  const shell = new Shell(title, tl(session.vehicle.label), { mainMenu: () => ctx.go('menu'), restart, setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) }, sheetOpen);
   document.body.append(shell.root, session.dashboard.root);
-  shell.addAction('camera', t('actCamera'), () => session.toggleCamera());
-  shell.addAction('xray', t('actXray'), () => session.setXray(!session.xrayOn), false);
+  const repair = async () => {
+    await session.repair();
+    notify(t('carRepaired'), 'ok', { icon: 'wrench' });
+  };
+  const resetCar = async () => {
+    await session.resetCar();
+    notify(t('carWasReset'), 'ok', { icon: 'reset' });
+  };
+  const swap = async (v: VehiclePreset) => {
+    await session.swapVehicle(v);
+    shell.setTitle(title, tl(v.label));
+    settings.set({ car: v.id });
+    ctx.onVehicle?.(v);
+    notify(`${t('carSwapped')} · ${tl(v.label)}`, 'ok', { icon: 'car' });
+  };
+  session.onReset = () => notify(t('carWasReset'), 'ok', { icon: 'reset' });
+  shell.addAction('wrench', t('carRepair'), () => void repair(), undefined, t('carRepairTip'));
+  shell.addAction('reset', t('carReset'), () => void resetCar(), undefined, t('carResetTip'), 'R');
+  session.onCamera = (label) => notify(`${t('actCamera')} · ${label}`, '', { icon: 'camera', key: 'cam' });
+  shell.addAction('camera', t('actCamera'), () => session.toggleCamera(), undefined, t('camOrbitHint'), 'C');
+  shell.addAction('xray', t('actXray'), () => session.setXray(!session.xrayOn), false, t('actXrayTip'), 'V');
   shell.addAction('gauge', t('actHud'), () => {
     const i = HUD_CYCLE.indexOf(settings.get().hud);
-    settings.set({ hud: HUD_CYCLE[(i + 1) % HUD_CYCLE.length] });
-  });
+    const next = HUD_CYCLE[(i + 1) % HUD_CYCLE.length];
+    settings.set({ hud: next });
+    notify(`${t('actHud')} · ${t(next === 'none' ? 'hudNone' : next === 'minimal' ? 'hudMinimal' : next === 'racing' ? 'hudRacing' : 'hudEngineer')}`, '', { icon: 'gauge', key: 'hud' });
+  }, undefined, t('actHudTip'));
   const apply = () => {
     const s = settings.get();
     session.dashboard.setPreset(s.hud);
@@ -115,13 +168,22 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
     b.onclick = () => {
       set(!get());
       b.classList.toggle('active', get());
+      notify(`${label} · ${get() ? t('stateOn') : t('stateOff')}`, '', { key: `aid-${label}` });
     };
     return b;
   };
+  const act = (name: Parameters<typeof icon>[0], label: string, tip: string, run: () => void) => {
+    const b = el('button', 'act', icon(name), el('span', '', label));
+    tipOf(b, `${label}\n${tip}`);
+    b.onclick = run;
+    return b;
+  };
   shell.sheet.section(t('sheetCar'),
-    el('div', 'row', button(t('restart'), restart), button(t('menuSettings'), () => shell.openSettings())),
+    el('div', 'grid3', act('wrench', t('carRepair'), t('carRepairTip'), () => void repair()), act('reset', t('carReset'), t('carResetTip'), () => void resetCar()),
+      act('restart', t('restart'), t('restartTip'), restart)),
     el('div', 'chips', aid('TCS', () => logic.tcs, (on) => (logic.tcs = on)), aid('ABS', () => logic.abs, (on) => (logic.abs = on)),
       aid(t('aidManual'), () => logic.manual, (on) => (logic.manual = on))));
+  shell.sheet.section(t('carSwap'), carPicker(session, (v) => void swap(v)));
   shell.sheet.section(t('sheetKeys'), el('p', 'muted', t('keysHelp')));
   touchControls(session, shell);
   return shell;
@@ -154,7 +216,7 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
   const num = (key: string) => (params.has(key) ? Number(params.get(key)) : undefined);
   const initial: Partial<CrashSpec> = {};
   const kind = params.get('kind');
-  if (kind && ['fullWall', 'offsetWall', 'carToCar', 'pole', 'rollover', 'drop'].includes(kind)) initial.kind = kind as CrashKind;
+  if (kind && ['fullWall', 'offsetWall', 'carToCar', 'pole', 'rollover', 'drop', 'crush'].includes(kind)) initial.kind = kind as CrashKind;
   const preset = CRASH_PRESETS.find((p) => p.id === params.get('preset'));
   if (preset) Object.assign(initial, preset.spec);
   for (const [key, field] of [['kmh', 'speedA'], ['kmhb', 'speedB'], ['angle', 'angle'], ['offset', 'offset']] as const) {
@@ -174,32 +236,52 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
       void crash.launch(spec, a, b, true);
     },
   }, initial, [crash.energyGraph.root, crash.momentumGraph.root], vehicle.id, vehicleB.id);
-  const shell = new Shell(t('modeCrash'), tl(vehicle.label), { mainMenu: () => ctx.go('menu'), restart: () => panel.launch(), setPaused: (p) => ctx.setPaused(p) });
+  const shell = new Shell(t('modeCrash'), tl(vehicle.label), { mainMenu: () => ctx.go('menu'), restart: () => panel.launch(), setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) });
   document.body.append(shell.root, panel.fab, panel.result);
-  shell.addAction('pause', t('actPause'), () => ctx.setPaused(!ctx.isPaused()), false);
-  let slow = 0;
-  shell.addAction('slow', t('actSlow'), (b) => {
-    slow = (slow + 1) % TIME_SCALES.length;
-    physics.setTimeScale(TIME_SCALES[slow]);
-    b.ariaPressed = String(slow !== 0);
-    b.title = slow === 0 ? t('crashRealtime') : `1/${Math.round(1 / TIME_SCALES[slow])}`;
-  }, false);
-  shell.addAction('xray', t('actXray'), (b) => crash.setXray(b.ariaPressed === 'true'), false);
-  shell.addAction('eye', t('crashFollow'), (b) => (crash.follow = b.ariaPressed === 'true'), true);
-  shell.addAction('info', t('actStats'), (b) => ctx.setStatsVisible(b.ariaPressed === 'true'), false);
-  shell.sheet.section(t('crashScenario'), panel.scenario);
-  shell.sheet.section(t('crashSetup'), panel.details);
-  shell.sheet.section(t('crashReport'), panel.report);
+  shell.addAction('xray', t('actXray'), (b) => crash.setXray(b.ariaPressed === 'true'), false, t('actXrayTip'));
+  const follow = shell.addAction('eye', t('crashFollow'), (b) => (crash.follow = b.ariaPressed === 'true'), true, t('crashFollowTip'));
+  shell.addAction('lock', t('camLock'), (b) => {
+    const on = b.ariaPressed === 'true';
+    crash.setCameraLock(on);
+    follow.disabled = on;
+  }, false, t('camLockTip'));
+  shell.addAction('wrench', t('carRepair'), () => void crash.repair().then(() => notify(t('carRepaired'), 'ok', { icon: 'wrench' })), undefined, t('crashRepairTip'));
+  shell.addAction('info', t('actStats'), (b) => ctx.setStatsVisible(b.ariaPressed === 'true'), false, t('actStatsTip'));
+  // View: camera angles and the backdrop (scenery only; the tested ground is the same flat concrete).
+  const backdrop = new CrashBackdrop(viewer.scene, ctx.grid ?? null);
+  const pick = <T extends string>(items: Array<[T, string, Parameters<typeof icon>[0]]>, current: T, set: (v: T) => void) => {
+    const row = el('div', 'chips');
+    const render = (v: T) => row.replaceChildren(...items.map(([id, label, ic]) => {
+      const b = el('button', id === v ? 'chip active act' : 'chip act', icon(ic), el('span', '', label));
+      b.onclick = () => {
+        set(id);
+        render(id);
+        notify(label, '', { icon: ic, key: 'crash-view' });
+      };
+      return b;
+    }));
+    render(current);
+    return row;
+  };
+  const views = pick<CameraPreset>([['side', t('camSide'), 'camera'], ['front', t('camFront'), 'camera'], ['top', t('camTop'), 'camera'], ['rear', t('camRear'), 'camera']], 'side', (p) => crash.viewFrom(p));
+  const scenery = pick<Backdrop>([['grid', t('bgGrid'), 'grid'], ['road', t('bgRoad'), 'road'], ['terrain', t('bgTerrain'), 'mountain']], 'grid', (b) => backdrop.set(b));
   crash.onLog = (rows) => panel.setLog(rows);
   crash.onWheels = (rows) => panel.setWheels(rows);
   const tools = new TetherTool(physics, viewer, viewer.renderer.domElement as HTMLCanvasElement);
   window.__apex!.tools = tools;
-  shell.sheet.section(t('tools'), tetherControls(tools));
+  const section = (title: string, ...nodes: Node[]) => el('section', 'sheet-section', el('h3', '', title), ...nodes);
+  const tabs = shell.sheet.tabs([
+    { title: t('crashTabPresets'), icon: 'flag', nodes: [section(t('crashScenario'), panel.scenario)] },
+    { title: t('crashTabDetails'), icon: 'sliders', nodes: [section(t('crashSetup'), panel.details), section(t('tools'), tetherControls(tools))] },
+    { title: t('crashTabReport'), icon: 'info', nodes: [section(t('crashReport'), panel.report)] },
+    { title: t('crashTabView'), icon: 'camera', nodes: [section(t('camAngles'), views), section(t('bgTitle'), scenery)] },
+  ]);
+  panel.onResult = () => tabs.select(2);
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || shell.menuOpen) return;
     if (e.code === 'Space' && !e.repeat) {
       e.preventDefault();
-      ctx.setPaused(!ctx.isPaused());
+      shell.time?.togglePause();
     } else if (e.key === 'r' || e.key === 'R') panel.launch();
   });
   physics.loadScene('crash');
@@ -216,7 +298,7 @@ export function startSandbox(ctx: AppContext, vehicle: VehiclePreset): ModeRunti
   let scene = params.get('scene') ?? 'sandbox';
   const info = () => SCENES.find((s) => s.id === scene);
   let session: DriveSession | null = null;
-  const shell = new Shell(t('modeSandbox'), tl(info()?.label ?? { ko: scene, en: scene }), { mainMenu: () => ctx.go('menu'), restart: () => load(scene), setPaused: (p) => ctx.setPaused(p) });
+  const shell = new Shell(t('modeSandbox'), tl(info()?.label ?? { ko: scene, en: scene }), { mainMenu: () => ctx.go('menu'), restart: () => load(scene), setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) });
   document.body.append(shell.root);
   const target = (): [number, number, number] => [viewer.controls.target.x, 0, viewer.controls.target.z];
   const load = (id: string) => {
@@ -225,23 +307,13 @@ export function startSandbox(ctx: AppContext, vehicle: VehiclePreset): ModeRunti
     shell.setTitle(t('modeSandbox'), tl(info()?.label ?? { ko: id, en: id }));
     if (session) void session.restart(); // the old car went with the old world
   };
-  // ---- top bar: pause, slow motion, nodes/beams, engineer stats
-  const pause = shell.addAction('pause', t('actPause'), () => ctx.setPaused(!ctx.isPaused()), false);
-  let slow = 0;
-  const cycleSlow = (dir: number) => {
-    slow = Math.min(Math.max(slow + dir, 0), TIME_SCALES.length - 1);
-    physics.setTimeScale(TIME_SCALES[slow]);
-    slowBtn.ariaPressed = String(slow !== 0);
-    slowBtn.title = slow === 0 ? t('crashRealtime') : `1/${Math.round(1 / TIME_SCALES[slow])}`;
-  };
-  const slowBtn = shell.addAction('slow', t('actSlow'), () => cycleSlow(slow === TIME_SCALES.length - 1 ? -slow : 1), false);
+  // ---- dock: nodes/beams, engineer stats (time: the shell's capsule)
   shell.addAction('xray', t('actXray'), (b) => {
     const on = b.ariaPressed === 'true';
     debug.xray = on;
     session?.setXray(on);
-  }, false);
-  shell.addAction('info', t('actStats'), (b) => ctx.setStatsVisible(b.ariaPressed === 'true'), false);
-  const syncPause = () => (pause.ariaPressed = String(ctx.isPaused()));
+  }, false, t('actXrayTip'));
+  shell.addAction('info', t('actStats'), (b) => ctx.setStatsVisible(b.ariaPressed === 'true'), false, t('actStatsTip'));
 
   // ---- sheet: scene, spawn, car, time, tools
   const sceneSelect = el('select');
@@ -280,17 +352,6 @@ export function startSandbox(ctx: AppContext, vehicle: VehiclePreset): ModeRunti
   };
   driveBtn.onclick = () => void toggleCar();
   shell.sheet.section(t('sheetCar'), driveBtn, carNote);
-  const step = button(t('step'), () => {
-    ctx.setPaused(true);
-    syncPause();
-    void physics.step(1);
-  });
-  const step100 = button('×100', () => {
-    ctx.setPaused(true);
-    syncPause();
-    void physics.step(100);
-  });
-  shell.sheet.section(t('time'), el('div', 'row', step, step100));
   const tools = new TetherTool(physics, viewer, viewer.renderer.domElement as HTMLCanvasElement);
   window.__apex!.tools = tools;
   shell.sheet.section(t('tools'), tetherControls(tools));
@@ -303,12 +364,12 @@ export function startSandbox(ctx: AppContext, vehicle: VehiclePreset): ModeRunti
     if (preset) physics.spawnLattice(resolveSpawn(preset, target()), tl(preset.label));
     else if (e.code === 'Space' && !e.repeat) {
       e.preventDefault();
-      ctx.setPaused(!ctx.isPaused());
-      syncPause();
-    } else if (e.key === '.') step.click();
-    else if (e.key === ',') step100.click();
-    else if (e.key === 'r' || e.key === 'R') load(scene);
-    else if (e.key === '[' || e.key === ']') cycleSlow(e.key === '[' ? 1 : -1);
+      shell.time?.togglePause();
+    } else if (e.key === ',') {
+      ctx.setPaused(true);
+      void physics.step(100);
+      shell.time?.sync();
+    } else if (e.key === 'r' || e.key === 'R') load(scene);
   });
   debug.showNodes = debug.showBeams = true;
   load(scene);

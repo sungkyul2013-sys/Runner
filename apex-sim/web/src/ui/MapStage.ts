@@ -8,6 +8,7 @@ import { generateMap } from '../world/loadMap';
 import { buildDiorama, gridDiorama, type MapDiorama } from '../world/MapDiorama';
 import type { Localized } from './i18n';
 import { isTouchDevice } from './TouchControls';
+import { accentHex } from './settings';
 
 const SIDE = 6; // model width [m]
 
@@ -310,7 +311,7 @@ function scanPlate(): THREE.Group {
   const line = (u: typeof positionWorld.x) => smoothstep(0.44, 0.5, abs(fract(u.mul(2.5)).sub(0.5)));
   const grid = line(positionWorld.x).max(line(positionWorld.z));
   const sweep = smoothstep(0.25, 0.0, abs(fract(positionWorld.x.div(SIDE).add(0.5).sub(time.mul(0.35))).sub(0.5)));
-  mat.colorNode = color(0xff6b2c);
+  mat.colorNode = color(accentHex());
   mat.opacityNode = grid.mul(0.55).add(sweep.mul(0.3)).add(0.04);
   const top = new THREE.Mesh(new THREE.PlaneGeometry(SIDE, SIDE).rotateX(-Math.PI / 2), mat);
   top.position.y = 0.425;

@@ -86,8 +86,13 @@ export class PhysicsClient {
   private reader: TripleBufferReader | null = null;
   private slots: SlotViews[] = [];
   private arrived: ArrayBuffer | null = null; // message transport: newest frame not yet consumed
-  private prev: Frame | null = null;
-  private cur: Frame | null = null;
+  /** Recent frames, oldest first (the playback clock blends the two that bracket it). */
+  private history: Frame[] = [];
+  private spare: Frame[] = [];
+  /** Playback clock in sim time, its rate (sim s per wall s, measured) and the wall time of the last update. */
+  private playTime = -1;
+  private playRate = 1;
+  private lastUpdate = 0;
   private render: RenderFrame | null = null;
   private stats: FrameStats | null = null;
   /** Latest damage-group state per body (§4.3, §4.4): group ids and 8 floats per group (sbc_body_damage_groups). */
@@ -152,8 +157,14 @@ export class PhysicsClient {
     return new Promise((resolve) => this.pending.set('ready', () => resolve()));
   }
 
+  /** Retires a body and the parts that broke off it: they park below the world and stop (a car replaced by a fresh
+   *  one without rebuilding the world — repair, reset, car change). */
+  retireFamily(body: number): void {
+    this.send({ type: 'retire', body });
+  }
+
   loadScene(name: string, bodies?: number): void {
-    this.prev = this.cur = null;
+    this.resetPlayback();
     this.send({ type: 'scene', name, bodies });
   }
   /** Stores an open-world map (§13) in the worker: every loadScene('map') builds a world from it (start, resets,
@@ -216,45 +227,69 @@ export class PhysicsClient {
     });
   }
 
-  /** Pulls the newest physics frame (if any) and returns positions interpolated for `now`. */
+  private resetPlayback(): void {
+    this.spare.push(...this.history);
+    this.history = [];
+    this.playTime = -1;
+  }
+
+  /**
+   * Pulls the newest physics frame (if any) and returns positions for `now`. Frames arrive unevenly (the worker
+   * publishes every few ms, the display samples at its own rate), so they are not shown as they come: a playback
+   * clock runs in sim time at the measured sim rate, a little behind the newest frame, and the two frames around it
+   * are blended. Every displayed pose is then a blend of two real states taken at an even pace (no extrapolation, no
+   * judder from the publish cadence).
+   */
   update(now: number): RenderFrame | null {
+    const wallDt = this.lastUpdate > 0 ? Math.min((now - this.lastUpdate) / 1000, 0.25) : 0;
+    this.lastUpdate = now;
     const fresh = this.acquire();
     if (fresh) {
-      const frame = this.copyFrame(fresh, now, this.prev);
-      this.prev = this.cur;
-      this.cur = frame;
+      const last = this.history[this.history.length - 1];
+      const frame = this.copyFrame(fresh, now, this.spare.pop() ?? null);
       this.stats = this.readStats(fresh);
       this.release();
+      if (last && (frame.simTime < last.simTime || frame.bodyCount < last.bodyCount)) this.resetPlayback(); // new scene / reset
+      else if (last && frame.simTime > last.simTime && frame.arrival > last.arrival) {
+        const rate = (frame.simTime - last.simTime) / ((frame.arrival - last.arrival) / 1000);
+        this.playRate += (Math.min(rate, 4) - this.playRate) * 0.15;
+      }
+      if (last && frame.simTime === last.simTime) this.spare.push(this.history.pop()!); // paused: keep the newest only
+      this.history.push(frame);
+      while (this.history.length > 5) this.spare.push(this.history.shift()!);
     }
-    const cur = this.cur;
+    const hist = this.history;
+    const cur = hist[hist.length - 1];
     if (!cur) return null;
-    const prev = this.prev && this.prev.bodyCount <= cur.bodyCount ? this.prev : null;
-    if (!this.render || this.render.positions.length < cur.positions.length) {
-      this.render = { ...cur, positions: new Float32Array(cur.positions.length) };
+    if (this.stats?.paused) this.playRate = 0;
+    // Aim a bit more than one publish interval behind the newest frame, in sim time at the current rate.
+    const target = cur.simTime - 0.022 * Math.max(this.playRate, 0.05);
+    if (this.playTime < 0 || Math.abs(target - this.playTime) > 0.25 * Math.max(this.playRate, 0.05)) this.playTime = target;
+    else this.playTime += wallDt * this.playRate + (target - this.playTime) * Math.min(1, wallDt * 4);
+    this.playTime = Math.min(Math.max(this.playTime, hist[0].simTime), cur.simTime);
+    let i = hist.length - 1;
+    while (i > 0 && hist[i - 1].simTime > this.playTime) i--;
+    const b = hist[i];
+    const a = i > 0 ? hist[i - 1] : null;
+    if (!this.render || this.render.positions.length < b.positions.length) {
+      this.render = { ...b, positions: new Float32Array(b.positions.length) };
     }
     const r = this.render;
-    r.bodyCount = cur.bodyCount;
-    r.nodeOffset = cur.nodeOffset;
-    r.nodeCount = cur.nodeCount;
-    r.beamOffset = cur.beamOffset;
-    r.beamCount = cur.beamCount;
-    r.strain = cur.strain;
-    r.vehicles = cur.vehicles;
-    // Present the physics state one frame interval late so every displayed position is a blend of two real
-    // simulation states (no extrapolation → no overshoot through walls).
-    let alpha = 1;
-    if (prev && cur.simTime > prev.simTime) {
-      const interval = cur.arrival - prev.arrival;
-      alpha = interval > 0 ? Math.min(Math.max((now - cur.arrival) / interval, 0), 1) : 1;
-    }
-    const n = cur.positions.length;
-    if (!prev || alpha >= 1) {
-      r.positions.set(cur.positions.subarray(0, n));
+    r.bodyCount = b.bodyCount;
+    r.nodeOffset = b.nodeOffset;
+    r.nodeCount = b.nodeCount;
+    r.beamOffset = b.beamOffset;
+    r.beamCount = b.beamCount;
+    r.strain = b.strain;
+    r.vehicles = b.vehicles;
+    const n = b.positions.length;
+    const alpha = a && b.simTime > a.simTime ? Math.min(Math.max((this.playTime - a.simTime) / (b.simTime - a.simTime), 0), 1) : 1;
+    if (!a || alpha >= 1 || a.positions.length !== n) {
+      r.positions.set(b.positions.subarray(0, n));
     } else {
-      const a = prev.positions, c = cur.positions, out = r.positions;
-      const prevLen = prev.nodeOffset.length ? prev.positions.length : 0;
-      for (let i = 0; i < n; i++) out[i] = i < prevLen ? a[i] + (c[i] - a[i]) * alpha : c[i];
-      r.vehicles = cur.vehicles.map((v, i) => (i < prev.vehicles.length && prev.vehicles[i].body === v.body ? blendVehicle(prev.vehicles[i], v, alpha) : v));
+      const pa = a.positions, pb = b.positions, out = r.positions;
+      for (let k = 0; k < n; k++) out[k] = pa[k] + (pb[k] - pa[k]) * alpha;
+      r.vehicles = b.vehicles.map((v, k) => (k < a.vehicles.length && a.vehicles[k].body === v.body ? blendVehicle(a.vehicles[k], v, alpha) : v));
     }
     return r;
   }

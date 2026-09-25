@@ -10,7 +10,7 @@ import { loadVehicleModel, type VehicleModel } from '../vehicles/VehicleModel';
 import { icon, type IconName } from './icons';
 import { MapStage } from './MapStage';
 import { t, tl, type Localized, type StringKey } from './i18n';
-import { settings } from './settings';
+import { settings, accentHex } from './settings';
 
 export type AppMode = 'freeroam' | 'drive' | 'crash' | 'sandbox' | 'garage';
 
@@ -71,7 +71,8 @@ export class MainMenu {
     this.root.append(hero, cards);
     document.body.append(this.root, this.foot);
     this.setupStage();
-    this.select(0);
+    // The car chosen last (here or in a mode) is on show again.
+    this.select(Math.max(0, SHOWROOM.findIndex((c) => c.id === settings.get().car || c.drive === settings.get().car)));
     window.addEventListener('keydown', (e) => {
       if (!this.root.isConnected || this.maps || document.querySelector('.overlay-layer')) return;
       if (e.key === 'ArrowLeft') prev.click();
@@ -92,6 +93,7 @@ export class MainMenu {
   private select(i: number): void {
     this.index = i;
     const c = showroomCar(SHOWROOM[i]);
+    if (settings.get().car !== c.id) settings.set({ car: c.id });
     this.carName.textContent = tl(c.label);
     const s = c.specs;
     this.specs.replaceChildren(...(s
@@ -156,8 +158,8 @@ export class MainMenu {
     );
     plinth.position.y = -0.04;
     plinth.receiveShadow = true;
-    const ringMat = new THREE.MeshBasicNodeMaterial({ color: 0xff6b2c });
-    ringMat.colorNode = color(0xff6b2c).mul(sin(time.mul(1.6)).mul(0.25).add(1.35));
+    const ringMat = new THREE.MeshBasicNodeMaterial({ color: accentHex() });
+    ringMat.colorNode = color(accentHex()).mul(sin(time.mul(1.6)).mul(0.25).add(1.35));
     const ring = new THREE.Mesh(new THREE.TorusGeometry(3.47, 0.014, 8, 200), ringMat);
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.005;

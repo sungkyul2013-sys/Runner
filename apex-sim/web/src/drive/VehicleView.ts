@@ -31,6 +31,22 @@ export function chassisFrame(v: Pick<VehicleState, 'forward' | 'up' | 'left'>): 
   return { x, y, z };
 }
 
+/**
+ * The car where it stands as a spawn pose: its model origin (the vehicle frame's origin, at the ground under the
+ * wheels) set upright, facing the way the car faces, lifted by `lift`. Render space = world space here (the render
+ * origin is 0).
+ */
+export function spawnPoseOf(v: Pick<VehicleState, 'position' | 'forward' | 'up' | 'left' | 'refCenterModel'>, lift = 0.3): { position: V3; yaw: number; speed: number } {
+  const { x, y, z } = chassisFrame(v);
+  const origin = new THREE.Vector3(...v.position).sub(new THREE.Vector3(...v.refCenterModel).applyQuaternion(basis(x, y, z)));
+  // On its roof or its side the model origin is not on the ground: take the lower of it and the reference point.
+  const ground = y.y > 0.5 ? origin.y : Math.min(origin.y, v.position[1] - 0.6);
+  const f = new THREE.Vector3(...v.forward).setY(0);
+  if (f.lengthSq() < 1e-6) f.set(0, 0, 1);
+  f.normalize();
+  return { position: [origin.x, ground + lift, origin.z], yaw: Math.atan2(f.x, f.z), speed: 0 };
+}
+
 /** Model-frame position of a render-space point. */
 export function toModelFrame(v: Pick<VehicleState, 'position' | 'forward' | 'up' | 'left' | 'refCenterModel'>, p: V3): V3 {
   const { x, y, z } = chassisFrame(v);

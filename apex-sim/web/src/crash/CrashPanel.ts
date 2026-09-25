@@ -44,6 +44,7 @@ const PICTOGRAMS: Record<string, string> = {
   rear: car(4, 13, 22, 14) + car(36, 13, 22, 14, B) + arrow(8, 7, 20, 7),
   rollover: `<path d="M2 35H62" stroke="${W}" stroke-width="2"/><path d="M28 35L44 35L44 27Z" fill="${W}"/><g transform="rotate(-24 34 18)">${car(22, 12, 26, 9)}</g>`,
   drop: `<path d="M2 36H62" stroke="${W}" stroke-width="2"/>${car(18, 4, 28, 9)}` + arrow(32, 17, 32, 31),
+  crush: `<path d="M2 36H62" stroke="${W}" stroke-width="2"/>${car(18, 26, 28, 9)}<rect x="6" y="4" width="22" height="12" rx="2" fill="#e0a321"/><rect x="36" y="2" width="22" height="12" rx="2" fill="#c4442f"/>` + arrow(17, 17, 21, 23) + arrow(47, 15, 43, 23),
   highSpeed: `<path d="M1 14H9M3 20H11M1 26H9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>` + car(14, 12, 26, 16) + wall(44, 3, 5, 34),
 };
 
@@ -74,6 +75,8 @@ export class CrashPanel {
   private presetLabel = '';
   private wheels: WheelRow[] = [];
   private resultTimer = 0;
+  /** Called when a result card appears (the lab shows its report tab). */
+  onResult: () => void = () => {};
 
   constructor(actions: CrashPanelActions, initial: Partial<CrashSpec> = {}, graphs: HTMLElement[] = [], vehicleA?: string, vehicleB?: string) {
     this.spec = { kind: 'fullWall', speedA: 56, speedB: 0, angle: 0, offset: 0, overlap: 0.4, ...initial };
@@ -177,6 +180,7 @@ export class CrashPanel {
         if (!this.armed) return;
         this.armed = false;
         this.showResult(done.reduce((a, b) => (b.absorbed > a.absorbed ? b : a)));
+        this.onResult();
       }, 700);
     }
     this.logBody.replaceChildren();

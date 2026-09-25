@@ -879,10 +879,16 @@ export class MapView {
     this.uniforms.signalClock.value += dt;
     const cx = camera.position.x, cz = camera.position.z;
     const cy = camera.position.y;
+    // A chunk switches LOD only once clear of the boundary (no flicker back and forth), and at most one mesh that is
+    // not built yet is built per frame (a burst of builds was a visible hitch); the others keep their LOD meanwhile.
+    const lodAt = (d: number) => (d < 420 ? 0 : d < 900 ? 1 : d < 1800 ? 2 : d < 3600 ? 3 : 4);
+    let builds = 0;
     for (const c of this.chunks) {
       const d = Math.hypot(c.cx - cx, c.cz - cz, (cy - this.map.terrain.heightAt(c.cx, c.cz)) * 0.5) / this.lodScale;
-      const lod = d < 420 ? 0 : d < 900 ? 1 : d < 1800 ? 2 : d < 3600 ? 3 : 4;
+      const lod = lodAt(d);
       if (lod !== c.current) {
+        if (c.current >= 0 && lodAt(d * (lod > c.current ? 0.93 : 1.07)) === c.current) continue;
+        if (c.current >= 0 && !c.lods[lod] && builds++ > 0) continue;
         if (c.current >= 0) this.group.remove(c.lods[c.current]!);
         this.group.add(this.chunkMesh(c, lod));
         c.current = lod;

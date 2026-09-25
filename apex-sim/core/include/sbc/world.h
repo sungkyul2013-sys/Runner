@@ -210,6 +210,11 @@ class World {
   Body& mutableBody(int i) { return bodies_[i]; }
   // Adds `dv` to every non-fixed node; the kinetic-energy change is booked as external work.
   void addBodyVelocity(int body, Vec3 dv);
+  // Retires `body` and every part that broke off it (its family): they stop, are parked kParkDepth below the world
+  // and are skipped by the step from then on (a car replaced by a fresh one without rebuilding the world). The
+  // energy they take along is booked as external work. Returns the number of bodies retired.
+  int retireFamily(int body);
+  static constexpr double kParkDepth = 20000.0;  // [m]
 
   // ---- vehicles (§6–§10) ----
   // Attaches a vehicle controller to body `body` (node indices in `desc` refer to that body). Returns its id.

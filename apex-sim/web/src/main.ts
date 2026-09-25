@@ -10,6 +10,7 @@
 //   /?golden=1        determinism self-check: golden_m0 in the browser worker against the native hashes
 import './ui/styles.css';
 import './ui/app.css';
+import './ui/shell.css';
 import * as THREE from 'three/webgpu';
 import goldenText from '../../core/tests/golden/golden_m0.txt?raw';
 import { DRIVE_VEHICLES } from './app/presets';
@@ -24,6 +25,8 @@ import { Viewer } from './render/Viewer';
 import type { TetherTool } from './tools/TetherTool';
 import { Hud } from './ui/Hud';
 import { t } from './ui/i18n';
+import { installTooltips, notify } from './ui/feedback';
+import { sound } from './audio/Sound';
 import { MainMenu, type AppMode } from './ui/MainMenu';
 import { openMapSelect, type MapChoice } from './ui/MapSelect';
 import { MAPS } from './world/maps';
@@ -84,14 +87,7 @@ const WASM_URL = new URL('wasm/sbc.mjs', document.baseURI).href;
 const WASM_ST_URL = new URL('wasm/sbc-st.mjs', document.baseURI).href;
 
 function toast(text: string, kind: '' | 'error' | 'ok' = ''): void {
-  let box = document.querySelector<HTMLElement>('.toasts');
-  if (!box) {
-    box = Object.assign(document.createElement('div'), { className: 'toasts' });
-    document.body.append(box);
-  }
-  const item = Object.assign(document.createElement('div'), { className: `toast ${kind}`, textContent: text });
-  box.append(item);
-  setTimeout(() => item.remove(), kind === 'error' ? 12000 : 6000);
+  notify(text, kind);
 }
 
 function fail(message: string): void {
@@ -104,6 +100,11 @@ async function main(): Promise<void> {
   const route = routeOf(params);
   window.__apex!.route = route;
   applyDocumentSettings(settings.get());
+  installTooltips();
+  const applySound = (s: ReturnType<typeof settings.get>) =>
+    sound?.setMix({ master: s.volume, engine: s.volEngine, tyres: s.volTyres, crash: s.volCrash, env: s.volEnv, ui: s.volUi }, s.muted);
+  applySound(settings.get());
+  settings.onChange(applySound);
   const canvas = document.getElementById('view') as HTMLCanvasElement;
   // The Artifact build renders through WebGL2: an embedded frame may not get a WebGPU adapter, and a lost device
   // could not switch backends there (no query string to carry the choice).
@@ -175,6 +176,18 @@ async function main(): Promise<void> {
       hud.root.hidden = !on;
     },
     statsVisible: () => statsOn,
+    grid,
+    onVehicle: (v) => {
+      // The address names the car the mode drives: a reload keeps the one just chosen.
+      for (const key of ['freeroam', 'drive', 'crash'] as const) if (params.has(key)) params.set(key, v.id);
+      if (HASH_ROUTES) {
+        const parts = location.hash.slice(1).split('.');
+        if (parts.length > 1) {
+          parts[1] = v.id;
+          history.replaceState(null, '', `#${parts.join('.')}`);
+        }
+      } else history.replaceState(null, '', `?${params.toString()}`);
+    },
   };
   const vehicleOf = (key: string) => DRIVE_VEHICLES.find((v) => v.id === params.get(key)) ?? DRIVE_VEHICLES[0];
 
@@ -236,6 +249,7 @@ async function main(): Promise<void> {
     if (mode?.crash) mode.tools?.update(frame);
     debug.update(frame);
     viewer.render();
+    if (route !== 'bench') viewer.governResolution(frameMs, dt);
     const stats = physics.latestStats();
     if (route === 'bench' && stats && !stats.paused) physicsSamples.push({ stepMs: stats.stepMs, rtf: stats.rtf });
     if (statsOn) hud.update(stats, { frameMs, drawCalls: viewer.drawCalls(), backend: viewer.backend, threads: physics.threads });

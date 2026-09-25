@@ -82,7 +82,8 @@ export class Viewer {
   setQuality(q: 'low' | 'medium' | 'high'): void {
     const ratio = q === 'low' ? 1 : q === 'medium' ? 1.5 : 2;
     this.setBloom(q === 'high');
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, ratio));
+    this.ratioCap = ratio;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, ratio) * this.dynScale);
     const shadows = q !== 'low';
     const size = q === 'high' ? 2048 : 1024;
     if (this.renderer.shadowMap.enabled !== shadows || this.sun.shadow.mapSize.x !== size) {
@@ -99,6 +100,34 @@ export class Viewer {
       });
     }
     this.resize();
+  }
+
+  private ratioCap = 2;
+  /** Adaptive resolution: a factor on the pixel ratio, lowered while frames run long and raised again once they are
+   *  short (only on sustained trends, so it does not pump). `?autores=0` turns it off. */
+  private dynScale = 1;
+  private slowFor = 0;
+  private fastFor = 0;
+  autoResolution = new URLSearchParams(location.search).get('autores') !== '0';
+
+  /** Per frame, with the smoothed frame time [ms]. */
+  governResolution(frameMs: number, dt: number): void {
+    if (!this.autoResolution || document.hidden) return;
+    this.slowFor = frameMs > 22 ? this.slowFor + dt : 0;
+    this.fastFor = frameMs < 14 ? this.fastFor + dt : 0;
+    let next = this.dynScale;
+    if (this.slowFor > 1.2) next = Math.max(0.6, this.dynScale - 0.1);
+    else if (this.fastFor > 4 && this.dynScale < 1) next = Math.min(1, this.dynScale + 0.05);
+    if (next === this.dynScale) return;
+    this.dynScale = next;
+    this.slowFor = this.fastFor = 0;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.ratioCap) * next);
+    this.resize();
+  }
+
+  /** The current adaptive resolution factor (1 = full). */
+  get resolutionScale(): number {
+    return this.dynScale;
   }
 
   focus(point: THREE.Vector3, distance = 9): void {

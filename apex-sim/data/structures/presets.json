@@ -69,6 +69,12 @@
         "massKg": 1595,
         "drive": "AWD",
         "zeroTo100": 3.4
+      },
+      "engineSound": {
+        "cylinders": 6,
+        "turbo": true,
+        "idleRpm": 850,
+        "redlineRpm": 7200
       }
     },
     {
@@ -86,6 +92,12 @@
         "front": 2.0,
         "width": 1.9,
         "rear": 2.0
+      },
+      "engineSound": {
+        "cylinders": 4,
+        "turbo": false,
+        "idleRpm": 900,
+        "redlineRpm": 7400
       }
     }
   ],

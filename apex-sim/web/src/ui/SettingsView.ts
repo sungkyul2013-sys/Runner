@@ -4,6 +4,8 @@
 import { setLang, t, type StringKey } from './i18n';
 import { defaultSettings, settings, type Settings } from './settings';
 import { icon } from './icons';
+import { notify } from './feedback';
+import { DEFAULT_TOUCH_LAYOUT } from './TouchControls';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -12,17 +14,21 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', ...ch
   return e;
 }
 
-type Tab = 'gameplay' | 'controls' | 'graphics' | 'access';
+type Tab = 'gameplay' | 'controls' | 'graphics' | 'audio' | 'access';
 
 /** Touch layout fields this view edits (the rest of TouchLayout — positions — is kept as stored). */
 interface TouchPrefs {
   steer: 'buttons' | 'wheel' | 'tilt' | 'slider';
   size: number;
+  pedalSize: number;
   opacity: number;
   autoAccelerate: boolean;
   haptics: boolean;
 }
-const TOUCH_DEFAULTS: TouchPrefs = { steer: 'wheel', size: 1, opacity: 0.85, autoAccelerate: false, haptics: true };
+const TOUCH_DEFAULTS: TouchPrefs = {
+  steer: DEFAULT_TOUCH_LAYOUT.steer, size: DEFAULT_TOUCH_LAYOUT.size, pedalSize: DEFAULT_TOUCH_LAYOUT.pedalSize, opacity: DEFAULT_TOUCH_LAYOUT.opacity,
+  autoAccelerate: DEFAULT_TOUCH_LAYOUT.autoAccelerate, haptics: DEFAULT_TOUCH_LAYOUT.haptics,
+};
 
 export function touchPrefs(s: Settings = settings.get()): TouchPrefs {
   return { ...TOUCH_DEFAULTS, ...((s.touchLayout as Partial<TouchPrefs> | null) ?? {}) };
@@ -46,7 +52,7 @@ export class SettingsView {
   }
 
   private render(): void {
-    const tabs: [Tab, StringKey][] = [['gameplay', 'setGameplay'], ['controls', 'setControls'], ['graphics', 'setGraphics'], ['access', 'setAccess']];
+    const tabs: [Tab, StringKey][] = [['gameplay', 'setGameplay'], ['controls', 'setControls'], ['graphics', 'setGraphics'], ['audio', 'setAudio'], ['access', 'setAccess']];
     this.tabs.replaceChildren(...tabs.map(([id, key]) => {
       const b = el('button', id === this.tab ? 'tab active' : 'tab', t(key));
       b.onclick = () => {
@@ -65,8 +71,9 @@ export class SettingsView {
       const p = touchPrefs(s);
       const setTouch = (patch: Partial<TouchPrefs>) => settings.set({ touchLayout: { ...((s.touchLayout as object | null) ?? {}), ...p, ...patch } });
       rows.push(choice('setTouch', s.touchControls, [['auto', 'touchAuto'], ['on', 'on'], ['off', 'off']], (v) => settings.set({ touchControls: v })));
-      rows.push(choice('setSteer', p.steer, [['wheel', 'steerWheel'], ['buttons', 'steerButtons'], ['slider', 'steerSlider'], ['tilt', 'steerTilt']], (v) => setTouch({ steer: v })));
+      rows.push(choice('setSteer', p.steer, [['slider', 'steerSlider'], ['buttons', 'steerButtons'], ['wheel', 'steerWheel'], ['tilt', 'steerTilt']], (v) => setTouch({ steer: v })));
       rows.push(slider('setTouchSize', p.size, 0.75, 1.5, 0.05, (v) => `${Math.round(v * 100)} %`, (v) => setTouch({ size: v })));
+      rows.push(slider('setPedalSize', p.pedalSize, 0.7, 1.6, 0.05, (v) => `${Math.round(v * 100)} %`, (v) => setTouch({ pedalSize: v })));
       rows.push(slider('setTouchOpacity', p.opacity, 0.2, 1, 0.05, (v) => `${Math.round(v * 100)} %`, (v) => setTouch({ opacity: v })));
       rows.push(toggle('setAutoAccel', p.autoAccelerate, (v) => setTouch({ autoAccelerate: v })));
       rows.push(toggle('setHaptics', p.haptics, (v) => setTouch({ haptics: v })));
@@ -79,6 +86,16 @@ export class SettingsView {
         rows.push(edit);
       }
       rows.push(el('p', 'settings-note', t('keysHelp')));
+    } else if (this.tab === 'audio') {
+      const pct = (v: number) => `${Math.round(v * 100)} %`;
+      rows.push(toggle('setMute', s.muted, (v) => settings.set({ muted: v })));
+      rows.push(slider('setVolume', s.volume, 0, 1, 0.05, pct, (v) => settings.set({ volume: v })));
+      rows.push(slider('setVolEngine', s.volEngine, 0, 1, 0.05, pct, (v) => settings.set({ volEngine: v })));
+      rows.push(slider('setVolTyres', s.volTyres, 0, 1, 0.05, pct, (v) => settings.set({ volTyres: v })));
+      rows.push(slider('setVolCrash', s.volCrash, 0, 1, 0.05, pct, (v) => settings.set({ volCrash: v })));
+      rows.push(slider('setVolEnv', s.volEnv, 0, 1, 0.05, pct, (v) => settings.set({ volEnv: v })));
+      rows.push(slider('setVolUi', s.volUi, 0, 1, 0.05, pct, (v) => settings.set({ volUi: v })));
+      rows.push(el('p', 'settings-note', t('audioNote')));
     } else if (this.tab === 'graphics') {
       rows.push(choice('setQuality', s.quality, [['auto', 'qAuto'], ['low', 'qLow'], ['medium', 'qMedium'], ['high', 'qHigh']], (v) => settings.set({ quality: v })));
       rows.push(el('p', 'settings-note', t('qualityNote')));
@@ -97,6 +114,7 @@ export class SettingsView {
       if (this.tab === 'gameplay') settings.set({ hud: d.hud, speedUnit: d.speedUnit });
       else if (this.tab === 'controls') settings.set({ touchControls: d.touchControls, touchLayout: null });
       else if (this.tab === 'graphics') settings.set({ quality: d.quality });
+      else if (this.tab === 'audio') settings.set({ volume: d.volume, volEngine: d.volEngine, volTyres: d.volTyres, volCrash: d.volCrash, volEnv: d.volEnv, volUi: d.volUi, muted: d.muted });
       else {
         setLang(d.lang);
         settings.set({ lang: d.lang, accent: d.accent, uiScale: d.uiScale, reduceMotion: d.reduceMotion });
@@ -117,7 +135,10 @@ function choice<V extends string>(label: StringKey, value: V, options: [V, Strin
     const b = el('button', v === value ? 'active' : '', t(key));
     b.role = 'radio';
     b.ariaChecked = String(v === value);
-    b.onclick = () => set(v);
+    b.onclick = () => {
+      set(v);
+      notify(`${t(label)} · ${t(key)}`, '', { icon: 'settings', key: `set-${label}` });
+    };
     seg.append(b);
   }
   return field(label, seg);
@@ -127,7 +148,10 @@ function slider(label: StringKey, value: number, min: number, max: number, step:
   const input = Object.assign(document.createElement('input'), { type: 'range', min: String(min), max: String(max), step: String(step), value: String(value) });
   const out = el('output', '', format(value));
   input.oninput = () => (out.textContent = format(Number(input.value)));
-  input.onchange = () => set(Number(input.value));
+  input.onchange = () => {
+    set(Number(input.value));
+    notify(`${t(label)} · ${format(Number(input.value))}`, '', { icon: 'settings', key: `set-${label}` });
+  };
   return field(label, el('div', 'range', input, out));
 }
 
@@ -136,6 +160,9 @@ function toggle(label: StringKey, value: boolean, set: (v: boolean) => void): HT
   b.role = 'switch';
   b.ariaChecked = String(value);
   b.append(el('i'));
-  b.onclick = () => set(!value);
+  b.onclick = () => {
+    set(!value);
+    notify(`${t(label)} · ${t(value ? 'stateOff' : 'stateOn')}`, '', { icon: 'settings', key: `set-${label}` });
+  };
   return field(label, b);
 }

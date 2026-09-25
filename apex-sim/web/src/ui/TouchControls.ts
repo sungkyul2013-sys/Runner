@@ -12,6 +12,7 @@ export type ControlId = 'steer' | 'throttle' | 'brake' | 'handbrake' | 'shiftUp'
 export interface TouchLayout {
   steer: SteerMode;
   size: number; // 0.75 … 1.5, scales every control
+  pedalSize: number; // 0.7 … 1.6, scales the pedals on top of `size`
   opacity: number; // 0.2 … 1
   autoAccelerate: boolean; // throttle held at 100 % unless braking (brake pedal still works)
   haptics: boolean; // navigator.vibrate on shifts / pedal floor / reset
@@ -23,7 +24,7 @@ export interface TouchState { throttle: number; brake: number; steer: number; ha
 
 export const CONTROL_IDS: readonly ControlId[] = ['steer', 'throttle', 'brake', 'handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause'];
 const STEER_MODES: readonly SteerMode[] = ['buttons', 'wheel', 'tilt', 'slider'];
-export const DEFAULT_TOUCH_LAYOUT: TouchLayout = { steer: 'buttons', size: 1, opacity: 0.85, autoAccelerate: false, haptics: true, showShift: true, positions: {} };
+export const DEFAULT_TOUCH_LAYOUT: TouchLayout = { steer: 'slider', size: 1, pedalSize: 1, opacity: 0.9, autoAccelerate: false, haptics: true, showShift: true, positions: {} };
 
 const WHEEL_MAX = 2.1; // [rad] ≈ 120° lock to lock / 2
 const AUTO_BRAKE = 0.05; // brake above this cancels auto-acceleration
@@ -94,6 +95,7 @@ export function normalizeLayout(l: unknown): TouchLayout {
   return {
     steer: STEER_MODES.includes(o.steer as SteerMode) ? (o.steer as SteerMode) : d.steer,
     size: num(o.size, 0.75, 1.5, d.size),
+    pedalSize: num(o.pedalSize, 0.7, 1.6, d.pedalSize),
     opacity: num(o.opacity, 0.2, 1, d.opacity),
     autoAccelerate: bool(o.autoAccelerate, d.autoAccelerate),
     haptics: bool(o.haptics, d.haptics),
@@ -255,6 +257,7 @@ export class TouchControls {
   setLayout(l: TouchLayout): void {
     this.lay = normalizeLayout(l);
     this.root.style.setProperty('--s', String(this.lay.size));
+    this.root.style.setProperty('--ps', String(this.lay.pedalSize));
     this.root.style.setProperty('--o', String(this.lay.opacity));
     this.nodes.throttle.hidden = this.lay.autoAccelerate;
     this.nodes.shiftUp.hidden = this.nodes.shiftDown.hidden = !this.lay.showShift;
@@ -466,7 +469,10 @@ export class TouchControls {
       parts.push(this.wheelFace);
     } else if (this.lay.steer === 'slider') {
       this.thumb = el('span', 'tc-thumb');
-      parts.push(icon(ICON.left, 'tc-end'), el('span', 'tc-mid'), this.thumb, icon(ICON.right, 'tc-end'));
+      this.thumb.append(el('i'), el('i'), el('i'));
+      const track = el('span', 'tc-track');
+      track.append(el('span', 'tc-sfill'));
+      parts.push(track, icon(ICON.left, 'tc-end'), el('span', 'tc-mid'), this.thumb, icon(ICON.right, 'tc-end'));
     } else {
       this.dot = el('i', 'tc-dot');
       const gauge = el('span', 'tc-gauge');
@@ -501,6 +507,7 @@ export class TouchControls {
     if (!this.thumb) return;
     const half = this.nodes.steer.clientWidth / 2 - this.thumb.offsetWidth / 2;
     this.thumb.style.transform = `translateX(${-this.slider * half}px)`;
+    this.nodes.steer.style.setProperty('--sv', (-this.slider).toFixed(3)); // the fill from the centre (+ = right)
   }
 
   private showTilt(): void {

@@ -10,7 +10,10 @@ import {
 import type { BodyTopology, FromWorker, TetherState, ToWorker, Transport, VehicleInput } from './messages';
 import { LATTICE_PARAM_COUNT, readCString, type Ptr, type SbcFactory, type SbcModule } from './sbc';
 
-const ITERATION_PERIOD_MS = 4; // target loop period (≈ 250 Hz publishing)
+const ITERATION_PERIOD_MS = 6; // target loop period (≈ 166 Hz publishing; the client plays frames back on a sim clock)
+// Energy, momentum and the state hash walk every node and beam: they are refreshed every STATS_EVERY publishes
+// (≈ 20 Hz, what the panels show) and on pause, single steps and new scenes.
+const STATS_EVERY = 8;
 const STEP_BUDGET_MS = 10; // wall time we may spend stepping per iteration before slowing sim time down
 const STEP_CHUNK = 8; // steps per WASM call between budget checks (8 × 0.5 ms = 4 ms of sim time)
 const MAX_WALL_GAP_S = 0.1; // a stalled tab must not make the sim try to catch up seconds of debt
@@ -182,6 +185,8 @@ function announceNewBodies(reset: boolean, label: string): void {
 }
 
 function loadScene(name: string, bodies = 16): void {
+  forceStats = true;
+  sceneGen++;
   if (world) sbc._sbc_world_destroy(world);
   const namePtr = cString(name);
   world = sbc._sbc_world_create_scene(namePtr, threads, 1, bodies);
@@ -200,18 +205,39 @@ function loadScene(name: string, bodies = 16): void {
   publish();
 }
 
+// Vehicle descriptions by URL (a respawn or a relaunch places the car at once, without a second download).
+const vehicleDocs = new Map<string, Promise<Uint8Array>>();
+// Bumped by every new world: a spawn still waiting for its description when the world was replaced belongs to the
+// old world and is dropped (a staged launch followed at once by a real one used to put both cars into the new world).
+let sceneGen = 0;
+
 async function spawnVehicle(msg: Extract<ToWorker, { type: 'spawnVehicle' }>): Promise<void> {
   const fail = (message: string) => post({ type: 'vehicleFailed', request: msg.request, message });
   if (!world) return fail('no world');
+  const gen = sceneGen;
   const { position: [x, y, z], yaw, speed } = msg.pose;
   let vehicle: number;
   if (msg.source.kind === 'proto') {
     vehicle = sbc._sbc_world_spawn_proto_car(world, x, y, z, yaw, speed);
   } else {
-    const response = await fetch(msg.source.url);
-    if (!response.ok) return fail(`${msg.source.url}: HTTP ${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const url = msg.source.url;
+    let doc = vehicleDocs.get(url);
+    if (!doc) {
+      doc = fetch(url).then(async (r) => {
+        if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+        return new Uint8Array(await r.arrayBuffer());
+      });
+      vehicleDocs.set(url, doc);
+      doc.catch(() => vehicleDocs.delete(url));
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = await doc;
+    } catch (err) {
+      return fail(String((err as Error)?.message ?? err));
+    }
     if (!world) return fail('no world');
+    if (gen !== sceneGen) return fail('superseded');
     const ptr = sbc._malloc(bytes.length + 1);
     new Uint8Array(heap(), ptr, bytes.length).set(bytes);
     vehicle = sbc._sbc_world_spawn_vehicle_json(world, ptr, bytes.length, x, y, z, yaw, speed);
@@ -299,6 +325,11 @@ function publishTethers(): void {
   post({ type: 'tethers', states });
 }
 
+const lastEnergy = new Float64Array(ENERGY_FIELDS.length);
+const lastMomentum = new Float64Array(6);
+const lastHash = new Float64Array(2);
+let forceStats = true;
+
 function publish(): void {
   const s = backSlot();
   if (!s) return;
@@ -342,10 +373,18 @@ function publish(): void {
   h[H.staticContacts] = st[0];
   h[H.bodyContacts] = st[1];
   h[H.ccdClamps] = st[2];
-  sbc._sbc_world_measure_energy(world, stats);
-  h.set(new Float64Array(heap(), stats, ENERGY_FIELDS.length), H.energy);
-  sbc._sbc_world_measure_momentum(world, stats);
-  h.set(new Float64Array(heap(), stats, 6), H.momentum);
+  const full = (!paused && publishSeq % STATS_EVERY === 0) || forceStats;
+  forceStats = false;
+  if (full) {
+    sbc._sbc_world_measure_energy(world, stats);
+    lastEnergy.set(new Float64Array(heap(), stats, ENERGY_FIELDS.length));
+    sbc._sbc_world_measure_momentum(world, stats);
+    lastMomentum.set(new Float64Array(heap(), stats, 6));
+    lastHash[0] = sbc._sbc_world_state_hash_hi(world);
+    lastHash[1] = sbc._sbc_world_state_hash_lo(world);
+  }
+  h.set(lastEnergy, H.energy);
+  h.set(lastMomentum, H.momentum);
   h[H.simTime] = sbc._sbc_world_time(world);
   h[H.stepIndex] = sbc._sbc_world_step_index(world);
   h[H.rtf] = rtf;
@@ -358,8 +397,8 @@ function publish(): void {
   h[H.timeScale] = timeScale;
   h[H.overloaded] = overloaded ? 1 : 0;
   h[H.wasmMemoryMB] = heap().byteLength / (1024 * 1024);
-  h[H.hashHi] = sbc._sbc_world_state_hash_hi(world);
-  h[H.hashLo] = sbc._sbc_world_state_hash_lo(world);
+  h[H.hashHi] = lastHash[0];
+  h[H.hashLo] = lastHash[1];
   h[H.vehicleCount] = publishVehicles(s);
   h[H.publishSeq] = ++publishSeq;
   commit();
@@ -447,13 +486,15 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       case 'setPaused':
         paused = msg.paused;
         simDebt = 0;
+        forceStats = true;
         return;
       case 'setTimeScale':
-        timeScale = Math.min(Math.max(msg.scale, 0.001), 1);
+        timeScale = Math.min(Math.max(msg.scale, 0.001), 2);
         return;
       case 'step':
         if (!world) return;
         for (let left = msg.steps; left > 0; left -= 1000) stepTimed(Math.min(1000, left));
+        forceStats = true;
         publish();
         post({ type: 'stepped', stepIndex: sbc._sbc_world_step_index(world) });
         return;
@@ -492,6 +533,10 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       case 'wind':
         wind = msg.wind;
         applyWeather();
+        return;
+      case 'retire':
+        if (world) sbc._sbc_world_retire_family(world, msg.body);
+        forceStats = true;
         return;
       case 'hash': {
         const hi = sbc._sbc_world_state_hash_hi(world) >>> 0;

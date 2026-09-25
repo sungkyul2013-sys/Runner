@@ -23,6 +23,7 @@ export interface SbcModule {
   _sbc_world_spawn_lattice(w: Ptr, params: Ptr, count: number): number;
   _sbc_world_static_triangle_materials(w: Ptr, first: number, count: number, out: Ptr): number;
   _sbc_world_add_body_velocity(w: Ptr, body: number, dvx: number, dvy: number, dvz: number): number;
+  _sbc_world_retire_family(w: Ptr, body: number): number;
   _sbc_world_add_tether(w: Ptr, body: number, node: number, anchorBody: number, anchorNode: number, x: number, y: number, z: number, length: number, rope: number, maxForce: number, reelSpeed: number): number;
   _sbc_world_set_tether_anchor(w: Ptr, id: number, x: number, y: number, z: number): number;
   _sbc_world_set_tether_length(w: Ptr, id: number, length: number): number;

@@ -23,7 +23,8 @@ export type ToWorker =
   | { type: 'tetherRemove'; id: number }
   | { type: 'map'; physics: MapPhysics; lattices: Float64Array[] } // stores the map; the scene "map" builds from it
   | { type: 'remap'; pairs: Array<[number, number]> } // weather: surface material substitutions
-  | { type: 'wind'; wind: [number, number, number] };
+  | { type: 'wind'; wind: [number, number, number] }
+  | { type: 'retire'; body: number }; // parks a body and its broken-off parts below the world (a car replaced)
 
 /** §20 tether (core TetherDesc): a grab (pulls its node toward `anchor`, saturating at maxForce) or a rope/winch
  *  (pulls only, above its length). anchorBody −1: the anchor is the world point. */

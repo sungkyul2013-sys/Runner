@@ -1,5 +1,8 @@
-// Driving HUD (§18.4 계기): the speed and the revs on one round gauge, and (§4.4) warning lights for the faults the
-// damage links report. Failed electrics make the cluster flicker. Numbers use the tabular mono face.
+// Driving HUD (§18.4 계기). One instrument at the bottom centre that changes shape with the screen: a half dial in
+// landscape (the rev arc sweeping over the speed digits, pedal bars along its flat edge) and, in portrait, a round
+// dial that rises from the bottom edge. Gear, shift light, TCS / ABS / manual tags, and (§4.4) warning lights only
+// while a fault is present; failed electrics make it flicker. Numbers use the tabular mono face.
+import './gauge.css';
 import { FAULT, TYRE, type VehicleState } from '../physics/telemetry';
 import { t, type StringKey } from './i18n';
 import type { HudPreset, SpeedUnit } from './settings';
@@ -36,9 +39,6 @@ export interface DashboardFlags {
 }
 
 const SVG = 'http://www.w3.org/2000/svg';
-const SWEEP = 270; // degrees of the rev arc, from bottom-left round the top to bottom-right
-const R = 44; // arc radius in the 100 × 100 view box
-const ARC = (2 * Math.PI * R * SWEEP) / 360;
 
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>): SVGElementTagNameMap[K] {
   const e = document.createElementNS(SVG, tag);
@@ -46,56 +46,109 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string,
   return e;
 }
 
-/** Driving cluster (§18.4, simplified for phones): one round gauge — the speed in large digits and the revs as an arc
- *  with its redline and a shift glow. Fault lights appear under it only while a fault is present. */
+/** A dial geometry: centre, radius and the swept angles (SVG degrees: 0 = +x, clockwise). */
+interface Dial {
+  box: string;
+  cx: number;
+  cy: number;
+  r: number;
+  from: number;
+  sweep: number;
+}
+// Landscape: a half dial over a flat base. Portrait: 240° of a circle (its foot hidden under the screen edge).
+const HALF: Dial = { box: '0 0 320 176', cx: 160, cy: 164, r: 142, from: 180, sweep: 180 };
+const ROUND: Dial = { box: '0 0 200 200', cx: 100, cy: 100, r: 86, from: 150, sweep: 240 };
+
+const rad = (deg: number) => (deg * Math.PI) / 180;
+function arcPath(d: Dial, a0: number, a1: number, r = d.r): string {
+  const p = (a: number) => `${(d.cx + Math.cos(rad(a)) * r).toFixed(2)} ${(d.cy + Math.sin(rad(a)) * r).toFixed(2)}`;
+  return `M ${p(a0)} A ${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${p(a1)}`;
+}
+
+/** One dial face: track, redline zone, rev fill, ticks and numbers. */
+class Face {
+  readonly svg: SVGSVGElement;
+  private readonly fill: SVGPathElement;
+  private readonly len: number;
+
+  constructor(d: Dial, redline: number, scale: number, cls: string) {
+    this.svg = svg('svg', { viewBox: d.box, class: `dash-svg ${cls}`, 'aria-hidden': 'true' });
+    const end = d.from + d.sweep;
+    const redFrom = d.from + d.sweep * (redline / scale);
+    this.svg.append(
+      svg('path', { d: arcPath(d, d.from, end), class: 'arc-bg' }),
+      svg('path', { d: arcPath(d, redFrom, end), class: 'arc-red' }),
+    );
+    this.fill = svg('path', { d: arcPath(d, d.from, end), class: 'arc-fill' });
+    this.len = rad(d.sweep) * d.r;
+    this.fill.setAttribute('stroke-dasharray', `0 ${this.len + 10}`);
+    this.svg.append(this.fill);
+    for (let k = 0; k <= scale / 1000; k++) {
+      const a = rad(d.from + (d.sweep * k * 1000) / scale);
+      const major = k % 2 === 0 || scale <= 8000;
+      const r0 = d.r - (major ? 16 : 12), r1 = d.r - 8;
+      this.svg.append(svg('line', { x1: d.cx + Math.cos(a) * r0, y1: d.cy + Math.sin(a) * r0, x2: d.cx + Math.cos(a) * r1, y2: d.cy + Math.sin(a) * r1, class: k * 1000 >= redline ? 'tick red' : 'tick' }));
+      if (major) {
+        const tr = d.r - 27;
+        const tx = svg('text', { x: d.cx + Math.cos(a) * tr, y: d.cy + Math.sin(a) * tr + 4, class: 'tick-num' });
+        tx.textContent = String(k);
+        this.svg.append(tx);
+      }
+    }
+  }
+
+  set(frac: number): void {
+    this.fill.setAttribute('stroke-dasharray', `${(this.len * Math.min(Math.max(frac, 0), 1)).toFixed(1)} ${this.len + 10}`);
+  }
+}
+
+/** Driving cluster (§18.4): the dial changes shape with the orientation (CSS shows one of the two faces). */
 export class Dashboard {
   readonly root = el('div', 'dash');
+  private readonly dial = el('div', 'dash-dial');
   private speed = el('b', 'dash-speed', '0');
   private unitLabel = el('small', 'dash-unit', 'km/h');
+  private gear = el('span', 'dash-gear', 'N');
   private rpmText = el('span', 'dash-rpm-text', '0');
-  private fill: SVGCircleElement;
-  private redline: number;
+  private tags = el('div', 'dash-tags');
+  private tagTcs = el('i', '', 'TCS');
+  private tagAbs = el('i', '', 'ABS');
+  private tagMan = el('i', '', 'M');
+  private pedals = el('div', 'dash-pedals');
+  private brakeBar = el('i', 'dash-brake');
+  private throttleBar = el('i', 'dash-throttle');
+  private faces: Face[] = [];
+  private redline = 7000;
+  private scale = 8000;
   private warnings = el('div', 'dash-warn');
   private warnLamps = WARNINGS.map(([, key]) => el('span', 'lamp warn', t(key)));
   private tyreLamp = el('span', 'lamp warn', t('warnTyre')); // §6 tyre pressure (TPMS)
   private flicker = 0;
   private unit: SpeedUnit = 'kmh';
-  private readonly scale: number;
 
   constructor(redlineRpm: number) {
-    this.redline = redlineRpm;
-    this.scale = Math.ceil((redlineRpm * 1.12) / 1000) * 1000;
-    const g = svg('svg', { viewBox: '0 0 100 100', class: 'dash-arc', 'aria-hidden': 'true' });
-    const rot = 90 + (360 - SWEEP) / 2; // start angle of the arc (SVG: 0° = +x, clockwise)
-    const ring = (cls: string, dash: string, offset = 0) =>
-      svg('circle', { cx: 50, cy: 50, r: R, class: cls, 'stroke-dasharray': dash, 'stroke-dashoffset': offset, transform: `rotate(${rot} 50 50)` });
-    const redFrac = redlineRpm / this.scale;
-    g.append(ring('arc-bg', `${ARC} 1000`), ring('arc-red', `${ARC * (1 - redFrac)} 1000`, -ARC * redFrac));
-    this.fill = ring('arc-fill', `0 1000`);
-    g.append(this.fill);
-    // Ticks every 1000 rpm, numbers every 2000.
-    for (let k = 0; k <= this.scale / 1000; k++) {
-      const a = ((rot + (SWEEP * k * 1000) / this.scale) * Math.PI) / 180;
-      const major = k % 2 === 0;
-      const r0 = major ? 36.5 : 38.5;
-      g.append(svg('line', { x1: 50 + Math.cos(a) * r0, y1: 50 + Math.sin(a) * r0, x2: 50 + Math.cos(a) * 40.5, y2: 50 + Math.sin(a) * 40.5, class: k * 1000 >= redlineRpm ? 'tick red' : 'tick' }));
-      if (major) {
-        const tx = svg('text', { x: 50 + Math.cos(a) * 30.5, y: 50 + Math.sin(a) * 30.5 + 2.2, class: 'tick-num' });
-        tx.textContent = String(k);
-        g.append(tx);
-      }
-    }
     const face = el('div', 'dash-face');
-    face.append(this.speed, this.unitLabel, this.rpmText);
-    const dial = el('div', 'dash-dial');
-    dial.append(g, face);
+    face.append(this.speed, this.unitLabel);
+    this.tags.append(this.tagMan, this.tagTcs, this.tagAbs);
+    this.pedals.append(this.brakeBar, this.throttleBar);
+    this.dial.append(face, this.gear, this.rpmText, this.tags, this.pedals);
     this.warnings.append(...this.warnLamps, this.tyreLamp);
-    this.root.append(dial, this.warnings);
+    this.root.append(this.warnings, this.dial);
     this.root.hidden = true;
+    this.setRedline(redlineRpm);
   }
 
-  /** §18.4 HUD presets: none hides the cluster, minimal keeps only the speed digits, racing and engineer show the
-   *  gauge (engineer adds the stats panel — the app shows that). */
+  /** Rebuilds the dial for a car with this redline [rpm]. */
+  setRedline(redlineRpm: number): void {
+    this.redline = redlineRpm;
+    this.scale = Math.ceil((redlineRpm * 1.12) / 1000) * 1000;
+    for (const f of this.faces) f.svg.remove();
+    this.faces = [new Face(HALF, redlineRpm, this.scale, 'half'), new Face(ROUND, redlineRpm, this.scale, 'round')];
+    this.dial.prepend(...this.faces.map((f) => f.svg));
+  }
+
+  /** §18.4 HUD presets: none hides the cluster, minimal keeps only the speed digits and the gear, racing and
+   *  engineer show the dial (engineer adds the stats panel — the app shows that). */
   setPreset(p: HudPreset): void {
     this.root.classList.toggle('hud-minimal', p === 'minimal');
     this.root.classList.toggle('hud-off', p === 'none');
@@ -106,15 +159,23 @@ export class Dashboard {
     this.unitLabel.textContent = u === 'mph' ? 'mph' : 'km/h';
   }
 
-  update(v: VehicleState | null, _f?: DashboardFlags, _dt = 1 / 60): void {
+  update(v: VehicleState | null, f?: DashboardFlags, _dt = 1 / 60): void {
     if (!v) return;
     const kmh = Math.abs(v.speed) * (this.unit === 'mph' ? 2.23694 : 3.6);
     this.speed.textContent = kmh < 0.5 ? '0' : kmh.toFixed(0);
-    const frac = Math.min(Math.max(v.engineRpm / this.scale, 0), 1);
-    this.fill.setAttribute('stroke-dasharray', `${(ARC * frac).toFixed(2)} 1000`);
-    const shift = v.engineRpm > this.redline * 0.93;
-    this.root.classList.toggle('shift', shift);
-    this.rpmText.textContent = `${(v.engineRpm / 1000).toFixed(1)}k rpm`;
+    const frac = v.engineRpm / this.scale;
+    for (const face of this.faces) face.set(frac);
+    this.root.classList.toggle('shift', v.engineRpm > this.redline * 0.93);
+    this.rpmText.textContent = `${(v.engineRpm / 1000).toFixed(1)}k`;
+    this.gear.textContent = v.gear < 0 ? 'R' : v.gear === 0 ? 'N' : String(v.gear);
+    this.gear.classList.toggle('shifting', v.shifting);
+    this.throttleBar.style.setProperty('--v', v.throttle.toFixed(2));
+    this.brakeBar.style.setProperty('--v', v.brake.toFixed(2));
+    if (f) {
+      this.tagTcs.className = f.tcs ? (v.tcs ? 'on act' : 'on') : '';
+      this.tagAbs.className = f.abs ? 'on' : '';
+      this.tagMan.className = f.manual ? 'on' : '';
+    }
     WARNINGS.forEach(([bits], i) => (this.warnLamps[i].hidden = (v.faults & bits) === 0));
     // Tyre pressure: any wheel under 80 % of its pressure, or off its rim; the lamp names the wheels.
     const low = v.wheels.map((w, i) => ((w.tyreFlags & TYRE.shredded) || w.pressure < 0.8 * w.nominalPressure ? i : -1)).filter((i) => i >= 0);
