@@ -262,6 +262,14 @@ const STRINGS = {
   mapSelect: { ko: '맵 선택', en: 'Choose a map' },
   mapSpawn: { ko: '출발 위치', en: 'Start at' },
   mapStart: { ko: '출발', en: 'Start' },
+  mapBack: { ko: '메뉴', en: 'Menu' },
+  mapOverview: { ko: '전체 보기', en: 'Whole map' },
+  mapBuilding: { ko: '지형 생성 중', en: 'Generating the map' },
+  mapFailed: { ko: '맵을 만들지 못했습니다', en: 'The map failed to build' },
+  mapKindOpen: { ko: '오픈월드', en: 'Open world' },
+  mapKindTest: { ko: '테스트 그라운드', en: 'Test ground' },
+  mapPinHint: { ko: '드래그로 회전 · 핀을 눌러 출발 위치 선택', en: 'Drag to turn · tap a pin to start there' },
+  mapKeys: { ko: '← → 맵 · ↑ ↓ 출발 위치 · Enter 출발', en: '← → map · ↑ ↓ start · Enter go' },
   menuHint: { ko: '◀ ▶ 차량 변경 · Enter 자유 주행', en: '◀ ▶ change car · Enter free roam' },
 } satisfies Record<string, Localized>;
 

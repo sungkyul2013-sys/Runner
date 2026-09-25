@@ -3,12 +3,13 @@
 // primary action). "Continue" returns to the last mode played.
 import * as THREE from 'three/webgpu';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { abs, color, dot, fract, length, mix, normalWorld, positionWorld, sin, smoothstep, time, vec2 } from 'three/tsl';
+import { abs, color, dot, float, fract, length, mix, normalWorld, positionWorld, sin, smoothstep, time, uniform, vec2 } from 'three/tsl';
 import { SHOWROOM, showroomCar } from '../app/presets';
 import type { Viewer } from '../render/Viewer';
 import { loadVehicleModel, type VehicleModel } from '../vehicles/VehicleModel';
 import { icon, type IconName } from './icons';
-import { t, tl, type StringKey } from './i18n';
+import { MapStage } from './MapStage';
+import { t, tl, type Localized, type StringKey } from './i18n';
 import { settings } from './settings';
 
 export type AppMode = 'freeroam' | 'drive' | 'crash' | 'sandbox' | 'garage';
@@ -72,7 +73,7 @@ export class MainMenu {
     this.setupStage();
     this.select(0);
     window.addEventListener('keydown', (e) => {
-      if (!this.root.isConnected || document.querySelector('.overlay-layer')) return;
+      if (!this.root.isConnected || this.maps || document.querySelector('.overlay-layer')) return;
       if (e.key === 'ArrowLeft') prev.click();
       else if (e.key === 'ArrowRight') next.click();
       else if (e.key === 'Enter') (cards.querySelector('.mm-card.primary') as HTMLButtonElement | null)?.click();
@@ -142,7 +143,10 @@ export class MainMenu {
     const floorMat = new THREE.MeshStandardNodeMaterial({ roughness: 0.14, metalness: 0.65 });
     const r = length(positionWorld.xz);
     const rings = smoothstep(0.03, 0.0, abs(fract(r.div(1.2)).sub(0.5))).mul(smoothstep(4.2, 5.5, r)).mul(smoothstep(22, 8, r));
-    floorMat.colorNode = mix(color(0x0b0d11), color(0x1d232d), rings.mul(0.8));
+    floorMat.colorNode = mix(color(0x0b0d11), color(0x1d232d), rings.mul(0.8)).mul(this.floorDim);
+    // Under the map preview's sun the mirror floor would flare: it turns matte.
+    floorMat.roughnessNode = mix(float(0.9), float(0.14), this.floorDim.sub(0.25).div(0.75));
+    floorMat.metalnessNode = mix(float(0.1), float(0.65), this.floorDim.sub(0.25).div(0.75));
     const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 96).rotateX(-Math.PI / 2), floorMat);
     floor.position.y = -0.085;
     floor.receiveShadow = true;
@@ -172,12 +176,16 @@ export class MainMenu {
     }
     // Overhead strip lights (seen in the paint and the floor).
     const stripMat = new THREE.MeshBasicNodeMaterial({ color: 0xffffff, fog: false });
+    const strips: THREE.Object3D[] = [];
     for (const x of [-1.6, 0, 1.6]) {
       const strip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 5.5), stripMat);
       strip.position.set(x, 5.2, 0);
+      strips.push(strip);
       this.stage.add(strip);
     }
     this.stage.add(back, floor, plinth, ring);
+    this.plinth = [plinth, ring, ...strips];
+    this.spots = [key, rimA, rimB].map((l) => [l, l.intensity]);
     v.scene.add(this.stage);
     v.hemi.intensity = 0.25;
     v.sun.intensity = 0.4;
@@ -197,6 +205,52 @@ export class MainMenu {
   }
 
   private readonly parallax = new THREE.Vector2();
+  private plinth: THREE.Object3D[] = [];
+  private spots: Array<[THREE.Light, number]> = [];
+  private maps: MapStage | null = null;
+  /** 1 while the car is on show, 0 while a map model stands on the stage. */
+  private carShow = 1;
+  /** Floor brightness: the map preview's daylight would light it grey. */
+  private readonly floorDim = uniform(1);
+
+  /** Map selection: the car and its plinth leave, the map model takes the stage (see MapStage). */
+  openMaps(labelOf: (id: string) => Localized): MapStage {
+    this.maps?.dispose();
+    this.maps = new MapStage(this.viewer, labelOf);
+    this.intro = 1;
+    document.body.classList.add('mm-maps');
+    this.maps.onDaylight = (day) => {
+      for (const [l, i] of this.spots) l.intensity = i * (0.05 + 0.2 * day);
+    };
+    return this.maps;
+  }
+
+  /** Back from the map selection to the car. */
+  closeMaps(): void {
+    if (!this.maps) return;
+    this.maps.dispose();
+    this.maps = null;
+    document.body.classList.remove('mm-maps');
+    for (const [l, i] of this.spots) l.intensity = i;
+    const v = this.viewer;
+    const fog = v.scene.fog as THREE.Fog | null;
+    if (fog) {
+      fog.near = 14;
+      fog.far = 34;
+      fog.color.setHex(0x07090c);
+    }
+    v.sunDirection.set(-18, 30, 14).normalize();
+    v.sun.color.setHex(0xfff4e6);
+    v.hemi.intensity = 0.25;
+    v.sun.intensity = 0.4;
+    v.shadowHalf = 30;
+    v.controls.minDistance = 3.5;
+    v.controls.maxDistance = 12;
+    v.controls.maxPolarAngle = Math.PI * 0.49;
+    v.controls.autoRotateSpeed = 0.5;
+    v.controls.autoRotate = !settings.get().reduceMotion;
+    this.intro = 0.35;
+  }
   private intro = 0;
 
   private placeIntroCamera(t: number): void {
@@ -210,6 +264,20 @@ export class MainMenu {
 
   /** Per frame: the intro sweep, the slow turntable and the car-change animation. */
   update(dt: number): void {
+    // The car (and its plinth) give way to the map model and come back after.
+    const goal = this.maps ? 0 : 1;
+    if (this.carShow !== goal) {
+      this.carShow = goal ? Math.min(1, this.carShow + dt / 0.6) : Math.max(0, this.carShow - dt / 0.35);
+      const e = goal ? 1 - Math.pow(1 - this.carShow, 3) : this.carShow;
+      for (const o of this.plinth) o.scale.setScalar(Math.max(e, 0.001));
+      this.floorDim.value = 0.25 + 0.75 * e;
+      if (this.model) this.model.root.visible = this.carShow > 0.01;
+    }
+    if (this.maps) {
+      this.maps.update(dt);
+      if (this.model) this.model.root.scale.setScalar(Math.max(this.carShow, 0.001));
+      return;
+    }
     if (this.intro < 1) {
       this.intro = Math.min(1, this.intro + dt / 2.4);
       this.placeIntroCamera(this.intro);
@@ -220,7 +288,7 @@ export class MainMenu {
       this.swap = Math.min(1, this.swap + dt / 0.9);
       const e = 1 - Math.pow(1 - this.swap, 3);
       this.model.root.rotation.y = (1 - e) * -1.2;
-      this.model.root.scale.setScalar(0.86 + 0.14 * e);
+      this.model.root.scale.setScalar((0.86 + 0.14 * e) * (1 - Math.pow(1 - this.carShow, 3)));
       this.model.root.position.y = (1 - e) * 0.25;
     }
     if (this.leaving) {
@@ -259,6 +327,9 @@ export class MainMenu {
   }
 
   dispose(): void {
+    this.maps?.dispose();
+    this.maps = null;
+    document.body.classList.remove('mm-maps');
     this.viewer.scene.fog = null;
     this.root.remove();
     this.foot.remove();

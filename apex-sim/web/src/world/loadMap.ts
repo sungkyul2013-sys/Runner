@@ -1,7 +1,20 @@
 // Map generation off the main thread, with a fallback on it (no module workers).
+import type { StringKey } from '../ui/i18n';
 import type { MapData } from './builder';
 import { mapInfo } from './maps';
 import { Terrain } from './terrain';
+
+/** Build stages as reported by the generator: progress (0…1 of a whole load) and a label. */
+export const MAP_STAGES: Record<string, [number, StringKey]> = {
+  junctions: [0.3, 'loadRoads'],
+  embankments: [0.38, 'loadTerrain'],
+  sections: [0.44, 'loadRoads'],
+  lowering: [0.5, 'loadTerrain'],
+  materials: [0.56, 'loadTerrain'],
+  decorate: [0.6, 'loadProps'],
+  roads: [0.66, 'loadRoads'],
+  props: [0.7, 'loadProps'],
+};
 
 export function generateMap(id: string, onStage: (stage: string) => void): Promise<MapData> {
   return new Promise((resolve, reject) => {

@@ -183,13 +183,20 @@ async function main(): Promise<void> {
   if (route === 'menu') {
     grid.visible = false;
     const choices: MapChoice[] = [
-      ...MAPS.map((m) => ({ id: m.id, label: m.label, desc: m.desc, areaKm2: m.areaKm2, spawns: m.spawns })),
-      { id: 'grid', label: { ko: '무한 그리드 주행장', en: 'Infinite grid ground' }, desc: { ko: '§13.3-6 튜닝·디버그용 평지: 방지턱, 점프대, 스파이크, 슬라럼', en: '§13.3-6 flat tuning ground: bumps, jump, spikes, slalom' }, areaKm2: 0, spawns: [{ id: 'start', label: { ko: '출발점', en: 'Start' } }] },
+      ...MAPS.map((m) => ({ id: m.id, label: m.label, desc: m.desc, areaKm2: m.areaKm2, kind: m.kind, spawns: m.spawns })),
+      { id: 'grid', label: { ko: '무한 그리드 주행장', en: 'Infinite grid ground' }, desc: { ko: '§13.3-6 튜닝·디버그용 평지: 방지턱, 점프대, 스파이크, 슬라럼', en: '§13.3-6 flat tuning ground: bumps, jump, spikes, slalom' }, areaKm2: 0, kind: 'grid' as const, spawns: [{ id: 'start', label: { ko: '출발점', en: 'Start' } }] },
     ];
     menu = new MainMenu(viewer, {
       start: (m: AppMode, vehicle: string) => {
         if (m !== 'freeroam' && m !== 'drive') return go(m, vehicle);
-        openMapSelect(choices, m === 'drive' ? 'proving' : settings.get().lastMap, (mapId, spawn) => (mapId === 'grid' ? go('drive', vehicle) : go('freeroam', vehicle, { map: mapId, spawn })));
+        const stage = menu!.openMaps((id) => choices.flatMap((c) => c.spawns).find((sp) => sp.id === id)?.label ?? { ko: id, en: id });
+        openMapSelect(
+          choices,
+          m === 'drive' ? 'proving' : settings.get().lastMap,
+          (mapId, spawn) => (mapId === 'grid' ? go('drive', vehicle) : go('freeroam', vehicle, { map: mapId, spawn })),
+          stage,
+          () => menu?.closeMaps(),
+        );
       },
       settings: () => openSettingsOverlay(),
     });
@@ -216,6 +223,7 @@ async function main(): Promise<void> {
   const physicsSamples: { stepMs: number; rtf: number }[] = [];
   viewer.renderer.setAnimationLoop(() => {
     const now = performance.now();
+    const frameStart = last;
     const dt = Math.min((now - last) / 1000, 0.1);
     frameMs = frameMs * 0.9 + (now - last) * 0.1;
     if (route === 'bench') frameTimes.push(now - last);
@@ -224,7 +232,7 @@ async function main(): Promise<void> {
     grid.update(viewer.controls.target);
     const frame = physics.update(now);
     mode?.update(dt, frame);
-    menu?.update(dt);
+    menu?.update(Math.min((now - frameStart) / 1000, 0.5)); // menu animations finish even on very slow frames
     if (mode?.crash) mode.tools?.update(frame);
     debug.update(frame);
     viewer.render();

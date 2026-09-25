@@ -11,7 +11,7 @@ import { LoadingScreen } from '../ui/Loading';
 import { effectiveQuality, settings } from '../ui/settings';
 import type { MapData } from './builder';
 import { Environment, WEATHERS, type Weather } from './Environment';
-import { generateMap } from './loadMap';
+import { generateMap, MAP_STAGES as STAGES } from './loadMap';
 import { MapView } from './MapView';
 import { ParkedCars } from './ParkedCars';
 import { Minimap, reliefImage, WorldMap } from './MapUI';
@@ -19,16 +19,6 @@ import { mapInfo } from './maps';
 import { nextManeuver, Router, type RoutePlan } from './Route';
 import type { Poi } from './types';
 
-const STAGES: Record<string, [number, StringKey]> = {
-  junctions: [0.3, 'loadRoads'],
-  embankments: [0.38, 'loadTerrain'],
-  sections: [0.44, 'loadRoads'],
-  lowering: [0.5, 'loadTerrain'],
-  materials: [0.56, 'loadTerrain'],
-  decorate: [0.6, 'loadProps'],
-  roads: [0.66, 'loadRoads'],
-  props: [0.7, 'loadProps'],
-};
 
 /** Parked car stand-in (KNOWN_ISSUES: a car-sized steel lattice, not a full vehicle): 1.35 t, crushable. */
 function parkedLattice(x: number, y: number, z: number, yaw: number): LatticeParams {

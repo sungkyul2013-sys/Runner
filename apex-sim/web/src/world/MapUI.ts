@@ -106,6 +106,62 @@ export function reliefImage(map: MapData, res = 8): HTMLCanvasElement {
   return canvas;
 }
 
+/** The whole map on a square canvas of `px` pixels: the relief with paved areas and roads, for a 3D model's top face.
+ *  With `night`, only the lit roads (warm, on black): its emissive map. */
+export function mapCanvas(map: MapData, px: number, night = false): HTMLCanvasElement {
+  const t = map.terrain;
+  const w = t.nx * t.cell;
+  const c = document.createElement('canvas');
+  c.width = c.height = px;
+  const g = c.getContext('2d')!;
+  if (night) {
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, px, px);
+  } else {
+    g.imageSmoothingEnabled = true;
+    g.drawImage(reliefImage(map, w / Math.min(px, 896)), 0, 0, px, px);
+  }
+  const k = px / w;
+  g.setTransform(k, 0, 0, k, -t.originX * k, -t.originZ * k);
+  if (!night) {
+    drawVectors(g, map, k, {});
+    return c;
+  }
+  g.lineCap = g.lineJoin = 'round';
+  // Paved areas and test tracks (not in the route graph) glow too, dimmer.
+  g.fillStyle = 'rgba(255,170,100,0.35)';
+  for (const a of map.render.areas) {
+    if (a.look === 'terrain') continue;
+    g.beginPath();
+    a.outline.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
+    g.closePath();
+    g.fill();
+  }
+  g.strokeStyle = 'rgba(255,196,128,0.8)';
+  for (const l of map.render.lines) {
+    g.lineWidth = Math.max(18, 2.2 / k);
+    g.beginPath();
+    g.moveTo(l.xs[0], l.zs[0]);
+    for (let i = 1; i < l.xs.length; i++) g.lineTo(l.xs[i], l.zs[i]);
+    if (l.closed) g.closePath();
+    g.stroke();
+  }
+  const lit: Record<string, number> = { highway: 30, ramp: 14, connector: 22, arterial: 26, street: 16, alley: 8, rural: 10, mountain: 8, track: 20 };
+  for (const [col, grow] of [['rgba(255,150,70,0.35)', 3], ['rgba(255,196,128,0.95)', 1]] as const) {
+    g.strokeStyle = col;
+    for (const e of map.graph.edges) {
+      const wd = lit[e.cls];
+      if (!wd) continue;
+      g.lineWidth = Math.max(wd * grow, 2.2 / k);
+      g.beginPath();
+      g.moveTo(e.xs[0], e.zs[0]);
+      for (let i = 1; i < e.xs.length; i++) g.lineTo(e.xs[i], e.zs[i]);
+      g.stroke();
+    }
+  }
+  return c;
+}
+
 /** Draws roads, POIs, route and car on a 2D context whose transform maps world metres to pixels. */
 function drawVectors(g: CanvasRenderingContext2D, map: MapData, pxPerM: number, opts: { route?: RoutePlan | null; waypoint?: { x: number; z: number } | null; pois?: boolean; labels?: boolean; carSize?: number }): void {
   const scale = Math.max(pxPerM, 0.05);

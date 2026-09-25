@@ -27,6 +27,16 @@ export const ICONS = {
   crane: svg('<path d="M5 21V4h9M5 8l9-4M14 4v6"/><path d="M12 10h4v3h-4z"/>'),
   eye: svg('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+  moon: svg('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'),
+  cloud: svg('<path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.3 1.6A3.3 3.3 0 0 0 7 18z"/>'),
+  rain: svg('<path d="M7 14h10a3.5 3.5 0 0 0 .4-7 5.5 5.5 0 0 0-10.4 1.4A2.9 2.9 0 0 0 7 14z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/>'),
+  storm: svg('<path d="M7 13h10a3.5 3.5 0 0 0 .4-7 5.5 5.5 0 0 0-10.4 1.4A2.9 2.9 0 0 0 7 13z"/><path d="M12 14l-2 4h4l-2 4"/>'),
+  fog: svg('<path d="M4 8h16M6 12h12M4 16h16M8 20h8"/>'),
+  snow: svg('<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/><path d="M9.5 4.5L12 6l2.5-1.5M9.5 19.5L12 18l2.5 1.5"/>'),
+  blizzard: svg('<path d="M10 3v12M4.8 6l10.4 6M4.8 12L15.2 6"/><path d="M14 17h7M12 20h9M17 14h4"/>'),
+  pin: svg('<path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/>'),
+  orbit: svg('<path d="M12 3l7 4v8l-7 4-7-4V7z"/><path d="M12 11l7-4M12 11v8M12 11L5 7"/><ellipse cx="12" cy="12" rx="10.5" ry="4" transform="rotate(-18 12 12)"/>'),
   touch: svg('<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>'),
 } as const;
 
