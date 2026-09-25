@@ -101,6 +101,8 @@ export class Shell {
     this.buildPause();
     window.addEventListener('keydown', (e) => {
       if (e.code !== 'Escape' || e.repeat) return;
+      // The 3D overview and the world map close on Escape themselves.
+      if (document.body.classList.contains('ov3-on') || document.querySelector('.worldmap')) return;
       if (!this.settingsLayer.hidden) this.closeSettings();
       else if (!this.pauseLayer.hidden) this.closePause();
       else this.openPause();

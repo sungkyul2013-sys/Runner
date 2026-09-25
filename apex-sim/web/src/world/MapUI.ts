@@ -23,7 +23,7 @@ const ROAD_STYLE: Record<string, [string, number]> = {
   track: ['#e8e8e8', 4],
 };
 
-const POI_COLOR: Record<Poi['kind'], string> = {
+export const POI_COLOR: Record<Poi['kind'], string> = {
   spawn: '#FF6B2C',
   city: '#3D8BFF',
   landmark: '#A78BFA',
@@ -347,6 +347,8 @@ export interface WorldMapActions {
   setWaypoint(x: number, z: number): void;
   clearWaypoint(): void;
   close(): void;
+  /** Switch to the 3D overview (when offered). */
+  open3d?(): void;
 }
 
 /** Full-screen world map (§18.3-7): pan, zoom, points of interest, teleport and waypoints. */
@@ -381,7 +383,14 @@ export class WorldMap {
       b.onclick = f;
       return b;
     };
-    top.append(title, btn('plus', t('mapZoomIn'), () => this.zoomBy(1.5)), btn('back', t('mapZoomOut'), () => this.zoomBy(1 / 1.5)), btn('car', t('mapCenter'), () => this.center()), btn('close', t('close'), () => actions.close()));
+    top.append(title, btn('plus', t('mapZoomIn'), () => this.zoomBy(1.5)), btn('back', t('mapZoomOut'), () => this.zoomBy(1 / 1.5)), btn('car', t('mapCenter'), () => this.center()));
+    if (actions.open3d) {
+      const b3 = btn('orbit', t('map3d'), () => actions.open3d!());
+      b3.classList.add('wm-3d');
+      b3.append(document.createTextNode('3D'));
+      top.append(b3);
+    }
+    top.append(btn('close', t('close'), () => actions.close()));
     this.card.className = 'wm-card';
     this.card.hidden = true;
     this.list.className = 'wm-list';

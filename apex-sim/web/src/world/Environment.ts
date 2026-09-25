@@ -45,6 +45,8 @@ export class Environment {
   /** Time of day [h] and the date (day of the year: 172 ≈ 21 June). */
   hour = 14;
   day = 200;
+  /** Floor on the fog's visibility [m] (the overview map looks across the whole map). */
+  minVisibility = 0;
   /** Game seconds per real second (0: time stands still). */
   timeScale = 30;
   weather: Weather = 'clear';
@@ -229,7 +231,7 @@ export class Environment {
     v.hemi.groundColor.setRGB(0.12 * day + 0.02, 0.12 * day + 0.02, 0.11 * day + 0.03);
     v.renderer.toneMappingExposure = 1.0 + this.night * 0.9;
     // Fog: visibility → density (e^(−density·d) = 2 % at the visibility distance), colour from the sky.
-    this.fog.density = 3.9 / Math.max(this.cur.fog, 50);
+    this.fog.density = 3.9 / Math.max(this.cur.fog, 50, this.minVisibility);
     const fogDay = new THREE.Color().setRGB(0.72 - 0.2 * this.cur.cloud, 0.78 - 0.18 * this.cur.cloud, 0.85 - 0.15 * this.cur.cloud);
     const fogNight = new THREE.Color(0x0b1018);
     this.fog.color.copy(fogNight).lerp(fogDay, day);

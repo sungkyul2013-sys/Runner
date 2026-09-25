@@ -16,6 +16,7 @@ import { MapView } from './MapView';
 import { ParkedCars } from './ParkedCars';
 import { Minimap, reliefImage, WorldMap } from './MapUI';
 import { mapInfo } from './maps';
+import { Overview3D } from './Overview3D';
 import { nextManeuver, Router, type RoutePlan } from './Route';
 import type { Poi } from './types';
 
@@ -133,6 +134,10 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
       worldMap.update(null, null);
     },
     close: () => closeMap(),
+    open3d: () => {
+      closeMap();
+      openOverview();
+    },
   });
   let mapOpen = false;
   const openMap = () => {
@@ -154,10 +159,42 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
   guide.className = 'route-guide';
   guide.hidden = true;
   document.body.append(guide);
+  // ---- 3D overview of the live world ----
+  const overview = new Overview3D(viewer, map, view, env, {
+    car: () => {
+      const v = session.state;
+      const c = carPos();
+      return { x: c.x, y: v ? v.position[1] : map.terrain.heightAt(c.x, c.z), z: c.z, heading: c.heading };
+    },
+    route: () => route,
+    waypoint: () => waypoint,
+    teleport,
+    setWaypoint: (x, z) => {
+      waypoint = { x, z };
+      replan();
+      ctx.toast(route ? `${t('routeSet')} · ${(route.length / 1000).toFixed(1)} km` : t('routeNone'));
+    },
+    closed: () => {
+      session.holdCamera = false;
+      ctx.setPaused(false);
+    },
+  });
+  const openOverview = () => {
+    if (overview.isOpen) return;
+    session.holdCamera = true;
+    ctx.setPaused(true);
+    overview.open();
+  };
   shell.addAction('map', t('actMap'), openMap);
+  shell.addAction('orbit', t('map3d'), openOverview);
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || shell.menuOpen) return;
+    if (overview.isOpen) {
+      if (e.key === 'Escape' || e.key === 'o' || e.key === 'O') overview.close();
+      return;
+    }
     if ((e.key === 'm' || e.key === 'M') && !mapOpen) openMap();
+    else if ((e.key === 'o' || e.key === 'O') && !mapOpen) openOverview();
   });
 
   // ---- sheet: time and weather, places ----
@@ -233,6 +270,7 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
     drive: session,
     update(dt, frame) {
       session.update(dt, frame);
+      overview.update();
       parkedView.update(frame);
       env.update(dt);
       view.update(viewer.camera, dt);

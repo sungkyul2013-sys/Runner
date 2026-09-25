@@ -290,6 +290,8 @@ export class MapView {
   private readonly propTiles: PropTile[] = [];
   private lodScale = 1;
   private drawDistance = 2600;
+  /** Overview map: every tile drawn, props farther out. */
+  overview = false;
   private propDistance = 1100;
   private readonly signalHeads: THREE.InstancedMesh[] = [];
 
@@ -785,8 +787,9 @@ export class MapView {
         c.current = lod;
       }
     }
-    for (const t of this.tiles) t.group.visible = Math.hypot(t.cx - cx, t.cz - cz) < this.drawDistance;
-    for (const t of this.propTiles) t.group.visible = Math.hypot(t.cx - cx, t.cz - cz) < this.propDistance;
+    const draw = this.overview ? Infinity : this.drawDistance, props = this.overview ? this.propDistance * 2 : this.propDistance;
+    for (const t of this.tiles) t.group.visible = Math.hypot(t.cx - cx, t.cz - cz) < draw;
+    for (const t of this.propTiles) t.group.visible = Math.hypot(t.cx - cx, t.cz - cz) < props;
   }
 
   dispose(): void {

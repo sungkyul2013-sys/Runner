@@ -123,6 +123,9 @@ export class DriveSession {
     return this.xray;
   }
 
+  /** Another view owns the camera (the free-roam overview map): the chase camera stands by. */
+  holdCamera = false;
+
   get cameraMode(): string {
     return this.chase.mode;
   }
@@ -167,7 +170,7 @@ export class DriveSession {
       this.physics.setVehicleInput(this.actor.spawned.vehicle, { throttle: 0, brake: 1, steer: 0, handbrake: 1, mode: 0, shift: 0, abs: true, tcs: true });
       return;
     }
-    this.chase.update(dt, v);
+    if (!this.holdCamera) this.chase.update(dt, v);
     this.physics.setVehicleInput(this.actor.spawned.vehicle, this.input.update(dt, v.speed));
     const logic = this.input.logic;
     this.dashboard.update(v, {

@@ -206,6 +206,48 @@ body.touch-on .minimap { left: calc(12px + var(--safe-l)); right: auto; top: cal
   .wm-title small { display: none; }
 }
 
+/* ---- free-roam 3D overview (§18.3-7) ---- */
+.wm-top .wm-3d { width: auto; padding: 0 12px; gap: 6px; display: flex; font-weight: 700; color: var(--accent); }
+body.ov3-on .dash, body.ov3-on .tc, body.ov3-on .minimap, body.ov3-on .topbar, body.ov3-on .route-guide, body.ov3-on .sheet, body.ov3-on .fab { opacity: 0; pointer-events: none !important; transition: opacity 300ms var(--ease); }
+body.ov3-on .tc * { pointer-events: none !important; }
+.ov3 { position: fixed; inset: 0; z-index: 25; pointer-events: none; animation: fade 400ms var(--ease); }
+.ov3.out { opacity: 0; transition: opacity 500ms var(--ease); }
+.ov3 > * { pointer-events: auto; }
+.ov3::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(7, 9, 12, 0.55) 0%, transparent 18%, transparent 80%, rgba(7, 9, 12, 0.45) 100%); }
+.ov3-top { position: absolute; left: calc(14px + var(--safe-l)); right: calc(14px + var(--safe-r)); top: calc(12px + var(--safe-t)); display: flex; align-items: center; gap: 8px; animation: msDown 520ms var(--ease) both; }
+.ov3-title { margin-right: auto; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px 16px; border-radius: 16px; background: var(--glass); backdrop-filter: blur(16px); border: 1px solid var(--border); }
+.ov3-title b { font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov3-title small { color: var(--text-3); font-size: 0.76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov3-btn { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: 999px; background: var(--glass); backdrop-filter: blur(16px); border: 1px solid var(--border); color: var(--text); font-weight: 600; white-space: nowrap; }
+.ov3-btn .icon, .ov3-btn .icon svg { width: 18px; height: 18px; flex: none; display: block; }
+.ov3-btn.primary { flex-direction: row-reverse; background: linear-gradient(180deg, #ff8a52, var(--accent)); border-color: transparent; color: #140a05; box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 45%, transparent); }
+.ov3-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.ov3-poi, .ov3-car, .ov3-area { position: absolute; left: 0; top: 0; white-space: nowrap; transition: opacity 200ms var(--ease); }
+.ov3-poi { translate: -12px -50%; display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px; border-radius: 999px; pointer-events: auto; font-size: 0.8rem; font-weight: 600; color: var(--text); background: rgba(11, 13, 16, 0.7); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.12); min-height: 0; }
+.ov3-poi i { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px rgba(11, 13, 16, 0.9); }
+.ov3-poi.mini { padding: 4px; }
+.ov3-poi.mini span { display: none; }
+.ov3-car { translate: -50% calc(-100% - 6px); display: flex; align-items: center; gap: 6px; padding: 5px 12px 5px 8px; border-radius: 999px; font-size: 0.82rem; font-weight: 800; color: #140a05; background: var(--accent); box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 55%, transparent); }
+.ov3-car .icon, .ov3-car .icon svg { width: 16px; height: 16px; flex: none; display: block; }
+.ov3-area { translate: -50% -50%; font-size: 0.86rem; font-weight: 700; letter-spacing: 0.14em; color: rgba(242, 244, 247, 0.86); text-shadow: 0 1px 2px #000, 0 0 12px rgba(0, 0, 0, 0.8); pointer-events: none; }
+.ov3-area.big { font-size: 1.15rem; letter-spacing: 0.22em; }
+.ov3-poi.hid, .ov3-car.hid, .ov3-area.hid { opacity: 0; pointer-events: none; }
+.ov3-card { position: absolute; left: 50%; bottom: calc(22px + var(--safe-b)); translate: -50% 0; width: min(420px, calc(100% - 28px)); display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 20px; background: linear-gradient(180deg, rgba(28, 32, 39, 0.9), rgba(14, 16, 20, 0.94)); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 44px rgba(0, 0, 0, 0.5); }
+.ov3-card.in { animation: msRise 360ms var(--ease) both; }
+.ov3-card-title { display: flex; align-items: center; gap: 10px; }
+.ov3-card-title i { width: 12px; height: 12px; border-radius: 50%; background: #3d8bff; box-shadow: 0 0 10px #3d8bff; flex: none; }
+.ov3-card-title b { font-size: 1.05rem; }
+.ov3-card-title small { margin-left: auto; font-family: var(--font-num); color: var(--text-3); }
+.ov3-card .row { display: flex; gap: 8px; }
+.ov3-card .row button { flex: 1; min-height: 48px; font-weight: 600; }
+.ov3-card button.primary { background: var(--accent); border-color: var(--accent); color: #140a05; }
+@media (max-width: 700px), (max-height: 520px) {
+  .ov3-btn span { display: none; }
+  .ov3-btn { padding: 0 12px; }
+  .ov3-title { padding: 6px 12px; }
+  .ov3-title small { display: none; }
+}
+
 /* ---- map selection (§18.3-6): full screen over the 3D model ---- */
 body.mm-maps .mainmenu { opacity: 0; transform: translateX(-28px); pointer-events: none; }
 body.mm-maps .mainmenu > * { pointer-events: none; }
@@ -381,6 +423,8 @@ body.touch-on .sheet:not(.open) { display: none; }
 @media (max-width: 760px), (max-height: 520px) { .dash { --g: 150px; right: calc(12px + var(--safe-r)); bottom: calc(12px + var(--safe-b)); } }
 /* Touch driving: centred between the steering pads and the pedals (landscape), above the controls (portrait). */
 body.touch-on .dash { --g: 132px; right: auto; left: 50%; transform: translateX(-50%); bottom: calc(10px + var(--safe-b)); animation: none; }
+/* portrait: the turn guide under the minimap and gauge row */
+@media (orientation: portrait) { body.touch-on .route-guide { top: calc(12px + var(--topbar-h) + 132px + var(--safe-t)); } }
 /* portrait: top right, opposite the minimap, so the car and the pads stay clear */
 @media (orientation: portrait) { body.touch-on .dash { --g: 112px; left: auto; right: calc(12px + var(--safe-r)); transform: none; top: calc(12px + var(--topbar-h) + 10px + var(--safe-t)); bottom: auto; } }
 
