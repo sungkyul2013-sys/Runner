@@ -78,6 +78,68 @@
       }
     },
     {
+      "id": "rolls_royce_ghost",
+      "label": {
+        "ko": "롤스로이스 고스트",
+        "en": "Rolls-Royce Ghost"
+      },
+      "source": {
+        "kind": "json",
+        "url": "vehicles/rolls_royce_ghost/vehicle.json"
+      },
+      "model": "vehicles/rolls_royce_ghost/rolls_royce_ghost.glb",
+      "redlineRpm": 5800,
+      "crash": {
+        "front": 2.58,
+        "width": 1.98,
+        "rear": 2.8
+      },
+      "specs": {
+        "powerKw": 420,
+        "torqueNm": 850,
+        "massKg": 2490,
+        "drive": "AWD",
+        "zeroTo100": 4.8
+      },
+      "engineSound": {
+        "cylinders": 12,
+        "turbo": true,
+        "idleRpm": 650,
+        "redlineRpm": 5800
+      }
+    },
+    {
+      "id": "maybach_gls",
+      "label": {
+        "ko": "메르세데스-마이바흐 GLS 600",
+        "en": "Mercedes-Maybach GLS 600"
+      },
+      "source": {
+        "kind": "json",
+        "url": "vehicles/maybach_gls/vehicle.json"
+      },
+      "model": "vehicles/maybach_gls/maybach_gls.glb",
+      "redlineRpm": 6500,
+      "crash": {
+        "front": 2.45,
+        "width": 2.03,
+        "rear": 2.73
+      },
+      "specs": {
+        "powerKw": 410,
+        "torqueNm": 730,
+        "massKg": 2785,
+        "drive": "AWD",
+        "zeroTo100": 4.9
+      },
+      "engineSound": {
+        "cylinders": 8,
+        "turbo": true,
+        "idleRpm": 650,
+        "redlineRpm": 6500
+      }
+    },
+    {
       "id": "apex_proto",
       "label": {
         "ko": "APEX Proto (절차 생성 기준차)",
@@ -345,33 +407,11 @@
     },
     {
       "id": "rolls_royce_ghost",
-      "label": {
-        "ko": "롤스로이스 고스트",
-        "en": "Rolls-Royce Ghost"
-      },
-      "model": "vehicles/rolls_royce_ghost/rolls_royce_ghost.glb",
-      "specs": {
-        "powerKw": 420,
-        "torqueNm": 850,
-        "massKg": 2490,
-        "drive": "AWD",
-        "zeroTo100": 4.8
-      }
+      "drive": "rolls_royce_ghost"
     },
     {
       "id": "maybach_gls",
-      "label": {
-        "ko": "메르세데스-마이바흐 GLS 600",
-        "en": "Mercedes-Maybach GLS 600"
-      },
-      "model": "vehicles/maybach_gls/maybach_gls.glb",
-      "specs": {
-        "powerKw": 410,
-        "torqueNm": 730,
-        "massKg": 2785,
-        "drive": "AWD",
-        "zeroTo100": 4.9
-      }
+      "drive": "maybach_gls"
     }
   ]
 }

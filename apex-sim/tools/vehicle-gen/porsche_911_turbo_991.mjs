@@ -70,7 +70,12 @@ const segments = 24;
 const suspensionYield = (plasticForce) => ({ plasticForce, hardening: 0.05, deformLimit: 0.25 });
 
 const b = new VehicleBuilder();
-b.group('chassis', { k: 6e5, zeta: 0.1 });                // per beam: k = EA / L, EA = 1.8e5 N
+// Chassis lattice: axial rigidity EA per beam (k = EA / L). A real shell is far stiffer than any lattice the 2 kHz
+// step can carry: 2.3e5 N is the most the node masses allow within 1,595 kg (m ≥ ½·Σk·t², below); with 25 % damping
+// (was 1.8e5 N, 10 %) the body stops wobbling on its wheels over bumps, and in a crash it stores less elastic energy
+// at yield (F²/2k) to spring back with.
+const CHASSIS_EA = 2.3e5;
+b.group('chassis', { k: 7.7e5, zeta: 0.25 });
 b.group('hardpoint', { k: 8e5, zeta: 0.2, plasticForce: 3.0e4, hardening: 0.05 });
 b.group('knuckle', { k: 2e6, zeta: 0.1 });
 b.group('link', { k: 1.5e6, zeta: 0.1, ...suspensionYield(2.4e4) });
@@ -115,7 +120,7 @@ const insideHull = (p) => {
   return !wheelEnvelope(p);
 };
 const inside = (p) => insideHull(p) && !inCavity(p);
-const latticeGrid = b.buildLattice({ xs, ys, zs, inside, axialStiffness: 1.8e5 });
+const latticeGrid = b.buildLattice({ xs, ys, zs, inside, axialStiffness: CHASSIS_EA });
 // Collision surface: the lattice hull is self-collision group 0, each tyre its own group (1 … 4), so a wheel driven
 // into its arch in a crash hits the body (§5.1 self-collision) while nodes of one group never collide among themselves.
 // The powertrain cavity's walls are part of the hull surface (facing the blocks, group 9).
@@ -569,12 +574,13 @@ const lampUnit = ({ c }) => {
   return null;                                                   // interior and trim parts sharing the lamp material
 };
 // Trigger values measured on this car (core/tests/test_damage.cpp): hard driving bends nothing permanently; the peak
-// plastic strain of the windscreen frame is 0 up to 40 km/h and 0.29 % in a 64 km/h frontal wall crash (35 % at
+// plastic strain of the windscreen frame is 0 up to 40 km/h and 0.11 % in a 64 km/h frontal wall crash with the
+// stiffer 2.3e5 N lattice (0.29 % with the first 1.8e5 N one; 35 % at
 // 100 km/h), of the side-window frames 0.4 % at 64 and 26 % at 100 km/h; a 15 km/h wall hit puts 20 kN on a
 // headlamp node, a traffic cone at 50 km/h 1 kN. (With the powertrain as its own blocks on mounts, 21 % of the mass
 // no longer loads the lattice directly, and the frames bend less than the earlier 0.75 % / 1.1 % at 64 km/h.)
 const damage = {
-  windscreen: { strain: 0.002, impact: 3.0e4 },   // laminated [-] plastic strain of the frame, [N] contact force
+  windscreen: { strain: 0.0009, impact: 3.0e4 },  // laminated [-] plastic strain of the frame, [N] contact force
   side: { strain: 0.02, impact: 2.0e4 },          // tempered
   quarter: { strain: 0.02, impact: 2.0e4 },
   rear: { strain: 0.025, impact: 2.0e4 },

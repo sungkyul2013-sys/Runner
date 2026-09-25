@@ -150,6 +150,7 @@ if(SBC_BUILD_TESTS)
     tests/test_elements.cpp
     tests/test_vehicle.cpp
     tests/test_vehicle_json.cpp
+    tests/test_luxury.cpp
     tests/test_tethers.cpp
     tests/test_tyres.cpp
     tests/test_aero.cpp
