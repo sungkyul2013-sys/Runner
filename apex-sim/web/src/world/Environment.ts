@@ -5,7 +5,7 @@
 import * as THREE from 'three/webgpu';
 import type { Node } from 'three/webgpu';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
-import { attribute, cameraPosition, float, fract, mod, positionLocal, time, uniform, vec3, vec4, sin } from 'three/tsl';
+import { attribute, cameraPosition, float, fract, mod, pmremTexture, positionLocal, time, uniform, vec3, vec4, sin } from 'three/tsl';
 import type { Viewer } from '../render/Viewer';
 import type { MapUniforms } from './MapView';
 import { MAT } from './types';
@@ -71,6 +71,19 @@ export class Environment {
   private readonly fog: THREE.FogExp2;
   private readonly headlight: THREE.SpotLight;
   night = 0;
+  // Reflections (§12 차량 반사): the sky (with its sun, clouds and overcast) over a ground-toned floor, prefiltered
+  // into an environment map the cars reflect (the world's materials keep their own tuned lighting), rebuilt when
+  // the hour or the weather has moved enough to show.
+  private readonly envScene = new THREE.Scene();
+  private readonly envGround: THREE.Mesh;
+  private readonly envGroundCol = uniform(new THREE.Color(0x3a3d38));
+  private pmrem: THREE.PMREMGenerator | null = null;
+  private envRT: THREE.RenderTarget | null = null;
+  private envKey = '';
+  private envAt = 0;
+  private envNode: ReturnType<typeof pmremTexture> | null = null;
+
+  private reflectAt = 0;
 
   constructor(private readonly viewer: Viewer, private readonly uniforms: MapUniforms, readonly latitude: number, private readonly physics: PhysicsWeatherLink | null) {
     const scene = viewer.scene;
@@ -78,6 +91,10 @@ export class Environment {
     this.sky.frustumCulled = false;
     scene.add(this.sky);
     scene.background = null;
+    // Only the cars use an environment map here (see updateReflections): at a little over half strength, as the
+    // hemisphere light already stands in for the sky's diffuse share.
+    scene.environment = null;
+    scene.environmentIntensity = 0.55;
     this.fog = new THREE.FogExp2(0xbfcad6, 0.0002);
     scene.fog = this.fog;
     viewer.camera.far = 32000;
@@ -124,6 +141,38 @@ export class Environment {
     this.headlight = new THREE.SpotLight(0xfff3dc, 0, 90, 0.5, 0.45, 1.2);
     this.headlight.castShadow = false;
     scene.add(this.headlight, this.headlight.target);
+    const gm = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide, fog: false });
+    gm.colorNode = this.envGroundCol;
+    this.envGround = new THREE.Mesh(new THREE.CircleGeometry(40000, 32).rotateX(-Math.PI / 2), gm);
+    this.envGround.position.y = -30;
+    this.envScene.add(this.envGround);
+  }
+
+  /** Rebuilds the reflection map when the sky has changed enough (a quarter hour, a weather step). */
+  private updateReflections(day: number): void {
+    const key = `${Math.round(this.hour * 4)}|${Math.round(this.cur.cloud * 8)}|${Math.round(this.cur.fog / 500)}`;
+    const now = performance.now();
+    if (key === this.envKey || now - this.envAt < 1500) return;
+    this.envKey = key;
+    this.envAt = now;
+    const v = this.viewer;
+    this.pmrem ??= new THREE.PMREMGenerator(v.renderer);
+    this.envGroundCol.value.setRGB(0.03 + 0.2 * day, 0.035 + 0.21 * day, 0.03 + 0.19 * day);
+    // The sky and the overcast dome visit the reflection scene (centred on its origin) and come back.
+    const domePos = this.dome.position.clone();
+    this.dome.position.set(0, 0, 0);
+    this.envScene.add(this.sky, this.dome);
+    try {
+      const rt = this.pmrem.fromScene(this.envScene, 0.02, 1, 60000);
+      if (this.envNode) this.envNode.value = rt.texture;
+      else this.envNode = pmremTexture(rt.texture);
+      this.envRT?.dispose();
+      this.envRT = rt;
+    } catch {
+      // No reflection map on this backend: the lights alone.
+    }
+    v.scene.add(this.sky, this.dome);
+    this.dome.position.copy(domePos);
   }
 
   private precipitation(count: number, width: number, length: number, speed: number, amount: Node<'float'>, hex: number): THREE.Mesh {
@@ -246,6 +295,22 @@ export class Environment {
     this.moon.position.copy(v.camera.position).addScaledVector(moonDir, 18000);
     this.moon.visible = moonDir.y > -0.05 && this.cur.cloud < 0.9;
     this.stars.position.copy(v.camera.position);
+    this.updateReflections(day);
+    // Car materials (models load and reload on reset) pick up the sky reflection; a scan once a second.
+    const now = performance.now();
+    if (this.envNode && now - this.reflectAt > 1000) {
+      this.reflectAt = now;
+      v.scene.traverse((o) => {
+        const mat = (o as THREE.Mesh).material as THREE.MeshStandardNodeMaterial | THREE.MeshStandardNodeMaterial[] | undefined;
+        if (!mat || !(o as THREE.Mesh).isMesh) return;
+        for (const m of Array.isArray(mat) ? mat : [mat]) {
+          // Lit (standard/physical) car materials only: the unlit lamp lenses take no prefiltered map.
+          if (!m.userData || !('apexRole' in m.userData) || !(m as { isMeshStandardNodeMaterial?: boolean }).isMeshStandardNodeMaterial || m.envNode === this.envNode) continue;
+          m.envNode = this.envNode;
+          m.needsUpdate = true;
+        }
+      });
+    }
     // Precipitation.
     this.rainAmount.value = this.cur.rain;
     this.snowAmount.value = this.cur.snow;
@@ -288,5 +353,8 @@ export class Environment {
   dispose(): void {
     for (const o of [this.sky, this.dome, this.stars, this.moon, this.rain, this.snow, this.headlight, this.headlight.target]) o.removeFromParent();
     this.viewer.scene.fog = null;
+    this.envRT?.dispose();
+    this.pmrem?.dispose();
+    this.viewer.scene.environmentIntensity = 1;
   }
 }

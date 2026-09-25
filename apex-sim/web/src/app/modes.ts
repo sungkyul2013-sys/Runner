@@ -169,9 +169,13 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
       ctx.setPaused(false);
       void crash.launch(spec, a, b);
     },
+    stage: (spec, a, b) => {
+      ctx.setPaused(false);
+      void crash.launch(spec, a, b, true);
+    },
   }, initial, [crash.energyGraph.root, crash.momentumGraph.root], vehicle.id, vehicleB.id);
   const shell = new Shell(t('modeCrash'), tl(vehicle.label), { mainMenu: () => ctx.go('menu'), restart: () => panel.launch(), setPaused: (p) => ctx.setPaused(p) });
-  document.body.append(shell.root, panel.fab);
+  document.body.append(shell.root, panel.fab, panel.result);
   shell.addAction('pause', t('actPause'), () => ctx.setPaused(!ctx.isPaused()), false);
   let slow = 0;
   shell.addAction('slow', t('actSlow'), (b) => {
@@ -201,6 +205,7 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
   physics.loadScene('crash');
   viewer.focus(new THREE.Vector3(0, 0.8, -4), 14);
   if (params.get('go') === '1') panel.launch();
+  else panel.stage();
   return { update: (dt, frame) => crash.update(dt, frame), crash, tools };
 }
 

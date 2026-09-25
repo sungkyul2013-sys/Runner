@@ -61,7 +61,8 @@ function baseMaterial(role: string | undefined): THREE.Material {
     case 'paint':
       return new THREE.MeshPhysicalNodeMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.06, side });
     case 'glass':
-      return new THREE.MeshPhysicalNodeMaterial({ color: 0x151b22, metalness: 0, roughness: 0.06, specularIntensity: 0.6, transparent: true, opacity: 0.66, side });
+      // Dark enough that the bare cabin shell behind it does not read as a grey panel.
+      return new THREE.MeshPhysicalNodeMaterial({ color: 0x0c1016, metalness: 0, roughness: 0.05, specularIntensity: 0.7, transparent: true, opacity: 0.84, side });
     case 'tint':
       // Privacy/panoramic-roof glass: nearly opaque; a softer reflection than clear glass (a flat roof pane mirrors the
       // whole sky and would read as white).

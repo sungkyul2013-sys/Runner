@@ -94,12 +94,13 @@ export class CrashLab {
     return this.actors;
   }
 
-  launch(spec: CrashSpec, vehicleA: VehiclePreset, vehicleB: VehiclePreset): Promise<void> {
-    this.launching = this.run(spec, vehicleA, vehicleB);
+  /** Launches a test; `staged`: the cars wait at their start marks at rest (the lab's opening view, a new pick). */
+  launch(spec: CrashSpec, vehicleA: VehiclePreset, vehicleB: VehiclePreset, staged = false): Promise<void> {
+    this.launching = this.run(spec, vehicleA, vehicleB, staged);
     return this.launching;
   }
 
-  private async run(spec: CrashSpec, vehicleA: VehiclePreset, vehicleB: VehiclePreset): Promise<void> {
+  private async run(spec: CrashSpec, vehicleA: VehiclePreset, vehicleB: VehiclePreset, staged: boolean): Promise<void> {
     this.lastSpec = spec;
     // Hold the clock until every car is in place: the first car must not set off while the second one loads.
     this.physics.setPaused(true);
@@ -122,7 +123,9 @@ export class CrashLab {
     this.actors.length = wanted.length;
     const plan = crashLaunch(spec, vehicleA.crash, vehicleB.crash);
     this.labels = wanted.map((v, i) => `${i === 0 ? 'A' : 'B'} · ${tl(v.label)}`);
-    const poses = [plan.a, plan.b];
+    // Staged: the same marks, standing still (a drop test's car waits on the ground under its drop point).
+    const still = (p: typeof plan.a | null) => p && { ...p, speed: 0, velocity: undefined, position: [p.position[0], spec.kind === 'drop' ? 0 : p.position[1], p.position[2]] as typeof p.position };
+    const poses = staged ? [still(plan.a), still(plan.b)] : [plan.a, plan.b];
     for (let i = 0; i < this.actors.length; i++) {
       const ok = await this.actors[i].spawn(poses[i]!, `${i === 0 ? 'A' : 'B'}:${wanted[i].id}`);
       if (ok) this.physics.setVehicleInput(this.actors[i].spawned!.vehicle, NEUTRAL);
@@ -132,6 +135,15 @@ export class CrashLab {
     this.debug.showBeams = !hasModels;
     this.debug.showNodes = !hasModels;
     this.viewer.freeMove = true;
+    if (staged) {
+      // The ready shot: behind and to the right of car A, the barrier (or the other car) beyond it.
+      const a = poses[0]!.position;
+      this.viewer.controls.target.set(a[0], 0.7, a[2]);
+      const far = THREE.MathUtils.clamp(1.25 / (innerWidth / Math.max(innerHeight, 1)), 1, 2.2); // back off on narrow screens
+      this.viewer.camera.position.set(a[0] + 3.8 * far, 1.9 * Math.sqrt(far), a[2] - 5.6 * far);
+      this.viewer.controls.update();
+      return;
+    }
     // Start half way between the cars and the point of impact, looking across the run from the front right.
     const f = plan.focus;
     const starts = poses.slice(0, this.actors.length).map((p) => p!.position);

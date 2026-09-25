@@ -1,6 +1,8 @@
 // WebGPU renderer (WebGL2 fallback), camera, lights and orbit/fly controls for the M0 sandbox.
 import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { pass } from 'three/tsl';
 import { TOKENS } from './palette';
 import { installWebGPUCompat } from './webgpuCompat';
 
@@ -79,6 +81,7 @@ export class Viewer {
    *  medium: 1.5, 1024² shadows; high: 2, soft 2048² shadows. The physics does not change with it. */
   setQuality(q: 'low' | 'medium' | 'high'): void {
     const ratio = q === 'low' ? 1 : q === 'medium' ? 1.5 : 2;
+    this.setBloom(q === 'high');
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, ratio));
     const shadows = q !== 'low';
     const size = q === 'high' ? 2048 : 1024;
@@ -135,8 +138,26 @@ export class Viewer {
     }
   }
 
+  private pipeline: THREE.RenderPipeline | null = null;
+
+  /** Bloom (high quality; `?bloom=0` turns it off): lamps, lit windows, the sun and sparks glow. */
+  setBloom(on: boolean): void {
+    if (new URLSearchParams(location.search).get('bloom') === '0') on = false;
+    if (on === !!this.pipeline) return;
+    if (!on) {
+      this.pipeline!.dispose();
+      this.pipeline = null;
+      return;
+    }
+    const p = new THREE.RenderPipeline(this.renderer);
+    const col = pass(this.scene, this.camera).getTextureNode('output');
+    p.outputNode = col.add(bloom(col, 0.22, 0.32, 1.0));
+    this.pipeline = p;
+  }
+
   render(): void {
-    this.renderer.render(this.scene, this.camera);
+    if (this.pipeline) this.pipeline.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   drawCalls(): number {

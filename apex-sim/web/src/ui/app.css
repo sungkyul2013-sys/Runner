@@ -206,6 +206,35 @@ body.touch-on .minimap { left: calc(12px + var(--safe-l)); right: auto; top: cal
   .wm-title small { display: none; }
 }
 
+/* ---- crash lab: scenario pictograms, result card (§18.3-9) ---- */
+.crash-tile { position: relative; padding-top: 50px !important; overflow: hidden; }
+.crash-tile .tile-pic { position: absolute; left: 10px; top: 8px; width: 64px; height: 40px; color: var(--text-2); opacity: 0.9; transition: transform 240ms var(--ease); }
+.crash-tile .tile-pic svg { width: 100%; height: 100%; display: block; }
+.crash-tile:hover .tile-pic { transform: translateX(3px); }
+.crash-tile.active .tile-pic { color: var(--accent); }
+.crash-result { position: fixed; z-index: 16; left: calc(20px + var(--safe-l)); bottom: calc(24px + var(--safe-b)); width: min(460px, calc(100% - 40px)); display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 22px;
+  background: linear-gradient(180deg, rgba(28, 32, 39, 0.92), rgba(12, 14, 18, 0.95)); backdrop-filter: blur(22px); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 24px 50px rgba(0, 0, 0, 0.5); overflow: hidden; }
+.crash-result::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent), #ffb27a, var(--accent)); }
+.crash-result.in { animation: msRise 460ms var(--ease) both; }
+.cr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.cr-head small { display: block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em; color: var(--accent); }
+.cr-head b { display: block; font-size: 1.35rem; font-weight: 800; margin-top: 2px; }
+.cr-what { font-size: 0.84rem; color: var(--text-2); }
+.cr-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.cr-stats > div { padding: 10px 8px; border-radius: 14px; background: rgba(255, 255, 255, 0.045); border: 1px solid rgba(255, 255, 255, 0.06); }
+.cr-stats b { display: block; font-family: var(--font-num); font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cr-stats b small { font-size: 0.66rem; color: var(--text-3); margin-left: 2px; font-weight: 500; }
+.cr-stats span { display: block; margin-top: 2px; font-size: 0.7rem; color: var(--text-3); }
+.cr-note { font-size: 0.8rem; color: var(--text-2); }
+.crash-result .row { display: flex; gap: 8px; }
+.crash-result .row button { flex: 1; min-height: 48px; font-weight: 700; }
+.crash-result button.primary { background: linear-gradient(180deg, #ff8a52, var(--accent)); border-color: transparent; color: #140a05; }
+@media (max-width: 700px) {
+  .crash-result { left: calc(10px + var(--safe-l)); right: calc(10px + var(--safe-r)); width: auto; bottom: calc(92px + var(--safe-b)); padding: 14px; }
+  .cr-stats { grid-template-columns: repeat(2, 1fr); }
+  .cr-stats b { font-size: 1.15rem; }
+}
+
 /* ---- free-roam 3D overview (§18.3-7) ---- */
 .wm-top .wm-3d { width: auto; padding: 0 12px; gap: 6px; display: flex; font-weight: 700; color: var(--accent); }
 body.ov3-on .dash, body.ov3-on .tc, body.ov3-on .minimap, body.ov3-on .topbar, body.ov3-on .route-guide, body.ov3-on .sheet, body.ov3-on .fab { opacity: 0; pointer-events: none !important; transition: opacity 300ms var(--ease); }
