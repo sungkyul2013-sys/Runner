@@ -44,6 +44,26 @@ describe('crash launcher', () => {
   });
 });
 
+describe('more crash tests (§12.7)', () => {
+  const dims = { front: 2.25, width: 1.88, rear: 2.26 };
+  it('rear impact: the parked car faces away from A with its back bumper at the meeting point', () => {
+    const l = crashLaunch({ kind: 'carToCar', speedA: 50, speedB: 0, angle: 180, offset: 0, overlap: 0.4 }, dims);
+    expect(Math.cos(l.b!.yaw)).toBeCloseTo(1, 6);            // same heading as A (+Z)
+    expect(l.b!.position[2] - dims.rear).toBeCloseTo(0, 6);   // rear bumper at z = 0
+    expect(l.a.position[2] + dims.front).toBeLessThan(0);     // A's front still short of it
+  });
+  it('side pole: the car slides sideways into the pole, its left side just clear of it', () => {
+    const l = crashLaunch({ kind: 'pole', speedA: 32, speedB: 0, angle: 0, offset: 0, overlap: 0.4 }, dims);
+    expect(l.a.speed).toBe(0);
+    expect(l.a.velocity![0]).toBeCloseTo(32 / 3.6, 6);
+    expect(l.a.position[0] + dims.width / 2).toBeLessThan(-25 - 0.127);
+  });
+  it('drop: the height gives the set landing speed', () => {
+    const l = crashLaunch({ kind: 'drop', speedA: 32, speedB: 0, angle: 0, offset: 0, overlap: 0.4 }, dims);
+    expect(Math.sqrt(2 * 9.81 * l.a.position[1]) * 3.6).toBeCloseTo(32, 6);
+  });
+});
+
 function state(p: Partial<VehicleState>): VehicleState {
   return {
     crashEvents: 1, eventActive: false, eventStart: 1, eventPeakG: 30, eventPeakForce: 4.7e5, eventDeltaV: 18, eventAbsorbed: 1e5,

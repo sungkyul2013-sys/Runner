@@ -118,6 +118,18 @@ export class VehicleActor {
     const v = frame.vehicles.find((x) => x.body === this.spawned!.body) ?? null;
     if (!v) return null;
     this.state = v;
+    // The ground under the car (open-world maps are not flat at y = 0): the wheels' contact heights.
+    let ground = 0, touching = 0;
+    for (const w of v.wheels) {
+      if (!w.contact) continue;
+      ground += w.center[1] - w.loadedRadius;
+      touching++;
+    }
+    if (touching > 0) {
+      const y = ground / touching;
+      if (this.leaks) this.leaks.groundY = y;
+      for (const d of [this.debris.glass, this.debris.lamp, this.debris.sparks]) if (d) d.groundY = y;
+    }
     this.view?.update(v, frame, (b, n) => this.physics.locate(b, n), this.physics.islandVersion);
     const known = this.physics.damage.get(this.spawned.body);
     this.leaks?.update(dt, v, known ? decodeDamage(known.status) : null);

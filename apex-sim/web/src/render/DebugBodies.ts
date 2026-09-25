@@ -12,6 +12,9 @@ const INITIAL_BEAMS = 32768;
 export class DebugBodies {
   showNodes = true;
   showBeams = true;
+  /** Bodies drawn by their own model (a driven car in the sandbox): left out unless x-ray is on. */
+  readonly hidden = new Set<number>();
+  xray = false;
   private nodes: THREE.InstancedMesh;
   private beams: THREE.LineSegments;
   private nodeCapacity = 0;
@@ -52,9 +55,10 @@ export class DebugBodies {
     for (let b = 0; b < frame.bodyCount; b++) {
       const topo = this.topology[b];
       const start = frame.nodeOffset[b];
+      const hide = !this.xray && this.hidden.has(b);
       for (let i = 0; i < frame.nodeCount[b]; i++) {
         const k = start + i, o = k * 16, p = k * 3;
-        const r = topo ? topo.radius[i] : 0.05;
+        const r = hide ? 0 : topo ? topo.radius[i] : 0.05;
         m[o] = r; m[o + 1] = 0; m[o + 2] = 0; m[o + 3] = 0;
         m[o + 4] = 0; m[o + 5] = r; m[o + 6] = 0; m[o + 7] = 0;
         m[o + 8] = 0; m[o + 9] = 0; m[o + 10] = r; m[o + 11] = 0;
@@ -83,7 +87,7 @@ export class DebugBodies {
     let v = 0;
     for (let b = 0; b < frame.bodyCount; b++) {
       const topo = this.topology[b];
-      if (!topo) continue;
+      if (!topo || (!this.xray && this.hidden.has(b))) continue;
       const nodeBase = frame.nodeOffset[b] * 3;
       const beamBase = frame.beamOffset[b];
       for (let i = 0; i < frame.beamCount[b]; i++) {

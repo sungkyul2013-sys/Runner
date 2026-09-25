@@ -123,7 +123,7 @@ void ContactSolver::gatherStaticCandidates(const World& w, const Body& b, Contac
   hi = hi + Vec3{inflate, inflate, inflate};
   for (size_t p = 0; p < w.planes_.size(); ++p) {
     const float h = static_cast<float>(w.planes_[p].height - b.origin.y);
-    if (lo.y < h) s.planes.push_back({h, kPlaneIdBase + static_cast<int32_t>(p), w.planes_[p].material});
+    if (lo.y < h) s.planes.push_back({h, kPlaneIdBase + static_cast<int32_t>(p), w.remap_[w.planes_[p].material]});
   }
   auto test = [&](size_t k) {
     const auto& t = w.staticTris_[k];
@@ -131,7 +131,7 @@ void ContactSolver::gatherStaticCandidates(const World& w, const Body& b, Contac
     const Vec3 bmin = t.boundsMin + offset, bmax = t.boundsMax + offset;
     if (bmax.x < lo.x || bmin.x > hi.x || bmax.y < lo.y || bmin.y > hi.y || bmax.z < lo.z || bmin.z > hi.z) return;
     s.tris.push_back({t.v0 + offset, t.v1 + offset, t.v2 + offset, t.normal, bmin, bmax, static_cast<int32_t>(k),
-                      t.material});
+                      w.remap_[t.material]});
   };
   if (w.params_.staticBvh && !w.staticBvhDirty_ && w.staticBvh_ && !w.staticBvh_->empty()) {
     // The BVH narrows the map down to the triangles whose world bounds meet the body's (a millimetre wider than the
@@ -147,6 +147,51 @@ void ContactSolver::gatherStaticCandidates(const World& w, const Body& b, Contac
     for (const int32_t k : s.staticHits) test(static_cast<size_t>(k));
   } else {
     for (size_t k = 0; k < w.staticTris_.size(); ++k) test(k);
+  }
+  if (w.heightfield_.nx > 0) gatherHeightfield(w, b, lo, hi, s);
+}
+
+// Terrain cells under the body's query box, as local triangles (cells ascending, lower-left triangle first).
+void ContactSolver::gatherHeightfield(const World& w, const Body& b, Vec3 lo, Vec3 hi, ContactScratch& s) {
+  const Heightfield& f = w.heightfield_;
+  const double inv = 1.0 / f.cell;
+  const auto cellRange = [&](double a, double c, int n, int& i0, int& i1) {
+    i0 = std::max(0, static_cast<int>(std::floor(a * inv)));
+    i1 = std::min(n - 1, static_cast<int>(std::floor(c * inv)));
+  };
+  int ix0, ix1, iz0, iz1;
+  cellRange(b.origin.x + lo.x - f.originX, b.origin.x + hi.x - f.originX, f.nx, ix0, ix1);
+  cellRange(b.origin.z + lo.z - f.originZ, b.origin.z + hi.z - f.originZ, f.nz, iz0, iz1);
+  if (ix0 > ix1 || iz0 > iz1) return;
+  const size_t row = static_cast<size_t>(f.nx) + 1;
+  const float cell = static_cast<float>(f.cell);
+  for (int iz = iz0; iz <= iz1; ++iz) {
+    for (int ix = ix0; ix <= ix1; ++ix) {
+      const size_t c = static_cast<size_t>(iz) * static_cast<size_t>(f.nx) + static_cast<size_t>(ix);
+      if (f.materials[c] == kHeightfieldHole) continue;
+      const size_t s00 = static_cast<size_t>(iz) * row + static_cast<size_t>(ix);
+      const double y00 = f.heights[s00], y10 = f.heights[s00 + 1], y01 = f.heights[s00 + row], y11 = f.heights[s00 + row + 1];
+      const double yMin = std::min({y00, y10, y01, y11}) - b.origin.y, yMax = std::max({y00, y10, y01, y11}) - b.origin.y;
+      if (yMax < lo.y || yMin > hi.y) continue;
+      // Corner (x0, z0) in the body frame; the other corners are a cell away.
+      const float x0 = static_cast<float>(f.originX + ix * f.cell - b.origin.x);
+      const float z0 = static_cast<float>(f.originZ + iz * f.cell - b.origin.z);
+      const Vec3 p00{x0, static_cast<float>(y00 - b.origin.y), z0};
+      const Vec3 p10{x0 + cell, static_cast<float>(y10 - b.origin.y), z0};
+      const Vec3 p01{x0, static_cast<float>(y01 - b.origin.y), z0 + cell};
+      const Vec3 p11{x0 + cell, static_cast<float>(y11 - b.origin.y), z0 + cell};
+      const uint16_t material = w.remap_[f.materials[c]];
+      const int32_t id = kHeightfieldIdBase + static_cast<int32_t>(2 * c);
+      const Vec3 tri[2][3] = {{p00, p01, p11}, {p00, p11, p10}};  // counter-clockwise seen from above
+      for (int k = 0; k < 2; ++k) {
+        const Vec3 &a = tri[k][0], &bb = tri[k][1], &cc = tri[k][2];
+        const Vec3 n = cross(bb - a, cc - a);
+        const Vec3 bmin{std::min({a.x, bb.x, cc.x}), std::min({a.y, bb.y, cc.y}), std::min({a.z, bb.z, cc.z})};
+        const Vec3 bmax{std::max({a.x, bb.x, cc.x}), std::max({a.y, bb.y, cc.y}), std::max({a.z, bb.z, cc.z})};
+        if (bmax.y < lo.y || bmin.y > hi.y) continue;
+        s.tris.push_back({a, bb, cc, n * (1.0f / length(n)), bmin, bmax, id + k, material});
+      }
+    }
   }
 }
 
@@ -172,7 +217,7 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
     if (!w.decals_.empty()) {  // §11.1 decals: µ-split lanes, road paint, spills
       for (int k = 0; k < n; ++k) {
         const Vec3 surfacePoint = x - contacts[k].normal * (b.radius[i] - contacts[k].penetration);
-        contacts[k].material = w.surfaceMaterialAt(b.origin + toDouble(surfacePoint), contacts[k].material);
+        contacts[k].material = w.remap_[w.surfaceMaterialAt(b.origin + toDouble(surfacePoint), contacts[k].material)];
       }
     }
     const float m = b.mass[i];

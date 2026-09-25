@@ -13,6 +13,7 @@ namespace sbc {
 
 class World;
 inline constexpr int32_t kPlaneIdBase = 0x40000000;  // surface ids ≥ this are ground planes
+inline constexpr int32_t kHeightfieldIdBase = 0x20000000;  // heightfield triangles: base + 2·cell + (0 | 1)
 
 // Closest point on triangle abc to p (Ericson, Real-Time Collision Detection, §5.1.5).
 inline Vec3 closestPointOnTriangle(Vec3 p, Vec3 a, Vec3 b, Vec3 c, bool& interior) {
@@ -199,6 +200,7 @@ inline float contactCapacity(float mass, int staticContacts) {
 struct ContactSolver {
   // Static triangles/planes within reach of the body this step, in its local coordinates.
   static void gatherStaticCandidates(const World& world, const Body& body, ContactScratch& scratch);
+  static void gatherHeightfield(const World& world, const Body& body, Vec3 lo, Vec3 hi, ContactScratch& scratch);
   // Gathers static geometry near the body and applies penalty + friction forces.
   template <bool kTrack>
   static int staticContacts(World& world, int bodyIndex);

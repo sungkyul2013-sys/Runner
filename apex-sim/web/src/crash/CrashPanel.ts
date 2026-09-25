@@ -2,11 +2,10 @@
 // log, the wheels' alignment and tyres (§4.4, §6) and the energy / momentum graphs.
 import { DRIVE_VEHICLES, type VehiclePreset } from '../app/presets';
 import { t, tl } from '../ui/i18n';
-import { TIME_SCALES } from '../ui/SandboxPanel';
 import { TYRE } from '../physics/telemetry';
 import type { WheelRow } from './CrashLab';
 import type { CollisionRow } from './events';
-import { SPEED_PRESETS, type CrashKind, type CrashSpec } from './scenario';
+import { CRASH_PRESETS, SPEED_PRESETS, type CrashSpec } from './scenario';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -21,15 +20,16 @@ function numberInput(value: number, min: number, max: number, step: number, labe
 
 export interface CrashPanelActions {
   launch(spec: CrashSpec, a: VehiclePreset, b: VehiclePreset): void;
-  setTimeScale(scale: number): void;
-  setXray(on: boolean): void;
-  setFollow(on: boolean): void;
-  back(): void;
 }
 
+/** The crash lab's controls for the app shell's sheet (§18.3-9 시나리오 빌더 → 실행 → 리포트): ready-made tests as
+ *  tiles, their details, and the report (event log, wheels, energy and momentum graphs); the launch is the screen's
+ *  one core action, a floating button (§18.5). */
 export class CrashPanel {
-  readonly root: HTMLElement;
-  readonly graphs: HTMLElement;
+  readonly scenario: HTMLElement;
+  readonly details: HTMLElement;
+  readonly report: HTMLElement;
+  readonly fab: HTMLButtonElement;
   private readonly logBody: HTMLTableSectionElement;
   private readonly wheelBody: HTMLTableSectionElement;
   private readonly spec: CrashSpec;
@@ -37,12 +37,7 @@ export class CrashPanel {
   readonly launch: () => void;
 
   constructor(actions: CrashPanelActions, initial: Partial<CrashSpec> = {}, graphs: HTMLElement[] = [], vehicleA?: string, vehicleB?: string) {
-    this.spec = { kind: 'fullWall', speedA: 64, speedB: 0, angle: 0, offset: 0, overlap: 0.4, ...initial };
-    const kind = el('select', { ariaLabel: t('crashScenario') });
-    for (const [id, label] of [['fullWall', t('crashFullWall')], ['offsetWall', t('crashOffsetWall')], ['carToCar', t('crashCarToCar')]] as const) {
-      kind.append(el('option', { value: id }, label));
-    }
-    kind.value = this.spec.kind;
+    this.spec = { kind: 'fullWall', speedA: 56, speedB: 0, angle: 0, offset: 0, overlap: 0.4, ...initial };
     const car = (label: string) => {
       const s = el('select', { ariaLabel: label });
       for (const v of DRIVE_VEHICLES) s.append(el('option', { value: v.id }, tl(v.label)));
@@ -62,15 +57,29 @@ export class CrashPanel {
     });
     const overlap = numberInput(Math.round(this.spec.overlap * 100), 5, 100, 5, t('crashOverlap'));
     const speedB = numberInput(this.spec.speedB, 0, 350, 1, t('crashSpeedB'));
-    const angle = numberInput(this.spec.angle, -90, 90, 5, t('crashAngle'));
+    const angle = numberInput(this.spec.angle, -180, 180, 5, t('crashAngle'));
     const offset = numberInput(this.spec.offset, -3, 3, 0.1, t('crashOffset'));
     const row = (label: string, ...controls: Node[]) => el('label', { className: 'field' }, el('span', {}, label), ...controls);
     const wallOnly = row(t('crashOverlap'), overlap, el('small', {}, '%'));
-    const pairOnly = el('div', { className: 'section' },
+    const pairOnly = el('div', { className: 'sheet-section' },
       row(t('crashCarB'), carB), row(t('crashSpeedB'), speedB, el('small', {}, 'km/h')), row(t('crashAngle'), angle, el('small', {}, '°')),
       row(t('crashOffset'), offset, el('small', {}, 'm')));
+    const tiles = CRASH_PRESETS.map((p) => {
+      const b = el('button', { className: 'tile' }, el('b', {}, tl(p.label)), el('small', {}, tl(p.note)));
+      b.onclick = () => {
+        Object.assign(this.spec, { speedB: 0, angle: 0, offset: 0, overlap: 0.4 }, p.spec);
+        speedA.value = String(this.spec.speedA);
+        speedB.value = String(this.spec.speedB);
+        angle.value = String(this.spec.angle);
+        offset.value = String(this.spec.offset);
+        overlap.value = String(Math.round(this.spec.overlap * 100));
+        preset = p.id;
+        sync();
+      };
+      return [p, b] as const;
+    });
+    let preset = CRASH_PRESETS.find((p) => p.spec.kind === this.spec.kind && (p.spec.speedA ?? 0) === this.spec.speedA)?.id ?? '';
     const sync = () => {
-      this.spec.kind = kind.value as CrashKind;
       this.spec.speedA = Number(speedA.value) || 0;
       this.spec.speedB = Number(speedB.value) || 0;
       this.spec.angle = Number(angle.value) || 0;
@@ -79,47 +88,32 @@ export class CrashPanel {
       wallOnly.hidden = this.spec.kind !== 'offsetWall';
       pairOnly.hidden = this.spec.kind !== 'carToCar';
       chips.forEach((c) => c.classList.toggle('active', Number(c.textContent) === this.spec.speedA));
+      for (const [p, b] of tiles) b.classList.toggle('active', p.id === preset);
     };
-    for (const input of [kind, speedA, overlap, speedB, angle, offset]) input.onchange = sync;
+    for (const input of [speedA, overlap, speedB, angle, offset]) input.onchange = () => {
+      preset = '';
+      sync();
+    };
     sync();
     const vehicle = (s: HTMLSelectElement) => DRIVE_VEHICLES.find((v) => v.id === s.value) ?? DRIVE_VEHICLES[0];
-    const launch = el('button', { className: 'primary' }, t('crashLaunch'));
+    this.fab = el('button', { className: 'fab primary' }, t('crashLaunch'));
     this.launch = () => {
       sync();
       actions.launch({ ...this.spec }, vehicle(carA), vehicle(carB));
     };
-    launch.onclick = this.launch;
-    const slow = el('select', { ariaLabel: t('time') });
-    for (const s of TIME_SCALES) slow.append(el('option', { value: String(s) }, s === 1 ? t('crashRealtime') : `1/${Math.round(1 / s)}`));
-    slow.onchange = () => actions.setTimeScale(Number(slow.value));
-    const xray = el('button', {}, t('crashXray'));
-    let xrayOn = false;
-    xray.onclick = () => {
-      xrayOn = !xrayOn;
-      xray.classList.toggle('active', xrayOn);
-      actions.setXray(xrayOn);
-    };
-    const follow = el('button', { className: 'active' }, t('crashFollow'));
-    follow.onclick = () => actions.setFollow(follow.classList.toggle('active'));
-    const back = el('button', {}, t('backToSandbox'));
-    back.onclick = () => actions.back();
+    this.fab.onclick = this.launch;
 
     this.logBody = el('tbody');
     const head = el('thead', {}, el('tr', {}, ...[t('logTime'), t('logWhat'), t('logWhere'), t('logSpeed'), t('logForce'), t('logEnergy'), t('logG')].map((h) => el('th', {}, h))));
-    const table = el('table', { className: 'eventlog' }, head, this.logBody);
+    const table = el('div', { className: 'tablewrap' }, el('table', { className: 'eventlog' }, head, this.logBody));
     this.wheelBody = el('tbody');
     const wheelHead = el('thead', {}, el('tr', {}, ...[t('wheelCar'), t('wheelWheel'), t('wheelCamber'), t('wheelToe'), t('wheelTyre')].map((h) => el('th', {}, h))));
-    const wheels = el('table', { className: 'eventlog wheels' }, wheelHead, this.wheelBody);
+    const wheels = el('div', { className: 'tablewrap' }, el('table', { className: 'eventlog wheels' }, wheelHead, this.wheelBody));
 
-    this.root = el('aside', { className: 'panel crashpanel' },
-      el('div', { className: 'brand' }, el('b', {}, 'APEX_SIM'), el('span', {}, t('crashTitle'))),
-      el('div', { className: 'section' }, el('h2', {}, t('crashScenario')), kind, row(t('crashCarA'), carA),
-        row(t('crashSpeedA'), speedA, el('small', {}, 'km/h')), el('div', { className: 'chips' }, ...chips), wallOnly),
-      pairOnly,
-      el('div', { className: 'row controls' }, launch, slow, xray, follow, back),
-      el('div', { className: 'section' }, el('h2', {}, t('crashLog')), table),
-      el('div', { className: 'section' }, el('h2', {}, t('wheelTitle')), wheels));
-    this.graphs = el('div', { className: 'graphs' }, ...graphs);
+    this.scenario = el('div', { className: 'grid2' }, ...tiles.map(([, b]) => b));
+    this.details = el('div', { className: 'sheet-section' }, row(t('crashCarA'), carA), row(t('crashSpeedA'), speedA, el('small', {}, 'km/h')),
+      el('div', { className: 'chips' }, ...chips), wallOnly, pairOnly);
+    this.report = el('div', { className: 'sheet-section' }, el('h3', {}, t('crashLog')), table, el('h3', {}, t('wheelTitle')), wheels, ...graphs);
     this.setLog([]);
     this.setWheels([]);
   }

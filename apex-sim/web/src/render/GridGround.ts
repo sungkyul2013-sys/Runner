@@ -32,6 +32,12 @@ export class GridGround {
     this.labelGroup.visible = on;
   }
 
+  /** Whole grid on/off (off on the open-world map and in the menu showroom). */
+  set visible(on: boolean) {
+    this.mesh.visible = on;
+    this.labelGroup.visible = on;
+  }
+
   constructor(scene: THREE.Scene) {
     const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 });
     const p = positionWorld.xz;

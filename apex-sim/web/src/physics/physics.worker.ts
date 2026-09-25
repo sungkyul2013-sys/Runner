@@ -2,6 +2,7 @@
 // Physics worker: owns the SoftBodyCore WASM instance, runs the fixed 2000 Hz loop and publishes frames through the
 // triple buffer (A§2), or by transferring slot buffers when the page has no SharedArrayBuffer (message transport). Overload policy (§21.2, §25): never skip a step — let simulated time fall behind wall time
 // and report the real-time factor instead.
+import type { MapPhysics } from '../world/types';
 import {
   B, BODY_STRIDE_F64, ENERGY_FIELDS, H, MAX_BEAMS, MAX_BODIES, MAX_NODES, MAX_VEHICLES, SLOT_BYTES, slotViews, TripleBufferWriter,
   VT_HEADER, VT_MAX_WHEELS, VT_STRIDE, VT_WHEEL, type SlotViews,
@@ -100,20 +101,64 @@ function topologyOf(b: number): BodyTopology {
   };
 }
 
+// Map worlds: the map's own triangles are drawn by the map renderer; only statics added after them are sent back.
+let staticFirst = 0;
+let mapPhysics: MapPhysics | null = null;
+let mapLattices: Float64Array[] = [];
+let remapPairs: Array<[number, number]> = [];
+let wind: [number, number, number] = [0, 0, 0];
+
 function staticTriangles(): Float32Array {
-  const count = sbc._sbc_world_static_triangle_count(world);
-  if (count === 0) return new Float32Array(0);
+  const count = sbc._sbc_world_static_triangle_count(world) - staticFirst;
+  if (count <= 0) return new Float32Array(0);
   const ptr = ensureScratch(count * 9 * 4);
-  sbc._sbc_world_static_triangles(world, 0, count, ptr);
+  sbc._sbc_world_static_triangles(world, staticFirst, count, ptr);
   return new Float32Array(heap(), ptr, count * 9).slice();
 }
 
 function staticMaterials(): Uint8Array {
-  const count = sbc._sbc_world_static_triangle_count(world);
-  if (count === 0) return new Uint8Array(0);
+  const count = sbc._sbc_world_static_triangle_count(world) - staticFirst;
+  if (count <= 0) return new Uint8Array(0);
   const ptr = ensureScratch(count * 4);
-  sbc._sbc_world_static_triangle_materials(world, 0, count, ptr);
+  sbc._sbc_world_static_triangle_materials(world, staticFirst, count, ptr);
   return Uint8Array.from(new Int32Array(heap(), ptr, count));
+}
+
+/** Copies the stored map into the (fresh) world: terrain heightfield, static meshes, parked lattices. */
+function addMap(m: MapPhysics): void {
+  const hf = m.heightfield;
+  const hp = sbc._malloc(hf.heights.byteLength);
+  const mp = sbc._malloc(hf.materials.byteLength);
+  new Float32Array(heap(), hp, hf.heights.length).set(hf.heights);
+  new Uint8Array(heap(), mp, hf.materials.length).set(hf.materials);
+  const ok = sbc._sbc_world_set_heightfield(world, hf.originX, hf.originZ, hf.cell, hf.nx, hf.nz, hp, mp);
+  sbc._free(hp);
+  sbc._free(mp);
+  if (ok < 0) post({ type: 'error', message: `heightfield rejected: ${readCString(heap(), sbc._sbc_last_error())}` });
+  for (const mesh of m.meshes) {
+    const vp = sbc._malloc(mesh.vertices.byteLength);
+    const ip = sbc._malloc(mesh.indices.byteLength);
+    new Float32Array(heap(), vp, mesh.vertices.length).set(mesh.vertices);
+    new Int32Array(heap(), ip, mesh.indices.length).set(mesh.indices);
+    const r = sbc._sbc_world_add_static_mesh(world, mesh.origin[0], mesh.origin[1], mesh.origin[2], vp, mesh.vertices.length / 3, ip, mesh.indices.length, mesh.material);
+    sbc._free(vp);
+    sbc._free(ip);
+    if (r < 0) post({ type: 'error', message: `map mesh rejected: ${readCString(heap(), sbc._sbc_last_error())}` });
+  }
+  staticFirst = sbc._sbc_world_static_triangle_count(world);
+  for (const params of mapLattices) {
+    const ptr = ensureScratch(LATTICE_PARAM_COUNT * 8);
+    new Float64Array(heap(), ptr, LATTICE_PARAM_COUNT).set(params);
+    sbc._sbc_world_spawn_lattice(world, ptr, LATTICE_PARAM_COUNT);
+  }
+  applyWeather();
+}
+
+function applyWeather(): void {
+  if (!world) return;
+  for (let m = 0; m < 64; m++) sbc._sbc_world_set_material_remap(world, m, m);
+  for (const [from, to] of remapPairs) sbc._sbc_world_set_material_remap(world, from, to);
+  sbc._sbc_world_set_wind(world, wind[0], wind[1], wind[2]);
 }
 
 function reportStability(b: number, label: string): void {
@@ -149,6 +194,8 @@ function loadScene(name: string, bodies = 16): void {
   simDebt = 0;
   knownBodies = 0;
   damageSeen = [];
+  staticFirst = 0;
+  if (name === 'map' && mapPhysics) addMap(mapPhysics);
   announceNewBodies(true, name);
   publish();
 }
@@ -171,6 +218,8 @@ async function spawnVehicle(msg: Extract<ToWorker, { type: 'spawnVehicle' }>): P
     sbc._free(ptr);
   }
   if (vehicle < 0) return fail(readCString(heap(), sbc._sbc_last_error()) || 'vehicle rejected by the core');
+  const dv = msg.pose.velocity;
+  if (dv) sbc._sbc_world_add_body_velocity(world, sbc._sbc_vehicle_body(world, vehicle), dv[0], dv[1], dv[2]);
   post({
     type: 'vehicle',
     request: msg.request,
@@ -430,6 +479,19 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
         return;
       case 'tetherRemove':
         if (world) sbc._sbc_world_remove_tether(world, msg.id);
+        return;
+      case 'map':
+        // Stored only: the next loadScene('map') (the drive session's start, resets, teleports) builds from it.
+        mapPhysics = msg.physics;
+        mapLattices = msg.lattices;
+        return;
+      case 'remap':
+        remapPairs = msg.pairs;
+        applyWeather();
+        return;
+      case 'wind':
+        wind = msg.wind;
+        applyWeather();
         return;
       case 'hash': {
         const hi = sbc._sbc_world_state_hash_hi(world) >>> 0;

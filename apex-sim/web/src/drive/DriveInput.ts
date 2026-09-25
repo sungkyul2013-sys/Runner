@@ -89,7 +89,12 @@ export class DriveLogic {
   }
 }
 
-type Action = 'shiftUp' | 'shiftDown' | 'toggleManual' | 'toggleTcs' | 'toggleAbs' | 'camera' | 'reset' | 'xray';
+export type Action = 'shiftUp' | 'shiftDown' | 'toggleManual' | 'toggleTcs' | 'toggleAbs' | 'camera' | 'reset' | 'xray';
+
+/** An analog control surface next to keyboard and gamepad (§15.4 touch controls): read once per frame. */
+export interface AnalogSource {
+  readonly state: { throttle: number; brake: number; steer: number; handbrake: number; analog: boolean };
+}
 
 const KEY_ACTIONS: Record<string, Action> = {
   KeyE: 'shiftUp',
@@ -114,6 +119,8 @@ const PAD_ACTIONS: [number, Action][] = [
 export class DriveInput {
   readonly logic = new DriveLogic();
   enabled = false;
+  /** Touch controls (or any other analog source), merged with the keys and the gamepad. */
+  touch: AnalogSource | null = null;
   onAction: (a: Action) => void = () => {};
   private keys = new Set<string>();
   private padPrev = new Map<number, boolean>();
@@ -128,6 +135,11 @@ export class DriveInput {
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
+  }
+
+  /** Performs an action as if its key had been pressed (touch buttons, menus). */
+  trigger(a: Action): void {
+    this.act(a);
   }
 
   private act(a: Action): void {
@@ -169,6 +181,16 @@ export class DriveInput {
         const down = !!pad.buttons[button]?.pressed;
         if (down && !this.padPrev.get(button)) this.act(action);
         this.padPrev.set(button, down);
+      }
+    }
+    const touch = this.touch?.state;
+    if (touch) {
+      c.throttle = Math.max(c.throttle, touch.throttle);
+      c.brake = Math.max(c.brake, touch.brake);
+      c.handbrake = Math.max(c.handbrake, touch.handbrake);
+      if (touch.steer !== 0 && c.steer === 0) {
+        c.steer = touch.steer;
+        c.analogSteer = touch.analog;
       }
     }
     return c;

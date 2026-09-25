@@ -95,6 +95,19 @@ struct StepStats {
 
 inline constexpr int kMaxMaterials = 64;  // material ids are < kMaxMaterials
 
+// §13 terrain: heights on a regular grid in the x–z plane, (nx + 1) × (nz + 1) samples row by row (x fastest), one
+// material per cell (nx × nz). A cell of material kHeightfieldHole has no surface (tunnel portals). Each cell is two
+// one-sided triangles facing up, split along its (x0, z0)–(x1, z1) diagonal. The contact solver generates the
+// triangles of the cells under a body on the fly, so a terrain of millions of cells costs only its heights.
+struct Heightfield {
+  double originX = 0.0, originZ = 0.0;  // world position of sample (0, 0)
+  double cell = 1.0;                    // [m] sample spacing
+  int nx = 0, nz = 0;                   // cells
+  std::vector<float> heights;           // [m] world y
+  std::vector<uint8_t> materials;
+};
+inline constexpr uint8_t kHeightfieldHole = 255;
+
 // Surface decal (World::addSurfaceDecal): a rectangle (half extents halfX × halfZ, turned by yaw about +Y) or a disc
 // (radius > 0) on the ground around `center`.
 struct SurfaceDecal {
@@ -167,7 +180,15 @@ class World {
   // Material of the static surface `base` at world point p after the decals.
   uint16_t surfaceMaterialAt(DVec3 p, uint16_t base) const;
 
+  // ---- weather (§13.1 날씨에 따른 노면 변화): static surfaces of material `from` act as `to` (identity by default;
+  // e.g. asphalt → wet asphalt in the rain). Applies to static triangles, the heightfield, planes and decals.
+  void setMaterialRemap(uint16_t from, uint16_t to);
+  uint16_t remapMaterial(uint16_t m) const { return remap_[m]; }
+
   // ---- static geometry ----
+  // Terrain heightfield (replaces the previous one). Throws on inconsistent sizes.
+  void setHeightfield(Heightfield field);
+  const Heightfield* heightfield() const { return heightfield_.nx > 0 ? &heightfield_ : nullptr; }
   // Infinite half-space below y = height (world). Returns its surface id.
   int addGroundPlane(double height, uint16_t material);
   // One-sided triangle mesh; triangles face the side their counter-clockwise winding points to.
@@ -261,6 +282,8 @@ class World {
   std::vector<Body> bodies_;
   std::vector<StaticTri> staticTris_;
   std::vector<GroundPlane> planes_;
+  Heightfield heightfield_;
+  std::array<uint16_t, kMaxMaterials> remap_{};
   std::vector<ContactPairParams> pairTable_;  // dense (kMaxMaterials²) lookup
   std::vector<float> tyreGrip_, tyreCrr_;       // kMaxMaterials × kTyreTypeCount
   std::shared_ptr<const SurfaceLibrary> surfaces_;

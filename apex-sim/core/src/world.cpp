@@ -74,6 +74,25 @@ World::World(const WorldParams& params)
       tyreGrip_(static_cast<size_t>(kMaxMaterials) * kTyreTypeCount, 1.0f),
       tyreCrr_(static_cast<size_t>(kMaxMaterials) * kTyreTypeCount, 1.0f) {
   if (!(params_.dt > 0.0f)) throw std::invalid_argument("WorldParams::dt must be > 0");
+  for (int m = 0; m < kMaxMaterials; ++m) remap_[static_cast<size_t>(m)] = static_cast<uint16_t>(m);
+}
+
+void World::setMaterialRemap(uint16_t from, uint16_t to) {
+  pairIndex(from, to);  // validates both ids
+  remap_[from] = to;
+}
+
+void World::setHeightfield(Heightfield field) {
+  if (field.nx <= 0 || field.nz <= 0 || !(field.cell > 0.0)) throw std::invalid_argument("setHeightfield: empty grid");
+  const size_t samples = static_cast<size_t>(field.nx + 1) * static_cast<size_t>(field.nz + 1);
+  const size_t cells = static_cast<size_t>(field.nx) * static_cast<size_t>(field.nz);
+  if (field.heights.size() != samples || field.materials.size() != cells) {
+    throw std::invalid_argument("setHeightfield: bad array sizes");
+  }
+  for (const uint8_t m : field.materials) {
+    if (m != kHeightfieldHole && m >= kMaxMaterials) throw std::invalid_argument("setHeightfield: bad material");
+  }
+  heightfield_ = std::move(field);
 }
 
 World::~World() = default;

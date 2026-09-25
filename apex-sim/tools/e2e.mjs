@@ -9,6 +9,7 @@
 //   2d. crash lab (M2): a car-to-car run and an offset wall run from the launcher; event log and graphs
 //   2e. tools (§20): mouse grab lifts a cube, the crane reels it up
 //   2f. tyres (§6): the spike strip punctures all four tyres, they deflate, the pressure warning comes on
+//   2g. free roam (§13): proving-ground oval drive, world map; the open-world city at night in the rain
 // Usage: npm run build && node tools/e2e.mjs [--no-bench] [--only <steps>] [--bench-tag M2] [--chromium /path/to/chrome]
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -25,7 +26,7 @@ const chromiumPath =
 const runBench = !args.includes('--no-bench');
 // Milestone the benchmark result is filed under (bench/results/<tag>-web-headless-swiftshader.json).
 const benchTag = args.includes('--bench-tag') ? args[args.indexOf('--bench-tag') + 1] : 'M2';
-// --only golden,sandbox,drive,crash,crashlab,tyres,tools,bench runs just those steps.
+// --only golden,sandbox,drive,crash,crashlab,tyres,tools,freeroam,bench runs just those steps.
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1].split(',') : null;
 const want = (step) => !only || only.includes(step);
 const PORT = 4179;
@@ -267,14 +268,13 @@ async function main() {
       if (pair.energySamples < 5 || pair.momentumSamples < 5) failures.push('crash lab: the energy / momentum graphs have no samples');
       if (pair.balance > 0.05) failures.push(`crash lab: energy balance error ${(100 * pair.balance).toFixed(2)} %`);
       // Second run from the panel: 56 km/h, 40 % offset wall.
+      // The scenario tiles (§18.3-9): the second is the 40 % offset wall; then the speed, then the launch button.
       await page.evaluate(() => {
-        const kind = document.querySelector('.crashpanel select');
-        kind.value = 'offsetWall';
-        kind.dispatchEvent(new Event('change'));
-        const speed = document.querySelector('.crashpanel input[type=number]');
+        document.querySelectorAll('.sheet .grid2 .tile')[1].click();
+        const speed = document.querySelector('.sheet input[type=number]');
         speed.value = '56';
         speed.dispatchEvent(new Event('change'));
-        document.querySelector('.crashpanel button.primary').click();
+        document.querySelector('button.fab').click();
       });
       await page.waitForFunction(() => window.__apex.crash.lastSpec?.kind === 'offsetWall', null, { timeout: 10000 });
       const wall = await settle(1);
@@ -349,7 +349,7 @@ async function main() {
           return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height, height: p[best * 3 + 1], low };
         });
       const tethers = () => page.evaluate(() => window.__apex.tools.physics.tethers.map((t) => ({ length: t.length, tension: t.tension, y: t.nodePosition[1] })));
-      await page.click('.panel .tools button:nth-child(1)'); // grab
+      await page.click('.sheet .tools .row:first-of-type button:nth-child(1)'); // grab
       const start = await top();
       await page.mouse.move(start.x, start.y);
       await page.mouse.down();
@@ -369,7 +369,7 @@ async function main() {
       else if (lifted.low < 0.3) failures.push(`tools: the grabbed cube did not leave the ground (lowest node ${lifted.low.toFixed(2)} m)`);
       // Crane: let the cube land, hook its top node, reel in for a while.
       await page.waitForTimeout(3000);
-      await page.click('.panel .tools button:nth-child(2)'); // crane
+      await page.click('.sheet .tools .row:first-of-type button:nth-child(2)'); // crane
       const rest = await top();
       await page.mouse.click(rest.x, rest.y);
       await page.waitForFunction(() => window.__apex.tools.physics.tethers.length === 1, null, { timeout: 20000 });
@@ -391,6 +391,43 @@ async function main() {
       const errors = await page.evaluate(() => window.__apex.errors);
       if (errors.length || consoleErrors.length) failures.push(`errors (tools): ${[...errors, ...consoleErrors].join(' | ')}`);
       await page.close();
+    }
+    // 2g. free roam (§13): the proving ground's banked oval — the car drives on the map's road meshes and terrain
+    //     heightfield, keeps its tyres, the world map opens; then the open-world city at night in the rain.
+    if (want('freeroam')) {
+      const dir = join(root, 'docs', 'screenshots');
+      const { page, consoleErrors } = await openPage(browser, '?freeroam=porsche_911_turbo_991&map=proving&spawn=oval&hour=11&weather=clear');
+      await page.waitForFunction(() => window.__apex?.drive?.state != null, null, { timeout: 300000 });
+      await page.waitForTimeout(2000);
+      const car = () => page.evaluate(() => {
+        const v = window.__apex.drive.state;
+        return { kmh: v.speed * 3.6, y: v.position[1], tyres: v.wheels.map((w) => w.tyreFlags), faults: v.faults };
+      });
+      const rest = await car();
+      await page.keyboard.down('KeyW');
+      await page.waitForTimeout(5000);
+      await page.keyboard.up('KeyW');
+      const run = await car();
+      await page.screenshot({ path: join(dir, 'B1-freeroam-oval.png') });
+      console.log('free roam (oval):', JSON.stringify({ rest, run }));
+      if (rest.tyres.some((f) => f !== 0)) failures.push(`free roam: tyre damage at rest ${rest.tyres}`);
+      if (!(run.kmh > 25)) failures.push(`free roam: ${run.kmh.toFixed(1)} km/h after 5 s of throttle`);
+      if (run.tyres.some((f) => f !== 0)) failures.push(`free roam: tyre damage while driving ${run.tyres}`);
+      await page.keyboard.press('KeyM');
+      await page.waitForSelector('.worldmap', { timeout: 10000 });
+      await page.waitForTimeout(800);
+      await page.screenshot({ path: join(dir, 'B1-worldmap.png') });
+      await page.keyboard.press('Escape');
+      const errors = await page.evaluate(() => window.__apex.errors);
+      if (errors.length || consoleErrors.length) failures.push(`errors (free roam): ${[...errors, ...consoleErrors].join(' | ')}`);
+      await page.close();
+      const city = await openPage(browser, '?freeroam=porsche_911_turbo_991&map=hanbit&spawn=cityhall&hour=21&weather=rain');
+      await city.page.waitForFunction(() => window.__apex?.drive?.state != null, null, { timeout: 300000 });
+      await city.page.waitForTimeout(4000);
+      await city.page.screenshot({ path: join(dir, 'B1-city-night-rain.png') });
+      const cityErrors = await city.page.evaluate(() => window.__apex.errors);
+      if (cityErrors.length || city.consoleErrors.length) failures.push(`errors (city): ${[...cityErrors, ...city.consoleErrors].join(' | ')}`);
+      await city.page.close();
     }
     // 3. benchmark
     if (runBench && want('bench')) {

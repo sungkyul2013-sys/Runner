@@ -33,6 +33,7 @@ interface Drop {
 
 interface Stain {
   x: number;
+  y: number; // ground height where it formed
   z: number;
   litres: number;
   fluid: Fluid;
@@ -139,7 +140,7 @@ export class Leaks {
     let stain = this.stains.find((s) => s.fluid === d.fluid && Math.hypot(s.x - d.p.x, s.z - d.p.z) < MERGE);
     if (!stain) {
       if (this.stains.length >= MAX_STAINS) this.stains.shift();
-      stain = { x: d.p.x, z: d.p.z, litres: 0, fluid: d.fluid };
+      stain = { x: d.p.x, y: this.groundY, z: d.p.z, litres: 0, fluid: d.fluid };
       this.stains.push(stain);
     }
     stain.litres += DROP_L;
@@ -147,7 +148,7 @@ export class Leaks {
     this.stainMesh.count = this.stains.length;
     this.stains.forEach((s, i) => {
       const r = Math.min(Math.sqrt((s.litres * 1e-3) / (Math.PI * FILM)), 1.5);
-      this.m.compose(new THREE.Vector3(s.x, this.groundY + 0.002 + i * 1e-5, s.z), this.q, new THREE.Vector3(r, r, r));
+      this.m.compose(new THREE.Vector3(s.x, s.y + 0.012 + i * 1e-5, s.z), this.q, new THREE.Vector3(r, r, r));
       this.stainMesh.setMatrixAt(i, this.m);
       this.stainMesh.setColorAt(i, this.c.setHex(COLOR[s.fluid]));
     });

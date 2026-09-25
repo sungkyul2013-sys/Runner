@@ -1,6 +1,7 @@
 #include "sbc/scenes.h"
 
 #include "sbc/builder.h"
+#include "sbc/det_math.h"
 #include "sbc/proto_car.h"
 #include "sbc/surfaces.h"
 #include "sbc/vehicle_json.h"
@@ -60,7 +61,7 @@ std::unique_ptr<World> baseWorld(const SceneOptions& o) {
 void applyDefaultContactPairs(World& w) { applySurfaces(w, defaultSurfaces()); }
 
 std::vector<std::string> sceneNames() {
-  return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0", "proto_drive", "drive", "crash"};
+  return {"sandbox", "cube_drop", "tower", "wall_crash", "pile", "golden_m0", "proto_drive", "drive", "crash", "map"};
 }
 
 std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o) {
@@ -117,9 +118,11 @@ std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o)
     return w;
   }
   if (name == "crash") {
-    // Crash test ground (M2 launch tool, §12.7 in part): asphalt, no car (the client launches them). A rigid concrete
-    // barrier 6 m wide, 2 m high, faces −Z at z = 0 and ends at x = 0, so a car at x = −3 hits it full width and one
-    // shifted toward +x overlaps it partly (offset tests). The open ground around x = 40 is for car-to-car runs.
+    // Crash test ground (M2 launch tool, §12.7): asphalt, no car (the client launches them). A rigid concrete barrier
+    // 6 m wide, 2 m high, faces −Z at z = 0 and ends at x = 0, so a car at x = −3 hits it full width and one shifted
+    // toward +x overlaps it partly (offset and small-overlap tests). The open ground around x = 40 is for car-to-car
+    // runs (head-on, side, rear), a side pole stands at (−25, 25), a rollover kicker at x = −46 … −45, z = 20 … 23,
+    // and the ground around x = −60 is free for drop tests.
     WorldParams wp;
     wp.threadCount = o.threads;
     wp.trackEnergy = o.trackEnergy;
@@ -127,6 +130,46 @@ std::unique_ptr<World> makeScene(const std::string& name, const SceneOptions& o)
     applyDefaultContactPairs(*w);
     w->addGroundPlane(0.0, material::kAsphalt);
     w->addStaticBox({-3.0, 1.0, 1.0}, {3.0f, 1.0f, 1.0f}, 0.0, material::kConcrete);
+    // Side pole (FMVSS 214 / Euro NCAP pole test): a rigid steel pole of 254 mm diameter, 3 m tall, at (−25, 25) —
+    // a 16-sided prism, open at the bottom (it stands on the ground plane).
+    {
+      constexpr int kSides = 16;
+      constexpr float kRadius = 0.127f, kHeight = 3.0f;
+      std::vector<float> v;
+      std::vector<int32_t> idx;
+      for (int k = 0; k < kSides; ++k) {
+        const double a = 6.283185307179586 * k / kSides;
+        const float x = kRadius * static_cast<float>(det::cos(a)), z = kRadius * static_cast<float>(det::sin(a));
+        v.insert(v.end(), {x, 0.0f, z, x, kHeight, z});
+      }
+      v.insert(v.end(), {0.0f, kHeight, 0.0f});
+      const int32_t top = 2 * kSides;
+      for (int32_t k = 0; k < kSides; ++k) {
+        const int32_t a0 = 2 * k, a1 = 2 * k + 1, b0 = 2 * ((k + 1) % kSides), b1 = b0 + 1;
+        idx.insert(idx.end(), {a0, a1, b1, a0, b1, b0, a1, top, b1});  // outward, counter-clockwise from outside
+      }
+      w->addStaticMesh({-25.0, 0.0, 25.0}, v, idx, material::kSteel);
+    }
+    // Rollover kicker (§12.7 전복 램프): a 3 m wedge under a car's right-hand wheels running +Z along x = −45, rising
+    // to 0.6 m at its inner edge and 1.0 m at its outer one (x ∈ [−46.6, −45.2], z ∈ [20, 23]), square at the end —
+    // the right side is thrown up and the car rolls onto its left.
+    {
+      const std::vector<float> v = {-45.2f, 0.0f, 20.0f, -46.6f, 0.0f, 20.0f, -45.2f, 0.0f, 23.0f, -46.6f, 0.0f, 23.0f,
+                                    -45.2f, 0.6f, 23.0f, -46.6f, 1.0f, 23.0f};
+      const std::vector<int32_t> idx = {0, 1, 5, 0, 5, 4, 0, 4, 2, 1, 3, 5, 2, 4, 5, 2, 5, 3};  // outward, open below
+      w->addStaticMesh({}, v, idx, material::kConcrete);
+    }
+    return w;
+  }
+  if (name == "map") {
+    // Open-world map (§13): no ground of its own — the caller adds the terrain heightfield and the road, bridge and
+    // building meshes. A plane far below catches whatever leaves the map.
+    WorldParams wp;
+    wp.threadCount = o.threads;
+    wp.trackEnergy = o.trackEnergy;
+    auto w = std::make_unique<World>(wp);
+    applyDefaultContactPairs(*w);
+    w->addGroundPlane(-500.0, material::kConcrete);
     return w;
   }
   if (name == "sandbox") {

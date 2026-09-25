@@ -154,6 +154,7 @@ if(SBC_BUILD_TESTS)
     tests/test_tyres.cpp
     tests/test_aero.cpp
     tests/test_static_bvh.cpp
+    tests/test_heightfield.cpp
   tests/test_surfaces.cpp
   )
   target_link_libraries(sbc_tests PRIVATE sbc Catch2::Catch2WithMain)

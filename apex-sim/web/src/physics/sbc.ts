@@ -14,6 +14,10 @@ export interface SbcModule {
   _sbc_world_add_static_box(
     w: Ptr, cx: number, cy: number, cz: number, hx: number, hy: number, hz: number, yaw: number, material: number,
   ): number;
+  _sbc_world_add_static_mesh(w: Ptr, ox: number, oy: number, oz: number, vertices: Ptr, vertexCount: number, indices: Ptr, indexCount: number, material: number): number;
+  _sbc_world_set_heightfield(w: Ptr, ox: number, oz: number, cell: number, nx: number, nz: number, heights: Ptr, materials: Ptr): number;
+  _sbc_world_set_material_remap(w: Ptr, from: number, to: number): number;
+  _sbc_world_set_wind(w: Ptr, x: number, y: number, z: number): void;
   _sbc_world_static_triangle_count(w: Ptr): number;
   _sbc_world_static_triangles(w: Ptr, first: number, count: number, out: Ptr): number;
   _sbc_world_spawn_lattice(w: Ptr, params: Ptr, count: number): number;

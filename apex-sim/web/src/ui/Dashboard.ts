@@ -3,6 +3,7 @@
 // flicker. Numbers use the tabular mono face.
 import { FAULT, gearLabel, TYRE, type VehicleState } from '../physics/telemetry';
 import { t, type StringKey } from './i18n';
+import type { HudPreset, SpeedUnit } from './settings';
 
 // Warning lights: fault bits → label (shown only while the fault is present).
 const WARNINGS: Array<[number, StringKey]> = [
@@ -52,6 +53,13 @@ export class Dashboard {
   private warnLamps = WARNINGS.map(([, key]) => el('span', 'lamp warn', t(key)));
   private tyreLamp = el('span', 'lamp warn', t('warnTyre')); // §6 tyre pressure (TPMS)
   private flicker = 0;
+  private unit: SpeedUnit = 'kmh';
+  private unitLabel = el('small', '', 'km/h');
+  // §18.4 G meter: lateral and longitudinal acceleration of the chassis, a dot in a ring (1.5 g at the edge).
+  private gDot = el('i');
+  private gText = el('span', 'dash-g-text', '0.0 g');
+  private lastVel: [number, number, number] | null = null;
+  private gFilt: [number, number] = [0, 0];
 
   constructor(redlineRpm: number) {
     this.redline = redlineRpm;
@@ -69,8 +77,12 @@ export class Dashboard {
     pedals.append(bb, tb);
     const main = el('div', 'dash-main');
     const speedBox = el('div', 'dash-speedbox');
-    speedBox.append(this.speed, el('small', '', 'km/h'));
-    main.append(pedals, speedBox, this.gear);
+    speedBox.append(this.speed, this.unitLabel);
+    const g = el('div', 'dash-g');
+    const ring = el('div', 'dash-g-ring');
+    ring.append(this.gDot);
+    g.append(ring, this.gText);
+    main.append(pedals, speedBox, this.gear, g);
     const lamps = el('div', 'dash-lamps');
     lamps.append(this.lamps.mode, this.lamps.tcs, this.lamps.abs, this.lamps.cam);
     const gauges = el('div', 'dash-gauges');
@@ -80,10 +92,36 @@ export class Dashboard {
     this.root.hidden = true;
   }
 
-  update(v: VehicleState | null, f: DashboardFlags): void {
+  /** §18.4 HUD presets: none hides the cluster, minimal keeps speed, gear and revs, racing adds pedals, aids, fluids
+   *  and the G meter; engineer is racing plus the stats panel (the app shows that). */
+  setPreset(p: HudPreset): void {
+    this.root.classList.toggle('hud-minimal', p === 'minimal');
+    this.root.classList.toggle('hud-off', p === 'none');
+  }
+
+  setUnit(u: SpeedUnit): void {
+    this.unit = u;
+    this.unitLabel.textContent = u === 'mph' ? 'mph' : 'km/h';
+  }
+
+  update(v: VehicleState | null, f: DashboardFlags, dt = 1 / 60): void {
     if (!v) return;
-    const kmh = Math.abs(v.speed) * 3.6;
+    const kmh = Math.abs(v.speed) * (this.unit === 'mph' ? 2.23694 : 3.6);
     this.speed.textContent = kmh < 0.5 ? '0' : kmh.toFixed(0);
+    // G meter from the change of the chassis velocity (heading × forward speed: the turn gives the lateral part) over
+    // the frame, in the car's frame, filtered (frames jitter).
+    const vv: [number, number, number] = [v.forward[0] * v.speed, v.forward[1] * v.speed, v.forward[2] * v.speed];
+    if (this.lastVel && dt > 1e-4) {
+      const a = [(vv[0] - this.lastVel[0]) / dt, (vv[1] - this.lastVel[1]) / dt, (vv[2] - this.lastVel[2]) / dt];
+      const lon = (a[0] * v.forward[0] + a[1] * v.forward[1] + a[2] * v.forward[2]) / 9.81;
+      const lat = (a[0] * v.left[0] + a[1] * v.left[1] + a[2] * v.left[2]) / 9.81;
+      const k = 1 - Math.exp(-dt * 8);
+      this.gFilt = [this.gFilt[0] + (lat - this.gFilt[0]) * k, this.gFilt[1] + (lon - this.gFilt[1]) * k];
+      const clamp = (x: number) => Math.max(-1.5, Math.min(1.5, x));
+      this.gDot.style.transform = `translate(${(-clamp(this.gFilt[0]) / 1.5) * 26}px, ${(-clamp(this.gFilt[1]) / 1.5) * 26}px)`;
+      this.gText.textContent = `${Math.hypot(this.gFilt[0], this.gFilt[1]).toFixed(1)} g`;
+    }
+    this.lastVel = vv;
     this.gear.textContent = gearLabel(v.gear, f.manual);
     const scale = this.redline * 1.1;
     this.rpmFill.style.width = `${Math.min(100, (v.engineRpm / scale) * 100)}%`;

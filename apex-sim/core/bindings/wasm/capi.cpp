@@ -4,6 +4,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "sbc/builder.h"
 #include "sbc/proto_car.h"
@@ -92,6 +93,41 @@ int sbc_world_add_static_box(sbc_world* w, double cx, double cy, double cz, floa
                              int material) {
   return guarded(
       [&] { return w->world.addStaticBox({cx, cy, cz}, {hx, hy, hz}, yaw, static_cast<uint16_t>(material)); });
+}
+
+int sbc_world_add_static_mesh(sbc_world* w, double ox, double oy, double oz, const float* vertices, int vertex_count,
+                              const int32_t* indices, int index_count, int material) {
+  if (!w || !vertices || !indices || vertex_count < 0 || index_count < 0) return -1;
+  return guarded([&] {
+    std::vector<float> v(vertices, vertices + static_cast<size_t>(vertex_count) * 3);
+    std::vector<int32_t> idx(indices, indices + index_count);
+    return w->world.addStaticMesh({ox, oy, oz}, v, idx, static_cast<uint16_t>(material));
+  });
+}
+
+int sbc_world_set_heightfield(sbc_world* w, double ox, double oz, double cell, int nx, int nz, const float* heights,
+                              const uint8_t* materials) {
+  if (!w || !heights || !materials || nx <= 0 || nz <= 0) return -1;
+  return guarded([&] {
+    sbc::Heightfield f;
+    f.originX = ox;
+    f.originZ = oz;
+    f.cell = cell;
+    f.nx = nx;
+    f.nz = nz;
+    f.heights.assign(heights, heights + static_cast<size_t>(nx + 1) * static_cast<size_t>(nz + 1));
+    f.materials.assign(materials, materials + static_cast<size_t>(nx) * static_cast<size_t>(nz));
+    w->world.setHeightfield(std::move(f));
+    return 0;
+  });
+}
+
+int sbc_world_set_material_remap(sbc_world* w, int from, int to) {
+  if (!w || from < 0 || to < 0) return -1;
+  return guarded([&] {
+    w->world.setMaterialRemap(static_cast<uint16_t>(from), static_cast<uint16_t>(to));
+    return 0;
+  });
 }
 
 int sbc_world_static_triangle_count(sbc_world* w) { return w ? w->world.staticTriangleCount() : 0; }

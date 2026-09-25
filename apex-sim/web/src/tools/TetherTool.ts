@@ -271,7 +271,7 @@ export function tetherControls(tool: TetherTool): HTMLElement {
   const help = Object.assign(document.createElement('small'), { className: 'toolhelp', textContent: t('toolHelp') });
   const section = document.createElement('div');
   section.className = 'section tools';
-  const h = Object.assign(document.createElement('h2'), { textContent: t('tools') });
-  section.append(h, row(grab, crane, release), row(up, stop, down), help);
+  // (The mode's sheet titles the section.)
+  section.append(row(grab, crane, release), row(up, stop, down), help);
   return section;
 }

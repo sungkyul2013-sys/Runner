@@ -1,3 +1,4 @@
+import type { MapPhysics } from '../world/types';
 // Non-real-time messages between the main thread and the physics worker. Real-time data (node positions, strain,
 // stats) travels through the SharedArrayBuffer triple buffer instead (layout.ts) — or, on a page without
 // cross-origin isolation, as transferred slot buffers ('frame' out, 'returnSlot' back: the message transport).
@@ -19,7 +20,10 @@ export type ToWorker =
   | { type: 'tether'; request: number; desc: TetherDesc }
   | { type: 'tetherAnchor'; id: number; anchor: [number, number, number] }
   | { type: 'tetherLength'; id: number; length: number }
-  | { type: 'tetherRemove'; id: number };
+  | { type: 'tetherRemove'; id: number }
+  | { type: 'map'; physics: MapPhysics; lattices: Float64Array[] } // stores the map; the scene "map" builds from it
+  | { type: 'remap'; pairs: Array<[number, number]> } // weather: surface material substitutions
+  | { type: 'wind'; wind: [number, number, number] };
 
 /** §20 tether (core TetherDesc): a grab (pulls its node toward `anchor`, saturating at maxForce) or a rope/winch
  *  (pulls only, above its length). anchorBody −1: the anchor is the world point. */
@@ -54,6 +58,7 @@ export interface VehiclePose {
   position: [number, number, number]; // model origin (ground level, mid-wheelbase) [m]
   yaw: number; // [rad] about +Y (0 = facing +Z)
   speed: number; // [m/s] forward
+  velocity?: [number, number, number]; // [m/s] extra world-frame velocity at spawn (a side-pole car moves sideways)
 }
 
 /** Driver input (core VehicleInput). mode: 0 drive, 1 reverse, 2 neutral, 3 manual. */

@@ -15,13 +15,21 @@ export class Viewer {
   backend = 'unknown';
   /** WASD/QE pan the orbit target (off while driving: the keys belong to the car). */
   freeMove = true;
-  private sun = new THREE.DirectionalLight(0xfff4e6, 2.6);
+  readonly sun = new THREE.DirectionalLight(0xfff4e6, 2.6);
+  readonly hemi = new THREE.HemisphereLight(0xc9d6ff, 0x1a1c20, 0.9);
+  /** Direction toward the sun (unit); the shadow camera sits along it around the camera target. */
+  readonly sunDirection = new THREE.Vector3(-18, 30, 14).normalize();
+  /** Half size of the sun's shadow frustum [m]. */
+  shadowHalf = SUN_SHADOW_HALF;
   private keys = new Set<string>();
 
   /** `forceWebGL`: use three's WebGL2 backend (A§5 fallback; also the only backend headless SwiftShader can
    *  present with — see KNOWN_ISSUES). */
-  constructor(private readonly canvas: HTMLCanvasElement, forceWebGL = false) {
-    this.renderer = new THREE.WebGPURenderer({ canvas, antialias: true, forceWebGL });
+  /** `largeWorld`: open-world maps (0.1 m … 32 km views) need a high-precision depth buffer. */
+  constructor(private readonly canvas: HTMLCanvasElement, forceWebGL = false, largeWorld = false) {
+    // Reversed depth: the open-world maps span 0.1 m … 20 km (falls back to the default buffer where unsupported).
+    // (WebGL2 fallback: a logarithmic buffer instead; reversed depth there depends on EXT_clip_control.)
+    this.renderer = new THREE.WebGPURenderer({ canvas, antialias: true, forceWebGL, reversedDepthBuffer: largeWorld && !forceWebGL, logarithmicDepthBuffer: largeWorld && forceWebGL });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.AgXToneMapping;
     this.renderer.toneMappingExposure = 1.1;
@@ -30,7 +38,7 @@ export class Viewer {
 
     this.scene.background = new THREE.Color(TOKENS.background);
     this.scene.fog = new THREE.Fog(TOKENS.background, 120, 900);
-    this.scene.add(new THREE.HemisphereLight(0xc9d6ff, 0x1a1c20, 0.9));
+    this.scene.add(this.hemi);
     this.sun.position.set(-18, 30, 14);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -67,6 +75,29 @@ export class Viewer {
     this.renderer.onDeviceLost = (info: { message?: string }) => onDeviceLost(info?.message ?? 'device lost');
   }
 
+  /** Rendering quality (settings → 그래픽): pixel ratio cap and shadows. Low (phones): ratio 1, no shadow map;
+   *  medium: 1.5, 1024² shadows; high: 2, soft 2048² shadows. The physics does not change with it. */
+  setQuality(q: 'low' | 'medium' | 'high'): void {
+    const ratio = q === 'low' ? 1 : q === 'medium' ? 1.5 : 2;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, ratio));
+    const shadows = q !== 'low';
+    const size = q === 'high' ? 2048 : 1024;
+    if (this.renderer.shadowMap.enabled !== shadows || this.sun.shadow.mapSize.x !== size) {
+      this.renderer.shadowMap.enabled = shadows;
+      this.renderer.shadowMap.type = q === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+      this.sun.castShadow = shadows;
+      this.sun.shadow.mapSize.set(size, size);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+      // Materials compiled with or without the shadow map must be rebuilt.
+      this.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+        for (const x of Array.isArray(m) ? m : m ? [m] : []) x.needsUpdate = true;
+      });
+    }
+    this.resize();
+  }
+
   focus(point: THREE.Vector3, distance = 9): void {
     const dir = this.camera.position.clone().sub(this.controls.target).normalize();
     this.controls.target.copy(point);
@@ -93,8 +124,15 @@ export class Viewer {
     }
     if (this.controls.enabled) this.controls.update();
     const t = this.controls.target;
-    this.sun.target.position.set(t.x, 0, t.z);
-    this.sun.position.set(t.x - 18, 30, t.z + 14);
+    this.sun.target.position.set(t.x, t.y, t.z);
+    this.sun.position.set(t.x, t.y, t.z).addScaledVector(this.sunDirection, 80);
+    const sc = this.sun.shadow.camera;
+    if (sc.right !== this.shadowHalf) {
+      sc.left = sc.bottom = -this.shadowHalf;
+      sc.right = sc.top = this.shadowHalf;
+      sc.far = 80 + this.shadowHalf * 2;
+      sc.updateProjectionMatrix();
+    }
   }
 
   render(): void {

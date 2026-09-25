@@ -25,6 +25,16 @@ int sbc_world_set_contact_pair(sbc_world* w, int mat_a, int mat_b, float mu_stat
 int sbc_world_add_ground_plane(sbc_world* w, double height, int material);
 int sbc_world_add_static_box(sbc_world* w, double cx, double cy, double cz, float hx, float hy, float hz, double yaw,
                              int material);
+/* One-sided triangle mesh (vertex_count xyz triples relative to the origin, index_count indices, counter-clockwise
+ * = front). Returns the id of its first triangle, or −1. */
+int sbc_world_add_static_mesh(sbc_world* w, double ox, double oy, double oz, const float* vertices, int vertex_count,
+                              const int32_t* indices, int index_count, int material);
+/* §13 terrain heightfield: (nx+1)(nz+1) heights [m] (x fastest) from world (ox, oz) at `cell` metres, one material per
+ * cell (255: a hole). Replaces the previous one. Returns 0, or −1. */
+int sbc_world_set_heightfield(sbc_world* w, double ox, double oz, double cell, int nx, int nz, const float* heights,
+                              const uint8_t* materials);
+/* Weather: static surfaces of material `from` act as `to` (to == from restores it). Returns 0, or −1. */
+int sbc_world_set_material_remap(sbc_world* w, int from, int to);
 int sbc_world_static_triangle_count(sbc_world* w);
 /* Copies static triangles [first, first+count) as 9 floats each (world-space vertices, relative to the world
  * origin, float) into out. Returns the number written. */

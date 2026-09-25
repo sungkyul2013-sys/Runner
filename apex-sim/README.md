@@ -40,7 +40,7 @@ npm run bench              # 네이티브 물리 벤치 (큐브 16개)
 ./build/native-release/sbc-cli run wall_crash --seconds 1.5 --energy   # 에너지 수지 출력
 ```
 
-URL 옵션: `?drive=porsche_911_turbo_991`(주행), `?view=garage[&car=<id>]`(차고), `?scene=sandbox|cube_drop|tower|wall_crash|pile|golden_m0|drive`, `?golden=1`(브라우저 결정론 자가 검사), `?bench=1`(벤치 JSON), `?backend=webgl2`(WebGL2 강제), `?lang=en`.
+첫 화면은 메인 메뉴(쇼룸·모드 카드·맵 선택)다. URL 옵션: `?freeroam=porsche_911_turbo_991&map=hanbit|proving&spawn=<장소>&hour=<0-24>&weather=clear|cloudy|rain|storm|fog|snow|blizzard`(자유 주행, §13 맵), `?drive=porsche_911_turbo_991`(무한 그리드 주행장), `?crash=porsche_911_turbo_991[&preset=frontal|offset|…][&go=1]`(크래시 랩), `?view=garage[&car=<id>]`(차고), `?scene=sandbox|cube_drop|tower|wall_crash|pile|golden_m0|drive`, `?golden=1`(브라우저 결정론 자가 검사), `?bench=1`(벤치 JSON), `?backend=webgl2`(WebGL2 강제), `?lang=en`.
 
 ### 배포
 
@@ -49,7 +49,10 @@ WASM 스레드와 트리플 버퍼는 `SharedArrayBuffer`를 쓰므로 페이지
 메시지 전송으로 자동 전환한다(무거운 장면은 느려질 수 있음). `file://`로 열면 동작하지 않는다(워커·WASM 로딩).
 Claude 아티팩트용 패키지: `node tools/artifact/package-app.mjs <출력 폴더>`(해시 경로 #drive·#garage·#sandbox).
 
-## 조작 (주행, `?drive=`)
+## 조작 (주행, `?freeroam=` / `?drive=`)
+
+자유 주행: M 월드맵(텔레포트·웨이포인트), 시트에서 시각·날씨·장소. 휴대폰은 화면 조향·페달(설정 → 조작).
+
 
 | 동작 | 키보드 | 게임패드 |
 |---|---|---|

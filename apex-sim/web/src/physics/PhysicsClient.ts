@@ -1,4 +1,5 @@
 // Main-thread side of the physics worker: commands out, interpolated frames in (A§2).
+import type { MapPhysics } from '../world/types';
 import {
   B,
   BODY_STRIDE_F64,
@@ -154,6 +155,18 @@ export class PhysicsClient {
   loadScene(name: string, bodies?: number): void {
     this.prev = this.cur = null;
     this.send({ type: 'scene', name, bodies });
+  }
+  /** Stores an open-world map (§13) in the worker: every loadScene('map') builds a world from it (start, resets,
+   *  teleports). */
+  loadMap(physics: MapPhysics, lattices: LatticeParams[] = []): void {
+    this.send({ type: 'map', physics, lattices: lattices.map(packLattice) });
+  }
+  /** Weather: static surfaces of the first material act as the second (asphalt → wet asphalt …). */
+  setMaterialRemap(pairs: Array<[number, number]>): void {
+    this.send({ type: 'remap', pairs });
+  }
+  setWind(x: number, y: number, z: number): void {
+    this.send({ type: 'wind', wind: [x, y, z] });
   }
   spawnLattice(params: LatticeParams, label: string): void {
     this.send({ type: 'spawnLattice', params: packLattice(params), label });
