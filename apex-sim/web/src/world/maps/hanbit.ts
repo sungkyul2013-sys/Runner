@@ -4,7 +4,7 @@
 // roads with a diamond interchange, two river bridges (one cable-stayed), a road tunnel through the hill north of the
 // city, a valley road, a mountain pass with hairpins over the eastern massif, a lake among the mountains, the
 // expressway boring through the massif to a toll plaza, and a farming town with a roundabout south of the river.
-import { MapBuilder, offsetPoints, onRoad, pointInPolygon, type MapData, type RoadSpec } from '../builder';
+import { MapBuilder, offsetPoints, onRoad, pointInPolygon, type MapData, type Road, type RoadSpec } from '../builder';
 import { CoarseField, fbm, hash2, lerp, noise2, ridged, rng, smoothstep } from '../noise';
 import { widths, STYLES } from '../road';
 import { MAT } from '../types';
@@ -206,7 +206,43 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   add({ id: 'IC_eb_off', name: { ko: '한빛IC 진출', en: 'Hanbit IC exit' }, style: 'ramp', points: [...offsetPoints(H1, sx - 460, sx - 300, -off, 4), [-800, 380], [-700, 420], [-600, 425]], merge: { road: 'H1', at: 'start', length: 150 }, end: { join: 'C2' }, oneWayRoute: true });
   add({ id: 'IC_eb_on', name: { ko: '한빛IC 진입', en: 'Hanbit IC entry' }, style: 'ramp', points: [[-600, 425], [-500, 420], [-400, 380], ...offsetPoints(H1, sx + 300, sx + 460, -off, 4)], start: { join: 'C2' }, merge: { road: 'H1', at: 'end', length: 150 }, oneWayRoute: true });
 
+  // ---- 누리지하차도: a street that dives under 중앙대로 (§13.2-1 지하차도): open cuts down to a short covered box
+  // under the crossing, lit inside like the tunnels; the avenue above crosses it on the ground (no junction). ----
+  const UX = -800, UZ = -1050;
+  add({
+    id: 'U1', name: { ko: '누리지하차도', en: 'Nuri Underpass' }, style: 'connector', styleOverride: { barrier: 'none' },
+    points: [[UX, EW[0]], [UX, -1200], [UX, UZ - 46], [UX, UZ + 46], [UX, -900], [UX, EW[2]]],
+    start: { join: ewId(EW[0]) }, end: { join: ewId(EW[2]) }, tunnels: [[2, 3]],
+    fixed: [{ at: 2, y: cityGround(UX, UZ - 46) - 7.8, radius: 30 }, { at: 3, y: cityGround(UX, UZ + 46) - 7.8, radius: 30 }],
+  });
+
+  // ---- apartment complexes (대단지 아파트): an access lane through each, with humps (단지 내 방지턱) ----
+  const hump = (roadId: string, x: number, z: number, halfW: number) => {
+    // Round hump, 3.6 m long, 8 cm high, painted in yellow and black stripes; it follows the lane's crossfall, so it
+    // starts flush with the surface everywhere across the road.
+    const road = b.byId.get(roadId)!;
+    const z0 = z - 1.8, z1 = z + 1.8;
+    b.addPad({
+      outline: [[x - halfW, z0], [x - halfW, z1], [x + halfW, z1], [x + halfW, z0]],
+      y: (px, pz) => road.surfaceAt(px, pz) + 0.006 + 0.08 * Math.sin((Math.PI * Math.min(Math.max(pz - z0, 0), 3.6)) / 3.6),
+      material: MAT.paint, look: 'paint', grid: 0.5, gridU: 0.3,
+      // Bands across the lane, two grid cells each (clean edges on the triangle colours).
+      colorAt: (px) => (Math.floor((px - x + halfW) / 1.0) & 1 ? 0xf0bf2a : 0x1f2022),
+    });
+  };
+  const complex = (x0: number, z0: number, x1: number, z1: number, zTop: number, zBot: number, top: string, bottom: string, ground: (x: number, z: number) => number) => {
+    const cx = Math.round((x0 + x1) / 2);
+    const id = `apt_${cx}_${zTop}`;
+    add({ id, style: 'alley', points: [[cx, zTop], [cx, zBot]], start: { join: top }, end: { join: bottom } });
+    const half = Math.max(W('alley').pe, W('alley').peLeft);
+    for (let d = 42; d < zBot - zTop - 36; d += 58) hump(id, cx, zTop + d, half);
+    b.addSign({ x: cx + half + 1.5, y: ground(cx + half + 1.5, zTop + 26), z: zTop + 26, yaw: 0, text: { ko: '과속방지턱', en: 'Speed humps' }, sub: { ko: '단지 내 서행 20', en: 'Estate 20 km/h' }, kind: 'info' });
+    fillBlock(b, R, x0, z0, cx - 9, z1, 'apart', ground);
+    fillBlock(b, R, cx + 9, z0, x1, z1, 'apart', ground);
+  };
+
   // ---- buildings: city blocks ----
+  const oldAlleys = ['c_alley1', 'c_alley2'].map((id) => b.byId.get(id)!);
   const ewW = (z: number) => (arterialEW.has(z) ? W('arterial') : W('street')).outer;
   const nsW = (x: number) => (arterialNS.has(x) ? W('arterial') : W('street')).outer;
   for (let i = 0; i + 1 < NS.length; i++) {
@@ -219,7 +255,12 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       else if (cx > -1300 && cx < 0 && cz > -1100 && cz < -300) kind = 'cbd';
       else if (cx > 0 || cz > -300) kind = 'apart';
       if (i === 5 && j === 2) kind = 'park'; // city hall plaza
-      fillBlock(b, R, x0, z0, x1, z1, kind, cityGround);
+      if (NS[i] < UX && NS[i + 1] > UX && j < 2) {
+        // The underpass runs through these blocks: buildings keep clear of its cuts.
+        fillBlock(b, R, x0, z0, UX - 26, z1, kind, cityGround);
+        fillBlock(b, R, UX + 26, z0, x1, z1, kind, cityGround);
+      } else if (kind === 'apart') complex(x0, z0, x1, z1, EW[j], EW[j + 1], ewId(EW[j]), ewId(EW[j + 1]), cityGround);
+      else fillBlock(b, R, x0, z0, x1, z1, kind, cityGround, kind === 'old' ? oldAlleys : []);
     }
   }
   for (let i = 0; i + 1 < SNS.length; i++) {
@@ -228,7 +269,7 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       const ew = (z: number) => (z === 1050 ? W('arterial') : W('street')).outer;
       const x0 = SNS[i] + sw(SNS[i]) + 3, x1 = SNS[i + 1] - sw(SNS[i + 1]) - 3;
       const z0 = SEW[j] + ew(SEW[j]) + 3, z1 = SEW[j + 1] - ew(SEW[j + 1]) - 3;
-      fillBlock(b, R, x0, z0, x1, z1, 'apart', southGround);
+      complex(x0, z0, x1, z1, SEW[j], SEW[j + 1], sewId(SEW[j]), sewId(SEW[j + 1]), southGround);
     }
   }
   // Landmark tower (한빛타워) in the CBD.
@@ -303,6 +344,9 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   poi('farm', 'scenic', '들녘 농로', 'Farm roads', face('F2', 30));
   poi('quarry', 'service', '채석장', 'Quarry', face('R2', b.byId.get('R2')!.length - 40));
   poi('south', 'city', '남한빛 아파트단지', 'South Hanbit apartments', face(sewId(1300), 900));
+  poi('underpass', 'landmark', '누리지하차도', 'Nuri Underpass', face('U1', 30));
+  const apt = b.roads.find((r) => r.spec.id.startsWith('apt_') && r.spec.id.endsWith('_1050'))!;
+  poi('estate', 'scenic', '아파트 단지 (방지턱)', 'Apartment estate (speed humps)', face(apt.spec.id, 8));
   poi('trail', 'scenic', '숲길 (비포장)', 'Forest trail (unpaved)', face('T2', 60));
   b.areas.push(
     { label: { ko: '한빛시', en: 'Hanbit City' }, x: -1100, z: -700, size: 2 },
@@ -330,7 +374,7 @@ function parkedCars(lot: { x0: number; x1: number; z0: number; z1: number }): Ar
 
 type BlockKind = 'cbd' | 'apart' | 'old' | 'mid' | 'park';
 
-function fillBlock(b: MapBuilder, R: () => number, x0: number, z0: number, x1: number, z1: number, kind: BlockKind, ground: (x: number, z: number) => number): void {
+function fillBlock(b: MapBuilder, R: () => number, x0: number, z0: number, x1: number, z1: number, kind: BlockKind, ground: (x: number, z: number) => number, avoid: Road[] = []): void {
   const w = x1 - x0, d = z1 - z0;
   if (w < 20 || d < 20) return;
   const base = (x: number, z: number) => ground(x, z) + 0.15;
@@ -358,24 +402,34 @@ function fillBlock(b: MapBuilder, R: () => number, x0: number, z0: number, x1: n
     for (let k = 0; k < 10; k++) b.addTree(x0 + 5 + R() * (w - 10), z0 + 3 + R() * 4, 0.9, 0);
     return;
   }
-  // Lots along both long sides.
-  const lot = kind === 'cbd' ? 64 : kind === 'old' ? 16 : 30;
-  const alongX = w >= d;
-  const L = alongX ? w : d, D = alongX ? d : w;
-  const n = Math.max(1, Math.floor(L / lot));
-  const depth = Math.min(D / 2 - 3, kind === 'cbd' ? 48 : kind === 'old' ? 14 : 24);
-  for (let side = 0; side < 2; side++) {
-    for (let k = 0; k < n; k++) {
-      if (kind !== 'cbd' && R() < 0.12) continue; // a gap: a small lot or courtyard
-      const a = (k + 0.5) * (L / n);
-      const off = side === 0 ? depth / 2 + 2 : D - depth / 2 - 2;
-      const cx = alongX ? x0 + a : x0 + off;
-      const cz = alongX ? z0 + off : z0 + a;
-      const bw = L / n - (kind === 'old' ? 2 : 8);
-      const h = kind === 'cbd' ? 70 + R() * 150 : kind === 'old' ? 6 + Math.floor(R() * 4) * 3 : 14 + Math.floor(R() * 8) * 3.5;
-      const type = kind === 'cbd' ? 0 : kind === 'old' ? (R() < 0.6 ? 4 : 5) : R() < 0.3 ? 5 : 2;
-      if (kind === 'cbd' && side === 1 && D < 110) continue; // one tower row in narrow blocks
-      put(cx, cz, alongX ? bw : depth, alongX ? depth : bw, h, type);
+  // Lots on a grid over the whole block: the street-facing ring is taller with shops, the inner lots lower, a few
+  // left as courtyards with trees. Lots over a road through the block (old-town alleys) stay empty.
+  const lotW = kind === 'cbd' ? 60 : kind === 'old' ? 15 : 30;
+  const lotD = kind === 'cbd' ? 54 : kind === 'old' ? 14 : 27;
+  const gap = kind === 'cbd' ? 14 : kind === 'old' ? 3 : 6;
+  const nx = Math.max(1, Math.floor((w + gap) / (lotW + gap))), nz = Math.max(1, Math.floor((d + gap) / (lotD + gap)));
+  const cw = (w - gap * (nx - 1)) / nx, cd = (d - gap * (nz - 1)) / nz;
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < nz; j++) {
+      const cx = x0 + i * (cw + gap) + cw / 2, cz = z0 + j * (cd + gap) + cd / 2;
+      if (avoid.some((r) => r.nearest(cx, cz).d < r.w.outer + Math.max(cw, cd) / 2 + 2)) continue;
+      const edge = i === 0 || j === 0 || i === nx - 1 || j === nz - 1;
+      if (!edge && R() < (kind === 'old' ? 0.12 : 0.22)) {
+        for (let k = 0; k < 3; k++) b.addTree(cx + (R() - 0.5) * cw * 0.7, cz + (R() - 0.5) * cd * 0.7, 0.8 + R() * 0.4, 2);
+        continue;
+      }
+      let h: number, type: number;
+      if (kind === 'cbd') {
+        h = edge ? 70 + R() * 160 : 28 + R() * 70;
+        type = edge || R() < 0.5 ? 0 : 2;
+      } else if (kind === 'old') {
+        h = 6 + Math.floor(R() * 3) * 3;
+        type = edge && R() < 0.45 ? 5 : 4;
+      } else {
+        h = edge ? 14 + Math.floor(R() * 8) * 3.5 : 10 + Math.floor(R() * 5) * 3.5;
+        type = edge ? (R() < 0.4 ? 5 : 2) : R() < 0.12 ? 3 : 2;
+      }
+      put(cx, cz, cw - (kind === 'old' ? 1 : 2), cd - (kind === 'old' ? 1 : 2), h, type);
     }
   }
 }

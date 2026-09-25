@@ -167,6 +167,8 @@ export interface PadSpec {
   fill?: boolean;
   /** Paint colour (look 'paint'). */
   color?: number;
+  /** Paint colour by position (look 'paint'; per triangle, at its centre): stripes. */
+  colorAt?: (x: number, z: number) => number;
 }
 
 export interface MeshAccum {
@@ -955,12 +957,22 @@ export class MapBuilder {
         if (!(a.flags & STATION.portal && b.flags & STATION.portal)) continue;
         const half = r.w.full + 1.5;
         const cells: number[] = [];
-        t.forCells(Math.min(a.x, b.x) - half, Math.min(a.z, b.z) - half, Math.max(a.x, b.x) + half, Math.max(a.z, b.z) + half, (cell, x, z) => {
+        const row = t.nx + 1;
+        t.forCells(Math.min(a.x, b.x) - half - 2 * t.cell, Math.min(a.z, b.z) - half - 2 * t.cell, Math.max(a.x, b.x) + half + 2 * t.cell, Math.max(a.z, b.z) + half + 2 * t.cell, (cell, x, z) => {
           const dx = b.x - a.x, dz = b.z - a.z;
           const len2 = dx * dx + dz * dz;
-          const w = ((x - a.x) * dx + (z - a.z) * dz) / len2;
-          if (w < -0.05 || w > 1.05) return;
           const len = Math.sqrt(len2);
+          const w = ((x - a.x) * dx + (z - a.z) * dz) / len2;
+          const ext = (2 * t.cell) / len;
+          if (w < -0.05 - ext || w > 1.05 + ext) return;
+          if (w < -0.05 || w > 1.05) {
+            // Just outside the portal: the face cell (rising from the cut floor to the ground above the tunnel) opens
+            // too, over the carriageway only; the cut floor and its side slopes never do.
+            if (Math.abs(((x - a.x) * dz - (z - a.z) * dx) / len) > half - t.cell) return;
+            const ix = cell % t.nx, iz = (cell - ix) / t.nx, i = iz * row + ix;
+            const top = Math.max(t.heights[i], t.heights[i + 1], t.heights[i + row], t.heights[i + row + 1]);
+            if (top < Math.min(a.y, b.y) + 2.5) return;
+          }
           const u = ((x - a.x) * dz - (z - a.z) * dx) / len;
           if (Math.abs(u) < half) cells.push(cell);
         });
@@ -1280,7 +1292,7 @@ export class MapBuilder {
       acc.pos.push(...a, ...c, ...b);
       acc.idx.push(base, base + 1, base + 2);
       if (acc.col) {
-        const hex = pad.color ?? 0xd8d8d2;
+        const hex = pad.colorAt ? pad.colorAt((a[0] + b[0] + c[0]) / 3, (a[2] + b[2] + c[2]) / 3) : pad.color ?? 0xd8d8d2;
         const r = ((hex >> 16) & 255) / 255, g = ((hex >> 8) & 255) / 255, bb = (hex & 255) / 255;
         acc.col.push(r, g, bb, r, g, bb, r, g, bb);
       }

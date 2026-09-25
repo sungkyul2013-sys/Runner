@@ -126,17 +126,42 @@ function roadMaterial(u: MapUniforms, pads = false): THREE.MeshStandardNodeMater
   const stopA = smoothstep(6.4, 6.5, toEnd).mul(smoothstep(7.0, 6.9, toEnd)).mul(step(lu, 0));
   const stopB = smoothstep(6.4, 6.5, fromStart).mul(smoothstep(7.0, 6.9, fromStart)).mul(step(0, lu));
   const cross = max(zebra, max(stopA, stopB).mul(step(au, cw))).mul(junction).mul(has(2).add(has(6)));
-  const white = max(max(edge.mul(step(0.5, pattern)), dividers), cross);
+  // Lane arrows (straight on) before the stop lines, one per lane, pointing at the junction.
+  const laneIdx = floor(au.sub(medianHalf).div(lw.max(0.1)));
+  const lx = au.sub(medianHalf.add(lw.mul(laneIdx.add(0.5))));
+  const inLane = step(0, laneIdx).mul(step(laneIdx, lanes.sub(0.5)));
+  const arrowAt = (d: Node<'float'>): Node<'float'> => {
+    const y = float(17).sub(d);
+    const shaft = float(1).sub(smoothstep(0.08, 0.1, abs(lx))).mul(step(-2.6, y)).mul(step(y, 1.0));
+    const head = float(1).sub(smoothstep(float(2.6).sub(y).div(1.6).mul(0.46), float(2.6).sub(y).div(1.6).mul(0.46).add(0.02), abs(lx))).mul(step(1.0, y)).mul(step(y, 2.6));
+    return max(shaft, head);
+  };
+  const arrows = max(arrowAt(toEnd).mul(step(lu, 0)), arrowAt(fromStart).mul(step(0, lu)))
+    .mul(inLane).mul(junction).mul(has(2).add(has(6))).mul(float(1).sub(oneWay));
+  const white = max(max(max(edge.mul(step(0.5, pattern)), dividers), cross), arrows);
+  // Manhole covers on city streets: one in a lane every 45 m cell, placed by a hash of the cell.
+  const cellS = floor(s.div(45));
+  const hA = fract(sin(cellS.mul(91.37).add(code)).mul(43758.5453));
+  const hB = fract(sin(cellS.mul(17.13).add(3.7)).mul(24634.6345));
+  const mhS = cellS.mul(45).add(8).add(hA.mul(29));
+  const mhU = medianHalf.add(lw.mul(floor(hB.mul(lanes)).add(0.5))).mul(select(hB.greaterThan(0.5), float(1), float(-1)));
+  const mhD = vec2(s.sub(mhS), lu.sub(mhU)).length();
+  const manhole = float(1).sub(smoothstep(0.34, 0.37, mhD)).mul(has(2).add(has(6)).add(has(3))).mul(smoothstep(8, 10, toEnd)).mul(smoothstep(8, 10, fromStart));
+  const manholeRim = smoothstep(0.26, 0.29, mhD).mul(manhole);
   // Asphalt: grain, patch variation, darker and glossier when wet.
   const grain = mx_noise_float(positionWorld.xz.mul(2.7)).mul(0.04);
   const patches = mx_noise_float(positionWorld.xz.mul(0.06)).mul(0.05);
   const asphalt = color(0x3d3e40).mul(grain.add(patches).add(1)).mul(float(1).sub(u.wet.mul(0.35)));
   let c = mix(asphalt, color(0xe8e8e2), white.mul(0.92));
   c = mix(c, color(0xe0b52c), yellow.mul(0.95));
+  // Cast-iron cover: dark, a lighter rim, a cross-hatch.
+  const hatch = step(0.5, fract(positionWorld.x.mul(9))).mul(step(0.5, fract(positionWorld.z.mul(9)))).mul(0.25);
+  c = mix(c, mix(color(0x2e3033).mul(hatch.add(1)), color(0x55585d), manholeRim), manhole.mul(0.96));
   if (pads) c = asphalt;
   m.colorNode = c;
   const paint = max(white, yellow);
-  m.roughnessNode = mix(mix(float(0.88), float(0.6), paint), float(0.22), u.wet.mul(0.85));
+  m.roughnessNode = mix(mix(mix(float(0.88), float(0.6), paint), float(0.35), manhole), float(0.22), u.wet.mul(0.85));
+  m.metalnessNode = manhole.mul(0.5);
   // Street-lamp pools at night: staggered lamps on both sides (see emitRoadProps).
   const L = lamp.x, off = lamp.y;
   const sr = fract(s.sub(L.mul(0.5)).div(L.max(1)).add(0.5)).sub(0.5).mul(L);
@@ -156,8 +181,8 @@ function plainMaterial(hex: number, rough = 0.9, metal = 0): THREE.MeshStandardN
  *  instance attributes (type, seed, base height). */
 function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.7, metalness: 0 });
-  const info = attribute('bInfo', 'vec4'); // type, seed, base y, height
-  const type = info.x, seed = info.y, baseY = info.z;
+  const info = attribute('bInfo', 'vec4'); // type, seed, base y, part top above the base
+  const type = info.x, seed = info.y, baseY = info.z, top = info.w;
   const isType = (k: number) => step(abs(type.sub(k)), 0.5);
   const n = normalWorld;
   const onX = step(0.5, abs(n.x));
@@ -167,7 +192,7 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const bay = mix(mix(float(3.0), float(1.6), isType(0)), float(4.5), isType(3));
   const fx = fract(fu.div(bay)), fy = fract(fv.div(floorH));
   const win = step(0.18, fx).mul(step(fx, 0.82)).mul(step(0.28, fy)).mul(step(fy, 0.86)).mul(step(1.6, fv));
-  const roof = step(0.6, n.y);
+  const roof = step(0.6, n.y).max(isType(7));
   // Wall colours per type, varied by the seed.
   const h1 = fract(sin(seed.mul(12.9898)).mul(43758.5453));
   const h2 = fract(sin(seed.mul(78.233)).mul(12345.678));
@@ -177,26 +202,56 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const indWall = mix(color(0x8d949b), color(0x6f7f8f), h1);
   const houseWall = mix(color(0xe6d7bf), color(0xc9b8a0), h1);
   const shopWall = mix(color(0xf0ede6), color(0xd8c9b3), h1);
+  const plantWall = mix(color(0x8f959b), color(0xa9adb1), h1); // rooftop plant, lift cores, masts
   let wall = glassWall.mul(isType(0));
-  wall = wall.add(apartWall.mul(isType(1))).add(lowWall.mul(isType(2))).add(indWall.mul(isType(3))).add(houseWall.mul(isType(4))).add(shopWall.mul(isType(5)));
+  wall = wall.add(apartWall.mul(isType(1))).add(lowWall.mul(isType(2))).add(indWall.mul(isType(3))).add(houseWall.mul(isType(4))).add(shopWall.mul(isType(5))).add(plantWall.mul(isType(6)));
   const glass = mix(color(0x1d2733), color(0x39516b), h2);
   const industrialNoWin = isType(3).mul(step(fv, 6));
-  const winMask = win.mul(float(1).sub(roof)).mul(float(1).sub(industrialNoWin));
-  const roofCol = mix(color(0x5b5e63), mix(color(0x6b3b2e), color(0x3a4750), h1), isType(4));
-  let c = mix(wall, glass, winMask.mul(float(1).sub(isType(0).mul(0.3))));
+  // Far away the window grid would shimmer: its contrast fades with the distance.
+  const far = smoothstep(180, 700, length(positionWorld.sub(cameraPosition)));
+  const winMask = win.mul(float(1).sub(roof)).mul(float(1).sub(industrialNoWin)).mul(float(1).sub(isType(6)));
+  const roofCol = mix(color(0x5b5e63), mix(color(0x6b3b2e), color(0x3a4750), h1), isType(4).max(isType(7)));
+  let c = mix(wall, glass, winMask.mul(float(1).sub(isType(0).mul(0.3))).mul(far.mul(-0.65).add(1)));
+  // Apartment slabs: a pale balcony band along every floor.
+  c = mix(c, color(0xf3f1ec), isType(1).mul(step(fy, 0.14)).mul(float(1).sub(roof)).mul(step(3, fv)));
+  // Plant: louvre stripes.
+  c = mix(c, c.mul(0.72), isType(6).mul(step(0.5, fract(fv.mul(2.2)))).mul(float(1).sub(roof)));
   c = mix(c, roofCol, roof);
-  // Shops: a coloured ground-floor band.
+  // Shops (and tower podiums): a coloured ground-floor band.
   const band = isType(5).mul(step(fv, 3.2)).mul(float(1).sub(roof));
   c = mix(c, mix(color(0xc0392b), color(0x2e86c1), h2), band.mul(0.8));
   m.colorNode = c;
   m.roughnessNode = mix(float(0.85), float(0.12), winMask.add(isType(0).mul(0.6)).clamp(0, 1));
   m.metalnessNode = isType(0).mul(0.4).mul(float(1).sub(roof));
-  // Night: a share of the windows lit (warm or cool), by floor and bay.
+  // Night: a share of the windows lit (warm or cool), by floor and bay; tower crowns lit; shop fronts glow.
   const cellId = floor(fu.div(bay)).mul(17.3).add(floor(fv.div(floorH)).mul(91.7)).add(seed);
   const lit = step(0.62, fract(sin(cellId).mul(43758.5453)));
   const tint = mix(color(0xffd9a0), color(0xcfe4ff), step(0.7, fract(sin(cellId.mul(3.1)).mul(9631.7))));
-  m.emissiveNode = tint.mul(winMask.mul(lit).mul(u.night).mul(0.75));
+  const crown = isType(0).mul(step(top.sub(2.2), fv)).mul(float(1).sub(roof));
+  const shopGlow = band.mul(step(0.3, fy)).mul(0.9);
+  m.emissiveNode = tint.mul(winMask.mul(lit).mul(0.75)).add(color(0xdfeaff).mul(crown.mul(1.4))).add(mix(color(0xffc27a), color(0xa8d8ff), h2).mul(shopGlow)).mul(u.night);
   return m;
+}
+
+/** Deterministic 0…1 from a building's seed. */
+function hash01(seed: number, k: number): number {
+  const x = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/** A gable roof (ridge along local x), unit size, base at y 0. */
+function gableGeometry(): THREE.BufferGeometry {
+  const v = [
+    -0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 1, 0, -0.5, 1, 0, // slope facing −z
+    0.5, 0, 0.5, -0.5, 0, 0.5, -0.5, 1, 0, 0.5, 1, 0, // slope facing +z
+    -0.5, 0, 0.5, -0.5, 0, -0.5, -0.5, 1, 0, // gable −x
+    0.5, 0, -0.5, 0.5, 0, 0.5, 0.5, 1, 0, // gable +x
+  ];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setIndex([0, 3, 2, 0, 2, 1, 4, 7, 6, 4, 6, 5, 8, 10, 9, 11, 13, 12]);
+  g.computeVertexNormals();
+  return g;
 }
 
 function treeGeometry(kind: number): THREE.BufferGeometry {
@@ -442,31 +497,77 @@ export class MapView {
   }
 
   // ---- buildings ----
+  /** Buildings (§13.4 건물): each spec becomes a few boxes inside its footprint (which is also its collision box) —
+   *  towers stand on a retail podium with a setback top, plant and a mast; apartment slabs carry lift and stair
+   *  cores; houses get gable roofs; warehouses a lower annex. */
   private buildBuildings(): void {
     const list = this.map.render.buildings;
     if (!list.length) return;
-    const geo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
-    const info = new Float32Array(list.length * 4);
-    const mesh = new THREE.InstancedMesh(geo, buildingMaterial(this.uniforms), list.length);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
-    const up = new THREE.Vector3(0, 1, 0);
-    list.forEach((b, i) => {
-      q.setFromAxisAngle(up, b.yaw);
-      s.set(b.w, b.h + 1, b.d);
-      p.set(b.x, b.y - 1, b.z);
-      m.compose(p, q, s);
-      mesh.setMatrixAt(i, m);
-      info[i * 4] = b.type;
-      info[i * 4 + 1] = b.seed % 1000;
-      info[i * 4 + 2] = b.y;
-      info[i * 4 + 3] = b.h;
-    });
-    geo.setAttribute('bInfo', new THREE.InstancedBufferAttribute(info, 4));
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.computeBoundingSphere();
-    this.group.add(mesh);
+    type Part = { x: number; z: number; y: number; w: number; d: number; h: number; yaw: number; type: number; seed: number; base: number; top: number };
+    const boxes: Part[] = [], roofs: Part[] = [];
+    for (const b of list) {
+      const r = (k: number) => hash01(b.seed % 100000, k);
+      const c = Math.cos(b.yaw), sn = Math.sin(b.yaw);
+      // A part of this building: local offset (ox along w, oz along d), size, from y0 to y1 above the base.
+      const part = (ox: number, oz: number, w: number, d: number, y0: number, y1: number, type: number, into = boxes) =>
+        into.push({ x: b.x + ox * c + oz * sn, z: b.z - ox * sn + oz * c, y: b.y + y0, w, d, h: y1 - y0, yaw: b.yaw, type, seed: b.seed % 1000, base: b.y, top: y1 });
+      if (b.type === 0 && b.h > 40) {
+        const pod = Math.min(b.h * 0.18, 9 + r(1) * 7);
+        part(0, 0, b.w, b.d, -1, pod, 5);
+        const tw = b.w * (0.74 + r(2) * 0.12), td = b.d * (0.74 + r(3) * 0.12);
+        const setAt = b.h * (0.6 + r(4) * 0.22);
+        part(0, 0, tw, td, pod, setAt, 0);
+        const sw = tw * (0.72 + r(5) * 0.14), sd = td * (0.72 + r(6) * 0.14);
+        part(0, 0, sw, sd, setAt, b.h, 0);
+        part(0, 0, sw * 0.46, sd * 0.46, b.h, b.h + 4 + r(7) * 4, 6);
+        if (b.h > 180 || r(8) > 0.8) part(0, 0, 1.1, 1.1, b.h + 6, b.h + 18 + r(9) * 30, 6);
+      } else if (b.type === 1) {
+        part(0, 0, b.w, b.d, -1, b.h, 1);
+        for (const f of [-0.28, 0.28]) part(f * b.w, 0, 5, Math.min(b.d * 0.7, 8), b.h, b.h + 4.5, 6);
+      } else if (b.type === 2) {
+        const setback = r(1) > 0.65 && b.h > 14;
+        part(0, 0, b.w, b.d, -1, setback ? b.h - 3.5 : b.h, 2);
+        if (setback) part(0, -b.d * 0.12, b.w * 0.86, b.d * 0.72, b.h - 3.5, b.h, 2);
+        if (r(2) > 0.5) part(b.w * (r(3) - 0.5) * 0.4, 0, Math.min(6, b.w * 0.3), Math.min(5, b.d * 0.3), b.h, b.h + 3, 6);
+      } else if (b.type === 3) {
+        const split = 0.62 + r(1) * 0.15;
+        part(-b.w * (1 - split) / 2, 0, b.w * split, b.d, -1, b.h, 3);
+        part(b.w * split / 2, 0, b.w * (1 - split), b.d, -1, b.h * (0.5 + r(2) * 0.2), 3);
+      } else if (b.type === 4) {
+        part(0, 0, b.w, b.d, -1, b.h, 4);
+        const along = b.w >= b.d;
+        part(0, 0, (along ? b.w : b.d) + 0.6, (along ? b.d : b.w) + 0.6, b.h, b.h + Math.min(b.w, b.d) * (0.3 + r(1) * 0.12), 7, roofs);
+        if (!along) roofs[roofs.length - 1].yaw += Math.PI / 2;
+      } else {
+        part(0, 0, b.w, b.d, -1, b.h, b.type);
+      }
+    }
+    const instanced = (geo: THREE.BufferGeometry, parts: Part[]) => {
+      const info = new Float32Array(parts.length * 4);
+      const mesh = new THREE.InstancedMesh(geo, this.buildingMat ??= buildingMaterial(this.uniforms), parts.length);
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+      const up = new THREE.Vector3(0, 1, 0);
+      parts.forEach((b, i) => {
+        q.setFromAxisAngle(up, b.yaw);
+        s.set(b.w, b.h, b.d);
+        p.set(b.x, b.y, b.z);
+        m.compose(p, q, s);
+        mesh.setMatrixAt(i, m);
+        info[i * 4] = b.type;
+        info[i * 4 + 1] = b.seed;
+        info[i * 4 + 2] = b.base;
+        info[i * 4 + 3] = b.top;
+      });
+      geo.setAttribute('bInfo', new THREE.InstancedBufferAttribute(info, 4));
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.computeBoundingSphere();
+      this.group.add(mesh);
+    };
+    instanced(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), boxes);
+    if (roofs.length) instanced(gableGeometry(), roofs);
   }
+  private buildingMat: THREE.MeshStandardNodeMaterial | null = null;
 
   // ---- trees, lamps, signals, signs, boxes, posts ----
   private buildProps(): void {

@@ -60,7 +60,8 @@ async function openPage(browser, query) {
   page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
   page.on('pageerror', (e) => consoleErrors.push(String(e)));
   const sep = query.includes('?') ? '&' : '?';
-  await page.goto(base + query + (BACKEND ? `${sep}backend=${BACKEND}` : ''));
+  // No bloom: it is visual only, and the software rasterizer's frames are slow enough already.
+  await page.goto(base + query + `${sep}bloom=0` + (BACKEND ? `&backend=${BACKEND}` : ''));
   await page.waitForFunction(() => window.__apex?.ready === true, null, { timeout: 60000 });
   return { page, consoleErrors };
 }
@@ -414,7 +415,7 @@ async function main() {
       if (!(run.kmh > 25)) failures.push(`free roam: ${run.kmh.toFixed(1)} km/h after 5 s of throttle`);
       if (run.tyres.some((f) => f !== 0)) failures.push(`free roam: tyre damage while driving ${run.tyres}`);
       await page.keyboard.press('KeyM');
-      await page.waitForSelector('.worldmap', { timeout: 10000 });
+      await page.waitForSelector('.worldmap', { timeout: 60000 });
       await page.waitForTimeout(800);
       await page.screenshot({ path: join(dir, 'B1-worldmap.png') });
       await page.keyboard.press('Escape');

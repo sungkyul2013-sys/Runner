@@ -19,7 +19,7 @@ export const MAPS: MapInfo[] = [
   {
     id: 'hanbit',
     label: { ko: '한빛시 (오픈월드)', en: 'Hanbit (open world)' },
-    desc: { ko: '강이 가로지르는 대도시, 고속도로와 IC, 터널, 산악 고갯길, 호수, 농촌 마을', en: 'River city, expressway and interchange, tunnels, mountain pass, lake, farming town' },
+    desc: { ko: '강이 가로지르는 대도시(지하차도·단지 내 방지턱), 고속도로와 IC, 터널, 산악 고갯길, 호수, 농촌 마을', en: 'River city (underpass, estate speed humps), expressway and interchange, tunnels, mountain pass, lake, farming town' },
     areaKm2: 36,
     kind: 'open',
     spawns: [
@@ -27,6 +27,8 @@ export const MAPS: MapInfo[] = [
       { id: 'expressway', label: { ko: '고속도로', en: 'Expressway' } },
       { id: 'bridge', label: { ko: '한빛대교', en: 'Hanbit Bridge' } },
       { id: 'oldtown', label: { ko: '구도심 언덕길', en: 'Old-town hill' } },
+      { id: 'underpass', label: { ko: '누리지하차도', en: 'Nuri Underpass' } },
+      { id: 'estate', label: { ko: '아파트 단지 (방지턱)', en: 'Apartment estate (humps)' } },
       { id: 'pass', label: { ko: '한빛재 고갯길', en: 'Hanbit Pass' } },
       { id: 'lake', label: { ko: '은빛호', en: 'Eunbit Lake' } },
       { id: 'town', label: { ko: '솔내읍', en: 'Sollae' } },
