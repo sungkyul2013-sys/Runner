@@ -224,6 +224,7 @@ async function main(): Promise<void> {
     grid.update(viewer.controls.target);
     const frame = physics.update(now);
     mode?.update(dt, frame);
+    menu?.update(dt);
     if (mode?.crash) mode.tools?.update(frame);
     debug.update(frame);
     viewer.render();
@@ -231,7 +232,6 @@ async function main(): Promise<void> {
     if (route === 'bench' && stats && !stats.paused) physicsSamples.push({ stepMs: stats.stepMs, rtf: stats.rtf });
     if (statsOn) hud.update(stats, { frameMs, drawCalls: viewer.drawCalls(), backend: viewer.backend, threads: physics.threads });
   });
-  void menu;
   window.__apex!.ready = true;
 
   if (route === 'golden') await runGolden(physics);

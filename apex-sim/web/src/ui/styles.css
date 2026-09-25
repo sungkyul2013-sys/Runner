@@ -92,33 +92,16 @@ select { width: 100%; }
 }
 
 /* Driving HUD (§18.4) */
-.dash { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; background: rgba(20, 23, 28, 0.82); border: 1px solid var(--border); border-radius: var(--radius-l); backdrop-filter: blur(8px); }
-.dash-rpm { display: flex; align-items: center; gap: 12px; }
-.dash-rpm .bar { position: relative; flex: 1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
-.dash-rpm .bar i { position: absolute; inset: 0 auto 0 0; background: var(--blue); border-radius: 4px; transition: width 60ms linear; }
-.dash-rpm .bar i.hot { background: var(--danger); }
-.dash-rpm .bar em { position: absolute; top: 0; bottom: 0; right: 0; background: rgba(244, 71, 92, 0.25); }
-.dash-rpm-text { font-family: var(--font-num); font-size: 12px; color: var(--text-2); min-width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
-.dash-main { display: flex; align-items: center; gap: 18px; }
-.dash-speedbox { flex: 1; display: flex; align-items: baseline; justify-content: center; gap: 6px; }
-.dash-speed { font-family: var(--font-num); font-size: 44px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
-.dash-speedbox small { color: var(--text-3); font-size: 12px; }
-.dash-gear { font-family: var(--font-num); font-size: 28px; font-weight: 600; color: var(--accent); min-width: 56px; text-align: center; }
-.dash-pedals { display: flex; gap: 6px; height: 44px; }
 .pedal { position: relative; width: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
 .pedal i { position: absolute; left: 0; right: 0; bottom: 0; }
 .pedal.throttle i { background: var(--success); }
 .pedal.brake i { background: var(--danger); }
-.dash-lamps { display: flex; gap: 8px; justify-content: center; }
 .lamp { font-family: var(--font-num); font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); color: var(--text-3); }
 .lamp.on { color: var(--text-2); }
 .lamp.act { color: #140a05; background: var(--warning); border-color: var(--warning); }
 .lamp.off { text-decoration: line-through; }
-.dash-gauges { display: flex; gap: 14px; justify-content: center; font-family: var(--font-num); font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .gauge.bad { color: var(--danger); }
-.dash-warn { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .lamp.warn { color: #fff; background: var(--danger); border-color: var(--danger); }
-.dash-help { color: var(--text-3); font-size: 11px; text-align: center; line-height: 1.5; }
 @media (max-width: 720px) { .dash-help { display: none; } }
 .drivebar { position: fixed; top: 16px; left: 16px; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; background: rgba(20, 23, 28, 0.82); border: 1px solid var(--border); border-radius: var(--radius-m); backdrop-filter: blur(8px); }
 .drivebar b { letter-spacing: 0.08em; font-size: 14px; }

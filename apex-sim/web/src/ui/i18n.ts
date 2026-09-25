@@ -262,6 +262,7 @@ const STRINGS = {
   mapSelect: { ko: '맵 선택', en: 'Choose a map' },
   mapSpawn: { ko: '출발 위치', en: 'Start at' },
   mapStart: { ko: '출발', en: 'Start' },
+  menuHint: { ko: '◀ ▶ 차량 변경 · Enter 자유 주행', en: '◀ ▶ change car · Enter free roam' },
 } satisfies Record<string, Localized>;
 
 export type StringKey = keyof typeof STRINGS;

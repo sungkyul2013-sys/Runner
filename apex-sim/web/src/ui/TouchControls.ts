@@ -23,7 +23,7 @@ export interface TouchState { throttle: number; brake: number; steer: number; ha
 
 export const CONTROL_IDS: readonly ControlId[] = ['steer', 'throttle', 'brake', 'handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause'];
 const STEER_MODES: readonly SteerMode[] = ['buttons', 'wheel', 'tilt', 'slider'];
-export const DEFAULT_TOUCH_LAYOUT: TouchLayout = { steer: 'wheel', size: 1, opacity: 0.85, autoAccelerate: false, haptics: true, showShift: true, positions: {} };
+export const DEFAULT_TOUCH_LAYOUT: TouchLayout = { steer: 'buttons', size: 1, opacity: 0.85, autoAccelerate: false, haptics: true, showShift: true, positions: {} };
 
 const WHEEL_MAX = 2.1; // [rad] ≈ 120° lock to lock / 2
 const AUTO_BRAKE = 0.05; // brake above this cancels auto-acceleration
@@ -128,6 +128,8 @@ const L = {
 // 2 px line icons, 24 × 24, currentColor (static markup only).
 const ICON = {
   left: '<path d="M15 5l-7 7 7 7"/>',
+  gas: '<path d="M6 14l6-6 6 6"/><path d="M6 19l6-6 6 6" opacity=".45"/>',
+  brakeIcon: '<rect x="6" y="6" width="12" height="12" rx="2.5"/>',
   right: '<path d="M9 5l7 7-7 7"/>',
   plus: '<path d="M12 6v12M6 12h12"/>',
   minus: '<path d="M6 12h12"/>',
@@ -207,7 +209,8 @@ export class TouchControls {
       n.setAttribute('aria-label', tl(labels[id]));
       this.nodes[id] = n;
     }
-    const pedal = (id: 'throttle' | 'brake') => this.nodes[id].append(el('i', 'tc-fill'), el('span', 'tc-ridges'), el('b', 'tc-label', tl(labels[id])));
+    const pedal = (id: 'throttle' | 'brake') =>
+      this.nodes[id].append(el('i', 'tc-fill'), el('span', 'tc-ridges'), icon(id === 'throttle' ? ICON.gas : ICON.brakeIcon, 'tc-pic', 24), el('b', 'tc-label', tl(labels[id])));
     pedal('throttle');
     pedal('brake');
     this.nodes.throttle.classList.add('tc-pedal');
@@ -447,6 +450,7 @@ export class TouchControls {
     const n = this.nodes.steer;
     this.builtSteer = this.lay.steer;
     n.className = `tc-c tc-steer tc-${this.lay.steer}`;
+    this.root.dataset.steer = this.lay.steer; // CSS stacks camera/reset above whichever steering control is shown
     this.halves = [];
     this.wheelFace = this.thumb = this.dot = this.hint = this.calBtn = null;
     this.wheelAngle = this.wheelVel = this.slider = 0;

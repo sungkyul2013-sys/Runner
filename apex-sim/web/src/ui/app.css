@@ -150,19 +150,9 @@ button.ghost { background: transparent; color: var(--text-2); align-self: flex-s
 }
 
 /* HUD presets (§18.4): minimal keeps speed, gear and the rev bar. */
-.dash.hud-minimal .dash-pedals, .dash.hud-minimal .dash-lamps, .dash.hud-minimal .dash-gauges, .dash.hud-minimal .dash-help { display: none; }
-.dash.hud-minimal { width: min(360px, calc(100% - 32px)); gap: 8px; }
-.dash .dash-help { display: none; }
 .stats-panel { position: fixed; left: calc(12px + var(--safe-l)); top: calc(12px + var(--topbar-h) + 12px + var(--safe-t)); z-index: 14; }
 .stats-panel.hud { right: auto; }
 @media (max-width: 760px) { .stats-panel { display: none; } }
-body.touch-on .dash { bottom: calc(8px + var(--safe-b)); transform: translateX(-50%) scale(0.86); transform-origin: bottom center; }
-.dash.hud-off { display: none !important; }
-.dash-g { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.dash-g-ring { position: relative; width: 60px; height: 60px; border-radius: 50%; border: 1px solid var(--border); background: radial-gradient(circle, transparent 0 29%, rgba(255,255,255,0.06) 30% 31%, transparent 32%); }
-.dash-g-ring i { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--accent); transition: transform 60ms linear; }
-.dash-g-text { font-family: var(--font-num); font-size: 0.72rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.dash.hud-minimal .dash-g { display: none; }
 
 /* ---- crash lab: floating launch button, scrollable tables ---- */
 .fab { position: fixed; z-index: 16; right: calc(16px + var(--safe-r)); bottom: calc(20px + var(--safe-b)); min-height: 56px; padding: 0 24px; border-radius: 28px; font-size: 1.07rem; font-weight: 600; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); animation: rise 300ms var(--ease); }
@@ -250,8 +240,6 @@ body.touch-on .minimap { left: calc(12px + var(--safe-l)); right: auto; top: cal
 @media (max-width: 760px) { .loading-screen { padding: calc(24px + var(--safe-t)) 20px calc(32px + var(--safe-b)); } .ls-brand { left: 20px; } }
 
 /* Touch driving (§15.4): the dashboard shrinks to speed, gear and revs between the steering and the pedals. */
-body.touch-on .dash { width: min(300px, 36vw); padding: 8px 12px; gap: 4px; }
-body.touch-on .dash .dash-gauges, body.touch-on .dash .dash-lamps, body.touch-on .dash .dash-pedals, body.touch-on .dash .dash-g, body.touch-on .dash .dash-help { display: none; }
 @media (max-width: 760px) {
   .map-select { padding: 16px; gap: 12px; }
   .ms-maps { grid-template-columns: 1fr; gap: 8px; }
@@ -259,9 +247,76 @@ body.touch-on .dash .dash-gauges, body.touch-on .dash .dash-lamps, body.touch-on
   .map-select > button.wide { position: sticky; bottom: 0; box-shadow: 0 -8px 16px var(--surface); }
 }
 
-/* The sheet button only on landscape phones, where the closed sheet hides entirely. */
+/* The sheet button on landscape phones and wherever the touch pads are up: the closed sheet hides entirely there,
+   so its peek never covers the pads. */
 .sheet-open-btn { display: none; }
+body.touch-on .sheet-open-btn { display: grid; }
+body.touch-on .sheet:not(.open) { display: none; }
 @media (max-height: 520px) and (orientation: landscape) {
   .sheet-open-btn { display: grid; }
   .sheet:not(.open) { display: none; }
 }
+
+/* ---- driving gauge (§18.4): speed digits in a rev arc; bottom right on wide screens ---- */
+.dash { --g: 210px; position: fixed; z-index: 12; right: calc(24px + var(--safe-r)); bottom: calc(20px + var(--safe-b)); width: var(--g); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; animation: gaugeIn 500ms var(--ease) both; }
+@keyframes gaugeIn { from { opacity: 0; transform: translateY(16px) scale(0.92); } }
+.dash-dial { position: relative; width: var(--g); height: var(--g); border-radius: 50%; background: radial-gradient(circle at 50% 42%, rgba(28, 32, 39, 0.78), rgba(11, 13, 16, 0.86) 70%); backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+.dash-arc { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.dash-arc circle { fill: none; stroke-width: 4.2; stroke-linecap: round; }
+.dash-arc .arc-bg { stroke: rgba(255, 255, 255, 0.08); }
+.dash-arc .arc-red { stroke: rgba(244, 71, 92, 0.55); stroke-linecap: butt; }
+.dash-arc .arc-fill { stroke: var(--accent); filter: drop-shadow(0 0 2px color-mix(in srgb, var(--accent) 70%, transparent)); }
+.dash-arc .tick { stroke: rgba(242, 244, 247, 0.55); stroke-width: 0.8; }
+.dash-arc .tick.red { stroke: var(--danger); }
+.dash-arc .tick-num { fill: var(--text-2); font: 600 6px var(--font-num); text-anchor: middle; }
+.dash.shift .arc-fill { stroke: var(--danger); animation: shiftPulse 180ms ease-in-out infinite alternate; }
+@keyframes shiftPulse { to { filter: drop-shadow(0 0 5px var(--danger)); } }
+.dash-face { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.dash-speed { font-family: var(--font-num); font-size: calc(var(--g) * 0.25); font-weight: 700; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--text); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); }
+.dash-unit { color: var(--text-3); font-size: calc(var(--g) * 0.065); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+.dash-rpm-text { position: absolute; bottom: 15%; font-family: var(--font-num); font-size: calc(var(--g) * 0.058); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.dash-warn { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 320px; }
+.dash-warn .lamp { font-family: var(--font-num); font-size: 11px; padding: 3px 8px; border-radius: 6px; background: rgba(244, 71, 92, 0.9); color: #fff; animation: rise 200ms var(--ease); }
+.dash.hud-off { display: none !important; }
+.dash.hud-minimal .dash-arc, .dash.hud-minimal .dash-rpm-text { display: none; }
+.dash.hud-minimal .dash-dial { background: transparent; box-shadow: none; backdrop-filter: none; }
+@media (max-width: 760px), (max-height: 520px) { .dash { --g: 150px; right: calc(12px + var(--safe-r)); bottom: calc(12px + var(--safe-b)); } }
+/* Touch driving: centred between the steering pads and the pedals (landscape), above the controls (portrait). */
+body.touch-on .dash { --g: 132px; right: auto; left: 50%; transform: translateX(-50%); bottom: calc(10px + var(--safe-b)); animation: none; }
+/* portrait: top right, opposite the minimap, so the car and the pads stay clear */
+@media (orientation: portrait) { body.touch-on .dash { --g: 112px; left: auto; right: calc(12px + var(--safe-r)); transform: none; top: calc(12px + var(--topbar-h) + 10px + var(--safe-t)); bottom: auto; } }
+
+/* ---- main menu motion (§18.1 시네마틱): brand reveal, staggered cards with a light sweep, car card swap ---- */
+.mm-brand { animation: brandIn 900ms var(--ease) both; text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6); }
+@keyframes brandIn { from { opacity: 0; letter-spacing: 0.45em; filter: blur(10px); } }
+.mm-brand span { display: inline-block; animation: caret 1.2s steps(1) 900ms 3; }
+@keyframes caret { 50% { opacity: 0; } }
+.mm-tagline { animation: rise 600ms var(--ease) 250ms both; }
+.mm-car { animation: rise 600ms var(--ease) 380ms both; }
+.mm-car-row b.swap { animation: nameIn 450ms var(--ease); }
+@keyframes nameIn { from { opacity: 0; transform: translateX(-14px); } }
+.mm-specs div { position: relative; padding-bottom: 8px; }
+.mm-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; border-radius: 2px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.mm-bar::after { content: ''; position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--v)); background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 50%, #fff)); animation: barIn 800ms var(--ease) both; }
+@keyframes barIn { from { transform: scaleX(0); } }
+.mm-cards .mm-card { position: relative; overflow: hidden; animation: cardIn 520ms var(--ease) both; transition: transform 220ms var(--ease), border-color 220ms var(--ease), box-shadow 220ms var(--ease); }
+.mm-cards .mm-card:nth-child(1) { animation-delay: 300ms; }
+.mm-cards .mm-card:nth-child(2) { animation-delay: 370ms; }
+.mm-cards .mm-card:nth-child(3) { animation-delay: 440ms; }
+.mm-cards .mm-card:nth-child(4) { animation-delay: 510ms; }
+.mm-cards .mm-card:nth-child(5) { animation-delay: 580ms; }
+.mm-cards .mm-card:nth-child(6) { animation-delay: 650ms; }
+@keyframes cardIn { from { opacity: 0; transform: translateX(48px); } }
+.mm-card::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.16) 50%, transparent 65%); transform: translateX(-120%); pointer-events: none; }
+.mm-card:hover::after, .mm-card:focus-visible::after { animation: sweep 700ms var(--ease); }
+@keyframes sweep { to { transform: translateX(120%); } }
+.mm-card:hover, .mm-card:focus-visible { transform: translateX(-6px) scale(1.015); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.12); }
+.mm-card:hover .icon { color: var(--accent); }
+.mm-card.primary { background: linear-gradient(110deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #ffb38a) 50%, var(--accent)); background-size: 220% 100%; animation: cardIn 520ms var(--ease) 300ms both, glowShift 5s ease-in-out 1s infinite; box-shadow: 0 10px 36px color-mix(in srgb, var(--accent) 40%, transparent); }
+@keyframes glowShift { 50% { background-position: 100% 0; } }
+.mm-card .go { transition: transform 220ms var(--ease); }
+.mm-card:hover .go { transform: translateX(4px); }
+.mm-foot { align-items: center; }
+.mm-hint { color: var(--text-3); font-size: 0.78rem; margin-right: 8px; }
+@media (max-width: 900px) { .mm-hint { display: none; } }
+@media (prefers-reduced-motion: reduce) { .mm-brand, .mm-card, .mm-car, .mm-tagline, .mm-bar::after { animation: none !important; } }

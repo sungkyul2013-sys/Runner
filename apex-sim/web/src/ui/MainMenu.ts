@@ -3,6 +3,7 @@
 // primary action). "Continue" returns to the last mode played.
 import * as THREE from 'three/webgpu';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { abs, color, dot, fract, length, mix, normalWorld, positionWorld, sin, smoothstep, time, vec2 } from 'three/tsl';
 import { SHOWROOM, showroomCar } from '../app/presets';
 import type { Viewer } from '../render/Viewer';
 import { loadVehicleModel, type VehicleModel } from '../vehicles/VehicleModel';
@@ -65,11 +66,17 @@ export class MainMenu {
     const gear = el('button', 'icon-btn', icon('settings'));
     gear.ariaLabel = t('menuSettings');
     gear.onclick = () => this.actions.settings();
-    this.foot.append(gear);
+    this.foot.append(el('span', 'mm-hint', t('menuHint')), gear);
     this.root.append(hero, cards);
     document.body.append(this.root, this.foot);
     this.setupStage();
     this.select(0);
+    window.addEventListener('keydown', (e) => {
+      if (!this.root.isConnected || document.querySelector('.overlay-layer')) return;
+      if (e.key === 'ArrowLeft') prev.click();
+      else if (e.key === 'ArrowRight') next.click();
+      else if (e.key === 'Enter') (cards.querySelector('.mm-card.primary') as HTMLButtonElement | null)?.click();
+    });
   }
 
   private card(mode: AppMode, name: IconName, title: StringKey, desc: StringKey, primary: boolean): HTMLButtonElement {
@@ -88,13 +95,31 @@ export class MainMenu {
     const s = c.specs;
     this.specs.replaceChildren(...(s
       ? ([
-        ['specPower', `${s.powerKw} kW · ${Math.round(s.powerKw * 1.35962)} PS`],
-        ['specTorque', `${s.torqueNm} N·m`],
-        ['specWeight', `${s.massKg.toLocaleString('en-US')} kg`],
-        ['specDrive', s.drive],
-        ['specAccel', `${s.zeroTo100.toFixed(1)} s`],
-      ] as Array<[StringKey, string]>).map(([k, v]) => el('div', '', el('small', '', t(k)), el('span', '', v)))
+        ['specPower', s.powerKw, (x: number) => `${Math.round(x)} kW · ${Math.round(x * 1.35962)} PS`, s.powerKw / 400],
+        ['specTorque', s.torqueNm, (x: number) => `${Math.round(x)} N·m`, s.torqueNm / 900],
+        ['specWeight', s.massKg, (x: number) => `${Math.round(x).toLocaleString('en-US')} kg`, s.massKg / 3000],
+        ['specDrive', 0, () => s.drive, 1],
+        ['specAccel', s.zeroTo100, (x: number) => `${x.toFixed(1)} s`, 3 / s.zeroTo100],
+      ] as Array<[StringKey, number, (x: number) => string, number]>).map(([k, value, fmt, bar]) => {
+        const out = el('span', '', fmt(value));
+        const meter = el('i', 'mm-bar');
+        meter.style.setProperty('--v', String(Math.min(Math.max(bar, 0.05), 1)));
+        // Count up from zero (the Forza card feel).
+        if (value > 0 && !settings.get().reduceMotion) {
+          const t0 = performance.now();
+          const tick = () => {
+            const f = Math.min(1, (performance.now() - t0) / 700);
+            out.textContent = fmt(value * (1 - Math.pow(1 - f, 3)));
+            if (f < 1) requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }
+        return el('div', '', el('small', '', t(k)), out, meter);
+      })
       : []));
+    this.carName.classList.remove('swap');
+    void this.carName.offsetWidth;
+    this.carName.classList.add('swap');
     this.note.textContent = c.drive ? '' : t('visualOnly');
     void this.showModel(c.model ?? null);
   }
@@ -103,38 +128,138 @@ export class MainMenu {
     const v = this.viewer;
     const pmrem = new THREE.PMREMGenerator(v.renderer);
     v.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    // Plinth: a dark disc with a soft rim light, the car turning on it.
+    v.scene.background = new THREE.Color(0x07090c);
+    v.scene.fog = new THREE.Fog(0x07090c, 14, 34);
+    // Studio: a haze backdrop (a warm-to-cold glow behind the car), a glossy floor that mirrors the car and the
+    // lights, faint concentric rings on it, the plinth with its accent ring.
+    const back = new THREE.Mesh(new THREE.SphereGeometry(30, 48, 24), new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide, fog: false }));
+    const dir = normalWorld.negate();
+    (back.material as THREE.MeshBasicNodeMaterial).colorNode = mix(
+      mix(color(0x07090c), color(0x151b26), smoothstep(-0.05, 0.25, dir.y).oneMinus()),
+      color(0x2a1a14),
+      smoothstep(0.55, 1.0, dot(dir.xz.normalize(), vec2(-0.7, -0.7))).mul(smoothstep(0.35, 0.0, abs(dir.y))).mul(0.6),
+    );
+    const floorMat = new THREE.MeshStandardNodeMaterial({ roughness: 0.14, metalness: 0.65 });
+    const r = length(positionWorld.xz);
+    const rings = smoothstep(0.03, 0.0, abs(fract(r.div(1.2)).sub(0.5))).mul(smoothstep(4.2, 5.5, r)).mul(smoothstep(22, 8, r));
+    floorMat.colorNode = mix(color(0x0b0d11), color(0x1d232d), rings.mul(0.8));
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 96).rotateX(-Math.PI / 2), floorMat);
+    floor.position.y = -0.085;
+    floor.receiveShadow = true;
     const plinth = new THREE.Mesh(
-      new THREE.CylinderGeometry(3.4, 3.5, 0.08, 96),
-      new THREE.MeshStandardNodeMaterial({ color: 0x15181d, roughness: 0.35, metalness: 0.2 }),
+      new THREE.CylinderGeometry(3.4, 3.55, 0.08, 128),
+      new THREE.MeshStandardNodeMaterial({ color: 0x14171c, roughness: 0.22, metalness: 0.5 }),
     );
     plinth.position.y = -0.04;
     plinth.receiveShadow = true;
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(3.45, 0.012, 8, 160), new THREE.MeshBasicNodeMaterial({ color: 0xff6b2c }));
+    const ringMat = new THREE.MeshBasicNodeMaterial({ color: 0xff6b2c });
+    ringMat.colorNode = color(0xff6b2c).mul(sin(time.mul(1.6)).mul(0.25).add(1.35));
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(3.47, 0.014, 8, 200), ringMat);
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.005;
-    this.stage.add(plinth, ring);
+    // Lights: a key light with shadows, orange and blue rim spots behind, a soft top light.
+    const key = new THREE.SpotLight(0xffffff, 160, 30, 0.55, 0.6, 1.6);
+    key.position.set(4, 7, 6);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    const rimA = new THREE.SpotLight(0xff7a3a, 240, 30, 0.5, 0.7, 1.4);
+    rimA.position.set(-6, 3.2, -5);
+    const rimB = new THREE.SpotLight(0x3d8bff, 200, 30, 0.5, 0.7, 1.4);
+    rimB.position.set(6, 3.0, -5.5);
+    for (const l of [key, rimA, rimB]) {
+      l.target.position.set(0, 0.5, 0);
+      this.stage.add(l, l.target);
+    }
+    // Overhead strip lights (seen in the paint and the floor).
+    const stripMat = new THREE.MeshBasicNodeMaterial({ color: 0xffffff, fog: false });
+    for (const x of [-1.6, 0, 1.6]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 5.5), stripMat);
+      strip.position.set(x, 5.2, 0);
+      this.stage.add(strip);
+    }
+    this.stage.add(back, floor, plinth, ring);
     v.scene.add(this.stage);
+    v.hemi.intensity = 0.25;
+    v.sun.intensity = 0.4;
     v.freeMove = false;
     v.controls.target.set(0, 0.6, 0);
-    v.camera.position.set(5.2, 1.6, 5.6);
-    v.controls.autoRotate = !settings.get().reduceMotion;
-    v.controls.autoRotateSpeed = 0.55;
+    v.controls.autoRotate = false;
+    v.controls.autoRotateSpeed = 0.5;
     v.controls.minDistance = 3.5;
     v.controls.maxDistance = 12;
+    v.controls.maxPolarAngle = Math.PI * 0.49;
+    // Cinematic intro: a low sweep from the side up to the resting three-quarter view.
+    this.intro = settings.get().reduceMotion ? 1 : 0;
+    this.placeIntroCamera(this.intro);
+    window.addEventListener('pointermove', (e) => {
+      this.parallax.set(e.clientX / window.innerWidth - 0.5, e.clientY / window.innerHeight - 0.5);
+    });
   }
+
+  private readonly parallax = new THREE.Vector2();
+  private intro = 0;
+
+  private placeIntroCamera(t: number): void {
+    const e = 1 - Math.pow(1 - Math.min(t, 1), 3);
+    const a = THREE.MathUtils.lerp(-0.2, 0.75, e);
+    const d = THREE.MathUtils.lerp(4.6, 7.6, e);
+    const y = THREE.MathUtils.lerp(0.35, 1.55, e);
+    this.viewer.camera.position.set(Math.sin(a) * d, y, Math.cos(a) * d);
+    this.viewer.controls.target.set(0, THREE.MathUtils.lerp(0.45, 0.6, e), 0);
+  }
+
+  /** Per frame: the intro sweep, the slow turntable and the car-change animation. */
+  update(dt: number): void {
+    if (this.intro < 1) {
+      this.intro = Math.min(1, this.intro + dt / 2.4);
+      this.placeIntroCamera(this.intro);
+      if (this.intro >= 1) this.viewer.controls.autoRotate = !settings.get().reduceMotion;
+    }
+    // The car arrives spinning a quarter turn and settling; the old one leaves the same way.
+    if (this.model) {
+      this.swap = Math.min(1, this.swap + dt / 0.9);
+      const e = 1 - Math.pow(1 - this.swap, 3);
+      this.model.root.rotation.y = (1 - e) * -1.2;
+      this.model.root.scale.setScalar(0.86 + 0.14 * e);
+      this.model.root.position.y = (1 - e) * 0.25;
+    }
+    if (this.leaving) {
+      this.leaveT += dt / 0.4;
+      this.leaving.root.rotation.y += dt * 4;
+      this.leaving.root.scale.setScalar(Math.max(0.01, 1 - this.leaveT));
+      if (this.leaveT >= 1) {
+        this.stage.remove(this.leaving.root);
+        this.leaving = null;
+      }
+    }
+    // Mouse parallax on the target (subtle).
+    const tgt = this.viewer.controls.target;
+    tgt.x += (this.parallax.x * 0.35 - tgt.x) * Math.min(1, dt * 2);
+    tgt.y += (0.6 - this.parallax.y * 0.2 - tgt.y) * Math.min(1, dt * 2);
+  }
+
+  private swap = 1;
+  private leaving: VehicleModel | null = null;
+  private leaveT = 0;
 
   private async showModel(url: string | null): Promise<void> {
     const ticket = ++this.loading;
     if (!url) return;
     const model = await loadVehicleModel(url).catch(() => null);
     if (!model || ticket !== this.loading) return;
-    if (this.model) this.stage.remove(this.model.root);
+    if (this.model) {
+      if (this.leaving) this.stage.remove(this.leaving.root);
+      this.leaving = this.model;
+      this.leaveT = 0;
+    }
     this.model = model;
+    model.root.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+    this.swap = this.intro < 1 ? 1 : 0;
     this.stage.add(model.root);
   }
 
   dispose(): void {
+    this.viewer.scene.fog = null;
     this.root.remove();
     this.foot.remove();
     this.stage.removeFromParent();
