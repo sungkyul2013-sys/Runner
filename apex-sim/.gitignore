@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+dist-artifact/
+.cache/
+.emsdk/
+web/public/wasm/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/

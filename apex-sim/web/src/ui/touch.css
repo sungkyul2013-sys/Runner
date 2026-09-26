@@ -1,0 +1,136 @@
+/* Touch driving controls (§15.4). Left thumb: steering (slider bar by default, or pads / wheel / tilt). Right thumb:
+   two blade pedals — a tall narrow throttle and a broad brake — with the handbrake and gear paddles above them. Camera
+   and reset are small rings above the steering. --s scales every control (0.75 … 1.5), --ps the pedals on top of it
+   (0.7 … 1.6), --o is their opacity. Touch targets never under 44 px; safe areas kept. */
+.tc { position: fixed; inset: 0; z-index: 12; pointer-events: none; --s: 1; --ps: 1; --o: 0.9;
+  --pad-b: calc(14px + env(safe-area-inset-bottom, 0px)); --pad-l: calc(16px + env(safe-area-inset-left, 0px)); --pad-r: calc(16px + env(safe-area-inset-right, 0px));
+  --gas-w: calc(74px * var(--s) * var(--ps)); --gas-h: calc(168px * var(--s) * var(--ps));
+  --brk-w: calc(96px * var(--s) * var(--ps)); --brk-h: calc(128px * var(--s) * var(--ps)); --gap: calc(12px * var(--s));
+  --glass: linear-gradient(180deg, rgba(34, 40, 50, 0.72), rgba(12, 15, 20, 0.78)); --edge: rgba(255, 255, 255, 0.13); }
+.tc-c {
+  position: absolute; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  opacity: var(--o); color: var(--text); display: grid; place-items: center; border-radius: calc(18px * var(--s));
+  background: var(--glass); border: 1px solid var(--edge); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 10px 24px rgba(0, 0, 0, 0.34);
+  transition: transform 110ms var(--ease), border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+.tc-c.on { transform: scale(0.96); border-color: var(--accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent); }
+.tc-ic { width: calc(24px * var(--s)); height: calc(24px * var(--s)); display: grid; }
+.tc-ic svg { width: 100%; height: 100%; }
+.tc-grip { display: none; position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; color: var(--text-3); }
+.tc-grip svg { width: 100%; height: 100%; }
+
+/* ---- steering ---- */
+.tc-steer { left: var(--pad-l); bottom: var(--pad-b); }
+/* slider bar (default): a pill track, a fill from the centre to the knob, the knob springs home on release */
+.tc-slider { width: calc(300px * var(--s)); height: calc(72px * var(--s)); border-radius: 999px; display: flex; align-items: center; justify-content: space-between; padding: 0 calc(14px * var(--s)); overflow: hidden; }
+.tc-slider.on { transform: none; }
+.tc-track { position: absolute; left: calc(40px * var(--s)); right: calc(40px * var(--s)); top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); }
+.tc-sfill { position: absolute; left: 50%; top: 0; bottom: 0; width: 50%; border-radius: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 35%, transparent), var(--accent)); transform-origin: left center; transform: scaleX(var(--sv, 0)); }
+.tc-slider:not(.drag) .tc-sfill { transition: transform 220ms var(--ease); }
+.tc-end { color: var(--text-3); position: relative; }
+.tc-end svg { stroke-width: 2.4; }
+.tc-mid { position: absolute; left: 50%; top: 22%; bottom: 22%; width: 2px; margin-left: -1px; background: rgba(255, 255, 255, 0.16); border-radius: 1px; }
+.tc-thumb {
+  position: absolute; left: 50%; top: 50%; width: calc(56px * var(--s)); height: calc(56px * var(--s)); margin: calc(-28px * var(--s)) 0 0 calc(-28px * var(--s));
+  border-radius: 50%; display: flex; align-items: center; justify-content: center; gap: calc(4px * var(--s));
+  background: radial-gradient(circle at 50% 35%, #3a4250, #1a1f27 72%); border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18); transition: transform 220ms var(--ease), border-color 150ms var(--ease);
+}
+.tc-thumb i { width: 2px; height: 36%; border-radius: 1px; background: rgba(255, 255, 255, 0.35); }
+.tc-slider.drag .tc-thumb { transition: none; border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent), 0 6px 16px rgba(0, 0, 0, 0.45); }
+/* pads ◀ ▶ (one touch zone, the thumb can slide across) */
+.tc-buttons { width: calc(200px * var(--s)); height: calc(92px * var(--s)); display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); padding: 0; background: transparent; border: none; box-shadow: none; backdrop-filter: none; }
+.tc-buttons.on { transform: none; box-shadow: none; }
+.tc-half { width: 100%; height: 100%; display: grid; place-items: center; border-radius: calc(20px * var(--s)); color: var(--text-2);
+  background: var(--glass); backdrop-filter: blur(12px); border: 1px solid var(--edge); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 10px 24px rgba(0, 0, 0, 0.34);
+  transition: transform 110ms var(--ease), border-color 150ms var(--ease), color 150ms var(--ease); }
+.tc-half svg { width: calc(40px * var(--s)); height: calc(40px * var(--s)); stroke-width: 2.6; }
+.tc-half.on { transform: scale(0.95); color: var(--accent); border-color: var(--accent); }
+/* wheel */
+.tc-wheel { width: calc(164px * var(--s)); height: calc(164px * var(--s)); border-radius: 50%; }
+.tc-face { width: 88%; height: 88%; display: grid; color: var(--text-2); will-change: transform; }
+.tc-face svg { width: 100%; height: 100%; stroke-width: 5; }
+.tc-face .tc-tick { stroke: var(--accent); stroke-width: 7; }
+.tc-wheel.on .tc-face { color: var(--text); }
+/* tilt */
+.tc-tilt { width: calc(220px * var(--s)); height: calc(92px * var(--s)); display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 10px 14px; }
+.tc-gauge { position: relative; width: 100%; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); }
+.tc-dot { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--accent); transition: transform 60ms linear; }
+.tc-hint { color: var(--text-2); font-size: 0.75rem; text-align: center; }
+.tc-cal { align-self: center; font-size: 0.8rem; color: var(--text-2); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-raised); }
+
+/* ---- pedals: blades with a grooved face; the fill rises with the pressure ---- */
+.tc-pedal { bottom: var(--pad-b); overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; padding-bottom: calc(12px * var(--s));
+  border-radius: calc(26px * var(--s) * var(--ps)) calc(26px * var(--s) * var(--ps)) calc(14px * var(--s)) calc(14px * var(--s)); }
+.tc-throttle { right: var(--pad-r); width: var(--gas-w); height: var(--gas-h); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.tc-brake { right: calc(var(--pad-r) + var(--gas-w) + var(--gap)); width: var(--brk-w); height: var(--brk-h); border-color: rgba(244, 71, 92, 0.4); }
+.tc-fill { position: absolute; inset: 0; transform-origin: bottom; transform: scaleY(0); transition: transform 50ms linear; }
+.tc-throttle .tc-fill { background: linear-gradient(0deg, color-mix(in srgb, var(--accent) 65%, transparent), color-mix(in srgb, var(--accent) 12%, transparent)); }
+.tc-brake .tc-fill { background: linear-gradient(0deg, rgba(244, 71, 92, 0.65), rgba(244, 71, 92, 0.12)); }
+.tc-ridges { position: absolute; inset: 14% 22% 34%; border-radius: 8px; background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.1) 0 3px, transparent 3px 10px); mask: linear-gradient(0deg, transparent, #000 20%, #000 80%, transparent); }
+.tc-pic { position: relative; width: calc(24px * var(--s) * var(--ps)); height: calc(24px * var(--s) * var(--ps)); display: grid; }
+.tc-pic svg { width: 100%; height: 100%; stroke-width: 2.6; }
+.tc-throttle .tc-pic { color: var(--accent); }
+.tc-brake .tc-pic { color: #ff8a98; }
+.tc-label { position: relative; font-size: calc(0.7rem * var(--s)); font-weight: 700; letter-spacing: 0.1em; color: var(--text); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
+.tc-pedal.on { transform: scale(0.97) translateY(2px); }
+.tc-throttle.on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent), 0 0 30px color-mix(in srgb, var(--accent) 45%, transparent); }
+.tc-brake.on { border-color: #f4475c; box-shadow: 0 0 0 3px rgba(244, 71, 92, 0.26), 0 0 28px rgba(244, 71, 92, 0.42); }
+
+/* ---- buttons ---- */
+.tc { --steer-h: calc(72px * var(--s)); --steer-w: calc(300px * var(--s)); --small: calc(46px * var(--s)); }
+.tc[data-steer='buttons'] { --steer-h: calc(92px * var(--s)); --steer-w: calc(200px * var(--s)); }
+.tc[data-steer='wheel'] { --steer-h: calc(164px * var(--s)); --steer-w: calc(164px * var(--s)); }
+.tc[data-steer='tilt'] { --steer-h: calc(92px * var(--s)); --steer-w: calc(220px * var(--s)); }
+.tc-btn { width: calc(56px * var(--s)); height: calc(48px * var(--s)); border-radius: 999px; }
+.tc-handbrake { right: calc(var(--pad-r) + var(--gas-w) + var(--gap)); bottom: calc(var(--pad-b) + var(--brk-h) + var(--gap)); width: var(--brk-w); }
+.tc-shiftUp, .tc-shiftDown { width: calc(var(--gas-w)); height: calc(40px * var(--s)); right: var(--pad-r); }
+.tc-shiftUp { bottom: calc(var(--pad-b) + var(--gas-h) + var(--gap) + calc(40px * var(--s)) + 6px); }
+.tc-shiftDown { bottom: calc(var(--pad-b) + var(--gas-h) + var(--gap)); }
+.tc-small { width: var(--small); height: var(--small); border-radius: 50%; }
+.tc-small .tc-ic { width: calc(20px * var(--s)); height: calc(20px * var(--s)); }
+.tc-camera { left: var(--pad-l); bottom: calc(var(--pad-b) + var(--steer-h) + var(--gap)); }
+.tc-reset { left: calc(var(--pad-l) + var(--small) + var(--gap)); bottom: calc(var(--pad-b) + var(--steer-h) + var(--gap)); }
+.tc[data-steer='wheel'] .tc-camera, .tc[data-steer='wheel'] .tc-reset { left: calc(var(--pad-l) + var(--steer-w) + var(--gap)); }
+.tc[data-steer='wheel'] .tc-camera { bottom: calc(var(--pad-b) + var(--small) + var(--gap)); }
+.tc[data-steer='wheel'] .tc-reset { bottom: var(--pad-b); }
+.tc-pause { display: none; } /* the top bar has the menu */
+
+/* landscape phones: a slider that leaves the centre to the gauge */
+@media (max-height: 520px) and (orientation: landscape) {
+  .tc { --pad-b: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .tc-slider { width: min(calc(300px * var(--s)), calc(50vw - 150px)); }
+  .tc { --steer-w: min(calc(300px * var(--s)), calc(50vw - 150px)); }
+}
+/* portrait: the pedals in the right thumb's corner, the round gauge at the bottom centre, and the steering ABOVE the
+   gauge's line — a wide bar from the left edge to the pedals (two and a half times the travel of a bar squeezed
+   beside the gauge: finer steering), camera and reset in the corner the bar left free */
+@media (orientation: portrait) {
+  .tc { --gap: calc(6px * var(--s));
+    --gas-w: calc(54px * var(--s) * var(--ps)); --gas-h: calc(136px * var(--s) * var(--ps));
+    --brk-w: calc(60px * var(--s) * var(--ps)); --brk-h: calc(100px * var(--s) * var(--ps));
+    --pad-b: calc(18px + env(safe-area-inset-bottom, 0px)); --pad-l: calc(10px + env(safe-area-inset-left, 0px)); --pad-r: calc(10px + env(safe-area-inset-right, 0px));
+    /* the gauge shows ≈ 0.8 of its --g (min(37vw, 190px)) above the edge */
+    --steer-b: calc(min(37vw, 190px) * 0.8 + 16px + env(safe-area-inset-bottom, 0px));
+    --steer-w: calc(100vw - var(--pad-l) - var(--pad-r) - var(--gas-w) - var(--brk-w) - 3 * var(--gap));
+    --steer-h: calc(64px * var(--s)); }
+  .tc-label { font-size: calc(0.62rem * var(--s)); letter-spacing: 0.02em; }
+  .tc-handbrake, .tc-shiftUp, .tc-shiftDown { height: calc(40px * var(--s)); }
+  .tc-steer { bottom: var(--steer-b); }
+  .tc-slider { width: var(--steer-w); height: var(--steer-h); }
+  .tc-thumb { width: calc(52px * var(--s)); height: calc(52px * var(--s)); margin: calc(-26px * var(--s)) 0 0 calc(-26px * var(--s)); }
+  .tc[data-steer='buttons'] { --steer-h: calc(84px * var(--s)); }
+  .tc-buttons { width: var(--steer-w); height: calc(84px * var(--s)); }
+  .tc[data-steer='wheel'] { --steer-h: min(var(--steer-w), calc(164px * var(--s))); }
+  .tc-wheel { width: var(--steer-h); height: var(--steer-h); }
+  .tc-tilt { width: var(--steer-w); }
+  /* camera and reset: the bottom-left corner, beside the gauge */
+  .tc-camera, .tc[data-steer='wheel'] .tc-camera { left: var(--pad-l); bottom: var(--pad-b); }
+  .tc-reset, .tc[data-steer='wheel'] .tc-reset { left: calc(var(--pad-l) + var(--small) + var(--gap)); bottom: var(--pad-b); }
+}
+
+/* layout editing: every control shows its outline and grip and can be dragged */
+.tc.editing .tc-c { outline: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 3px; opacity: 1; }
+.tc.editing .tc-grip { display: block; }
+@media (prefers-reduced-motion: reduce) { .tc-c, .tc-half, .tc-thumb, .tc-sfill { transition: none; } }

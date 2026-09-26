@@ -1,0 +1,78 @@
+/* Driving gauge (§18.4). Landscape: a half dial at the bottom centre — the rev arc over big speed digits, the gear to
+   the right, pedal bars along the flat base. Portrait: a round dial rising from the bottom edge (its foot hidden).
+   One face is shown at a time; --g is the dial width. */
+.dash {
+  --g: 320px; position: fixed; z-index: 12; left: 50%; bottom: calc(6px + var(--safe-b)); transform: translateX(-50%);
+  width: var(--g); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; animation: gaugeIn 500ms var(--ease) both;
+}
+@keyframes gaugeIn { from { opacity: 0; transform: translateX(-50%) translateY(16px); } }
+.dash-dial { position: relative; width: var(--g); aspect-ratio: 320 / 176; }
+.dash-dial::before {
+  content: ''; position: absolute; inset: 0; border-radius: calc(var(--g) / 2) calc(var(--g) / 2) 22px 22px;
+  background: radial-gradient(120% 100% at 50% 100%, rgba(12, 15, 20, 0.9), rgba(12, 15, 20, 0.62) 62%, rgba(12, 15, 20, 0.35));
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.dash-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.dash-svg.round { display: none; }
+.dash-svg path { fill: none; stroke-linecap: round; }
+.dash-svg .arc-bg { stroke: rgba(255, 255, 255, 0.08); stroke-width: 9; }
+.dash-svg .arc-red { stroke: rgba(244, 71, 92, 0.5); stroke-width: 9; stroke-linecap: butt; }
+.dash-svg .arc-fill { stroke: var(--accent); stroke-width: 9; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 70%, transparent)); transition: stroke 120ms linear; }
+.dash-svg .tick { stroke: rgba(242, 244, 247, 0.5); stroke-width: 1.6; }
+.dash-svg .tick.red { stroke: var(--danger); }
+.dash-svg .tick-num { fill: var(--text-2); font: 600 12px var(--font-num); text-anchor: middle; }
+.dash.shift .arc-fill { stroke: var(--danger); animation: shiftPulse 160ms ease-in-out infinite alternate; }
+@keyframes shiftPulse { to { opacity: 0.45; } }
+
+.dash-face { position: absolute; left: 0; right: 0; bottom: 20%; display: flex; flex-direction: column; align-items: center; }
+.dash-speed { font-family: var(--font-num); font-size: calc(var(--g) * 0.2); font-weight: 700; line-height: 0.95; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; color: var(--text); text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55); }
+.dash-unit { color: var(--text-3); font-size: calc(var(--g) * 0.036); letter-spacing: 0.16em; text-transform: uppercase; margin-top: 2px; }
+.dash-gear {
+  position: absolute; right: 22%; bottom: 26%; min-width: calc(var(--g) * 0.1); height: calc(var(--g) * 0.1); display: grid; place-items: center; padding: 0 6px;
+  font: 700 calc(var(--g) * 0.066) var(--font-num); color: var(--text); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.05);
+  transition: border-color 150ms var(--ease), color 150ms var(--ease);
+}
+.dash-gear.shifting { border-color: var(--accent); color: var(--accent); }
+.dash-rpm-text { position: absolute; left: 22%; bottom: 29%; font: 600 calc(var(--g) * 0.04) var(--font-num); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.dash-rpm-text::after { content: ' rpm'; color: var(--text-3); font-size: 0.8em; }
+.dash-tags { position: absolute; left: 0; right: 0; bottom: 8.5%; display: flex; justify-content: center; gap: 6px; }
+.dash-tags i { font: 700 calc(var(--g) * 0.03) var(--font-num); font-style: normal; letter-spacing: 0.06em; padding: 1px 6px; border-radius: 5px; color: var(--text-3); border: 1px solid rgba(255, 255, 255, 0.08); }
+.dash-tags i.on { color: var(--text-2); border-color: rgba(255, 255, 255, 0.18); }
+.dash-tags i.act { color: #1a1204; background: var(--warning); border-color: var(--warning); }
+/* pedal bars along the flat base: brake grows to the left, throttle to the right */
+.dash-pedals { position: absolute; left: 9%; right: 9%; bottom: 3.5%; height: 4px; }
+.dash-pedals i { position: absolute; top: 0; bottom: 0; width: 50%; border-radius: 2px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.dash-pedals i::after { content: ''; position: absolute; top: 0; bottom: 0; width: 100%; transform: scaleX(var(--v, 0)); transition: transform 60ms linear; }
+.dash-brake { left: 0; }
+.dash-brake::after { right: 0; transform-origin: right; background: var(--danger); }
+.dash-throttle { right: 0; }
+.dash-throttle::after { left: 0; transform-origin: left; background: var(--accent); }
+
+.dash-warn { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: min(420px, 92vw); }
+.dash-warn .lamp { font-family: var(--font-num); font-size: 11px; padding: 3px 9px; border-radius: 999px; background: rgba(244, 71, 92, 0.92); color: #fff; border: none; animation: rise 200ms var(--ease); }
+.dash.hud-off { display: none !important; }
+.dash.hud-minimal .dash-svg, .dash.hud-minimal .dash-rpm-text, .dash.hud-minimal .dash-tags, .dash.hud-minimal .dash-pedals { display: none; }
+.dash.hud-minimal .dash-dial::before { background: transparent; box-shadow: none; backdrop-filter: none; }
+
+/* smaller windows and touch landscape: a smaller half dial between the steering and the pedals */
+@media (max-width: 1100px), (max-height: 700px) { .dash { --g: 270px; } }
+@media (max-height: 520px) and (orientation: landscape) { .dash { --g: 220px; bottom: calc(2px + var(--safe-b)); } }
+
+/* portrait: a round dial whose foot sinks under the bottom edge */
+@media (orientation: portrait) {
+  .dash { --g: min(37vw, 190px); bottom: calc(var(--g) * -0.2 + var(--safe-b)); }
+  .dash-dial { aspect-ratio: 1; }
+  .dash-dial::before { border-radius: 50%; background: radial-gradient(circle at 50% 42%, rgba(24, 28, 35, 0.86), rgba(10, 12, 16, 0.9) 70%); }
+  .dash-svg.half { display: none; }
+  .dash-svg.round { display: block; }
+  .dash-svg .arc-bg, .dash-svg .arc-red, .dash-svg .arc-fill { stroke-width: 7; }
+  .dash-svg .tick-num { font-size: 10px; }
+  .dash-face { top: 26%; bottom: auto; }
+  .dash-speed { font-size: calc(var(--g) * 0.25); }
+  .dash-unit { font-size: calc(var(--g) * 0.05); }
+  .dash-gear { right: auto; left: 50%; transform: translateX(-50%); bottom: 26%; min-width: calc(var(--g) * 0.15); height: calc(var(--g) * 0.13); font-size: calc(var(--g) * 0.09); }
+  .dash-rpm-text, .dash-pedals { display: none; }
+  .dash-tags { display: none; }
+  .dash-warn { position: absolute; bottom: calc(100% + 6px); width: 92vw; }
+}

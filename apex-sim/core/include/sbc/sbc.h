@@ -1,0 +1,158 @@
+/* SoftBodyCore — C ABI used by the WASM module (and any future engine plug-in, A§13).
+ * All quantities SI. Handles are opaque. Functions never throw: failures return a negative value.
+ */
+#ifndef SBC_SBC_H
+#define SBC_SBC_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct sbc_world sbc_world;
+
+/* ---- world ---- */
+sbc_world* sbc_world_create(int thread_count, int track_energy);
+/* One of the reference scenes of sbc/scenes.h (cube_drop, tower, wall_crash, pile, golden_m0); NULL if unknown.
+ * `bodies` is used by "pile" only. */
+sbc_world* sbc_world_create_scene(const char* name, int thread_count, int track_energy, int bodies);
+void sbc_world_destroy(sbc_world* w);
+void sbc_world_set_gravity(sbc_world* w, float gx, float gy, float gz);
+/* friction µs/µk [-], penalty frequency [Hz], damping ratio [-] for a material pair */
+int sbc_world_set_contact_pair(sbc_world* w, int mat_a, int mat_b, float mu_static, float mu_kinetic,
+                               float normal_hz, float normal_zeta);
+int sbc_world_add_ground_plane(sbc_world* w, double height, int material);
+int sbc_world_add_static_box(sbc_world* w, double cx, double cy, double cz, float hx, float hy, float hz, double yaw,
+                             int material);
+/* One-sided triangle mesh (vertex_count xyz triples relative to the origin, index_count indices, counter-clockwise
+ * = front). Returns the id of its first triangle, or −1. */
+int sbc_world_add_static_mesh(sbc_world* w, double ox, double oy, double oz, const float* vertices, int vertex_count,
+                              const int32_t* indices, int index_count, int material);
+/* §13 terrain heightfield: (nx+1)(nz+1) heights [m] (x fastest) from world (ox, oz) at `cell` metres, one material per
+ * cell (255: a hole). Replaces the previous one. Returns 0, or −1. */
+int sbc_world_set_heightfield(sbc_world* w, double ox, double oz, double cell, int nx, int nz, const float* heights,
+                              const uint8_t* materials);
+/* Weather: static surfaces of material `from` act as `to` (to == from restores it). Returns 0, or −1. */
+int sbc_world_set_material_remap(sbc_world* w, int from, int to);
+int sbc_world_static_triangle_count(sbc_world* w);
+/* Copies static triangles [first, first+count) as 9 floats each (world-space vertices, relative to the world
+ * origin, float) into out. Returns the number written. */
+int sbc_world_static_triangles(sbc_world* w, int first, int count, float* out);
+/* Material ids of static triangles first … first + count − 1 (render colours). Returns the number written. */
+int sbc_world_static_triangle_materials(sbc_world* w, int first, int count, int* out);
+
+/* Lattice parameters, in this order (see LatticeParams in sbc/builder.h):
+ *  0-2 center xyz [m]   3-5 size xyz [m]   6-8 nodes per axis   9 total mass [kg]   10 node radius [m]
+ *  11 EA [N]   12 damping ratio   13 yield strain   14 hardening   15 break strain   16 deform limit
+ *  17 material   18-20 velocity [m/s]   21-23 yaw pitch roll [rad] */
+#define SBC_LATTICE_PARAM_COUNT 24
+int sbc_world_spawn_lattice(sbc_world* w, const double* params, int count);
+int sbc_world_add_body_velocity(sbc_world* w, int body, float dvx, float dvy, float dvz);
+// Retires a body and the parts that broke off it (World::retireFamily); returns how many bodies, −1 on a bad index.
+int sbc_world_retire_family(sbc_world* w, int body);
+// Relaunches a vehicle with its damage (World::relaunchVehicle): model origin at x y z, heading yaw [rad], forward
+// speed [m/s], no collision node below floor_y. 0, or −1 on a bad index.
+int sbc_world_relaunch_vehicle(sbc_world* w, int vehicle, double x, double y, double z, double yaw, float speed, double floor_y);
+/* §10 steady wind [m/s] (world frame) and a vehicle wing's angle adjustment [rad]. */
+void sbc_world_set_wind(sbc_world* w, float x, float y, float z);
+int sbc_vehicle_set_wing_angle(sbc_world* w, int vehicle, int wing, float angle);
+
+/* §20 tethers — node grab, crane / winch, tow rope (World::addTether). anchorBody −1: the anchor is the world point
+ * (x, y, z). rope 0: grab (pulls toward the point, saturating at maxForce); 1: rope/winch (pulls only, above its
+ * length; the length reels toward the target at reelSpeed while the tension stays under maxForce). maxForce 0:
+ * unlimited, < 0: −maxForce × the tied body's weight. Returns the tether id, or −1 (not a free node). */
+int sbc_world_add_tether(sbc_world* w, int body, int node, int anchorBody, int anchorNode, double x, double y, double z,
+                         float length, int rope, float maxForce, float reelSpeed);
+int sbc_world_set_tether_anchor(sbc_world* w, int id, double x, double y, double z);
+int sbc_world_set_tether_length(sbc_world* w, int id, float length);
+int sbc_world_remove_tether(sbc_world* w, int id);
+int sbc_world_tether_count(sbc_world* w);
+/* active, body, node, length, target length, tension [N], node xyz, anchor xyz (world) */
+#define SBC_TETHER_STATE 12
+int sbc_world_tether_state(sbc_world* w, int id, double* out);
+
+void sbc_world_step(sbc_world* w, int steps);
+double sbc_world_time(sbc_world* w);
+double sbc_world_step_index(sbc_world* w);
+float sbc_world_dt(sbc_world* w);
+/* 64-bit FNV-1a state hash split into two 32-bit halves (JS-friendly). */
+uint32_t sbc_world_state_hash_hi(sbc_world* w);
+uint32_t sbc_world_state_hash_lo(sbc_world* w);
+/* Last step stats: [static contacts, body contacts, CCD clamps, beams broken] */
+void sbc_world_last_stats(sbc_world* w, int32_t* out4);
+/* Energy [J]: kinetic, gravity, beam, contact, beamDamping, contactDamping, friction, plastic, fracture, ccd,
+ * external, balance */
+#define SBC_ENERGY_FIELD_COUNT 12
+void sbc_world_measure_energy(sbc_world* w, double* out);
+/* Momentum: linear xyz [kg·m/s], angular xyz [kg·m²/s] */
+void sbc_world_measure_momentum(sbc_world* w, double* out6);
+
+/* ---- bodies ---- */
+int sbc_world_body_count(sbc_world* w);
+int sbc_body_node_count(sbc_world* w, int body);
+int sbc_body_beam_count(sbc_world* w, int body);
+uint32_t sbc_body_topology_version(sbc_world* w, int body);
+void sbc_body_origin(sbc_world* w, int body, double* out3);
+/* Damage groups (§4.3 glass/lamps, §4.4): count, id, and per group 8 floats [beams, damaged beams, first damage time
+   [s] (−1: intact), first damage's node a, node b (a == b: an impact on that node), peak plastic strain, impacts, peak
+   impact force [N]]; returns the floats written. */
+int sbc_body_damage_group_count(sbc_world* w, int body);
+const char* sbc_body_damage_group_id(sbc_world* w, int body, int group);
+int sbc_body_damage_groups(sbc_world* w, int body, float* out, int capacity);
+/* Island provenance: the body a split-off part came from (−1 for spawned bodies) and, per node, its index there. */
+int sbc_body_source(sbc_world* w, int body);
+const int32_t* sbc_body_source_nodes(sbc_world* w, int body);
+/* Pointers into the live SoA arrays (valid until the next step / topology change). */
+const float* sbc_body_px(sbc_world* w, int body);
+const float* sbc_body_py(sbc_world* w, int body);
+const float* sbc_body_pz(sbc_world* w, int body);
+const float* sbc_body_radius(sbc_world* w, int body);
+const int32_t* sbc_body_beam_a(sbc_world* w, int body);
+const int32_t* sbc_body_beam_b(sbc_world* w, int body);
+/* Writes per-beam strain (L − L0)/L0 [-], NaN for broken beams. */
+void sbc_body_beam_strain(sbc_world* w, int body, float* out);
+/* Stability check (§4.2) at the world dt with safety s. Writes [min critical dt, beam violations, node violations]. */
+void sbc_body_check_stability(sbc_world* w, int body, double safety, double* out3);
+
+/* ---- vehicles (§6–§10) ---- */
+/* Spawns the procedural APEX Proto car (sbc/proto_car.h) with its model origin at (x, y, z), heading yaw [rad] about
+   +Y and forward speed [m/s]. Returns the vehicle id, or −1. */
+int sbc_world_spawn_proto_car(sbc_world* w, double x, double y, double z, double yaw, float speed);
+/* Spawns a vehicle from "apex-vehicle" JSON text (docs/VEHICLE_FORMAT.md). Returns the vehicle id, or −1 on a parse /
+   validation error (the message is available from sbc_last_error). */
+int sbc_world_spawn_vehicle_json(sbc_world* w, const char* json, int length, double x, double y, double z, double yaw,
+                                 float speed);
+/* Message of the last failed call on this thread ("" if none). */
+const char* sbc_last_error(void);
+int sbc_world_vehicle_count(sbc_world* w);
+int sbc_vehicle_body(sbc_world* w, int vehicle);
+int sbc_vehicle_wheel_count(sbc_world* w, int vehicle);
+/* mode: 0 drive, 1 reverse, 2 neutral, 3 manual; shift: +1 / −1 manual shift request; aids: bit 0 ABS, bit 1 TCS, bit 2 ESC. */
+int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake, float steer, float handbrake,
+                          int mode, int shift, int aids);
+/* Packed telemetry: SBC_VT_HEADER floats, then SBC_VT_WHEEL floats per wheel (layout below). Returns the number of
+   floats written, or −(floats needed) when capacity is too small. Positions are body-local (add sbc_body_origin). */
+#define SBC_VT_HEADER 62
+#define SBC_VT_WHEEL 30
+/* header: 0 time, 1 speed [m/s], 2 engine rpm, 3 engine torque [N·m], 4 clutch torque, 5 gear (−1 R, 0 N),
+   6 flags (1 shifting, 2 engine running, 4 TCS active, 8 ESC active), 7 throttle, 8 brake, 9 steer, 10 clutch, 11 accel long,
+   12 accel lat [m/s²], 13 odometer [m], 14–16 chassis position, 17–19 forward, 20–22 up, 23–25 left,
+   26–28 refCenter in the model frame, 29 wheel count, 30 reserved, 31 yaw rate [rad/s] (positive: left), §4.4: 32 coolant [°C], 33 coolant [L],
+   34 oil pressure [bar], 35 oil [L], 36 fuel [L], 37 engine wear [0, 1], 38 power available [0, 1], 39 fault bits,
+   40 airbag bits, 41 crash time [s] (−1: none), 42 crash peak [g], 43 crash Δv [m/s]; crash events (§5.3 event
+   log, the latest one): 44 count, 45 active, 46 start [s], 47 peak [g], 48 peak force [N], 49 Δv [m/s], 50 absorbed
+   [J], 51 speed at the start [m/s], 52–54 position at the start (world frame), 55–57 velocity at the start;
+   §10 aerodynamics: 58 drag [N], 59 downforce front [N], 60 downforce rear [N], 61 airspeed [m/s]
+   wheel: 0 spin [rad/s], 1 spin angle [rad], 2 load [N], 3 slip ratio, 4 slip angle [rad], 5 Fx, 6 Fy [N],
+   7 brake torque, 8 drive torque [N·m], 9 loaded radius [m], 10 flags (1 contact, 2 ABS active), 11–13 centre,
+   14–16 axis (points left), 17 tyre radius [m], 18 tyre pressure [bar], 19 tyre flags (tyre_flag::), 20 rim sparks
+   [0, 1], 21–23 spark point (body-local), 24 rim bend (plastic strain), 25 nominal pressure [bar], §4.4: 26 camber [rad] (negative: top inward),
+   27 toe [rad] (positive: toe-in), 28–29 camber and toe at the vehicle's first step (design geometry) */
+int sbc_vehicle_telemetry(sbc_world* w, int vehicle, float* out, int capacity);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* SBC_SBC_H */

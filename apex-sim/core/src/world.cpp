@@ -1,0 +1,669 @@
+#include "sbc/world.h"
+
+#include "sbc/surfaces.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <stdexcept>
+
+#include "contact.h"
+#include "static_bvh.h"
+#include "internal.h"
+#include "sbc/det_math.h"
+#include "sbc/job_system.h"
+#include "vehicle_impl.h"
+
+namespace sbc {
+namespace {
+
+// Bodies whose centroid drifts farther than this from their local origin are re-based (A§4.4). A node whose
+// motion per step falls below half an ulp of its coordinate freezes with a residual ("phantom") velocity of at most
+// ulp(x)/(2·dt); keeping |x| ≲ 4 m + body half-size bounds that below ~0.5 mm/s for car-sized bodies, while at
+// 83 m/s a re-base happens only every ~100 steps (a cheap integer shift).
+constexpr float kRebaseDistance = 4.0f;  // [m]
+
+size_t pairIndex(uint16_t a, uint16_t b) {
+  if (a >= kMaxMaterials || b >= kMaxMaterials) throw std::out_of_range("material id >= kMaxMaterials");
+  return static_cast<size_t>(a) * kMaxMaterials + b;
+}
+
+// FNV-1a 64-bit (Fowler–Noll–Vo).
+struct Fnv1a {
+  uint64_t h = 1469598103934665603ull;
+  void bytes(const void* data, size_t n) {
+    const auto* p = static_cast<const unsigned char*>(data);
+    for (size_t i = 0; i < n; ++i) {
+      h ^= p[i];
+      h *= 1099511628211ull;
+    }
+  }
+  template <typename T>
+  void value(const T& v) { bytes(&v, sizeof(T)); }
+  template <typename T>
+  void vec(const std::vector<T>& v) { if (!v.empty()) bytes(v.data(), v.size() * sizeof(T)); }
+};
+
+double kineticEnergy(const Body& b) {
+  double e = 0.0;
+  for (int i = 0; i < b.nodeCount(); ++i) {
+    if (b.invMass[i] == 0.0f) continue;
+    const double v2 = static_cast<double>(b.vx[i]) * b.vx[i] + static_cast<double>(b.vy[i]) * b.vy[i] +
+                      static_cast<double>(b.vz[i]) * b.vz[i];
+    e += 0.5 * b.mass[i] * v2;
+  }
+  return e;
+}
+
+double gravityPotential(const Body& b, Vec3 g) {
+  double e = 0.0;
+  const DVec3 gd = toDouble(g);
+  for (int i = 0; i < b.nodeCount(); ++i) {
+    if (b.invMass[i] == 0.0f) continue;
+    e -= b.mass[i] * dot(gd, b.nodeWorldPosition(i));
+  }
+  return e;
+}
+
+}  // namespace
+
+World::World(const WorldParams& params)
+    : params_(params),
+      jobs_(std::make_unique<JobSystem>(std::max(1, params.threadCount))),
+      pairTable_(static_cast<size_t>(kMaxMaterials) * kMaxMaterials),
+      tyreGrip_(static_cast<size_t>(kMaxMaterials) * kTyreTypeCount, 1.0f),
+      tyreCrr_(static_cast<size_t>(kMaxMaterials) * kTyreTypeCount, 1.0f) {
+  if (!(params_.dt > 0.0f)) throw std::invalid_argument("WorldParams::dt must be > 0");
+  for (int m = 0; m < kMaxMaterials; ++m) remap_[static_cast<size_t>(m)] = static_cast<uint16_t>(m);
+}
+
+void World::setMaterialRemap(uint16_t from, uint16_t to) {
+  pairIndex(from, to);  // validates both ids
+  remap_[from] = to;
+}
+
+void World::setHeightfield(Heightfield field) {
+  if (field.nx <= 0 || field.nz <= 0 || !(field.cell > 0.0)) throw std::invalid_argument("setHeightfield: empty grid");
+  const size_t samples = static_cast<size_t>(field.nx + 1) * static_cast<size_t>(field.nz + 1);
+  const size_t cells = static_cast<size_t>(field.nx) * static_cast<size_t>(field.nz);
+  if (field.heights.size() != samples || field.materials.size() != cells) {
+    throw std::invalid_argument("setHeightfield: bad array sizes");
+  }
+  for (const uint8_t m : field.materials) {
+    if (m != kHeightfieldHole && m >= kMaxMaterials) throw std::invalid_argument("setHeightfield: bad material");
+  }
+  heightfield_ = std::move(field);
+}
+
+World::~World() = default;
+
+void World::setContactPair(uint16_t a, uint16_t b, const ContactPairParams& p) {
+  pairTable_[pairIndex(a, b)] = p;
+  pairTable_[pairIndex(b, a)] = p;
+}
+
+const ContactPairParams& World::contactPair(uint16_t a, uint16_t b) const { return pairTable_[pairIndex(a, b)]; }
+
+void World::setTyreFactors(uint16_t material, TyreType type, float grip, float crr) {
+  pairIndex(material, material);
+  const size_t k = static_cast<size_t>(material) * kTyreTypeCount + static_cast<size_t>(type);
+  tyreGrip_[k] = grip;
+  tyreCrr_[k] = crr;
+}
+
+void World::setSurfaces(const SurfaceLibrary& library) { surfaces_ = std::make_shared<SurfaceLibrary>(library); }
+
+int World::addSurfaceDecal(const SurfaceDecal& decal) {
+  pairIndex(decal.material, decal.material);
+  decals_.push_back(decal);
+  decals_.back().active = true;
+  return static_cast<int>(decals_.size()) - 1;
+}
+
+void World::removeSurfaceDecal(int id) { decals_.at(static_cast<size_t>(id)).active = false; }
+
+uint16_t World::surfaceMaterialAt(DVec3 p, uint16_t base) const {
+  for (size_t k = decals_.size(); k-- > 0;) {
+    const SurfaceDecal& d = decals_[k];
+    if (!d.active || std::fabs(p.y - d.center.y) > 1.0) continue;
+    const double dx = p.x - d.center.x, dz = p.z - d.center.z;
+    if (d.radius > 0.0) {
+      if (dx * dx + dz * dz <= d.radius * d.radius) return d.material;
+      continue;
+    }
+    const double c = det::cos(d.yaw), s = det::sin(d.yaw);
+    const double u = c * dx - s * dz, v = s * dx + c * dz;  // into the decal's frame (yaw about +Y)
+    if (std::fabs(u) <= d.halfX && std::fabs(v) <= d.halfZ) return d.material;
+  }
+  return base;
+}
+
+int World::addGroundPlane(double height, uint16_t material) {
+  pairIndex(material, material);  // validates the id
+  planes_.push_back({height, material});
+  return kPlaneIdBase + static_cast<int>(planes_.size()) - 1;
+}
+
+int World::addStaticMesh(DVec3 origin, const std::vector<float>& vertices, const std::vector<int32_t>& indices,
+                         uint16_t material) {
+  pairIndex(material, material);
+  if (vertices.size() % 3 != 0 || indices.size() % 3 != 0) throw std::invalid_argument("addStaticMesh: bad array sizes");
+  const int vertexCount = static_cast<int>(vertices.size() / 3);
+  const int first = static_cast<int>(staticTris_.size());
+  for (size_t t = 0; t < indices.size(); t += 3) {
+    Vec3 v[3];
+    for (int k = 0; k < 3; ++k) {
+      const int idx = indices[t + static_cast<size_t>(k)];
+      if (idx < 0 || idx >= vertexCount) throw std::invalid_argument("addStaticMesh: index out of range");
+      v[k] = {vertices[static_cast<size_t>(idx) * 3], vertices[static_cast<size_t>(idx) * 3 + 1],
+              vertices[static_cast<size_t>(idx) * 3 + 2]};
+    }
+    const Vec3 n = cross(v[1] - v[0], v[2] - v[0]);
+    const float len = length(n);
+    if (!(len > 1e-12f)) continue;  // skip degenerate triangles
+    StaticTri tri;
+    tri.origin = origin;
+    tri.v0 = v[0]; tri.v1 = v[1]; tri.v2 = v[2];
+    tri.normal = n * (1.0f / len);
+    tri.boundsMin = {std::min({v[0].x, v[1].x, v[2].x}), std::min({v[0].y, v[1].y, v[2].y}),
+                     std::min({v[0].z, v[1].z, v[2].z})};
+    tri.boundsMax = {std::max({v[0].x, v[1].x, v[2].x}), std::max({v[0].y, v[1].y, v[2].y}),
+                     std::max({v[0].z, v[1].z, v[2].z})};
+    tri.material = material;
+    staticTris_.push_back(tri);
+  }
+  staticBvhDirty_ = true;  // rebuilt once, at the next step (a map adds many meshes)
+  return first;
+}
+
+void World::rebuildStaticBvh() {
+  std::vector<StaticBvh::Box> bounds(staticTris_.size());
+  for (size_t k = 0; k < staticTris_.size(); ++k) {
+    const StaticTri& t = staticTris_[k];
+    const double lo[3] = {t.boundsMin.x, t.boundsMin.y, t.boundsMin.z}, hi[3] = {t.boundsMax.x, t.boundsMax.y, t.boundsMax.z};
+    const double o[3] = {t.origin.x, t.origin.y, t.origin.z};
+    for (int a = 0; a < 3; ++a) {
+      bounds[k].lo[a] = o[a] + lo[a];
+      bounds[k].hi[a] = o[a] + hi[a];
+    }
+  }
+  if (!staticBvh_) staticBvh_ = std::make_unique<StaticBvh>();
+  staticBvh_->build(bounds);
+  staticBvhDirty_ = false;
+}
+
+int World::addStaticBox(DVec3 center, Vec3 half, double yaw, uint16_t material) {
+  const double c = det::cos(yaw), s = det::sin(yaw);
+  std::vector<float> verts;
+  verts.reserve(24);
+  for (int i = 0; i < 8; ++i) {
+    const double lx = (i & 1) ? half.x : -half.x;
+    const double ly = (i & 2) ? half.y : -half.y;
+    const double lz = (i & 4) ? half.z : -half.z;
+    // rotation about +Y: x' = c·x + s·z, z' = −s·x + c·z
+    verts.push_back(static_cast<float>(c * lx + s * lz));
+    verts.push_back(static_cast<float>(ly));
+    verts.push_back(static_cast<float>(-s * lx + c * lz));
+  }
+  // Outward-facing, counter-clockwise faces (corner bit 0 = +x, bit 1 = +y, bit 2 = +z).
+  const std::vector<int32_t> idx = {
+      0, 4, 6, 0, 6, 2,  // −x
+      1, 3, 7, 1, 7, 5,  // +x
+      0, 1, 5, 0, 5, 4,  // −y
+      2, 6, 7, 2, 7, 3,  // +y
+      0, 2, 3, 0, 3, 1,  // −z
+      4, 5, 7, 4, 7, 6,  // +z
+  };
+  return addStaticMesh(center, verts, idx, material);
+}
+
+std::array<DVec3, 3> World::staticTriangleWorld(int t) const {
+  const StaticTri& tri = staticTris_.at(static_cast<size_t>(t));
+  return {tri.origin + toDouble(tri.v0), tri.origin + toDouble(tri.v1), tri.origin + toDouble(tri.v2)};
+}
+
+int World::addBody(const BodyDesc& desc) {
+  Body b = buildBody(desc);
+  for (int i = 0; i < b.nodeCount(); ++i) pairIndex(b.material[i], b.material[i]);
+  // A body entering the world brings mechanical energy with it (motion, height, pre-stress, and penalty
+  // energy if it spawns overlapping something): book it as external work so the energy balance (§5.3)
+  // stays zero-based.
+  const double contactBefore = ContactSolver::contactPotential(*this);
+  const double own = kineticEnergy(b) + gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b) +
+                     detail::constraintPotentialEnergy(b);
+  b.family = static_cast<int32_t>(bodies_.size());
+  bodies_.push_back(std::move(b));
+  bodyStats_.emplace_back();
+  scratch_.emplace_back();
+  bodyVehicles_.emplace_back();
+  bodies_.back().losses.external += own + ContactSolver::contactPotential(*this) - contactBefore;
+  return static_cast<int>(bodies_.size()) - 1;
+}
+
+void World::addBodyVelocity(int bodyIndex, Vec3 dv) {
+  Body& b = bodies_.at(static_cast<size_t>(bodyIndex));
+  const double before = kineticEnergy(b);
+  for (int i = 0; i < b.nodeCount(); ++i) {
+    if (b.invMass[i] == 0.0f) continue;
+    b.vx[i] += dv.x; b.vy[i] += dv.y; b.vz[i] += dv.z;
+  }
+  b.losses.external += kineticEnergy(b) - before;
+}
+
+int World::retireFamily(int body) {
+  if (body < 0 || body >= bodyCount()) throw std::out_of_range("retireFamily: body index");
+  const int32_t family = bodies_[static_cast<size_t>(body)].family;
+  int count = 0;
+  for (Body& b : bodies_) {
+    if (b.family != family || !b.enabled) continue;
+    const double before = kineticEnergy(b) + gravityPotential(b, params_.gravity);
+    std::fill(b.vx.begin(), b.vx.end(), 0.0f);
+    std::fill(b.vy.begin(), b.vy.end(), 0.0f);
+    std::fill(b.vz.begin(), b.vz.end(), 0.0f);
+    b.origin.y -= kParkDepth;
+    b.enabled = false;
+    b.losses.external += kineticEnergy(b) + gravityPotential(b, params_.gravity) - before;
+    ++count;
+  }
+  return count;
+}
+
+void World::relaunchVehicle(int vehicle, DVec3 position, double yaw, float speed, double floorY) {
+  Vehicle& v = *vehicles_.at(static_cast<size_t>(vehicle));
+  const size_t bi = static_cast<size_t>(v.bodyIndex());
+  const int32_t family = bodies_[bi].family;
+  for (size_t k = 0; k < bodies_.size(); ++k) {
+    Body& part = bodies_[k];
+    if (k == bi || part.family != family || !part.enabled) continue;
+    const double before = kineticEnergy(part) + gravityPotential(part, params_.gravity);
+    std::fill(part.vx.begin(), part.vx.end(), 0.0f);
+    std::fill(part.vy.begin(), part.vy.end(), 0.0f);
+    std::fill(part.vz.begin(), part.vz.end(), 0.0f);
+    part.origin.y -= kParkDepth;
+    part.enabled = false;
+    part.losses.external += kineticEnergy(part) + gravityPotential(part, params_.gravity) - before;
+  }
+  Body& b = bodies_[bi];
+  const double before = kineticEnergy(b) + gravityPotential(b, params_.gravity);
+  v.relaunch(b, position, yaw, speed, floorY);
+  b.losses.external += kineticEnergy(b) + gravityPotential(b, params_.gravity) - before;
+}
+
+int World::addVehicle(int body, const VehicleDesc& desc) {
+  if (body < 0 || body >= bodyCount()) throw std::out_of_range("addVehicle: body index");
+  vehicles_.push_back(std::make_unique<Vehicle>(desc, body, bodies_[static_cast<size_t>(body)]));
+  const int id = static_cast<int>(vehicles_.size()) - 1;
+  bodyVehicles_[static_cast<size_t>(body)].push_back(id);
+  return id;
+}
+
+int World::vehicleBody(int v) const { return vehicles_.at(static_cast<size_t>(v))->bodyIndex(); }
+const VehicleDesc& World::vehicleDesc(int v) const { return vehicles_.at(static_cast<size_t>(v))->desc(); }
+const VehicleInput& World::vehicleInput(int v) const { return vehicles_.at(static_cast<size_t>(v))->input(); }
+const VehicleTelemetry& World::vehicleTelemetry(int v) const {
+  return vehicles_.at(static_cast<size_t>(v))->telemetry();
+}
+
+void World::setVehicleInput(int v, const VehicleInput& in) {
+  VehicleInput& dst = vehicles_.at(static_cast<size_t>(v))->input();
+  auto finite = [](float x, float lo, float hi) { return std::isfinite(x) ? std::min(std::max(x, lo), hi) : 0.0f; };
+  dst.throttle = finite(in.throttle, 0.0f, 1.0f);
+  dst.brake = finite(in.brake, 0.0f, 1.0f);
+  dst.steer = finite(in.steer, -1.0f, 1.0f);
+  dst.handbrake = finite(in.handbrake, 0.0f, 1.0f);
+  dst.mode = in.mode;
+  dst.abs = in.abs;
+  dst.tcs = in.tcs;
+  dst.esc = in.esc;
+  if (in.shiftRequest != 0) dst.shiftRequest = in.shiftRequest > 0 ? 1 : -1;
+}
+
+void World::step(int count) {
+  for (int i = 0; i < count; ++i) stepOnce();
+}
+
+void World::stepOnce() {
+  const int n = bodyCount();
+  if (staticBvhDirty_ && params_.staticBvh) rebuildStaticBvh();
+  updateWakes();
+  jobs_->parallelFor(n, [this](int i) { computeInternalForces(i); });
+  if (!tethers_.empty()) applyTethers();
+  stats_ = {};
+  if (n > 1) {
+    stats_.bodyContacts = params_.trackEnergy ? ContactSolver::bodyContacts<true>(*this)
+                                              : ContactSolver::bodyContacts<false>(*this);
+  }
+  // The contact depths just gathered become the reference for the next contacts (and the ledger at the step end).
+  jobs_->parallelFor(n, [this](int i) { detail::settleContactDepths(bodies_[static_cast<size_t>(i)]); });
+  if (n > 1) {
+    jobs_->parallelFor(n, [this](int i) { integrateBody(i); });
+    // Sweep tests between bodies (serial, deterministic pair order). Their position corrections move nodes without a
+    // force doing the work; with energy tracking, the potential energy they change is measured and booked as work of
+    // the constraint (§5.3 ledger), the kinetic energy they remove as CCD loss.
+    // The springs are measured with the band continued behind the mid-plane, where this step's integration may have
+    // carried nodes (the force law and the ledger at step ends never see them there).
+    // Nodes the sweeps could not bring back in front of a surface (sandwiched between two crushed hulls, the sweep
+    // iterations used up) keep their spring in this extended measure, but the force law holds a contact only in
+    // front of the mid-plane: at the step end those springs are released without doing work. Their energy is lost
+    // with the sweeps (booked as CCD loss; without it the ledger drifted by ≈ 10 % in some car-to-car crashes).
+    // (Measured only when the sweeps can act: two bodies of different families within reach.)
+    const double before = params_.trackEnergy && ContactSolver::ccdPossible(*this) ? potentialEnergy(true) : 0.0;
+    const int clamps = ContactSolver::ccdBodies(*this);
+    stats_.ccdClamps += clamps;
+    if (params_.trackEnergy && clamps > 0) {
+      const double extended = ContactSolver::contactPotential(*this, true);
+      bodies_[0].losses.external += potentialEnergy(true) - before;
+      bodies_[0].losses.ccd += extended - ContactSolver::contactPotential(*this, false);
+    }
+    jobs_->parallelFor(n, [this](int i) { finishBody(i); });
+  } else {
+    jobs_->parallelFor(n, [this](int i) {
+      integrateBody(i);
+      finishBody(i);
+    });
+  }
+  // Island split (§4.3, A§4.2 step 11): parts that broke loose become bodies of their own. Serial, body order; new
+  // bodies are appended, so existing body indices never change.
+  std::vector<Body> parts;
+  for (int i = 0; i < n; ++i) {
+    Body& b = bodies_[static_cast<size_t>(i)];
+    if (b.brokenBeamCount == b.islandCheckedAt) continue;
+    b.islandCheckedAt = b.brokenBeamCount;
+    for (Body& part : detail::splitIslands(b)) {
+      part.sourceBody = static_cast<int32_t>(i);
+      part.family = b.family;
+      parts.push_back(std::move(part));
+    }
+  }
+  // Pairs with a node that moved into a new part lose their continuity (the part's contacts start afresh).
+  if (!parts.empty()) {
+    for (int i = 0; i < n; ++i) {
+      Body& own = bodies_[static_cast<size_t>(i)];
+      std::erase_if(own.contactDepths, [&](const ContactDepth& e) {
+        const Body& other = bodies_[static_cast<size_t>(e.otherBody)];
+        return (own.flags[static_cast<size_t>(e.node)] & node_flag::kDetached) ||
+               (other.flags[static_cast<size_t>(e.otherNode)] & node_flag::kDetached);
+      });
+    }
+  }
+  for (Body& part : parts) {
+    part.contactDepths.clear();
+    part.contactDepthsNext.clear();
+    bodies_.push_back(std::move(part));
+    bodyStats_.emplace_back();
+    scratch_.emplace_back();
+    bodyVehicles_.emplace_back();
+    stats_.islandsSplit++;
+  }
+  if (!parts.empty() && !tethers_.empty()) rebindTethers(n);
+  for (const StepStats& s : bodyStats_) {  // serial reduction in body order
+    stats_.staticContacts += s.staticContacts;
+    stats_.selfContacts += s.selfContacts;
+    stats_.ccdClamps += s.ccdClamps;
+    stats_.beamsBroken += s.beamsBroken;
+  }
+  ++stepIndex_;
+}
+
+void World::computeInternalForces(int bi) {
+  Body& b = bodies_[bi];
+  StepStats& st = bodyStats_[bi];
+  st = {};
+  if (!b.enabled) return;
+  const Vec3 g = params_.gravity;
+  const int n = b.nodeCount();
+  for (int i = 0; i < n; ++i) {
+    const float m = b.invMass[i] == 0.0f ? 0.0f : b.mass[i];
+    b.fx[i] = m * g.x;
+    b.fy[i] = m * g.y;
+    b.fz[i] = m * g.z;
+  }
+  std::fill(b.contactLoad.begin(), b.contactLoad.end(), 0.0f);
+  if (params_.trackEnergy) {
+    for (auto* a : {&b.fdBeamX, &b.fdBeamY, &b.fdBeamZ, &b.fdContactX, &b.fdContactY, &b.fdContactZ, &b.fdFrictionX,
+                    &b.fdFrictionY, &b.fdFrictionZ, &b.fdExternalX, &b.fdExternalY, &b.fdExternalZ}) {
+      std::fill(a->begin(), a->end(), 0.0f);
+    }
+    detail::updateHydros(b, params_.dt);
+    st.beamsBroken = detail::accumulateBeamForces<true>(b, params_.dt);
+    detail::accumulateConstraintForces<true>(b);
+    if (!b.aeroCoefficient.empty()) detail::accumulateAeroPanels<true>(b, params_.airDensity);
+    st.staticContacts = ContactSolver::staticContacts<true>(*this, bi);
+    if (b.triangleCount() > 0) {
+      ContactSolver::updateSurface(*this, bi);
+      st.selfContacts = ContactSolver::selfContacts<true>(*this, bi);
+    }
+    for (const int v : bodyVehicles_[static_cast<size_t>(bi)]) vehicles_[static_cast<size_t>(v)]->step(*this, b, true);
+  } else {
+    detail::updateHydros(b, params_.dt);
+    st.beamsBroken = detail::accumulateBeamForces<false>(b, params_.dt);
+    detail::accumulateConstraintForces<false>(b);
+    if (!b.aeroCoefficient.empty()) detail::accumulateAeroPanels<false>(b, params_.airDensity);
+    st.staticContacts = ContactSolver::staticContacts<false>(*this, bi);
+    if (b.triangleCount() > 0) {
+      ContactSolver::updateSurface(*this, bi);
+      st.selfContacts = ContactSolver::selfContacts<false>(*this, bi);
+    }
+    for (const int v : bodyVehicles_[static_cast<size_t>(bi)]) vehicles_[static_cast<size_t>(v)]->step(*this, b, false);
+  }
+}
+
+void World::integrateBody(int bi) {
+  Body& b = bodies_[bi];
+  if (!b.enabled) return;
+  const float dt = params_.dt;
+  const int n = b.nodeCount();
+  if (params_.trackEnergy) {
+    // Work of dissipative forces over the step, W = F·v_mid·dt with v_mid = v_n + ½a·dt, which matches the
+    // kinetic-energy change of symplectic Euler exactly (ΔKE = F·v_mid·dt).
+    double wBeam = 0.0, wContact = 0.0, wFriction = 0.0, wExternal = 0.0;
+    for (int i = 0; i < n; ++i) {
+      const float im = b.invMass[i];
+      if (im == 0.0f) continue;
+      const double mx = b.vx[i] + 0.5f * b.fx[i] * im * dt;
+      const double my = b.vy[i] + 0.5f * b.fy[i] * im * dt;
+      const double mz = b.vz[i] + 0.5f * b.fz[i] * im * dt;
+      wBeam += b.fdBeamX[i] * mx + b.fdBeamY[i] * my + b.fdBeamZ[i] * mz;
+      wContact += b.fdContactX[i] * mx + b.fdContactY[i] * my + b.fdContactZ[i] * mz;
+      wFriction += b.fdFrictionX[i] * mx + b.fdFrictionY[i] * my + b.fdFrictionZ[i] * mz;
+      wExternal += b.fdExternalX[i] * mx + b.fdExternalY[i] * my + b.fdExternalZ[i] * mz;
+    }
+    b.losses.beamDamping -= wBeam * dt;
+    b.losses.contactDamping -= wContact * dt;
+    b.losses.friction -= wFriction * dt;
+    b.losses.external += wExternal * dt;
+  }
+  // Symplectic (semi-implicit) Euler, §4.2: v ← v + (F/m)·dt, then x ← x + v·dt.
+  std::copy(b.px.begin(), b.px.end(), b.sx.begin());
+  std::copy(b.py.begin(), b.py.end(), b.sy.begin());
+  std::copy(b.pz.begin(), b.pz.end(), b.sz.begin());
+  for (int i = 0; i < n; ++i) {
+    const float im = b.invMass[i];
+    if (im == 0.0f) {
+      b.vx[i] = 0.0f; b.vy[i] = 0.0f; b.vz[i] = 0.0f;
+      continue;
+    }
+    b.vx[i] += b.fx[i] * im * dt;
+    b.vy[i] += b.fy[i] * im * dt;
+    b.vz[i] += b.fz[i] * im * dt;
+    b.px[i] += b.vx[i] * dt;
+    b.py[i] += b.vy[i] * dt;
+    b.pz[i] += b.vz[i] * dt;
+  }
+  // Static sweep tests (CCD). A clamp replaces the node's step: the ledger books it as a constraint that took the
+  // node from where the step began to where it lands — the potential energy that move changes (gravity, the beams
+  // and constraints it pulls on with the other nodes where this step left them, its contact spring) as work of the
+  // constraint, and the kinetic energy it lost against the step's start as CCD loss (§5.3). Where the integration
+  // carried the node before the clamp is no state and is not measured: pinned against a face by a crushing
+  // structure it is pushed in and set back every step, and near an edge the nearest-face depth there can jump by the
+  // whole face size.
+  const int clamps = ContactSolver::ccdStatic(*this, bi);
+  bodyStats_[bi].ccdClamps = clamps;
+  if (clamps == 0) return;
+  if (!params_.trackEnergy) {
+    ContactSolver::applyCcdStatic(*this, bi);
+    return;
+  }
+  const std::vector<ContactScratch::StaticCorrection>& corrections = scratch_[static_cast<size_t>(bi)].corrections;
+  auto potential = [&] {
+    double e = gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b) + detail::constraintPotentialEnergy(b);
+    for (const ContactScratch::StaticCorrection& c : corrections) {
+      e += ContactSolver::staticNodePotential(*this, bi, c.node, b.nodePosition(c.node));
+    }
+    return e;
+  };
+  // Start-of-step state of the clamped nodes: positions saved before the integration, velocities recovered from it
+  // (v₁ = v₀ + F·dt/m).
+  double kineticBefore = 0.0, kineticAfter = 0.0, clampLoss = 0.0;
+  std::vector<Vec3> integrated(corrections.size());
+  for (size_t k = 0; k < corrections.size(); ++k) {
+    const size_t i = static_cast<size_t>(corrections[k].node);
+    integrated[k] = b.nodePosition(corrections[k].node);
+    const float step = dt * b.invMass[i];
+    const Vec3 v0{b.vx[i] - b.fx[i] * step, b.vy[i] - b.fy[i] * step, b.vz[i] - b.fz[i] * step};
+    kineticBefore += 0.5 * b.mass[i] * static_cast<double>(dot(v0, v0));
+    kineticAfter += 0.5 * b.mass[i] * static_cast<double>(dot(corrections[k].velocity, corrections[k].velocity));
+    clampLoss += corrections[k].kineticLoss;
+    b.px[i] = b.sx[i]; b.py[i] = b.sy[i]; b.pz[i] = b.sz[i];
+  }
+  const double before = potential();
+  for (size_t k = 0; k < corrections.size(); ++k) {
+    const size_t i = static_cast<size_t>(corrections[k].node);
+    b.px[i] = integrated[k].x; b.py[i] = integrated[k].y; b.pz[i] = integrated[k].z;
+  }
+  ContactSolver::applyCcdStatic(*this, bi);  // books clampLoss as CCD loss; replaced by the start-based loss below
+  b.losses.external += potential() - before;
+  b.losses.ccd += (kineticBefore - kineticAfter) - clampLoss;
+}
+
+void World::finishBody(int bi) {
+  Body& b = bodies_[bi];
+  if (!b.enabled) return;
+  bodyStats_[bi].beamsBroken += detail::applyPendingBreakGroups(b);
+  if (!b.damageGroups.empty()) detail::updateDamageGroups(b, stepIndex_);
+
+  // Deterministic re-basing of the local frame by whole metres (A§4.4).
+  double cx = 0.0, cy = 0.0, cz = 0.0;
+  const int n = b.nodeCount();
+  for (int i = 0; i < n; ++i) { cx += b.px[i]; cy += b.py[i]; cz += b.pz[i]; }
+  cx /= n; cy /= n; cz /= n;
+  if (std::fabs(cx) > kRebaseDistance || std::fabs(cy) > kRebaseDistance || std::fabs(cz) > kRebaseDistance) {
+    const float sx = static_cast<float>(std::floor(cx)), sy = static_cast<float>(std::floor(cy)),
+                sz = static_cast<float>(std::floor(cz));
+    for (int i = 0; i < n; ++i) {
+      b.px[i] -= sx; b.py[i] -= sy; b.pz[i] -= sz;
+      b.sx[i] -= sx; b.sy[i] -= sy; b.sz[i] -= sz;
+    }
+    b.origin += DVec3{sx, sy, sz};
+  }
+}
+
+double World::potentialEnergy(bool extendedBand) const {
+  double e = ContactSolver::contactPotential(*this, extendedBand);
+  for (const Body& b : bodies_)
+    e += gravityPotential(b, params_.gravity) + detail::beamPotentialEnergy(b) + detail::constraintPotentialEnergy(b);
+  return e;
+}
+
+EnergyReport World::measureEnergy() const {
+  EnergyReport r;
+  for (const Body& b : bodies_) {
+    r.kinetic += kineticEnergy(b);
+    r.gravityPotential += gravityPotential(b, params_.gravity);
+    r.beamPotential += detail::beamPotentialEnergy(b) + detail::constraintPotentialEnergy(b);
+    r.losses.beamDamping += b.losses.beamDamping;
+    r.losses.contactDamping += b.losses.contactDamping;
+    r.losses.friction += b.losses.friction;
+    r.losses.plastic += b.losses.plastic;
+    r.losses.fracture += b.losses.fracture;
+    r.losses.ccd += b.losses.ccd;
+    r.losses.external += b.losses.external;
+  }
+  r.contactPotential = ContactSolver::contactPotential(*this);
+  return r;
+}
+
+PenetrationReport World::measurePenetration() const { return ContactSolver::measurePenetration(*this); }
+
+MomentumReport World::measureMomentum() const {
+  MomentumReport r;
+  for (const Body& b : bodies_) {
+    for (int i = 0; i < b.nodeCount(); ++i) {
+      if (b.invMass[i] == 0.0f) continue;
+      const DVec3 p = toDouble(b.nodeVelocity(i)) * b.mass[i];
+      r.linear += p;
+      r.angular += cross(b.nodeWorldPosition(i), p);
+    }
+  }
+  return r;
+}
+
+void World::setVehicleWingAngle(int v, int wing, float angle) {
+  vehicles_.at(static_cast<size_t>(v))->setWingAngle(wing, angle);
+}
+
+// §10: the wakes of this step's vehicles (serial, before the forces read them in parallel).
+void World::updateWakes() {
+  wakes_.clear();
+  for (const auto& v : vehicles_) {
+    const Body& b = bodies_[static_cast<size_t>(v->bodyIndex())];
+    const VehicleWake w = v->wake(b);
+    if (dot(w.velocity, w.velocity) > 1.0) wakes_.push_back(w);  // under 1 m/s: no wake worth the name
+  }
+}
+
+DVec3 World::airVelocity(DVec3 p, int exceptBody) const {
+  const Vec3 wind = params_.wind;
+  DVec3 air{wind.x, wind.y, wind.z};
+  constexpr double kInduction = 0.25, kSpread = 0.1, kEdge = 0.5;  // Jensen a, k; soft edge [m]
+  for (const VehicleWake& w : wakes_) {
+    if (w.body == exceptBody) continue;
+    const double speed = std::sqrt(dot(w.velocity, w.velocity));
+    const DVec3 dir = w.velocity * (1.0 / speed);
+    const DVec3 rel = p - w.center;
+    const double along = -dot(rel, dir);    // behind the centre
+    const double x = along - w.halfLength;  // behind the tail
+    if (x <= 0.0) continue;
+    const DVec3 radial = rel + dir * along;
+    const double r = std::sqrt(dot(radial, radial));
+    const double radius = 0.5 * w.diameter + kSpread * x;
+    const double edge = r <= radius ? 1.0 : std::max(0.0, 1.0 - (r - radius) / kEdge);
+    if (edge <= 0.0) continue;
+    const double shrink = w.diameter / (w.diameter + 2.0 * kSpread * x);
+    const double deficit = std::min(0.6, 2.0 * kInduction * shrink * shrink) * edge;
+    air += w.velocity * deficit;
+  }
+  return air;
+}
+
+uint64_t World::stateHash() const {
+  Fnv1a h;
+  h.value(stepIndex_);
+  for (const Body& b : bodies_) {
+    h.value(b.origin.x); h.value(b.origin.y); h.value(b.origin.z);
+    h.vec(b.px); h.vec(b.py); h.vec(b.pz);
+    h.vec(b.vx); h.vec(b.vy); h.vec(b.vz);
+    h.vec(b.stickX); h.vec(b.stickY); h.vec(b.stickZ); h.vec(b.anchorContact);
+    h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.fatigue); h.vec(b.plasticSign); h.vec(b.unloadArmed); h.vec(b.broken); h.vec(b.torsionBroken); h.vec(b.triTorn); h.vec(b.nodeSurface);
+    h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags);
+    for (const ContactDepth& e : b.contactDepths) { h.value(e.node); h.value(e.otherBody); h.value(e.otherNode); h.value(e.depth); }
+    h.vec(b.hydroInputs);
+    for (int i = b.typeBegin[5]; i < b.typeBegin[6]; ++i) h.value(b.hydroOffset[static_cast<size_t>(i)]);
+    h.vec(b.damageBeamHit);
+    h.vec(b.damageNodeHit);
+    for (const DamageGroupState& g : b.damageGroups) { h.value(g.firstStep); h.value(g.peakStrain); h.value(g.peakImpact); }
+  }
+  for (const auto& v : vehicles_) v->hashState(h);
+  for (const SurfaceDecal& d : decals_) {
+    h.value(d.center.x); h.value(d.center.y); h.value(d.center.z); h.value(d.halfX); h.value(d.halfZ); h.value(d.yaw);
+    h.value(d.radius); h.value(d.material); h.value(d.active);
+  }
+  for (const Tether& t : tethers_) {
+    h.value(t.active); h.value(t.desc.body); h.value(t.desc.node); h.value(t.desc.anchorBody); h.value(t.desc.anchorNode);
+    h.value(t.desc.anchor.x); h.value(t.desc.anchor.y); h.value(t.desc.anchor.z);
+    h.value(t.length); h.value(t.targetLength); h.value(t.tension);
+  }
+  return h.h;
+}
+
+}  // namespace sbc
