@@ -145,6 +145,7 @@ struct Loader {
   struct BeamProps {
     BeamType type = BeamType::kNormal;
     double k = 0.0, c = -1.0, zeta = -1.0;
+    double unloadRatio = 0.0;   // BeamDesc::unloadRatio
     double plastic = kInfiniteForce, hardening = 0.0, breakForce = kInfiniteForce, deform = kInfiniteForce, fatigue = kInfiniteForce;
     double crush = 0.95, tear = kInfiniteForce;
     double kc = -1.0;
@@ -170,6 +171,8 @@ struct Loader {
     p.k = numberOr(obj, "k", p.k, path);
     if (member(obj, "c")) { p.c = numberOr(obj, "c", 0.0, path); p.zeta = -1.0; }
     if (member(obj, "zeta")) { p.zeta = numberOr(obj, "zeta", 0.0, path); p.c = -1.0; }
+    p.unloadRatio = numberOr(obj, "unloadRatio", p.unloadRatio, path);
+    if (!(p.unloadRatio >= 0.0)) fail(path, "unloadRatio must be ≥ 0");
     p.plastic = numberOr(obj, "plasticForce", p.plastic, path);
     p.hardening = numberOr(obj, "hardening", p.hardening, path);
     p.breakForce = numberOr(obj, "breakForce", p.breakForce, path);
@@ -266,6 +269,7 @@ struct Loader {
       bd.stiffness = static_cast<float>(p.k);
       const double c = p.c >= 0.0 ? p.c : (p.zeta >= 0.0 ? 2.0 * p.zeta * std::sqrt(p.k * reducedMass(bd.a, bd.b)) : 0.0);
       bd.damping = static_cast<float>(c);
+      bd.unloadRatio = static_cast<float>(p.unloadRatio);
       bd.plasticForce = static_cast<float>(p.plastic);
       bd.hardening = static_cast<float>(p.hardening);
       bd.breakForce = static_cast<float>(p.breakForce);

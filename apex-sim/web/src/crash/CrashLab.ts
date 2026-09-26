@@ -134,22 +134,35 @@ export class CrashLab {
     return this.actors;
   }
 
-  /** Launches a test; `staged`: the cars wait at their start marks at rest (the lab's opening view, a new pick). */
-  launch(spec: CrashSpec, vehicleA: VehiclePreset, vehicleB: VehiclePreset, staged = false): Promise<void> {
-    this.launching = this.run(spec, vehicleA, vehicleB, staged);
+  /** Launches a test; `staged`: the cars wait at their start marks at rest (the lab's opening view, a new pick);
+   *  `keep`: the cars already on the pad go into it as they are, damage and all (the world is not rebuilt; a car
+   *  that is not there yet is added fresh, one no longer wanted is taken away). */
+  launch(spec: CrashSpec, vehicleA: VehiclePreset, vehicleB: VehiclePreset, staged = false, keep = false): Promise<void> {
+    this.launching = this.run(spec, vehicleA, vehicleB, staged, keep);
     return this.launching;
   }
 
   private runId = 0;
 
-  private async run(spec: CrashSpec, vehicleA: VehiclePreset, vehicleB: VehiclePreset, staged: boolean): Promise<void> {
+  private async run(spec: CrashSpec, vehicleA: VehiclePreset, vehicleB: VehiclePreset, staged: boolean, keep: boolean): Promise<void> {
     const id = ++this.runId; // a newer launch supersedes this one (its spawns are dropped by the worker)
     this.lastSpec = spec;
-    this.trucks.clear();
+    const wanted = spec.kind === 'carToCar' ? [vehicleA, vehicleB] : [vehicleA];
+    const labels = wanted.map((v, i) => `${i === 0 ? 'A' : 'B'} · ${tl(v.label)}`);
+    // Keep damage: a slot whose car is on the pad already takes it into the new run as it is.
+    const kept = wanted.map((v, i) => keep && !!this.actors[i]?.spawned && this.actors[i].vehicle.id === v.id);
+    const reuse = kept.some(Boolean);
     // Hold the clock until every car is in place: the first car must not set off while the second one loads.
     this.physics.setPaused(true);
-    this.physics.loadScene(CRASH_SCENE);
-    this.log.clear();
+    const since = new Map<string, number>();
+    if (reuse) {
+      this.trucks.retire();
+      kept.forEach((k, i) => k && since.set(labels[i], this.actors[i].state?.crashEvents ?? 0));
+    } else {
+      this.trucks.clear();
+      this.physics.loadScene(CRASH_SCENE);
+    }
+    this.log.clear(since);
     this.onLog?.([]);
     this.onWheels?.([]);
     this.energyGraph.clear();
@@ -157,26 +170,35 @@ export class CrashLab {
     this.glassDebris.clear();
     this.lampDebris.clear();
     this.sparks.clear();
-    const wanted = spec.kind === 'carToCar' ? [vehicleA, vehicleB] : [vehicleA];
     // Reuse a slot's actor (and its bound model) while its vehicle stays the same.
     for (let i = 0; i < Math.max(wanted.length, this.actors.length); i++) {
-      const keep = i < wanted.length && this.actors[i]?.vehicle.id === wanted[i].id;
-      if (!keep && this.actors[i]) this.actors[i].dispose();
-      if (i < wanted.length && !keep) this.actors[i] = new VehicleActor(this.physics, this.viewer, wanted[i], { glass: this.glassDebris, lamp: this.lampDebris, sparks: this.sparks }, this.onError);
+      const same = i < wanted.length && this.actors[i]?.vehicle.id === wanted[i].id;
+      if (!same && this.actors[i]) {
+        const gone = this.actors[i].spawned;
+        if (reuse && gone) this.physics.retireFamily(gone.body); // the world stays: take the car off the pad
+        this.actors[i].dispose();
+      }
+      if (i < wanted.length && !same) this.actors[i] = new VehicleActor(this.physics, this.viewer, wanted[i], { glass: this.glassDebris, lamp: this.lampDebris, sparks: this.sparks }, this.onError);
     }
     this.actors.length = wanted.length;
     const plan = crashLaunch(spec, vehicleA.crash, vehicleB.crash);
-    this.labels = wanted.map((v, i) => `${i === 0 ? 'A' : 'B'} · ${tl(v.label)}`);
+    this.labels = labels;
     // Staged: the same marks, standing still (a drop test's car waits on the ground under its drop point).
     const still = (p: typeof plan.a | null) => p && { ...p, speed: 0, velocity: undefined, position: [p.position[0], spec.kind === 'drop' ? 0 : p.position[1], p.position[2]] as typeof p.position };
     const poses = staged ? [still(plan.a), still(plan.b)] : [plan.a, plan.b];
     for (let i = 0; i < this.actors.length; i++) {
+      const spawned = this.actors[i].spawned;
+      if (kept[i] && spawned) {
+        this.physics.relaunchVehicle(spawned.vehicle, poses[i]!, 0); // the crash pad's floor is y = 0
+        this.physics.setVehicleInput(spawned.vehicle, NEUTRAL);
+        continue;
+      }
       const ok = await this.actors[i].spawn(poses[i]!, `${i === 0 ? 'A' : 'B'}:${wanted[i].id}`);
       if (id !== this.runId) return;
       if (ok) this.physics.setVehicleInput(this.actors[i].spawned!.vehicle, NEUTRAL);
     }
     if (id !== this.runId) return;
-    if (spec.kind === 'crush' && !staged) this.trucks.start(0);
+    if (spec.kind === 'crush' && !staged) this.trucks.start(reuse ? this.physics.latestStats()?.simTime ?? 0 : 0);
     this.physics.setPaused(false);
     this.focus.set(plan.focus[0], plan.focus[1], plan.focus[2]);
     // X-ray survives a launch: the reused and the new cars both follow it (the models see-through, beams shown).

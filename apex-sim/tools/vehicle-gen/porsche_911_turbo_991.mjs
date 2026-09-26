@@ -75,14 +75,19 @@ const b = new VehicleBuilder();
 // (was 1.8e5 N, 10 %) the body stops wobbling on its wheels over bumps, and in a crash it stores less elastic energy
 // at yield (F²/2k) to spring back with.
 const CHASSIS_EA = 2.3e5;
+// unloadRatio: the crumple zones, loaded hard (in a crash), spring back along a 5× steeper slope, as sheet steel
+// does: the elastic energy this soft lattice holds is not all returned as a rebound (core BeamDesc::unloadRatio). The
+// passenger cell keeps its elastic spring-back (set by the crash lattice below): it must come out of a crash its own
+// shape, not set where the impact squeezed it.
+const UNLOAD_RATIO = 5;
 b.group('chassis', { k: 7.7e5, zeta: 0.25 });
-b.group('hardpoint', { k: 8e5, zeta: 0.2, plasticForce: 3.0e4, hardening: 0.05 });
+b.group('hardpoint', { k: 8e5, zeta: 0.2, plasticForce: 3.0e4, hardening: 0.05, unloadRatio: UNLOAD_RATIO });
 b.group('knuckle', { k: 2e6, zeta: 0.1 });
 b.group('link', { k: 1.5e6, zeta: 0.1, ...suspensionYield(2.4e4) });
 b.group('tierod', { type: 'hydro', k: 1.5e6, zeta: 0.1, ...suspensionYield(1.4e4) });
 b.group('toelink', { k: 1.5e6, zeta: 0.1, ...suspensionYield(1.2e4) });
 b.group('bumpstop', { type: 'bounded', k: 1.5e5, zeta: 0.05 });
-b.group('subframe', { k: 1.2e6, zeta: 0.1, plasticForce: 3.0e4, hardening: 0.05 });
+b.group('subframe', { k: 1.2e6, zeta: 0.1, plasticForce: 3.0e4, hardening: 0.05, unloadRatio: UNLOAD_RATIO });
 
 // ---- powertrain (§4.4 internal parts) ---------------------------------------------------------------------------
 // The engine behind the rear axle and the PDK (with the rear differential) ahead of it are rigid node blocks bolted
@@ -171,9 +176,11 @@ const zoneForce = (z) => {
     const zm = Math.round(((pa[2] + pc[2]) / 2) * 1000) / 1000;
     const zc = zs.includes(zm) ? zm + 0.05 * Math.sign(-zm || 1) : zm;
     if (!cosCache.has(zc)) cosCache.set(zc, sectionCos(zc));
-    const yieldForce = zoneForce((pa[2] + pc[2]) / 2) / cosCache.get(zc);
+    const zone = zoneForce((pa[2] + pc[2]) / 2);
+    const yieldForce = zone / cosCache.get(zc);
     Object.assign(beam[3], {
       plasticForce: Math.round(yieldForce), hardening: crash.hardening, crushLimit: crash.crushLimit, tearLimit: crash.tearLimit,
+      ...(zone < crash.cabin ? { unloadRatio: UNLOAD_RATIO } : {}),
     });
   }
 }
@@ -537,7 +544,10 @@ const vehicle = {
   brakes: { stiffness: 1.0e5, damping: 40 },
   electronics: { abs: true, absSlip: 0.13, tcs: true, tcsSlip: 0.10 },
   aero: {
-    dragArea: 0.65, liftAreaFront: +(0.03 - panelLift.front).toFixed(4), liftAreaRear: +(0.06 - panelLift.rear).toFixed(4),
+    // liftArea* count downforce positive; the latched panels' suction lifts (panelLift, up positive), so the residual
+    // carries that much more downforce and the closed car keeps its totals (a sign slip here once doubled the lift:
+    // the nose went light at 250 km/h and shook at 300).
+    dragArea: 0.65, liftAreaFront: +(0.03 + panelLift.front).toFixed(4), liftAreaRear: +(0.06 + panelLift.rear).toFixed(4),
     frontNodes: b.lattice.filter((lid) => b.pos(lid)[2] > zF + 0.2 && b.pos(lid)[1] < 0.6),
     rearNodes: b.lattice.filter((lid) => b.pos(lid)[2] < zR - 0.3 && b.pos(lid)[1] < 0.9),
     // §10 surface aerodynamics on the lattice hull (group 0; the lids' and doors' skins carry their own panels), and

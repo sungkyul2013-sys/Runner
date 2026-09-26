@@ -16,6 +16,8 @@
 namespace sbc::detail {
 namespace {
 
+constexpr float kOneSidedStop = 100.0f;  // [m] a bounded beam's maxLength from which it only pushes (no upper limit)
+
 struct UnionFind {
   std::vector<int32_t> parent;
   explicit UnionFind(int n) : parent(static_cast<size_t>(n)) { std::iota(parent.begin(), parent.end(), 0); }
@@ -78,6 +80,7 @@ Body extract(const Body& src, const std::vector<int32_t>& nodes, const std::vect
   for (int32_t& a : b.beamA) a = map(a);
   for (int32_t& a : b.beamB) a = map(a);
   pick(b.beamType, src.beamType, beams); pick(b.stiffness, src.stiffness, beams); pick(b.damping, src.damping, beams);
+  pick(b.unloadRatio, src.unloadRatio, beams); pick(b.unloadArmed, src.unloadArmed, beams);
   pick(b.restLength, src.restLength, beams); pick(b.initialRestLength, src.initialRestLength, beams);
   pick(b.plasticForce, src.plasticForce, beams); pick(b.hardening, src.hardening, beams);
   pick(b.breakForce, src.breakForce, beams); pick(b.deformLimit, src.deformLimit, beams);
@@ -160,9 +163,14 @@ std::vector<Body> splitIslands(Body& b) {
   const int n = b.nodeCount();
   UnionFind uf(n);
   // Support beams resist compression only: they keep a panel from being pushed through the body, not on it.
-  for (int i = 0; i < b.beamCount(); ++i)
-    if (!b.broken[static_cast<size_t>(i)] && b.beamType[static_cast<size_t>(i)] != static_cast<uint8_t>(BeamType::kSupport))
-      uf.join(b.beamA[static_cast<size_t>(i)], b.beamB[static_cast<size_t>(i)]);
+  for (int i = 0; i < b.beamCount(); ++i) {
+    const size_t k = static_cast<size_t>(i);
+    // A compression-only element holds nothing together: support beams, and bounded stops without an upper limit
+    // (a tyre's rim barrel) — a wheel torn off or a shredded tread goes its way past them.
+    const bool pushOnly = b.beamType[k] == static_cast<uint8_t>(BeamType::kSupport) ||
+                          (b.beamType[k] == static_cast<uint8_t>(BeamType::kBounded) && b.maxLength[k] >= kOneSidedStop);
+    if (!b.broken[k] && !pushOnly) uf.join(b.beamA[k], b.beamB[k]);
+  }
   for (int s = 0; s < b.sliderCount(); ++s) {
     if (b.sliderBroken[static_cast<size_t>(s)]) continue;
     uf.join(b.sliderNode[static_cast<size_t>(s)], b.sliderA[static_cast<size_t>(s)]);

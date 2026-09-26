@@ -90,7 +90,11 @@ button.ghost { background: transparent; color: var(--text-2); align-self: flex-s
 .fab.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .fab .icon { width: 22px; height: 22px; margin-right: 8px; vertical-align: -5px; }
 @media (min-width: 761px) { body:has(.sheet.open) .fab { right: calc(16px + var(--safe-r) + min(380px, 34vw) + 16px); } }
-@media (max-width: 760px) { .fab { bottom: calc(76px + var(--safe-b)); } }
+@media (max-width: 760px) {
+  .fab { bottom: calc(76px + var(--safe-b)); transition: bottom 260ms var(--ease); }
+  /* The phone's panel takes the lower 62 %: the launch button rides above it. */
+  body:has(.sheet.open) .fab { bottom: calc(62% + 20px + var(--safe-b)); }
+}
 .tablewrap { overflow-x: auto; border-radius: var(--radius-s); border: 1px solid var(--border); }
 .tablewrap table { width: 100%; border-collapse: collapse; font-family: var(--font-num); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 .tablewrap th, .tablewrap td { padding: 6px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
@@ -158,12 +162,30 @@ body.touch-on .minimap { left: calc(12px + var(--safe-l)); right: auto; top: cal
 .cr-stats span { display: block; margin-top: 2px; font-size: 0.7rem; color: var(--text-3); }
 .cr-note { font-size: 0.8rem; color: var(--text-2); }
 .crash-result .row { display: flex; gap: 8px; }
+.crash-result .chips { margin: -2px 0; }
+.cr-what { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cr-link { min-height: 32px !important; padding: 0 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; color: var(--accent); background: transparent; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); white-space: nowrap; }
+.crash-presets { display: flex; flex-direction: column; gap: 12px; }
+.keep-toggle::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; border: 2px solid currentColor; vertical-align: -1px; }
+.keep-toggle.active::before { background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.fab small { margin-left: 6px; font-size: 0.78rem; font-weight: 700; opacity: 0.85; }
 .crash-result .row button { flex: 1; min-height: 48px; font-weight: 700; }
 .crash-result button.primary { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 70%, #fff), var(--accent)); border-color: transparent; color: var(--accent-ink); }
-@media (max-width: 700px) {
-  .crash-result { left: calc(10px + var(--safe-l)); right: calc(10px + var(--safe-r)); width: auto; bottom: calc(92px + var(--safe-b)); padding: 14px; }
-  .cr-stats { grid-template-columns: repeat(2, 1fr); }
-  .cr-stats b { font-size: 1.15rem; }
+@media (max-width: 760px) {
+  /* Phones: a compact card above the launch button (which stays free), the stats in one row. */
+  .crash-result { left: calc(10px + var(--safe-l)); right: calc(10px + var(--safe-r)); width: auto; bottom: calc(144px + var(--safe-b)); padding: 12px 12px 10px; gap: 8px; border-radius: 18px; }
+  .cr-head b { font-size: 1.05rem; }
+  .cr-head .icon-btn { min-height: 34px !important; min-width: 34px; }
+  .cr-stats { gap: 5px; }
+  .cr-stats > div { padding: 7px 5px; border-radius: 10px; }
+  .cr-stats b { font-size: 0.98rem; }
+  .cr-stats b small { display: block; margin: 0; }
+  .cr-stats span { font-size: 0.62rem; }
+  .crash-result .row button { min-height: 42px; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  .crash-result { bottom: calc(10px + var(--safe-b)); width: min(400px, 50vw); padding: 10px; gap: 6px; }
+  .cr-stats b { font-size: 1rem; }
 }
 
 /* ---- free-roam 3D overview (§18.3-7) ---- */

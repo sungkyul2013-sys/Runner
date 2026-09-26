@@ -129,7 +129,7 @@ Body buildBody(const BodyDesc& desc) {
 
   const size_t m = desc.beams.size();
   auto resizeBeams = [m](auto&... arrays) { (arrays.assign(m, {}), ...); };
-  resizeBeams(b.beamA, b.beamB, b.beamType, b.stiffness, b.damping, b.restLength, b.initialRestLength,
+  resizeBeams(b.beamA, b.beamB, b.beamType, b.stiffness, b.damping, b.unloadRatio, b.unloadArmed, b.restLength, b.initialRestLength,
               b.plasticForce, b.hardening, b.breakForce, b.deformLimit, b.crushFloor, b.tearLength, b.plasticDeformation,
               b.fatigueLimit, b.fatigue, b.plasticSign, b.minLength,
               b.maxLength, b.breakGroup, b.broken, b.compressionStiffness, b.hydroChannel, b.hydroFactor,
@@ -143,7 +143,7 @@ Body buildBody(const BodyDesc& desc) {
     const std::string tag = "beam " + std::to_string(order[k]);
     require(d.a >= 0 && d.b >= 0 && static_cast<size_t>(d.a) < n && static_cast<size_t>(d.b) < n && d.a != d.b,
             tag + " has invalid node indices");
-    require(d.stiffness >= 0.0f && d.damping >= 0.0f, tag + " has negative stiffness/damping");
+    require(d.stiffness >= 0.0f && d.damping >= 0.0f && d.unloadRatio >= 0.0f, tag + " has negative stiffness/damping");
     require(d.hardening >= 0.0f && d.hardening < 1.0f, tag + " hardening must be in [0, 1)");
     const Vec3 pa = desc.nodes[d.a].position, pb = desc.nodes[d.b].position;
     const float initialLength = length(pb - pa);
@@ -156,6 +156,7 @@ Body buildBody(const BodyDesc& desc) {
     b.beamType[k] = static_cast<uint8_t>(d.type);
     b.stiffness[k] = d.stiffness;
     b.damping[k] = d.damping;
+    b.unloadRatio[k] = d.unloadRatio;
     b.restLength[k] = rest;
     b.initialRestLength[k] = rest;
     b.plasticForce[k] = d.plasticForce;

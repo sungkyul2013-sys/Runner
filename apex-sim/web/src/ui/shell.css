@@ -110,7 +110,7 @@
 .sheet .act span { overflow: hidden; text-overflow: ellipsis; }
 .sheet .act .icon { width: 18px; height: 18px; }
 
-.sheet-tabs { position: sticky; top: -14px; z-index: 1; margin: -14px -16px 0; padding: 10px 12px; display: flex; gap: 4px; background: color-mix(in srgb, var(--surface) 96%, transparent); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.sheet-tabs { flex: none; position: sticky; top: -14px; z-index: 1; margin: -14px -16px 0; padding: 10px 12px; display: flex; gap: 4px; background: color-mix(in srgb, var(--surface) 96%, transparent); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
 .sheet-tab { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px !important; padding: 0 10px; border-radius: 999px; border: none; background: transparent; color: var(--text-2); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 .sheet-tab .icon { width: 16px; height: 16px; }
 .sheet-tab.on { background: color-mix(in srgb, var(--accent) 20%, var(--surface-raised)); color: var(--text); }

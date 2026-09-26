@@ -268,6 +268,27 @@ int World::retireFamily(int body) {
   return count;
 }
 
+void World::relaunchVehicle(int vehicle, DVec3 position, double yaw, float speed, double floorY) {
+  Vehicle& v = *vehicles_.at(static_cast<size_t>(vehicle));
+  const size_t bi = static_cast<size_t>(v.bodyIndex());
+  const int32_t family = bodies_[bi].family;
+  for (size_t k = 0; k < bodies_.size(); ++k) {
+    Body& part = bodies_[k];
+    if (k == bi || part.family != family || !part.enabled) continue;
+    const double before = kineticEnergy(part) + gravityPotential(part, params_.gravity);
+    std::fill(part.vx.begin(), part.vx.end(), 0.0f);
+    std::fill(part.vy.begin(), part.vy.end(), 0.0f);
+    std::fill(part.vz.begin(), part.vz.end(), 0.0f);
+    part.origin.y -= kParkDepth;
+    part.enabled = false;
+    part.losses.external += kineticEnergy(part) + gravityPotential(part, params_.gravity) - before;
+  }
+  Body& b = bodies_[bi];
+  const double before = kineticEnergy(b) + gravityPotential(b, params_.gravity);
+  v.relaunch(b, position, yaw, speed, floorY);
+  b.losses.external += kineticEnergy(b) + gravityPotential(b, params_.gravity) - before;
+}
+
 int World::addVehicle(int body, const VehicleDesc& desc) {
   if (body < 0 || body >= bodyCount()) throw std::out_of_range("addVehicle: body index");
   vehicles_.push_back(std::make_unique<Vehicle>(desc, body, bodies_[static_cast<size_t>(body)]));
@@ -403,7 +424,7 @@ void World::computeInternalForces(int bi) {
       std::fill(a->begin(), a->end(), 0.0f);
     }
     detail::updateHydros(b, params_.dt);
-    st.beamsBroken = detail::accumulateBeamForces<true>(b);
+    st.beamsBroken = detail::accumulateBeamForces<true>(b, params_.dt);
     detail::accumulateConstraintForces<true>(b);
     if (!b.aeroCoefficient.empty()) detail::accumulateAeroPanels<true>(b, params_.airDensity);
     st.staticContacts = ContactSolver::staticContacts<true>(*this, bi);
@@ -414,7 +435,7 @@ void World::computeInternalForces(int bi) {
     for (const int v : bodyVehicles_[static_cast<size_t>(bi)]) vehicles_[static_cast<size_t>(v)]->step(*this, b, true);
   } else {
     detail::updateHydros(b, params_.dt);
-    st.beamsBroken = detail::accumulateBeamForces<false>(b);
+    st.beamsBroken = detail::accumulateBeamForces<false>(b, params_.dt);
     detail::accumulateConstraintForces<false>(b);
     if (!b.aeroCoefficient.empty()) detail::accumulateAeroPanels<false>(b, params_.airDensity);
     st.staticContacts = ContactSolver::staticContacts<false>(*this, bi);
@@ -622,7 +643,7 @@ uint64_t World::stateHash() const {
     h.vec(b.px); h.vec(b.py); h.vec(b.pz);
     h.vec(b.vx); h.vec(b.vy); h.vec(b.vz);
     h.vec(b.stickX); h.vec(b.stickY); h.vec(b.stickZ); h.vec(b.anchorContact);
-    h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.fatigue); h.vec(b.plasticSign); h.vec(b.broken); h.vec(b.torsionBroken); h.vec(b.triTorn); h.vec(b.nodeSurface);
+    h.vec(b.restLength); h.vec(b.plasticDeformation); h.vec(b.fatigue); h.vec(b.plasticSign); h.vec(b.unloadArmed); h.vec(b.broken); h.vec(b.torsionBroken); h.vec(b.triTorn); h.vec(b.nodeSurface);
     h.vec(b.sliderBroken); h.vec(b.groupBroken); h.vec(b.flags);
     for (const ContactDepth& e : b.contactDepths) { h.value(e.node); h.value(e.otherBody); h.value(e.otherNode); h.value(e.depth); }
     h.vec(b.hydroInputs);

@@ -163,6 +163,12 @@ export class PhysicsClient {
     this.send({ type: 'retire', body });
   }
 
+  /** Sends a spawned car, with the damage it has, into another run from `pose` (see messages.ts 'relaunch'). */
+  relaunchVehicle(vehicle: number, pose: VehiclePose, floorY = 0): void {
+    this.resetPlayback(); // no frame blended between the wreck's last place and its start mark
+    this.send({ type: 'relaunch', vehicle, pose, floorY });
+  }
+
   loadScene(name: string, bodies?: number): void {
     this.resetPlayback();
     this.send({ type: 'scene', name, bodies });

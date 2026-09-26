@@ -227,13 +227,21 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
   if (overlap !== undefined && overlap > 0 && overlap <= 1) initial.overlap = overlap;
   const vehicleB = DRIVE_VEHICLES.find((v) => v.id === params.get('b')) ?? vehicle;
   const panel = new CrashPanel({
-    launch: (spec, a, b) => {
+    launch: (spec, a, b, keep) => {
       ctx.setPaused(false);
-      void crash.launch(spec, a, b);
+      void crash.launch(spec, a, b, false, keep);
     },
-    stage: (spec, a, b) => {
+    stage: (spec, a, b, keep) => {
       ctx.setPaused(false);
-      void crash.launch(spec, a, b, true);
+      void crash.launch(spec, a, b, true, keep);
+    },
+    pick: () => {
+      tabs.select(0);
+      shell.sheet.setOpen(true);
+    },
+    report: () => {
+      tabs.select(2);
+      shell.sheet.setOpen(true);
     },
   }, initial, [crash.energyGraph.root, crash.momentumGraph.root], vehicle.id, vehicleB.id);
   const shell = new Shell(t('modeCrash'), tl(vehicle.label), { mainMenu: () => ctx.go('menu'), restart: () => panel.launch(), setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) });
@@ -276,7 +284,12 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
     { title: t('crashTabReport'), icon: 'info', nodes: [section(t('crashReport'), panel.report)] },
     { title: t('crashTabView'), icon: 'camera', nodes: [section(t('camAngles'), views), section(t('bgTitle'), scenery)] },
   ]);
-  panel.onResult = () => tabs.select(2);
+  // A phone's panel covers the lower half: opened, it takes the result card's place.
+  const sheetToggled = shell.sheet.onToggle;
+  shell.sheet.onToggle = (open) => {
+    sheetToggled(open);
+    if (open && !matchMedia('(min-width: 761px)').matches) panel.dismissResult();
+  };
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || shell.menuOpen) return;
     if (e.code === 'Space' && !e.repeat) {

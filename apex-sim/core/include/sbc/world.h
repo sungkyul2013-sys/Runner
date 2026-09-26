@@ -215,6 +215,12 @@ class World {
   // energy they take along is booked as external work. Returns the number of bodies retired.
   int retireFamily(int body);
   static constexpr double kParkDepth = 20000.0;  // [m]
+  // Sends vehicle `vehicle` into another run with the damage it has (§20 crash tools: the same wreck into the next
+  // test): the parts that broke off it are retired, its body is moved rigidly (no beam, plastic or pressure state
+  // changes) so the chassis stands upright at heading `yaw` with the model origin at `position` — lifted until no
+  // collision node is below `floorY` — and every node gets the forward `speed` (wheels spinning to match). Stick
+  // anchors, the crash sensor and the slip states start fresh; the energy change is booked as external work.
+  void relaunchVehicle(int vehicle, DVec3 position, double yaw, float speed, double floorY);
 
   // ---- vehicles (§6–§10) ----
   // Attaches a vehicle controller to body `body` (node indices in `desc` refer to that body). Returns its id.

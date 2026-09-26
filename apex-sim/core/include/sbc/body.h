@@ -51,6 +51,12 @@ struct BeamDesc {
   BeamType type = BeamType::kNormal;
   float stiffness = 0.0f;              // k [N/m]
   float damping = 0.0f;                // c [N·s/m]
+  // [-] unloading ratio α (plastic beams): after yielding, the beam springs back along a slope α times its stiffness
+  // — its rest length follows the recovering length (α − 1) times as fast until the force is gone — and the elastic
+  // energy it does not give back is plastic work. A node-beam body is far softer than the sheet steel it stands for
+  // (the explicit step bounds its stiffness), so a member loaded to yield holds many times the elastic energy the
+  // real one would and returns it as a rebound; real metal unloads steeply. ≤ 1: off. The loading is untouched.
+  float unloadRatio = 0.0f;
   float restLength = -1.0f;            // [m]; ≤ 0 → taken from the initial node distance
   float plasticForce = kInfiniteForce; // [N] elastic force magnitude at which yielding starts
   float hardening = 0.0f;              // [-] post-yield slope as a fraction of k (0 = perfectly plastic)
@@ -227,6 +233,8 @@ struct Body {
   std::vector<int32_t> beamA, beamB;
   std::vector<uint8_t> beamType;
   std::vector<float> stiffness, damping;
+  std::vector<float> unloadRatio;       // [-] (BeamDesc::unloadRatio)
+  std::vector<uint8_t> unloadArmed;     // loaded to 80 % of its yield force (or yielding) since it last unloaded fully
   std::vector<float> restLength;        // current (plastically updated) rest length [m]
   std::vector<float> initialRestLength; // [m]
   std::vector<float> plasticForce, hardening, breakForce, deformLimit;

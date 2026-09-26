@@ -38,14 +38,18 @@ const MIN_ABSORBED = 1000;   // [J]
 
 export class EventLog {
   private events: CarEvent[] = [];
+  // Per car: events up to this number belong to an earlier run (a car relaunched with its damage keeps counting).
+  private floor = new Map<string, number>();
 
-  clear(): void {
+  /** Empties the log; `since`: per car, the event count its earlier runs reached (those are not shown again). */
+  clear(since?: Map<string, number>): void {
     this.events = [];
+    this.floor = since ?? new Map();
   }
 
   /** Takes a car's latest state; returns true when something changed. */
   observe(car: string, v: VehicleState): boolean {
-    if (v.crashEvents <= 0) return false;
+    if (v.crashEvents <= (this.floor.get(car) ?? 0)) return false;
     const e: CarEvent = {
       car,
       index: v.crashEvents,

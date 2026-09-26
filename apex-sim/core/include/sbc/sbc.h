@@ -51,6 +51,9 @@ int sbc_world_spawn_lattice(sbc_world* w, const double* params, int count);
 int sbc_world_add_body_velocity(sbc_world* w, int body, float dvx, float dvy, float dvz);
 // Retires a body and the parts that broke off it (World::retireFamily); returns how many bodies, −1 on a bad index.
 int sbc_world_retire_family(sbc_world* w, int body);
+// Relaunches a vehicle with its damage (World::relaunchVehicle): model origin at x y z, heading yaw [rad], forward
+// speed [m/s], no collision node below floor_y. 0, or −1 on a bad index.
+int sbc_world_relaunch_vehicle(sbc_world* w, int vehicle, double x, double y, double z, double yaw, float speed, double floor_y);
 /* §10 steady wind [m/s] (world frame) and a vehicle wing's angle adjustment [rad]. */
 void sbc_world_set_wind(sbc_world* w, float x, float y, float z);
 int sbc_vehicle_set_wing_angle(sbc_world* w, int vehicle, int wing, float angle);

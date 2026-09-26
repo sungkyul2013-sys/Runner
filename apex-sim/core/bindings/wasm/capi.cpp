@@ -189,6 +189,14 @@ int sbc_world_retire_family(sbc_world* w, int body) {
   return w->world.retireFamily(body);
 }
 
+int sbc_world_relaunch_vehicle(sbc_world* w, int vehicle, double x, double y, double z, double yaw, float speed, double floor_y) {
+  if (!validVehicle(w, vehicle)) return -1;
+  return guarded([&] {
+    w->world.relaunchVehicle(vehicle, {x, y, z}, yaw, speed, floor_y);
+    return 0;
+  });
+}
+
 int sbc_world_add_tether(sbc_world* w, int body, int node, int anchorBody, int anchorNode, double x, double y, double z,
                          float length, int rope, float maxForce, float reelSpeed) {
   if (!w) return -1;

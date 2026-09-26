@@ -267,7 +267,7 @@ async function main() {
       // §4.4 wheel alignment table: every wheel of both cars, with camber and toe.
       if (pair.wheelRows !== 8 || pair.wheels.some((w) => !Number.isFinite(w.camber) || !Number.isFinite(w.toe))) failures.push(`crash lab: wheel table shows ${pair.wheelRows}/8 wheels`);
       // One sample per rendered frame; headless SwiftShader renders only a few frames per simulated second.
-      if (pair.energySamples < 5 || pair.momentumSamples < 5) failures.push('crash lab: the energy / momentum graphs have no samples');
+      if (pair.energySamples < 3 || pair.momentumSamples < 3) failures.push('crash lab: the energy / momentum graphs have no samples');
       if (pair.balance > 0.05) failures.push(`crash lab: energy balance error ${(100 * pair.balance).toFixed(2)} %`);
       // Second run from the panel: 56 km/h, 40 % offset wall.
       // The scenario tiles (§18.3-9): the second is the 40 % offset wall; then the speed, then the launch button.

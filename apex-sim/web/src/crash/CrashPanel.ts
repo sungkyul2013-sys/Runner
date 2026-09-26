@@ -2,6 +2,7 @@
 // log, the wheels' alignment and tyres (§4.4, §6) and the energy / momentum graphs.
 import { DRIVE_VEHICLES, type VehiclePreset } from '../app/presets';
 import { t, tl } from '../ui/i18n';
+import { notify } from '../ui/feedback';
 import { TYRE } from '../physics/telemetry';
 import type { WheelRow } from './CrashLab';
 import type { CollisionRow } from './events';
@@ -19,9 +20,14 @@ function numberInput(value: number, min: number, max: number, step: number, labe
 }
 
 export interface CrashPanelActions {
-  launch(spec: CrashSpec, a: VehiclePreset, b: VehiclePreset): void;
+  /** `keep`: the cars on the pad go into the test as they are, damage and all. */
+  launch(spec: CrashSpec, a: VehiclePreset, b: VehiclePreset, keep: boolean): void;
   /** A new pick: the cars wait at their marks. */
-  stage?(spec: CrashSpec, a: VehiclePreset, b: VehiclePreset): void;
+  stage?(spec: CrashSpec, a: VehiclePreset, b: VehiclePreset, keep: boolean): void;
+  /** The result card's "other test": the scenario tiles. */
+  pick?(): void;
+  /** The result card's "report": the report tab. */
+  report?(): void;
 }
 
 // Scenario pictograms (top view, side view for the rollover and the drop): car A in the accent colour, a parked
@@ -75,11 +81,32 @@ export class CrashPanel {
   private presetLabel = '';
   private wheels: WheelRow[] = [];
   private resultTimer = 0;
-  /** Called when a result card appears (the lab shows its report tab). */
+  /** Called when a result card appears. */
   onResult: () => void = () => {};
+  /** Keep damage: the next test takes the wrecked cars as they are (toggles in the tiles, the details and the card). */
+  keep = false;
+  private readonly keepToggles: HTMLButtonElement[] = [];
+  private readonly onKeep: (on: boolean) => void;
+  /** A "keep damage" toggle bound to the panel's state (every copy shows the same). */
+  keepToggle(): HTMLButtonElement {
+    const b = el('button', { className: 'chip keep-toggle', title: t('crashKeepTip') }, t('crashKeep'));
+    b.ariaPressed = String(this.keep);
+    b.onclick = () => this.onKeep(!this.keep);
+    this.keepToggles.push(b);
+    return b;
+  }
 
   constructor(actions: CrashPanelActions, initial: Partial<CrashSpec> = {}, graphs: HTMLElement[] = [], vehicleA?: string, vehicleB?: string) {
     this.spec = { kind: 'fullWall', speedA: 56, speedB: 0, angle: 0, offset: 0, overlap: 0.4, ...initial };
+    this.onKeep = (on) => {
+      this.keep = on;
+      for (const b of this.keepToggles) {
+        b.ariaPressed = String(on);
+        b.classList.toggle('active', on);
+      }
+      this.fab.replaceChildren(t('crashLaunch'), ...(on ? [el('small', {}, t('crashKeepShort'))] : []));
+      notify(on ? t('crashKeepOn') : t('crashKeepOff'), on ? 'ok' : '', { icon: 'wrench', key: 'crash-keep' });
+    };
     const car = (label: string) => {
       const s = el('select', { ariaLabel: label });
       for (const v of DRIVE_VEHICLES) s.append(el('option', { value: v.id }, tl(v.label)));
@@ -145,14 +172,15 @@ export class CrashPanel {
       this.hideResult();
       this.armed = true;
       this.presetLabel = tl((CRASH_PRESETS.find((p) => p.id === preset) ?? { label: { ko: t('crashCustom'), en: t('crashCustom') } }).label);
-      actions.launch({ ...this.spec }, vehicle(carA), vehicle(carB));
+      actions.launch({ ...this.spec }, vehicle(carA), vehicle(carB), this.keep);
     };
     this.fab.onclick = this.launch;
     const stage = () => {
       this.hideResult();
       this.armed = false;
-      actions.stage?.({ ...this.spec }, vehicle(carA), vehicle(carB));
+      actions.stage?.({ ...this.spec }, vehicle(carA), vehicle(carB), this.keep);
     };
+    this.actions = actions;
     this.stage = stage;
     carA.onchange = carB.onchange = stage;
 
@@ -163,8 +191,8 @@ export class CrashPanel {
     const wheelHead = el('thead', {}, el('tr', {}, ...[t('wheelCar'), t('wheelWheel'), t('wheelCamber'), t('wheelToe'), t('wheelTyre')].map((h) => el('th', {}, h))));
     const wheels = el('div', { className: 'tablewrap' }, el('table', { className: 'eventlog wheels' }, wheelHead, this.wheelBody));
 
-    this.scenario = el('div', { className: 'grid2' }, ...tiles.map(([, b]) => b));
-    this.details = el('div', { className: 'sheet-section' }, row(t('crashCarA'), carA), row(t('crashSpeedA'), speedA, el('small', {}, 'km/h')),
+    this.scenario = el('div', { className: 'crash-presets' }, el('div', { className: 'chips' }, this.keepToggle()), el('div', { className: 'grid2' }, ...tiles.map(([, b]) => b)));
+    this.details = el('div', { className: 'sheet-section' }, el('div', { className: 'chips' }, this.keepToggle()), row(t('crashCarA'), carA), row(t('crashSpeedA'), speedA, el('small', {}, 'km/h')),
       el('div', { className: 'chips' }, ...chips), wallOnly, pairOnly);
     this.report = el('div', { className: 'sheet-section' }, el('h3', {}, t('crashLog')), table, el('h3', {}, t('wheelTitle')), wheels, ...graphs);
     this.setLog([]);
@@ -219,6 +247,13 @@ export class CrashPanel {
     }
   }
 
+  private readonly actions: CrashPanelActions;
+
+  /** Takes the result card away (the panel opened over it on a phone). */
+  dismissResult(): void {
+    this.hideResult();
+  }
+
   private hideResult(): void {
     clearTimeout(this.resultTimer);
     this.resultTimer = 0;
@@ -252,15 +287,28 @@ export class CrashPanel {
     const what = r.cars.length > 1 ? r.cars.map((c) => c.split(' · ')[0]).join(' ↔ ') : `${r.cars[0].split(' · ')[1] ?? r.cars[0]} → ${t('logWorld')}`;
     const again = el('button', { className: 'primary' }, t('resAgain'));
     again.onclick = () => this.launch();
+    const other = el('button', {}, t('resOther'));
+    other.onclick = () => {
+      this.hideResult();
+      this.actions.pick?.();
+    };
+    const report = el('button', { className: 'cr-link' }, t('resReport'), ' ›');
+    report.onclick = () => {
+      this.hideResult();
+      this.actions.report?.();
+    };
     const close = el('button', { className: 'icon-btn', ariaLabel: t('close') }, '✕');
     close.onclick = () => this.hideResult();
     this.result.replaceChildren(
       el('div', { className: 'cr-head' }, el('div', {}, el('small', {}, t('resTitle')), el('b', {}, this.presetLabel)), close),
-      el('div', { className: 'cr-what' }, what),
+      el('div', { className: 'cr-what' }, what, report),
       grid,
       el('div', { className: 'cr-note' }, bad.length ? `${t('resWheels')} ${bad.length}` + ' · ' + bad.map((w) => `${w.car} ${w.wheel}`).join(', ') : t('resWheelsOk')),
-      el('div', { className: 'row' }, again),
+      el('div', { className: 'chips' }, this.keepToggle()),
+      el('div', { className: 'row' }, again, other),
     );
+    const live = this.keepToggles.filter((b) => b.isConnected); // drop the earlier cards' toggles
+    this.keepToggles.splice(0, this.keepToggles.length, ...live);
     this.result.hidden = false;
     this.result.classList.remove('in');
     void this.result.offsetWidth;

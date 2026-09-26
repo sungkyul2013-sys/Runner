@@ -129,7 +129,7 @@ void Vehicle::initAero(const Body& b) {
     const DVec3 p0 = at(b, i0), p1 = at(b, i1), p2 = at(b, i2);
     const DVec3 f = surfaceForce(cross(p1 - p0, p2 - p0) * 0.5, wind, 1.0, A.baseSuction, A.skinFriction);
     surfaceDrag += -dot(f, fwd) * 2.0;
-    const double front = axles.frontShare((p0 + p1 + p2) * (1.0 / 3.0));
+    const double front = axles.leverShare((p0 + p1 + p2) * (1.0 / 3.0));
     surfaceFront += -dot(f, up) * 2.0 * front;
     surfaceRear += -dot(f, up) * 2.0 * (1.0 - front);
   }
@@ -137,14 +137,32 @@ void Vehicle::initAero(const Body& b) {
     const DVec3 f = wingForce(b, w, 0.0, wind, 1.0);
     DVec3 c;
     for (const int32_t n : w.nodes) c += at(b, n) * 0.25;
-    const double front = axles.frontShare(c);
+    const double front = axles.leverShare(c);
     wingDrag += -dot(f, fwd) * 2.0;
     wingFront += -dot(f, up) * 2.0 * front;
     wingRear += -dot(f, up) * 2.0 * (1.0 - front);
   }
   if (surfaceDrag > 1e-6) aeroScale_ = std::max(0.0, (A.dragArea - wingDrag) / surfaceDrag);
-  liftResidualFront_ = A.liftAreaFront - aeroScale_ * surfaceFront - wingFront;
-  liftResidualRear_ = A.liftAreaRear - aeroScale_ * surfaceRear - wingRear;
+  // Every force counts on each axle as the lever it is (a wing behind the rear axle lifts the front). The residuals
+  // act on their node sets, levers too: solve for the two that bring both axles to their lift areas.
+  const double needFront = A.liftAreaFront - aeroScale_ * surfaceFront - wingFront;
+  const double needRear = A.liftAreaRear - aeroScale_ * surfaceRear - wingRear;
+  auto share = [&](const std::vector<int32_t>& nodes, double fallback) {
+    DVec3 c;
+    double m = 0.0;
+    for (const int32_t i : nodes) { c += at(b, i) * static_cast<double>(b.mass[i]); m += b.mass[i]; }
+    return m > 0.0 ? axles.leverShare(c * (1.0 / m)) : fallback;
+  };
+  const double sf = share(A.frontNodes, 1.0), sr = share(A.rearNodes, 0.0);
+  // front: Rf·sf + Rr·sr = needFront;  rear: Rf·(1 − sf) + Rr·(1 − sr) = needRear
+  const double det = sf * (1.0 - sr) - sr * (1.0 - sf);  // = sf − sr
+  if (std::fabs(det) > 0.2) {
+    liftResidualFront_ = (needFront * (1.0 - sr) - sr * needRear) / det;
+    liftResidualRear_ = (sf * needRear - (1.0 - sf) * needFront) / det;
+  } else {
+    liftResidualFront_ = needFront;
+    liftResidualRear_ = needRear;
+  }
 }
 
 Vehicle::AxleLine Vehicle::axleLine(const Body& b, DVec3 fwd) const {

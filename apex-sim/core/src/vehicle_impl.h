@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <array>
 #include <vector>
 
 #include "sbc/body.h"
@@ -36,6 +37,12 @@ class Vehicle {
   const VehicleInput& input() const { return input_; }
   const VehicleTelemetry& telemetry() const { return telemetry_; }
 
+  // Rigid re-placement with the damage kept (World::relaunchVehicle): moves every node of the body so the chassis
+  // stands upright at heading `yaw` with the model origin at `position` (world), lifted until no collision node is
+  // below `floorY`; every node gets the forward `speed`, the wheels the matching spin. Stick anchors, the crash
+  // sensor, the slip and brake states start fresh (the damage, tyres, fluids and airbags stay as they are).
+  void relaunch(Body& body, DVec3 position, double yaw, double speed, double floorY);
+
   // Feeds every state variable that influences the future into a hash (A§4.5).
   template <typename Hash>
   void hashState(Hash& h) const {
@@ -57,7 +64,8 @@ class Vehicle {
     h.value(coolantL_); h.value(oilL_); h.value(fuelL_); h.value(coolantC_); h.value(engineWear_); h.value(lastPower_);
     h.value(engineFailed_); h.value(faults_);
     for (size_t i = 0; i < sensorLong_.size(); ++i) { h.value(sensorLong_[i]); h.value(sensorLat_[i]); }
-    h.value(static_cast<uint64_t>(sensorAt_)); h.value(static_cast<uint64_t>(sensorFill_));  // size_t: 4 bytes on wasm32 h.value(airbags_); h.value(crashTime_); h.value(crashPeakG_); h.value(crashDeltaV_);
+    h.value(static_cast<uint64_t>(sensorAt_)); h.value(static_cast<uint64_t>(sensorFill_));  // size_t: 4 bytes on wasm32
+    h.value(airbags_); h.value(crashTime_); h.value(crashPeakG_); h.value(crashDeltaV_);
     h.value(crashEvents_); h.value(eventActive_); h.value(eventStart_); h.value(eventPeakG_); h.value(eventPeakForce_);
     h.value(eventDeltaV_); h.value(eventAbsorbed0_); h.value(eventAbsorbed_); h.value(eventQuiet_); h.value(eventSpeed_);
     h.value(eventPosition_.x); h.value(eventPosition_.y); h.value(eventPosition_.z);
@@ -83,6 +91,9 @@ class Vehicle {
   // deflation and its effects on the body (cavity gauge, sidewall stiffness; energy booked), shredding.
   void initTyres(const Body& body);
   void updateTyres(const World& world, Body& body, double dt, double speed, bool track);
+  // Hoop tension of wheel w spinning at ω: each ring carries its own centrifugal load (T = m′v²) as the steel rim and
+  // belt do, so the spokes and sidewalls do not pull the (non-rotating) hub by it.
+  void hoopTension(Body& body, size_t w, double omega, bool track);
 
  public:
   // §10 aerodynamics (vehicle_aero.cpp): surface, wings and residual lift, calibrated at creation; the wake this
@@ -97,6 +108,9 @@ class Vehicle {
     double frontShare(DVec3 p) const {
       return span > 1e-6 ? std::clamp(dot(p - rear, fwd) / span, 0.0, 1.0) : 0.5;
     }
+    // The front axle's share of a vertical force at p as a lever: above 1 ahead of the front axle, below 0 behind the
+    // rear one (a wing behind the rear axle lifts the front).
+    double leverShare(DVec3 p) const { return span > 1e-6 ? dot(p - rear, fwd) / span : 0.5; }
   };
   void initAero(const Body& body);
   AxleLine axleLine(const Body& body, DVec3 fwd) const;
@@ -137,6 +151,9 @@ class Vehicle {
   DVec3 prevVelocity_;        // mass-centre velocity of the previous step [m/s]
   double accelLong_ = 0.0, accelLat_ = 0.0, odometer_ = 0.0;
   bool firstStep_ = true;
+  // The model axes (left +X, up +Y, forward +Z) in the chassis frame (forward, left, up) as built: relaunch() turns
+  // the chassis back onto them.
+  DVec3 modelAxes_[3];
   // Parts torn off the body (§4.3 island split): a lost wheel no longer takes drive, brake or tyre forces; a lost
   // chassis reference (the car broke apart) switches the controller off.
   std::vector<uint8_t> wheelLost_;
@@ -153,6 +170,10 @@ class Vehicle {
     uint32_t flags = 0;
     // topology
     std::vector<int32_t> rimNodes, sidewall, carcass, rimBeams;
+    // The wheel's rings in order around the axle — tread A, tread B, rim A, rim B — with their radius and node mass
+    // at rest: the hoop tension of the spinning wheel (hoopTension).
+    std::array<std::vector<int32_t>, 4> rings;
+    std::array<double, 4> ringRadius{}, ringMass{};
     std::vector<float> sidewallK0;
     int group = -1;
     float gauge0 = 0.0f;

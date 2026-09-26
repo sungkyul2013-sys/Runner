@@ -92,6 +92,41 @@ void Vehicle::initTyres(const Body& b) {
         t.rimRadius += norm(d - axis * dot(d, axis)) / static_cast<double>(t.rimNodes.size());
       }
     }
+    {
+      // Rings in order around the axle; the sides split about each ring set's own mid-plane.
+      const DVec3 l = at(b, wd.axleLeft), r = at(b, wd.axleRight);
+      const DVec3 axis = (l - r) * (1.0 / norm(l - r));
+      const DVec3 hint = std::fabs(axis.y) < 0.9 ? DVec3{0.0, 1.0, 0.0} : DVec3{0.0, 0.0, 1.0};
+      DVec3 e1 = hint - axis * dot(hint, axis);
+      e1 = e1 * (1.0 / norm(e1));
+      const DVec3 e2 = cross(axis, e1);
+      auto build = [&](const std::vector<int32_t>& nodes, int first) {
+        if (nodes.empty()) return;
+        DVec3 c;
+        for (const int32_t i : nodes) c += at(b, i);
+        c = c * (1.0 / static_cast<double>(nodes.size()));
+        std::vector<std::pair<double, int32_t>> side[2];
+        double radius[2] = {0.0, 0.0}, mass[2] = {0.0, 0.0};
+        for (const int32_t i : nodes) {
+          const DVec3 d = at(b, i) - c;
+          const double ax = dot(d, axis);
+          const DVec3 rr = d - axis * ax;
+          const int s = ax < 0.0 ? 0 : 1;
+          side[s].push_back({det::atan2(dot(rr, e2), dot(rr, e1)), i});
+          radius[s] += norm(rr);
+          mass[s] += b.mass[static_cast<size_t>(i)];
+        }
+        for (int s = 0; s < 2; ++s) {
+          std::sort(side[s].begin(), side[s].end());
+          for (const auto& [angle, i] : side[s]) t.rings[static_cast<size_t>(first + s)].push_back(i);
+          const double n = static_cast<double>(side[s].size());
+          t.ringRadius[static_cast<size_t>(first + s)] = n > 0.0 ? radius[s] / n : 0.0;
+          t.ringMass[static_cast<size_t>(first + s)] = n > 0.0 ? mass[s] / n : 0.0;
+        }
+      };
+      build(wd.treadNodes, 0);
+      build(t.rimNodes, 2);
+    }
     for (int g = 0; g < b.pressureGroupCount() && t.group < 0; ++g) {
       for (int k = b.groupTriBegin[g] * 3; k < b.groupTriBegin[g + 1] * 3; ++k) {
         if (tread.count(b.pressureTri[static_cast<size_t>(k)])) {

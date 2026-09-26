@@ -239,6 +239,43 @@ PressureWheelNodes addPressureWheel(BodyDesc& d, const PressureWheelParams& p) {
     beam(treadB(j), rimA(j + 1), cross, p.sidewallDampingRatio);
   }
 
+  // Rim barrel (§6): the tread can be crushed onto the rim but not through it. Each tread node gets a bump stop to
+  // both axle nodes that acts once its centre comes within the rim radius of the axis (bounded beams: they store
+  // and dissipate energy like any beam, so the ledger stays closed). Without them a tread node pushed in by a
+  // crash slipped past the rim and stayed there, the inflated tyre holding it inside-out. Their stiffness takes what
+  // the explicit step leaves (m ≥ ½·Σk·t², t = 0.63 ms) on the tread nodes and on the hub.
+  {
+    std::vector<double> sum(d.nodes.size(), 0.0);
+    for (const BeamDesc& bd : d.beams) {
+      sum[static_cast<size_t>(bd.a)] += bd.stiffness;
+      sum[static_cast<size_t>(bd.b)] += bd.stiffness;
+    }
+    constexpr double kT = 0.63e-3;
+    auto budget = [&](int i) { return 2.0 * massOf(i) / (kT * kT) - sum[static_cast<size_t>(i)]; };
+    double tread = 1e30;
+    for (const int i : out.tread) tread = std::min(tread, budget(i));
+    // The hub takes two stops per tread node (2n of them per axle node).
+    const double hub = std::min(budget(p.axleRight), budget(p.axleLeft)) / (2.0 * n);
+    const double k = std::min({0.5 * tread / 2.0, 0.5 * hub, 1.5e5});
+    if (k > 1.0e3) {
+      for (const int t : out.tread) {
+        const DVec3 x = position(t);
+        const DVec3 rel = x - c;
+        const DVec3 radial = rel - axis * dot(rel, axis);
+        const DVec3 atRim = c + axis * dot(rel, axis) + radial * (p.rimRadius / std::sqrt(dot(radial, radial)));
+        for (const int hubNode : {p.axleRight, p.axleLeft}) {
+          const DVec3 h = position(hubNode);
+          beam(t, hubNode, static_cast<float>(k), 0.3f);
+          BeamDesc& stop = d.beams.back();
+          stop.type = BeamType::kBounded;
+          const DVec3 dr = atRim - h;
+          stop.minLength = static_cast<float>(std::sqrt(dot(dr, dr)));
+          stop.maxLength = 1.0e3f;
+        }
+      }
+    }
+  }
+
   if (p.structuralPressure > 0.0f) {
     PressureGroupDesc g;
     g.gaugePressure = p.structuralPressure;

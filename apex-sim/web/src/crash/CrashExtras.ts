@@ -270,6 +270,12 @@ export class DumpTrucks {
     this.expect = [];
     this.clearModels();
   }
+
+  /** Takes the trucks of an earlier test out of a world that stays (a relaunch with the damage kept). */
+  retire(): void {
+    for (const t of this.trucks) this.physics.retireFamily(t.body);
+    this.clear();
+  }
 }
 
 /** Camera presets of the lab: where the camera goes relative to the point of impact. */

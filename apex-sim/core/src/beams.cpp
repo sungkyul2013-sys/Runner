@@ -8,6 +8,9 @@ namespace sbc::detail {
 namespace {
 
 constexpr float kDegenerateLength2 = 1e-12f;   // [m²] beams shorter than 1 µm exert no force this step
+// [-] of the yield force: a load that arms a beam's steep unloading (BeamDesc::unloadRatio) — a member being bent or
+// crushed, never one carrying everyday loads (and its set on unloading is then part of real damage).
+constexpr float kUnloadArm = 0.8f;
 
 struct Geometry {
   float length;         // current length L [m]
@@ -48,8 +51,26 @@ inline void applyBeamForce(Body& b, int a, int c, const Geometry& g, float force
 // Plastic work ΔW = (F_y + ½HΔλ)·Δλ is booked as absorbed energy (§4.3, §5.3).
 // Crushing stops at the densification floor (crushFloor): the rest length never yields below it, and the beam is
 // elastic about the floor from there on. Stretching past tearLength tears the beam (ductile rupture).
+// Steep unloading (BeamDesc::unloadRatio α): a beam armed by a load near its strength (kUnloadArm of the yield
+// force) that now springs back (its length moving
+// toward the rest length at `rate`) has its rest length follow by (α − 1)·rate·dt, never past the length itself
+// (force zero: disarmed) — a crushed stack sets at the length it springs back to, which may be under its
+// densification floor (it was squeezed further still); the elastic energy that takes away is plastic work.
+// It stays armed through reloading until it has unloaded completely. Its force magnitude only falls while it
+// unloads armed, so it gives back less, never more.
 // Returns the corrected elastic force; sets `broke` when a break criterion is met.
-inline float plasticReturn(Body& b, int i, float length, bool& broke, float k) {
+inline float plasticReturn(Body& b, int i, float length, float rate, float dt, bool& broke, float k) {
+  if (b.unloadArmed[i]) {
+    const float ext = length - b.restLength[i];
+    if (ext * rate < 0.0f) {
+      float rest = b.restLength[i] - (b.unloadRatio[i] - 1.0f) * rate * dt;
+      rest = ext < 0.0f ? std::max(rest, length) : std::min(rest, length);
+      const float after = length - rest;
+      b.losses.plastic += 0.5 * static_cast<double>(k) * (static_cast<double>(ext) * ext - static_cast<double>(after) * after);
+      b.restLength[i] = rest;
+      if (rest == length) b.unloadArmed[i] = 0;
+    }
+  }
   float fe = k * (length - b.restLength[i]);
   const float fy0 = b.plasticForce[i];
   if (fy0 < kInfiniteForce) {
@@ -57,6 +78,7 @@ inline float plasticReturn(Body& b, int i, float length, bool& broke, float k) {
     const float plasticModulus = h > 0.0f ? k * h / (1.0f - h) : 0.0f;
     const float fy = fy0 + plasticModulus * b.plasticDeformation[i];
     const float magnitude = std::fabs(fe);
+    if (magnitude > kUnloadArm * fy && b.unloadRatio[i] > 1.0f) b.unloadArmed[i] = 1;
     if (magnitude > fy) {
       float dl = (magnitude - fy) / (k + plasticModulus);
       const float s = fe > 0.0f ? 1.0f : -1.0f;
@@ -98,7 +120,7 @@ void breakBeam(Body& b, int i, float elasticForce) {
 }
 
 template <bool kTrack>
-int accumulateBeamForces(Body& b) {
+int accumulateBeamForces(Body& b, float dt) {
   int newlyBroken = 0;
   Geometry g{};
 
@@ -108,7 +130,7 @@ int accumulateBeamForces(Body& b) {
     const int a = b.beamA[i], c = b.beamB[i];
     if (!beamGeometry(b, a, c, g)) continue;
     bool broke = false;
-    const float fe = plasticReturn(b, i, g.length, broke, b.stiffness[i]);
+    const float fe = plasticReturn(b, i, g.length, g.lengthRate, dt, broke, b.stiffness[i]);
     if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
     const float fd = b.damping[i] * g.lengthRate;
     applyBeamForce<kTrack>(b, a, c, g, fe + fd, fd);
@@ -121,7 +143,7 @@ int accumulateBeamForces(Body& b) {
     if (!beamGeometry(b, a, c, g)) continue;
     if (g.length >= b.restLength[i]) continue;
     bool broke = false;
-    const float fe = plasticReturn(b, i, g.length, broke, b.stiffness[i]);
+    const float fe = plasticReturn(b, i, g.length, g.lengthRate, dt, broke, b.stiffness[i]);
     if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
     const float f = std::min(fe + b.damping[i] * g.lengthRate, 0.0f);
     applyBeamForce<kTrack>(b, a, c, g, f, f - fe);
@@ -153,7 +175,7 @@ int accumulateBeamForces(Body& b) {
     if (!beamGeometry(b, a, c, g)) continue;
     if (g.length <= b.restLength[i]) continue;
     bool broke = false;
-    const float fe = plasticReturn(b, i, g.length, broke, b.stiffness[i]);
+    const float fe = plasticReturn(b, i, g.length, g.lengthRate, dt, broke, b.stiffness[i]);
     if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
     const float f = std::max(fe + b.damping[i] * g.lengthRate, 0.0f);
     applyBeamForce<kTrack>(b, a, c, g, f, f - fe);
@@ -165,7 +187,7 @@ int accumulateBeamForces(Body& b) {
     if (!beamGeometry(b, a, c, g)) continue;
     const float k = g.length < b.restLength[i] ? b.compressionStiffness[i] : b.stiffness[i];
     bool broke = false;
-    const float fe = plasticReturn(b, i, g.length, broke, k);
+    const float fe = plasticReturn(b, i, g.length, g.lengthRate, dt, broke, k);
     if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
     const float fd = b.damping[i] * g.lengthRate;
     applyBeamForce<kTrack>(b, a, c, g, fe + fd, fd);
@@ -179,7 +201,7 @@ int accumulateBeamForces(Body& b) {
     if (!beamGeometry(b, a, c, g)) continue;
     bool broke = false;
     const float before = b.restLength[i];
-    const float fe = plasticReturn(b, i, g.length, broke, b.stiffness[i]);
+    const float fe = plasticReturn(b, i, g.length, g.lengthRate, dt, broke, b.stiffness[i]);
     b.hydroOffset[i] += b.restLength[i] - before;
     if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
     const float fd = b.damping[i] * g.lengthRate;
@@ -208,8 +230,8 @@ void updateHydros(Body& b, float dt) {
   }
 }
 
-template int accumulateBeamForces<true>(Body&);
-template int accumulateBeamForces<false>(Body&);
+template int accumulateBeamForces<true>(Body&, float);
+template int accumulateBeamForces<false>(Body&, float);
 
 double beamPotentialEnergy(const Body& b) {
   double e = 0.0;

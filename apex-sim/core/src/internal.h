@@ -9,7 +9,7 @@ namespace sbc::detail {
 // mapping and breaking (§4.3). With kTrack the damping part is also written to body.fdBeam*.
 // Returns the number of beams that broke during this call.
 template <bool kTrack>
-int accumulateBeamForces(Body& body);
+int accumulateBeamForces(Body& body, float dt);  // dt: steep unloading (BeamDesc::unloadRatio)
 
 // Σ ½k·(active extension)² over intact beams [J].
 double beamPotentialEnergy(const Body& body);

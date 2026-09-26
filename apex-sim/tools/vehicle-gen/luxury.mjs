@@ -25,6 +25,9 @@ import { add, sub, scale, norm, dist } from './lib/v3.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
+// Chassis lattice: loaded hard (a crash), it springs back along a 5× steeper slope (core BeamDesc::unloadRatio).
+const UNLOAD_RATIO = 5;
+
 /** Per-car data. Heights are in the model frame (y = 0 on the ground, +Z forward, +X left). */
 const CARS = {
   rolls_royce_ghost: {
@@ -149,14 +152,20 @@ function generate(id, car) {
   const dy = R - 0.3446; // suspension heights: the 911's geometry about the wheel centre
   const suspensionYield = (plasticForce) => ({ plasticForce, hardening: 0.05, deformLimit: 0.25 });
   const heavy = car.mass / 1595; // link and hardpoint strengths scale with the car's weight
+  // unloadRatio: the crumple zones spring back along a 5× steeper slope (core BeamDesc::unloadRatio), set per beam
+  // with the crash zones below; the passenger cell keeps its elastic spring-back.
   b.group('chassis', { k: 1e6, zeta: 0.25 });
-  b.group('hardpoint', { k: 1.0e6, zeta: 0.2, plasticForce: +(3.0e4 * heavy).toFixed(0), hardening: 0.05 });
-  b.group('knuckle', { k: 2e6, zeta: 0.1 });
-  b.group('link', { k: 1.5e6, zeta: 0.1, ...suspensionYield(+(2.4e4 * heavy).toFixed(0)) });
-  b.group('tierod', { type: 'hydro', k: 1.5e6, zeta: 0.1, ...suspensionYield(+(1.4e4 * heavy).toFixed(0)) });
-  b.group('toelink', { k: 1.5e6, zeta: 0.1, ...suspensionYield(+(1.2e4 * heavy).toFixed(0)) });
+  b.group('hardpoint', { k: 1.0e6, zeta: 0.2, plasticForce: +(3.0e4 * heavy).toFixed(0), hardening: 0.05, unloadRatio: UNLOAD_RATIO });
+  // Upright: damped (ζ 0.2, what its seven nodes' step allows) — its internal modes with the spinning wheel on it
+  // otherwise rang at 25–40 Hz and shook the car at speed.
+  b.group('knuckle', { k: 2e6, zeta: 0.2 });
+  // Links damped like hydro bushings (ζ 0.35): the wheel's fore-aft mode on its arms (≈ 25–35 Hz) otherwise rings,
+  // fed by the tyre's slip at speed (the front wheels hopped fore and aft at 200 km/h).
+  b.group('link', { k: 1.5e6, zeta: 0.35, ...suspensionYield(+(2.4e4 * heavy).toFixed(0)) });
+  b.group('tierod', { type: 'hydro', k: 1.5e6, zeta: 0.2, ...suspensionYield(+(1.4e4 * heavy).toFixed(0)) });
+  b.group('toelink', { k: 1.5e6, zeta: 0.2, ...suspensionYield(+(1.2e4 * heavy).toFixed(0)) });
   b.group('bumpstop', { type: 'bounded', k: 2.0e5, zeta: 0.05 });
-  b.group('subframe', { k: 1.2e6, zeta: 0.1, plasticForce: +(3.0e4 * heavy).toFixed(0), hardening: 0.05 });
+  b.group('subframe', { k: 1.2e6, zeta: 0.1, plasticForce: +(3.0e4 * heavy).toFixed(0), hardening: 0.05, unloadRatio: UNLOAD_RATIO });
 
   // ---- powertrain cavity ----
   const pt = car.powertrain;
@@ -215,8 +224,10 @@ function generate(id, car) {
       const zm = Math.round(((pa[2] + pc[2]) / 2) * 1000) / 1000;
       const zc = zs.includes(zm) ? zm + 0.05 * Math.sign(-zm || 1) : zm;
       if (!cosCache.has(zc)) cosCache.set(zc, sectionCos(zc));
+      const zone = zoneForce((pa[2] + pc[2]) / 2);
       Object.assign(beam[3], {
-        plasticForce: Math.round(zoneForce((pa[2] + pc[2]) / 2) / cosCache.get(zc)), hardening: crash.hardening, crushLimit: crash.crushLimit, tearLimit: crash.tearLimit,
+        plasticForce: Math.round(zone / cosCache.get(zc)), hardening: crash.hardening, crushLimit: crash.crushLimit, tearLimit: crash.tearLimit,
+        ...(zone < crash.cabin ? { unloadRatio: UNLOAD_RATIO } : {}),
       });
     }
   }
@@ -272,16 +283,21 @@ function generate(id, car) {
   function doubleWishbone(name, W, s) {
     const P = at(W, s);
     const n = (tag, p, m) => b.node(`${name}_${tag}`, p, m);
+    // The upright is a 3D truss: ball joints (KU, KL) and hub (Ai, Ao) nearly in one vertical plane, the steering arm
+    // (KS) and the caliper mounts (KT behind, KF ahead) out of it. Without a node ahead of the axle it twisted about
+    // the vertical under the tyre's drag and drive (1.5° of toe at 200 km/h) and steered the car off at speed.
     const Ai = n('ai', [W[0] - s * 0.1, R, W[2]], hubNodeMass), Ao = n('ao', [W[0] + s * 0.06, R, W[2]], hubNodeMass);
     const KU = n('ku', P(0.14, 0.60, -0.02), 2.8);
     const KL = n('kl', P(0.04, 0.13, 0.01), 3.8);
     const KS = n('ks', P(0.12, 0.26, -0.15), 2.8);
     const KT = n('kt', P(-0.04, 0.20, -0.10), 2.5);
-    const upright = [Ai, Ao, KU, KL, KS, KT];
+    const KF = n('kf', P(-0.02, 0.22, 0.13), 2.5);
+    const upright = [Ai, Ao, KU, KL, KS, KT, KF];
     upright.forEach((a, i) => upright.slice(i + 1).forEach((c) => b.beam(a, c, 'knuckle')));
-    const uaF = b.hardpoint(`${name}_uaf`, P(0.42, 0.62, 0.14), 2.2);
-    const uaR = b.hardpoint(`${name}_uar`, P(0.42, 0.62, -0.18), 2.2);
-    const laF = b.hardpoint(`${name}_laf`, P(0.46, 0.15, 0.06), 2.2);
+    // A-arms spread 0.42 / 0.52 m along the car (the wheel held fore and aft, not only across).
+    const uaF = b.hardpoint(`${name}_uaf`, P(0.42, 0.62, 0.19), 2.2);
+    const uaR = b.hardpoint(`${name}_uar`, P(0.42, 0.62, -0.23), 2.2);
+    const laF = b.hardpoint(`${name}_laf`, P(0.46, 0.15, 0.20), 2.2);
     const laR = b.hardpoint(`${name}_lar`, P(0.44, 0.15, -0.32), 2.2);
     const topMount = b.hardpoint(`${name}_top`, P(0.24, 0.80, -0.04), 5.0);
     b.beam(uaF, KU, 'link');
@@ -420,7 +436,8 @@ function generate(id, car) {
 
   // ---- vehicle section ----
   const cornerLoad = (axle) => ((axle === 'front' ? car.front : 1 - car.front) * car.mass * 9.81) / 2;
-  const tyre = (nominalLoad, verticalStiffness) => ({ radius: R, mu: 1.1, nominalLoad, verticalStiffness, relaxationX: 0.11, relaxationY: 0.3 });
+  // Relaxation lengths of these large tyres (255–285 section, 20–22 in): 0.18 m along, 0.45 m across.
+  const tyre = (nominalLoad, verticalStiffness) => ({ radius: R, mu: 1.1, nominalLoad, verticalStiffness, relaxationX: 0.18, relaxationY: 0.45 });
   const wheel = (c, driveShare, brakeTorque, handbrakeTorque, axle) => ({
     name: c.name, pressureWheel: c.name, carrier: c.upright, tyre: tyre(+cornerLoad(axle).toFixed(0), 3.2e5), brakeTorque, handbrakeTorque, driveShare,
   });

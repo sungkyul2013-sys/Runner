@@ -538,6 +538,14 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
         if (world) sbc._sbc_world_retire_family(world, msg.body);
         forceStats = true;
         return;
+      case 'relaunch': {
+        if (!world || msg.vehicle < 0 || msg.vehicle >= sbc._sbc_world_vehicle_count(world)) return;
+        const { position: [x, y, z], yaw, speed, velocity: dv } = msg.pose;
+        sbc._sbc_world_relaunch_vehicle(world, msg.vehicle, x, y, z, yaw, speed, msg.floorY);
+        if (dv) sbc._sbc_world_add_body_velocity(world, sbc._sbc_vehicle_body(world, msg.vehicle), dv[0], dv[1], dv[2]);
+        forceStats = true;
+        return;
+      }
       case 'hash': {
         const hi = sbc._sbc_world_state_hash_hi(world) >>> 0;
         const lo = sbc._sbc_world_state_hash_lo(world) >>> 0;

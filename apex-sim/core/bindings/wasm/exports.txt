@@ -14,6 +14,7 @@ _sbc_world_static_triangle_materials
 _sbc_world_spawn_lattice
 _sbc_world_add_body_velocity
 _sbc_world_retire_family
+_sbc_world_relaunch_vehicle
 _sbc_world_set_wind
 _sbc_vehicle_set_wing_angle
 _sbc_world_add_tether

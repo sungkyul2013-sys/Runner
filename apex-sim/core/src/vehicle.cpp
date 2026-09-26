@@ -12,6 +12,7 @@
 namespace sbc {
 namespace {
 
+
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kRadToRpm = 60.0 / (2.0 * kPi);
 constexpr double kBearingDragTorque = 40.0;  // [N·m] drag of a fully damaged hub bearing (§6)
@@ -234,8 +235,89 @@ Vehicle::Vehicle(const VehicleDesc& desc, int bodyIndex, const Body& body) : des
     wheels_[i].peakY = magicFormulaPeak(t.By, t.Cy, t.Ey);
   }
   engineOmega_ = desc.engine.idleRpm / kRadToRpm;
+  {
+    // As built the model stands upright (spawn yaw only turns it about +Y): its forward is the reference line's
+    // horizontal part.
+    const DVec3 pc = pos(body, desc.refCenter);
+    const DVec3 fwd = normalized(pos(body, desc.refFront) - pc);
+    DVec3 left = pos(body, desc.refLeft) - pc;
+    left = normalized(left - fwd * dot(left, fwd));
+    const DVec3 up = cross(fwd, left);
+    const DVec3 modelUp{0.0, 1.0, 0.0};
+    const DVec3 modelFwd = normalized(DVec3{fwd.x, 0.0, fwd.z});
+    const DVec3 modelLeft = cross(modelUp, modelFwd);
+    const DVec3 axes[3] = {modelLeft, modelUp, modelFwd};
+    for (int k = 0; k < 3; ++k) modelAxes_[k] = {dot(axes[k], fwd), dot(axes[k], left), dot(axes[k], up)};
+  }
   initTyres(body);
   initAero(body);
+}
+
+void Vehicle::relaunch(Body& b, DVec3 position, double yaw, double speed, double floorY) {
+  const VehicleDesc& D = desc_;
+  const DVec3 pc = pos(b, D.refCenter);
+  const DVec3 fwd = normalized(pos(b, D.refFront) - pc);
+  DVec3 left = pos(b, D.refLeft) - pc;
+  left = normalized(left - fwd * dot(left, fwd));
+  const DVec3 up = cross(fwd, left);
+  DVec3 now[3];  // the model axes as the chassis carries them now (world)
+  for (int k = 0; k < 3; ++k) now[k] = fwd * modelAxes_[k].x + left * modelAxes_[k].y + up * modelAxes_[k].z;
+  const double c = det::cos(yaw), s = det::sin(yaw);
+  const DVec3 target[3] = {{c, 0.0, -s}, {0.0, 1.0, 0.0}, {s, 0.0, c}};
+  auto turn = [&](DVec3 v) { return target[0] * dot(now[0], v) + target[1] * dot(now[1], v) + target[2] * dot(now[2], v); };
+  const Vec3 rc = D.refCenterModel;
+  const DVec3 refWorld = position + DVec3{c * rc.x + s * rc.z, rc.y, -s * rc.x + c * rc.z};
+  for (int i = 0; i < b.nodeCount(); ++i) {
+    const DVec3 p = turn(pos(b, i) - pc);
+    b.px[i] = static_cast<float>(p.x); b.py[i] = static_cast<float>(p.y); b.pz[i] = static_cast<float>(p.z);
+  }
+  b.origin = refWorld;
+  double lowest = std::numeric_limits<double>::infinity();
+  for (int i = 0; i < b.nodeCount(); ++i) {
+    if (b.invMass[i] == 0.0f || !(b.flags[i] & node_flag::kCollide)) continue;
+    lowest = std::min(lowest, b.origin.y + b.py[i] - b.radius[i]);
+  }
+  if (lowest < floorY) b.origin.y += floorY - lowest;
+  const DVec3 v = target[2] * speed;
+  for (int i = 0; i < b.nodeCount(); ++i) {
+    const bool moving = b.invMass[i] != 0.0f;
+    b.vx[i] = moving ? static_cast<float>(v.x) : 0.0f;
+    b.vy[i] = moving ? static_cast<float>(v.y) : 0.0f;
+    b.vz[i] = moving ? static_cast<float>(v.z) : 0.0f;
+    b.sx[i] = b.px[i]; b.sy[i] = b.py[i]; b.sz[i] = b.pz[i];
+    b.stickX[i] = b.stickY[i] = b.stickZ[i] = 0.0f;
+    b.anchorContact[i] = -1;
+  }
+  for (size_t w = 0; w < D.wheels.size(); ++w) {
+    const WheelDesc& wd = D.wheels[w];
+    if (wheelLost_.size() == D.wheels.size() && wheelLost_[w]) continue;
+    const DVec3 r = pos(b, wd.axleRight);
+    const DVec3 axis = normalized(pos(b, wd.axleLeft) - r);  // points left: forward rolling is +ω
+    const DVec3 omega = axis * (speed / wd.tyre.radius);
+    for (const int32_t i : *spinNodes_[w]) {
+      if (b.invMass[static_cast<size_t>(i)] == 0.0f) continue;
+      const DVec3 vi = v + cross(omega, pos(b, i) - r);
+      b.vx[static_cast<size_t>(i)] = static_cast<float>(vi.x);
+      b.vy[static_cast<size_t>(i)] = static_cast<float>(vi.y);
+      b.vz[static_cast<size_t>(i)] = static_cast<float>(vi.z);
+    }
+  }
+  for (WheelState& w : wheels_) {
+    w.rhoX = w.rhoY = w.brakeAngle = 0.0;
+    w.absFactor = 1.0;
+  }
+  windup_ = 0.0;
+  tcsFactor_ = 1.0;
+  firstStep_ = true;
+  accelLong_ = accelLat_ = 0.0;
+  std::fill(sensorLong_.begin(), sensorLong_.end(), 0.0);
+  std::fill(sensorLat_.begin(), sensorLat_.end(), 0.0);
+  sensorAt_ = sensorFill_ = 0;
+  crashTime_ = -1.0;
+  crashPeakG_ = crashDeltaV_ = 0.0;
+  eventActive_ = false;
+  eventQuiet_ = 0.0;
+  quietTime_ = -1.0;
 }
 
 double Vehicle::gearRatio(int gear) const {
@@ -471,6 +553,10 @@ void Vehicle::step(const World& world, Body& b, bool track) {
       f.axialInertia = inertia;
       f.spinAbs = inertia > 0.0 ? momentum / inertia : 0.0;
     }
+    // The spinning rim and belt carry their own centrifugal load (hoop tension), as the steel in them does; left to
+    // the spokes and sidewalls it pulled the non-rotating hub nodes together by a force growing as ω² (8 kN at
+    // 200 km/h), and the uprights buckled into toe at speed.
+    hoopTension(b, w, f.spinAbs, track);
     f.spinRel = f.spinAbs - dot(f.carrier.omega, f.axis);
     f.spinDrive = reactionFit.valid ? f.spinAbs - dot(reactionFit.omega, f.axis) : f.spinRel;
     driveOmega += shares_[w] * f.spinDrive;
@@ -972,6 +1058,34 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     if (!alignmentRecorded_) { tel.camber0 = tel.camber; tel.toe0 = tel.toe; }
   }
   alignmentRecorded_ = true;
+}
+
+}  // namespace sbc
+
+namespace sbc {
+
+void Vehicle::hoopTension(Body& b, size_t w, double omega, bool track) {
+  const TyreState& t = tyres_[w];
+  auto detached = [&](int32_t i) { return (b.flags[static_cast<size_t>(i)] & node_flag::kDetached) != 0; };
+  constexpr double kTwoPi = 6.283185307179586;
+  for (size_t k = 0; k < 4; ++k) {
+    if (k < 2 && (t.flags & tyre_flag::kShredded)) continue;  // the belt is gone
+    const std::vector<int32_t>& ring = t.rings[k];
+    const size_t n = ring.size();
+    if (n < 3) continue;
+    // T = m′·v², m′ = m·n / (2πr), v = ω·r: on a round ring each node gets 2T·sin(π/n) = m·ω²·r toward the axle.
+    const double tension = t.ringMass[k] * static_cast<double>(n) * omega * omega * t.ringRadius[k] / kTwoPi;
+    for (size_t j = 0; j < n; ++j) {
+      const int32_t a = ring[j], c = ring[(j + 1) % n];
+      if (detached(a) || detached(c)) continue;
+      const DVec3 d = pos(b, c) - pos(b, a);
+      const double length = std::sqrt(dot(d, d));
+      if (length < 1e-6) continue;
+      const DVec3 f = d * (tension / length);
+      addForce(b, a, f, track, Ledger::kExternal);
+      addForce(b, c, f * -1.0, track, Ledger::kExternal);
+    }
+  }
 }
 
 }  // namespace sbc
