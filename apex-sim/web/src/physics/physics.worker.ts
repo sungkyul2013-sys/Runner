@@ -11,10 +11,13 @@ import type { BodyTopology, FromWorker, TetherState, ToWorker, Transport, Vehicl
 import { LATTICE_PARAM_COUNT, readCString, type Ptr, type SbcFactory, type SbcModule } from './sbc';
 
 const ITERATION_PERIOD_MS = 6; // target loop period (≈ 166 Hz publishing; the client plays frames back on a sim clock)
+// Behind wall time (a phone, single-thread WASM), the loop runs back to back: it yields through a MessageChannel, which
+// has no minimum delay (a nested setTimeout waits ≥ 4 ms: with a 10 ms step budget that idled the worker 30–40 % of
+// the time and held the real-time factor near 0.6 on a car that steps faster than real time).
 // Energy, momentum and the state hash walk every node and beam: they are refreshed every STATS_EVERY publishes
 // (≈ 20 Hz, what the panels show) and on pause, single steps and new scenes.
 const STATS_EVERY = 8;
-const STEP_BUDGET_MS = 10; // wall time we may spend stepping per iteration before slowing sim time down
+const STEP_BUDGET_MS = 12; // wall time we may spend stepping per iteration before publishing (≈ 80 frames/s when behind)
 const STEP_CHUNK = 8; // steps per WASM call between budget checks (8 × 0.5 ms = 4 ms of sim time)
 const MAX_WALL_GAP_S = 0.1; // a stalled tab must not make the sim try to catch up seconds of debt
 const EMA = 0.1; // smoothing of the published timing figures
@@ -277,7 +280,7 @@ function publishDamage(): void {
 
 function setVehicleInput(vehicle: number, i: VehicleInput): void {
   if (!world || vehicle < 0 || vehicle >= sbc._sbc_world_vehicle_count(world)) return;
-  sbc._sbc_vehicle_set_input(world, vehicle, i.throttle, i.brake, i.steer, i.handbrake, i.mode, i.shift, (i.abs ? 1 : 0) | (i.tcs ? 2 : 0));
+  sbc._sbc_vehicle_set_input(world, vehicle, i.throttle, i.brake, i.steer, i.handbrake, i.mode, i.shift, (i.abs ? 1 : 0) | (i.tcs ? 2 : 0) | (i.esc ? 4 : 0));
 }
 
 /** Copies every vehicle's packed telemetry into the slot (body index in the header's reserved field 30). */
@@ -440,8 +443,14 @@ function iterate(): void {
     publish();
   }
   const elapsed = performance.now() - start;
-  setTimeout(iterate, Math.max(0, ITERATION_PERIOD_MS - elapsed));
+  const wait = ITERATION_PERIOD_MS - elapsed;
+  if (world && !paused && (overloaded || wait < 1)) resume.port2.postMessage(0);
+  else setTimeout(iterate, Math.max(0, wait));
 }
+
+/** Immediate re-entry into the loop (no timer clamp); messages from the page still get their turn in between. */
+const resume = new MessageChannel();
+resume.port1.onmessage = () => iterate();
 
 async function init(msg: Extract<ToWorker, { type: 'init' }>): Promise<void> {
   const factory = (await import(/* @vite-ignore */ msg.wasmUrl)).default as SbcFactory;

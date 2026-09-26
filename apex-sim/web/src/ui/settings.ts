@@ -19,6 +19,7 @@ export interface Settings {
   reduceMotion: boolean;
   touchControls: 'auto' | 'on' | 'off';
   uiLayout: UiLayout;       // phone UI or PC UI (a change reloads the page)
+  assists: 'beginner' | 'standard' | 'sim';  // §15.2 driving aids preset
   touchLayout: unknown;     // TouchLayout (ui/TouchControls), stored as given
   lastMode: string | null;  // "최근 플레이 이어하기" (the main menu's continue card)
   minimapRotate: boolean;   // §18.4 미니맵(회전·고정)
@@ -57,6 +58,7 @@ export function defaultSettings(): Settings {
     reduceMotion: false,
     touchControls: 'auto',
     uiLayout: 'auto',
+    assists: 'standard',
     touchLayout: null,
     lastMode: null,
     minimapRotate: true,
@@ -92,6 +94,7 @@ export function parseSettings(raw: string | null): Settings {
     }
     out.uiScale = Math.min(1.5, Math.max(0.75, out.uiScale));
     if (!['auto', 'mobile', 'desktop'].includes(out.uiLayout)) out.uiLayout = 'auto';
+    if (!['beginner', 'standard', 'sim'].includes(out.assists)) out.assists = 'standard';
     // Settings from before the redesign: its identity (accent) and the slider steering the player asked for.
     if (!(typeof v.uiVersion === 'number' && v.uiVersion >= UI_VERSION)) {
       if (out.accent === 'orange') out.accent = 'blue';

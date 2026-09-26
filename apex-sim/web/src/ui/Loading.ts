@@ -1,4 +1,5 @@
 // Loading screen (§18.3-16): progress, the current stage, a tip, and the shader compile step.
+import { brandmark } from './brand';
 import { t, type StringKey } from './i18n';
 
 const TIPS: StringKey[] = ['tip1', 'tip2', 'tip3', 'tip4', 'tip5', 'tip6'];
@@ -10,9 +11,7 @@ export class LoadingScreen {
 
   constructor(title: string, subtitle: string) {
     this.root.className = 'loading-screen';
-    const brand = document.createElement('div');
-    brand.className = 'ls-brand';
-    brand.innerHTML = 'APEX<span>_</span>SIM';
+    const brand = brandmark('ls-brand', 'div');
     const h = document.createElement('h2');
     h.textContent = title;
     const sub = document.createElement('p');

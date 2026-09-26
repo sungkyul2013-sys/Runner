@@ -4,6 +4,8 @@
 @import '@fontsource/inter/600.css';
 @import '@fontsource/jetbrains-mono/400.css';
 @import '@fontsource/jetbrains-mono/600.css';
+@import '@fontsource-variable/saira/wdth.css';
+@import '@fontsource-variable/saira/wdth-italic.css';
 
 :root {
   color-scheme: dark;
@@ -27,6 +29,10 @@
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --font-ui: 'Pretendard Variable', Pretendard, Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-num: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Display: Saira (variable width 50–125 %) for the brand, titles and the gauges' numerals; Hangul falls back to the UI face. */
+  --font-display: 'Saira Variable', Saira, 'Pretendard Variable', Pretendard, system-ui, sans-serif;
+  /* Brushed metal for the brand and the key numerals. */
+  --metal: linear-gradient(180deg, #ffffff 0%, #e4e8ee 42%, #9aa3b1 52%, #d5dae2 70%, #f6f8fa 100%);
 }
 
 @media (prefers-reduced-motion: reduce) {

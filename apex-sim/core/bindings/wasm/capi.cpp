@@ -420,6 +420,7 @@ int sbc_vehicle_set_input(sbc_world* w, int v, float throttle, float brake, floa
   in.shiftRequest = static_cast<int8_t>(shift > 0 ? 1 : (shift < 0 ? -1 : 0));
   in.abs = (aids & 1) != 0;
   in.tcs = (aids & 2) != 0;
+  in.esc = (aids & 4) != 0;
   w->world.setVehicleInput(v, in);
   return 0;
 }
@@ -439,7 +440,7 @@ int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
   out[3] = t.engineTorque;
   out[4] = t.clutchTorque;
   out[5] = static_cast<float>(t.gear);
-  out[6] = static_cast<float>((t.shifting ? 1 : 0) | (t.engineRunning ? 2 : 0) | (t.tcsActive ? 4 : 0));
+  out[6] = static_cast<float>((t.shifting ? 1 : 0) | (t.engineRunning ? 2 : 0) | (t.tcsActive ? 4 : 0) | (t.escActive ? 8 : 0));
   out[7] = t.throttle;
   out[8] = t.brake;
   out[9] = t.steer;
@@ -453,6 +454,7 @@ int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
   put3(23, t.left);
   put3(26, d.refCenterModel);
   out[29] = static_cast<float>(wheels);
+  out[31] = t.yawRate;
   // 30 body index (worker), 31 reserved; §4.4 fluids and engine health:
   out[32] = t.coolantC;
   out[33] = t.coolantL;

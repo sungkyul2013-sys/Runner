@@ -11,7 +11,7 @@ export const VT = {
   engineTorque: 3,
   clutchTorque: 4,
   gear: 5,
-  flags: 6, // 1 shifting, 2 engine running, 4 TCS active
+  flags: 6, // 1 shifting, 2 engine running, 4 TCS active, 8 ESC active
   throttle: 7,
   brake: 8,
   steer: 9,
@@ -26,6 +26,7 @@ export const VT = {
   refCenterModel: 26,
   wheelCount: 29,
   body: 30,
+  yawRate: 31, // [rad/s] positive: turning left
   // §4.4 fluids and engine health
   coolantC: 32,
   coolantL: 33,
@@ -135,6 +136,10 @@ export interface VehicleState {
   shifting: boolean;
   engineRunning: boolean;
   tcs: boolean;
+  /** Stability control braking a wheel or cutting torque. */
+  esc: boolean;
+  /** [rad/s] about the chassis up axis, positive = turning left (filtered). */
+  yawRate: number;
   throttle: number;
   brake: number;
   steer: number;
@@ -243,6 +248,8 @@ export function decodeVehicle(r: Float32Array, origin: V3, renderOrigin: V3 = [0
     shifting: (flags & 1) !== 0,
     engineRunning: (flags & 2) !== 0,
     tcs: (flags & 4) !== 0,
+    esc: (flags & 8) !== 0,
+    yawRate: r[VT.yawRate],
     throttle: r[VT.throttle],
     brake: r[VT.brake],
     steer: r[VT.steer],

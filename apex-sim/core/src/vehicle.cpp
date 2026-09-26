@@ -220,6 +220,7 @@ Vehicle::Vehicle(const VehicleDesc& desc, int bodyIndex, const Body& body) : des
   sensorLong_.assign(100, 0.0);  // 50 ms at the 0.5 ms step (resized for other steps is not needed: dt is fixed)
   sensorLat_.assign(100, 0.0);
   brakeFactor_.assign(desc.wheels.size(), 1.0);
+  escTorque_.assign(desc.wheels.size(), 0.0);
   shares_.resize(desc.wheels.size());
   for (size_t i = 0; i < shares_.size(); ++i) shares_[i] = desc.wheels[i].driveShare;
   if (desc.centre.active) {
@@ -308,6 +309,9 @@ void Vehicle::relaunch(Body& b, DVec3 position, double yaw, double speed, double
   }
   windup_ = 0.0;
   tcsFactor_ = 1.0;
+  escYaw_ = 0.0;
+  escThrottle_ = 1.0;
+  std::fill(escTorque_.begin(), escTorque_.end(), 0.0);
   firstStep_ = true;
   accelLong_ = accelLat_ = 0.0;
   std::fill(sensorLong_.begin(), sensorLong_.end(), 0.0);
@@ -675,6 +679,64 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     b.hydroInputs[static_cast<size_t>(D.steeringChannel)] = static_cast<float>(steer_);
   }
 
+  // ---- electronic stability control (§9, §15.2) ----------------------------------------------------------------
+  // Yaw-rate control. The reference is a linear single-track model on the driver's steer angle δ (rack position ×
+  // steering lock), r_ref = v·δ / (L + K·v²), capped at what µ ≈ 1 allows (0.9 g / v). Yawing faster than that (oversteer, a spin
+  // starting) it brakes the front wheel on the outside of the rotation; slower (understeer, pushing wide) the rear
+  // wheel on the inside — braking a wheel on one side yaws the car toward that side. Beyond a dead band the torque
+  // grows with the error, capped at half the wheel's service brake (a quarter for understeer), and while it catches a
+  // spin the engine torque drops. Off in reverse and below 20 km/h. Engage ≈ 50 ms, release ≈ 25 ms.
+  {
+    const DVec3 dr = pos(b, D.refFront) - pc;
+    const double arm = std::max(dot(dr, fwd), 0.1);
+    const double yawRaw = dot(vel(b, D.refFront) - vel(b, D.refCenter), left) / arm;
+    escYaw_ += (dt / (0.03 + dt)) * (yawRaw - escYaw_);
+    std::vector<double>& target = escScratch_;
+    target.assign(nw, 0.0);
+    double throttleFactor = 1.0;
+    if (D.electronics.esc && input_.esc && !electricalFailed_ && gear_ > 0 && speed > 5.5) {
+      // The driver's command (the rack position) sets the reference, as a real system's steering-angle sensor does:
+      // the front wheels' actual angle also carries compliance steer, which a heavy car's side load adds to a turn.
+      double xf = 0.0, xr = 0.0;
+      int nf = 0, nr = 0;
+      for (size_t w = 0; w < nw; ++w) {
+        const double x = dot(frames_[w].wheel.center - pc, fwd);
+        if (x > 0.0) {
+          xf += x;
+          ++nf;
+        } else {
+          xr += x;
+          ++nr;
+        }
+      }
+      if (nf > 0 && nr > 0) {
+        const double delta = steer_ * D.steeringLock;
+        const double L = std::max(xf / nf - xr / nr, 1.0);
+        const double cap = 0.9 * 9.81 / speed;
+        const double ref = clampd(speed * delta / (L + D.electronics.escUndersteer * speed * speed), -cap, cap);
+        const double error = escYaw_ - ref;
+        const double excess = std::fabs(error) - (0.05 + 0.12 * std::fabs(ref));
+        if (excess > 0.0) {
+          const bool brakeLeft = error < 0.0;  // the car should yaw more to the left: brake a left wheel
+          const bool over = std::fabs(escYaw_) > std::fabs(ref) || escYaw_ * ref < 0.0;
+          for (size_t w = 0; w < nw; ++w) {
+            const WheelFrame& f = frames_[w];
+            const bool isFront = dot(f.wheel.center - pc, fwd) > 0.0, isLeft = dot(f.wheel.center - pc, left) > 0.0;
+            if (isLeft != brakeLeft || isFront != over || !f.contact) continue;
+            const double bt = D.wheels[w].brakeTorque;
+            target[w] = std::min(2.0 * bt * excess, (over ? 0.5 : 0.25) * bt);
+          }
+          if (over) throttleFactor = clampd(1.0 - 2.5 * excess, 0.25, 1.0);
+        }
+      }
+    }
+    for (size_t w = 0; w < nw; ++w) {
+      const double bt = D.wheels[w].brakeTorque;
+      escTorque_[w] += clampd(target[w] - escTorque_[w], -40.0 * bt * dt, 20.0 * bt * dt);
+    }
+    escThrottle_ += clampd(throttleFactor - escThrottle_, -20.0 * dt, 10.0 * dt);
+  }
+
   // ---- gearbox, clutch, engine, driveline ---------------------------------------------------------------------
   const EngineDesc& E = D.engine;
   const TransmissionDesc& T = D.transmission;
@@ -694,7 +756,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     const double rate = target > clutch_ ? 12.0 : 25.0;  // [1/s] engage in ~80 ms, open in 40 ms
     clutch_ += clampd(target - clutch_, -rate * dt, rate * dt);
   }
-  double throttle = throttleIn;
+  double throttle = throttleIn * escThrottle_;
   if (shifting && gear_ > 0 && pendingGear_ > gear_) throttle = 0.0;  // upshift: ignition cut
   if (shifting && pendingGear_ > 0 && pendingGear_ < gear_) {          // downshift: blip to the new gear's speed
     throttle = engineOmega_ < std::fabs(driveOmega * gearRatio(pendingGear_)) ? 1.0 : 0.0;
@@ -832,7 +894,8 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     } else {
       s.absFactor = 1.0;
     }
-    const double cap = wd.brakeTorque * pedal * s.absFactor * brakeFactor_[w] + wd.handbrakeTorque * handbrake;
+    const double cap = wd.brakeTorque * pedal * s.absFactor * brakeFactor_[w] + wd.handbrakeTorque * handbrake +
+                       escTorque_[w] * brakeFactor_[w];
     s.brakeAngle += f.spinRel * dt;
     double torque = -(D.brakes.stiffness * s.brakeAngle + D.brakes.damping * f.spinRel);
     if (std::fabs(torque) > cap) {
@@ -990,7 +1053,8 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   telemetry_.gear = shiftTimer_ > 0.0 ? pendingGear_ : gear_;
   telemetry_.shifting = shiftTimer_ > 0.0;
   telemetry_.engineRunning = running_;
-  telemetry_.tcsActive = D.electronics.tcs && input_.tcs && !electricalFailed_ && throttle < std::min(throttleIn, 0.999);
+  telemetry_.tcsActive = D.electronics.tcs && input_.tcs && !electricalFailed_ && throttle < std::min(throttleIn * escThrottle_, 0.999);
+  telemetry_.escActive = escThrottle_ < 0.99 || std::any_of(escTorque_.begin(), escTorque_.end(), [](double t) { return t > 1.0; });
   telemetry_.coolantC = static_cast<float>(coolantC_);
   telemetry_.coolantL = static_cast<float>(coolantL_);
   telemetry_.oilL = static_cast<float>(oilL_);
@@ -1019,6 +1083,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   telemetry_.clutch = static_cast<float>(clutch_);
   telemetry_.accelLong = static_cast<float>(accelLong_);
   telemetry_.accelLat = static_cast<float>(accelLat_);
+  telemetry_.yawRate = static_cast<float>(escYaw_);
   telemetry_.odometer = static_cast<float>(odometer_);
   telemetry_.position = toFloat(pc);
   telemetry_.forward = toFloat(fwd);

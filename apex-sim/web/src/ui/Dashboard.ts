@@ -35,6 +35,9 @@ export interface DashboardFlags {
   manual: boolean;
   abs: boolean;
   tcs: boolean;
+  esc?: boolean;
+  /** Real-time factor of the physics (§21.2: shown when the simulation runs slower than real time). */
+  rtf?: number;
   camera: string;
 }
 
@@ -114,7 +117,13 @@ export class Dashboard {
   private tagTcs = el('i', '', 'TCS');
   private tagAbs = el('i', '', 'ABS');
   private tagMan = el('i', '', 'M');
+  private tagEsc = el('i', '', 'ESC');
+  private rtfBadge = el('span', 'dash-rtf');
+  private rtfShown = 1;
+  private lit = -1;
   private pedals = el('div', 'dash-pedals');
+  /** Shift lights: green, amber, red from 72 % of the redline; all flash at the change point. */
+  private lights = el('div', 'dash-lights');
   private brakeBar = el('i', 'dash-brake');
   private throttleBar = el('i', 'dash-throttle');
   private faces: Face[] = [];
@@ -129,11 +138,13 @@ export class Dashboard {
   constructor(redlineRpm: number) {
     const face = el('div', 'dash-face');
     face.append(this.speed, this.unitLabel);
-    this.tags.append(this.tagMan, this.tagTcs, this.tagAbs);
+    this.tags.append(this.tagMan, this.tagTcs, this.tagAbs, this.tagEsc);
     this.pedals.append(this.brakeBar, this.throttleBar);
-    this.dial.append(face, this.gear, this.rpmText, this.tags, this.pedals);
+    for (let i = 0; i < 10; i++) this.lights.append(el('i', i < 4 ? 'g' : i < 7 ? 'y' : 'r'));
+    this.dial.append(face, this.lights, this.gear, this.rpmText, this.tags, this.pedals);
     this.warnings.append(...this.warnLamps, this.tyreLamp);
-    this.root.append(this.warnings, this.dial);
+    this.rtfBadge.hidden = true;
+    this.root.append(this.warnings, this.rtfBadge, this.dial);
     this.root.hidden = true;
     this.setRedline(redlineRpm);
   }
@@ -166,6 +177,11 @@ export class Dashboard {
     const frac = v.engineRpm / this.scale;
     for (const face of this.faces) face.set(frac);
     this.root.classList.toggle('shift', v.engineRpm > this.redline * 0.93);
+    const lit = Math.round(Math.min(Math.max((v.engineRpm / this.redline - 0.72) / 0.24, 0), 1) * 10);
+    if (lit !== this.lit) {
+      this.lit = lit;
+      this.lights.querySelectorAll('i').forEach((l, i) => l.classList.toggle('on', i < lit));
+    }
     this.rpmText.textContent = `${(v.engineRpm / 1000).toFixed(1)}k`;
     this.gear.textContent = v.gear < 0 ? 'R' : v.gear === 0 ? 'N' : String(v.gear);
     this.gear.classList.toggle('shifting', v.shifting);
@@ -175,6 +191,14 @@ export class Dashboard {
       this.tagTcs.className = f.tcs ? (v.tcs ? 'on act' : 'on') : '';
       this.tagAbs.className = f.abs ? 'on' : '';
       this.tagMan.className = f.manual ? 'on' : '';
+      this.tagEsc.className = f.esc ? (v.esc ? 'on act' : 'on') : '';
+      // §21.2: the physics running slower than real time is shown, not hidden (the car then looks slow).
+      if (f.rtf !== undefined) {
+        this.rtfShown += (f.rtf - this.rtfShown) * 0.05;
+        const slow = this.rtfShown < 0.93;
+        this.rtfBadge.hidden = !slow;
+        if (slow) this.rtfBadge.textContent = `${t('rtfBadge')} ${Math.round(this.rtfShown * 100)} %`;
+      }
     }
     WARNINGS.forEach(([bits], i) => (this.warnLamps[i].hidden = (v.faults & bits) === 0));
     // Tyre pressure: any wheel under 80 % of its pressure, or off its rim; the lamp names the wheels.

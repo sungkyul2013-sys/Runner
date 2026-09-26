@@ -165,6 +165,7 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
   settings.onChange(apply);
   apply();
   const logic = session.input.logic;
+  const aidChips: Array<() => void> = [];
   const aid = (label: string, get: () => boolean, set: (on: boolean) => void) => {
     const b = el('button', get() ? 'chip active' : 'chip', label);
     b.onclick = () => {
@@ -172,8 +173,18 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
       b.classList.toggle('active', get());
       notify(`${label} · ${get() ? t('stateOn') : t('stateOff')}`, '', { key: `aid-${label}` });
     };
+    aidChips.push(() => b.classList.toggle('active', get()));
     return b;
   };
+  // §15.2 aid presets: the preset sets the aids; each can then be switched on its own.
+  let assist = settings.get().assists;
+  logic.setAssist(assist);
+  settings.onChange((s) => {
+    if (s.assists === assist) return;
+    assist = s.assists;
+    logic.setAssist(assist);
+    aidChips.forEach((sync) => sync());
+  });
   const act = (name: Parameters<typeof icon>[0], label: string, tip: string, run: () => void) => {
     const b = el('button', 'act', icon(name), el('span', '', label));
     tipOf(b, `${label}\n${tip}`);
@@ -184,7 +195,7 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
     el('div', 'grid3', act('wrench', t('carRepair'), t('carRepairTip'), () => void repair()), act('reset', t('carReset'), t('carResetTip'), () => void resetCar()),
       act('restart', t('restart'), t('restartTip'), restart)),
     el('div', 'chips', aid('TCS', () => logic.tcs, (on) => (logic.tcs = on)), aid('ABS', () => logic.abs, (on) => (logic.abs = on)),
-      aid(t('aidManual'), () => logic.manual, (on) => (logic.manual = on))));
+      aid('ESC', () => logic.esc, (on) => (logic.esc = on)), aid(t('aidManual'), () => logic.manual, (on) => (logic.manual = on))));
   shell.sheet.section(t('carSwap'), carPicker(session, (v) => void swap(v)));
   shell.sheet.section(t('sheetKeys'), el('p', 'muted', t('keysHelp')));
   touchControls(session, shell);

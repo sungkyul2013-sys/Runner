@@ -34,6 +34,8 @@ export class DriveSession {
   readonly sparks = new Sparks();
 
   private active = true;
+  /** The car's wheelbase has been measured (the steering limit's geometry). */
+  private geometryKnown = false;
   /** The session owns the debug view (test ground, free roam); in the sandbox the lattices keep theirs and the car
    *  is only left out of it. */
   manageDebug = true;
@@ -149,6 +151,7 @@ export class DriveSession {
     this.actor.dispose();
     this.vehicle = vehicle;
     this.actor = this.makeActor(vehicle);
+    this.geometryKnown = false;
     this.dashboard.setRedline(vehicle.redlineRpm);
   }
 
@@ -242,7 +245,7 @@ export class DriveSession {
     sound?.update(this.active ? v : null, stats?.timeScale ?? 1, stats?.paused ?? false);
     if (!this.active) {
       // Parked: handbrake on, foot on the brake.
-      this.physics.setVehicleInput(this.actor.spawned.vehicle, { throttle: 0, brake: 1, steer: 0, handbrake: 1, mode: 0, shift: 0, abs: true, tcs: true });
+      this.physics.setVehicleInput(this.actor.spawned.vehicle, { throttle: 0, brake: 1, steer: 0, handbrake: 1, mode: 0, shift: 0, abs: true, tcs: true, esc: true });
       return;
     }
     if (!this.holdCamera) {
@@ -250,12 +253,25 @@ export class DriveSession {
       this.chase.lift = this.dashboard.root.hidden || this.dashboard.root.classList.contains('hud-off') ? 0 : short ? 0.15 : innerHeight > innerWidth ? 0.07 : 0.1;
       this.chase.update(dt, v);
     } else this.chase.release();
-    this.physics.setVehicleInput(this.actor.spawned.vehicle, this.input.update(dt, v.speed));
+    const logic0 = this.input.logic;
+    if (!this.geometryKnown && v.wheels.length >= 4) {
+      // Wheelbase from the wheel centres along the chassis forward (the speed-sensitive steering limit uses it).
+      const along = v.wheels.map((w) => w.center[0] * v.forward[0] + w.center[1] * v.forward[1] + w.center[2] * v.forward[2]);
+      const mid = (Math.max(...along) + Math.min(...along)) / 2;
+      const front = along.filter((a) => a > mid), rear = along.filter((a) => a <= mid);
+      const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1);
+      const wheelbase = mean(front) - mean(rear);
+      if (wheelbase > 1.5 && wheelbase < 5) logic0.geometry = { wheelbase, lock: logic0.geometry.lock };
+      this.geometryKnown = true;
+    }
+    this.physics.setVehicleInput(this.actor.spawned.vehicle, this.input.update(dt, v.speed, v.yawRate));
     const logic = this.input.logic;
     this.dashboard.update(v, {
       manual: logic.manual,
       abs: logic.abs,
       tcs: logic.tcs,
+      esc: logic.esc,
+      rtf: this.physics.latestStats()?.rtf ?? 1,
       camera: this.cameraLabel,
     });
   }

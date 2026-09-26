@@ -7,6 +7,7 @@ import { abs, color, dot, float, fract, length, mix, normalWorld, positionWorld,
 import { SHOWROOM, showroomCar } from '../app/presets';
 import type { Viewer } from '../render/Viewer';
 import { loadVehicleModel, type VehicleModel } from '../vehicles/VehicleModel';
+import { brandmark } from './brand';
 import { icon, type IconName } from './icons';
 import { MapStage } from './MapStage';
 import { t, tl, type Localized, type StringKey } from './i18n';
@@ -79,7 +80,7 @@ export class MainMenu {
   /** PC: the brand, the car card with its figures on the left, the mode cards on the right, hints at the foot. */
   private buildDesktop(prev: HTMLButtonElement, next: HTMLButtonElement, gear: HTMLButtonElement, cont: AppMode | null): void {
     const hero = el('div', 'mm-hero');
-    const brand = el('h1', 'mm-brand', 'APEX', el('span', '', '_'), 'SIM');
+    const brand = brandmark('mm-brand');
     const car = el('div', 'mm-car', el('div', 'mm-car-row', this.carName, prev, next), this.specs, this.note);
     hero.append(brand, el('p', 'mm-tagline', t('appTagline')), car);
     const cards = el('nav', 'mm-cards');
@@ -97,7 +98,7 @@ export class MainMenu {
    */
   private buildMobile(prev: HTMLButtonElement, next: HTMLButtonElement, gear: HTMLButtonElement, cont: AppMode | null, count: number): void {
     this.root.className = 'm-menu';
-    const top = el('header', 'm-menu-top', el('h1', 'mm-brand', 'APEX', el('span', '', '_'), 'SIM'), gear);
+    const top = el('header', 'm-menu-top', el('div', 'm-brandbox', brandmark('mm-brand'), el('p', 'mm-tagline', t('appTagline'))), gear);
     this.specs.className = 'm-specs';
     this.note.className = 'm-note';
     const car = el('section', 'm-car', el('div', 'm-car-row', prev, el('div', 'm-car-name', this.carName, this.note), next), this.specs, this.dots);

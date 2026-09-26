@@ -34,7 +34,7 @@ export interface WheelRow {
 const WHEEL_NAMES = ['FL', 'FR', 'RL', 'RR'];
 const DEG = 180 / Math.PI;
 
-const NEUTRAL: VehicleInput = { throttle: 0, brake: 0, steer: 0, handbrake: 0, mode: 2, shift: 0, abs: true, tcs: true };
+const NEUTRAL: VehicleInput = { throttle: 0, brake: 0, steer: 0, handbrake: 0, mode: 2, shift: 0, abs: true, tcs: true, esc: false };
 
 export class CrashLab {
   readonly log = new EventLog();

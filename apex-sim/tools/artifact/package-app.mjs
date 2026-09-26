@@ -54,11 +54,11 @@ if (!entry || !style) throw new Error('entry script or stylesheet not found in t
 put('index.html', Buffer.from(`<title>APEX_SIM 주행</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+KR:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+KR:wght@400;600&family=Saira:ital,wdth,wght@0,50..125,100..900;1,50..125,100..900&display=swap">
 <link rel="stylesheet" href="${style}">
 <style>
   /* Pretendard ships with the app build but this host serves no fonts of its own: Inter + Noto Sans KR instead. */
-  :root { --font-ui: Inter, 'Noto Sans KR', system-ui, -apple-system, 'Segoe UI', sans-serif; --font-num: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  :root { --font-ui: Inter, 'Noto Sans KR', system-ui, -apple-system, 'Segoe UI', sans-serif; --font-num: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; --font-display: Saira, 'Noto Sans KR', system-ui, sans-serif; }
   html, body { background: #0b0d10; }
 </style>
 <canvas id="view" tabindex="0" aria-label="3D 주행 화면"></canvas>

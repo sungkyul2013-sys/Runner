@@ -103,28 +103,31 @@
   .tc-slider { width: min(calc(300px * var(--s)), calc(50vw - 150px)); }
   .tc { --steer-w: min(calc(300px * var(--s)), calc(50vw - 150px)); }
 }
-/* portrait: steering in the left third, pedals in the right third, the round gauge between them */
+/* portrait: the pedals in the right thumb's corner, the round gauge at the bottom centre, and the steering ABOVE the
+   gauge's line — a wide bar from the left edge to the pedals (two and a half times the travel of a bar squeezed
+   beside the gauge: finer steering), camera and reset in the corner the bar left free */
 @media (orientation: portrait) {
-  /* each side zone is what the gauge (37vw, centred) leaves: (100vw − 37vw) / 2 minus the margins */
-  .tc { --zone: calc(31.5vw - 16px); --gap: calc(6px * var(--s));
-    --gas-w: min(calc(50px * var(--s) * var(--ps)), calc(var(--zone) * 0.46)); --gas-h: calc(136px * var(--s) * var(--ps));
-    --brk-w: min(calc(56px * var(--s) * var(--ps)), calc(var(--zone) * 0.54 - var(--gap))); --brk-h: calc(100px * var(--s) * var(--ps));
-    --pad-b: calc(18px + env(safe-area-inset-bottom, 0px)); --pad-l: calc(8px + env(safe-area-inset-left, 0px)); --pad-r: calc(8px + env(safe-area-inset-right, 0px));
-    --steer-w: var(--zone); --steer-h: calc(64px * var(--s)); }
+  .tc { --gap: calc(6px * var(--s));
+    --gas-w: calc(54px * var(--s) * var(--ps)); --gas-h: calc(136px * var(--s) * var(--ps));
+    --brk-w: calc(60px * var(--s) * var(--ps)); --brk-h: calc(100px * var(--s) * var(--ps));
+    --pad-b: calc(18px + env(safe-area-inset-bottom, 0px)); --pad-l: calc(10px + env(safe-area-inset-left, 0px)); --pad-r: calc(10px + env(safe-area-inset-right, 0px));
+    /* the gauge shows ≈ 0.8 of its --g (min(37vw, 190px)) above the edge */
+    --steer-b: calc(min(37vw, 190px) * 0.8 + 16px + env(safe-area-inset-bottom, 0px));
+    --steer-w: calc(100vw - var(--pad-l) - var(--pad-r) - var(--gas-w) - var(--brk-w) - 3 * var(--gap));
+    --steer-h: calc(64px * var(--s)); }
   .tc-label { font-size: calc(0.62rem * var(--s)); letter-spacing: 0.02em; }
   .tc-handbrake, .tc-shiftUp, .tc-shiftDown { height: calc(40px * var(--s)); }
-  .tc-slider { width: var(--steer-w); height: var(--steer-h); padding: 0 6px; }
-  .tc-slider .tc-end { display: none; }
-  .tc-track { left: 16px; right: 16px; }
-  .tc-thumb { width: calc(50px * var(--s)); height: calc(50px * var(--s)); margin: calc(-25px * var(--s)) 0 0 calc(-25px * var(--s)); }
+  .tc-steer { bottom: var(--steer-b); }
+  .tc-slider { width: var(--steer-w); height: var(--steer-h); }
+  .tc-thumb { width: calc(52px * var(--s)); height: calc(52px * var(--s)); margin: calc(-26px * var(--s)) 0 0 calc(-26px * var(--s)); }
   .tc[data-steer='buttons'] { --steer-h: calc(84px * var(--s)); }
   .tc-buttons { width: var(--steer-w); height: calc(84px * var(--s)); }
-  .tc[data-steer='wheel'] { --steer-h: var(--steer-w); }
-  .tc-wheel { width: var(--steer-w); height: var(--steer-w); }
+  .tc[data-steer='wheel'] { --steer-h: min(var(--steer-w), calc(164px * var(--s))); }
+  .tc-wheel { width: var(--steer-h); height: var(--steer-h); }
   .tc-tilt { width: var(--steer-w); }
-  .tc[data-steer='wheel'] .tc-camera, .tc[data-steer='wheel'] .tc-reset { left: var(--pad-l); }
-  .tc[data-steer='wheel'] .tc-camera { bottom: calc(var(--pad-b) + var(--steer-h) + var(--gap)); }
-  .tc[data-steer='wheel'] .tc-reset { left: calc(var(--pad-l) + var(--small) + var(--gap)); bottom: calc(var(--pad-b) + var(--steer-h) + var(--gap)); }
+  /* camera and reset: the bottom-left corner, beside the gauge */
+  .tc-camera, .tc[data-steer='wheel'] .tc-camera { left: var(--pad-l); bottom: var(--pad-b); }
+  .tc-reset, .tc[data-steer='wheel'] .tc-reset { left: calc(var(--pad-l) + var(--small) + var(--gap)); bottom: var(--pad-b); }
 }
 
 /* layout editing: every control shows its outline and grip and can be dragged */

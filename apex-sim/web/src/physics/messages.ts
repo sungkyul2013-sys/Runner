@@ -75,6 +75,8 @@ export interface VehicleInput {
   shift: -1 | 0 | 1; // one-shot manual shift request
   abs: boolean;
   tcs: boolean;
+  /** Stability control (core VehicleInput::esc). */
+  esc: boolean;
 }
 
 export interface BodyTopology {

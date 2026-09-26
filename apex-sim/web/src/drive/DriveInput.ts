@@ -14,22 +14,46 @@ const REVERSE_ENGAGE_S = 0.35; // hold the back pedal this long at a standstill 
 const STANDSTILL = 0.6; // [m/s]
 const KEY_STEER_RATE = 2.6; // [1/s] towards the target
 const KEY_STEER_RETURN = 4.5; // [1/s] back to centre
+const ANALOG_STEER_RATE = 5; // [1/s] a thumb or stick may move this fast (full lock in 0.2 s)
+const ANALOG_SMOOTH = 0.05; // [s] low-pass of a thumb or stick (finger tremor, stick noise)
 
-/** Keyboard steering limit: full lock when parking, ≈ 0.3 at 100 km/h, ≈ 0.18 at 200 km/h (a tapped key must not
- *  throw a fast car sideways). Analog steering keeps a milder limit. */
-export function steerLimit(speed: number, analog: boolean): number {
-  const v = Math.abs(speed);
-  return analog ? Math.max(0.35, 1 / (1 + v / 40)) : Math.min(1, Math.max(0.12, 1 / (1 + v / 12)));
+/** Driving aids preset (§15.2): 입문 (every aid, gentle steering), 표준, 시뮬레이션 (no aids, the raw steering). */
+export type AssistLevel = 'beginner' | 'standard' | 'sim';
+
+/** What a car's steering needs for the limit below (defaults: a mid-size car). */
+export interface SteerGeometry {
+  wheelbase: number; // [m]
+  lock: number; // road wheel angle at full lock [rad]
+}
+export const DEFAULT_GEOMETRY: SteerGeometry = { wheelbase: 2.8, lock: 0.5 };
+
+/**
+ * Speed-sensitive steering limit (§15.2 속도 감응 조향), as a share of full lock. The road wheel angle that reaches
+ * the tyres' grip: the kinematic angle for the cornering limit, L·a/v², plus the tyres' peak slip angle — with more no
+ * car corners harder, it only slides. A tapped key or a thumb then cannot throw a fast car sideways, while parking
+ * keeps full lock. Countersteer (steering against the car's rotation) gets the whole lock: catching a slide needs it.
+ * Simulation: no limit.
+ */
+export function steerLimit(speed: number, assist: AssistLevel = 'standard', geometry: SteerGeometry = DEFAULT_GEOMETRY): number {
+  if (assist === 'sim') return 1;
+  const v = Math.max(Math.abs(speed), 1);
+  const lateral = assist === 'beginner' ? 8.5 : 10.5; // [m/s²] at the limit
+  const slip = assist === 'beginner' ? 0.05 : 0.08; // [rad] tyre slip angle allowance
+  return Math.min(1, Math.max(0.1, (geometry.wheelbase * lateral / (v * v) + slip) / geometry.lock));
 }
 
 export class DriveLogic {
   manual = false;
   abs = true;
   tcs = true;
+  esc = true;
+  assist: AssistLevel = 'standard';
+  geometry: SteerGeometry = DEFAULT_GEOMETRY;
   /** 0 drive, 1 reverse (the automatic's selector; manual mode keeps its own gear but reverses the same way). */
   private reverse = false;
   private hold = 0;
   private steer = 0;
+  private smooth = 0;
   private shift: -1 | 0 | 1 = 0;
 
   requestShift(dir: -1 | 1): void {
@@ -44,11 +68,22 @@ export class DriveLogic {
     this.reverse = false;
     this.hold = 0;
     this.steer = 0;
+    this.smooth = 0;
     this.shift = 0;
   }
 
-  /** Advances by `dt` seconds at forward speed `speed` [m/s]. */
-  update(dt: number, speed: number, c: RawControls): VehicleInput {
+  /** Sets the aids of a preset (the driver may still switch each one after). */
+  setAssist(level: AssistLevel): void {
+    this.assist = level;
+    const on = level !== 'sim';
+    this.abs = on;
+    this.tcs = on;
+    this.esc = on;
+    if (level === 'beginner') this.manual = false;
+  }
+
+  /** Advances by `dt` seconds at forward speed `speed` [m/s]; `yawRate` [rad/s] (positive: turning left). */
+  update(dt: number, speed: number, c: RawControls, yawRate = 0): VehicleInput {
     // Reverse selection at a standstill: in reverse the pedals swap (back = go, forward = brake), as in most games.
     const back = this.reverse ? c.throttle : c.brake;
     const go = this.reverse ? c.brake : c.throttle;
@@ -64,14 +99,21 @@ export class DriveLogic {
     const throttle = this.reverse ? c.brake : c.throttle;
     const brake = this.reverse ? c.throttle : c.brake;
 
-    const limit = steerLimit(speed, c.analogSteer);
-    const target = Math.max(-1, Math.min(1, c.steer)) * limit;
+    const raw = Math.max(-1, Math.min(1, c.steer));
+    // Countersteer — against the rotation while the car yaws faster than the steering asks — may use the whole lock.
+    const counter = speed > 3 && raw * yawRate < 0 && Math.abs(yawRate) > 0.15;
+    const limit = counter ? 1 : steerLimit(speed, this.assist, this.geometry);
+    const target = raw * limit;
     if (c.analogSteer) {
-      this.steer = target;
+      // A thumb or stick: smoothed (tremor) and rate-limited, never a jump.
+      this.smooth += (target - this.smooth) * Math.min(1, dt / ANALOG_SMOOTH);
+      const d = this.smooth - this.steer;
+      this.steer += Math.sign(d) * Math.min(Math.abs(d), ANALOG_STEER_RATE * dt);
     } else {
       const rate = Math.abs(target) < Math.abs(this.steer) || target * this.steer < 0 ? KEY_STEER_RETURN : KEY_STEER_RATE;
       const d = target - this.steer;
       this.steer += Math.sign(d) * Math.min(Math.abs(d), rate * dt);
+      this.smooth = this.steer;
     }
 
     const shift = this.shift;
@@ -85,11 +127,12 @@ export class DriveLogic {
       shift,
       abs: this.abs,
       tcs: this.tcs,
+      esc: this.esc,
     };
   }
 }
 
-export type Action = 'shiftUp' | 'shiftDown' | 'toggleManual' | 'toggleTcs' | 'toggleAbs' | 'camera' | 'reset' | 'xray';
+export type Action = 'shiftUp' | 'shiftDown' | 'toggleManual' | 'toggleTcs' | 'toggleAbs' | 'toggleEsc' | 'camera' | 'reset' | 'xray';
 
 /** An analog control surface next to keyboard and gamepad (§15.4 touch controls): read once per frame. */
 export interface AnalogSource {
@@ -102,6 +145,7 @@ const KEY_ACTIONS: Record<string, Action> = {
   KeyM: 'toggleManual',
   KeyT: 'toggleTcs',
   KeyB: 'toggleAbs',
+  KeyY: 'toggleEsc',
   KeyC: 'camera',
   KeyR: 'reset',
   KeyV: 'xray',
@@ -148,6 +192,7 @@ export class DriveInput {
     else if (a === 'toggleManual') this.logic.manual = !this.logic.manual;
     else if (a === 'toggleTcs') this.logic.tcs = !this.logic.tcs;
     else if (a === 'toggleAbs') this.logic.abs = !this.logic.abs;
+    else if (a === 'toggleEsc') this.logic.esc = !this.logic.esc;
     this.onAction(a);
   }
 
@@ -196,7 +241,7 @@ export class DriveInput {
     return c;
   }
 
-  update(dt: number, speed: number): VehicleInput {
-    return this.logic.update(dt, speed, this.controls());
+  update(dt: number, speed: number, yawRate = 0): VehicleInput {
+    return this.logic.update(dt, speed, this.controls(), yawRate);
   }
 }

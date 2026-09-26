@@ -84,7 +84,10 @@ b.group('chassis', { k: 7.7e5, zeta: 0.25 });
 b.group('hardpoint', { k: 8e5, zeta: 0.2, plasticForce: 3.0e4, hardening: 0.05, unloadRatio: UNLOAD_RATIO });
 b.group('knuckle', { k: 2e6, zeta: 0.1 });
 b.group('link', { k: 1.5e6, zeta: 0.1, ...suspensionYield(2.4e4) });
-b.group('tierod', { type: 'hydro', k: 1.5e6, zeta: 0.1, ...suspensionYield(1.4e4) });
+// The tie rods and the rack's mounts give a little more than the lower ball joints (a rack in rubber bushes): under side
+// force the outer wheel then turns less, not more, than the rack commands — with 1.5e6 N/m it toed 0.9° further into
+// the turn at 0.65 g (compliance oversteer).
+b.group('tierod', { type: 'hydro', k: 8e5, zeta: 0.1, ...suspensionYield(1.4e4) });
 b.group('toelink', { k: 1.5e6, zeta: 0.1, ...suspensionYield(1.2e4) });
 b.group('bumpstop', { type: 'bounded', k: 1.5e5, zeta: 0.05 });
 b.group('subframe', { k: 1.2e6, zeta: 0.1, plasticForce: 3.0e4, hardening: 0.05, unloadRatio: UNLOAD_RATIO });
@@ -203,11 +206,17 @@ b.group('latch', { k: 3e5, zeta: 0.2 });
 // Seals and stops (§4.1 support beams, compression only): each inner panel node rests on the two nearest lattice
 // nodes, so a crash cannot push a door or lid into the body through its frame, while it opens freely.
 b.group('seal', { type: 'support', k: 5e4, zeta: 0.1 });
+// Frame stops (doors): a closed door lies in its frame all round (the seal pressed by the latch), so its free edges
+// cannot bow out: each outer node other than the hinges and the latch is held within −8 … +2 mm of the body by a
+// bounded tie, part of the latch's break group — a torn latch frees the door whole (swinging on its hinges). Without
+// them the 16 kg door skins, held at three points, flapped 6–12 cm at 120–150 km/h (suction and road shake). The
+// lids, small and stiff between their hinges and latch, move a few millimetres and keep their free edges.
+b.group('panelStop', { type: 'bounded', k: 5e4, zeta: 0.3 });
 const paintPieces = connectedPieces(primitiveGeometry(glb, 'body', 'paint'));
 const unit = (x) => norm(x);
 const panelParts = [];
 const panelLift = { front: 0, rear: 0 };  // Σ C_S·A·n_y of the panels [m²]
-function hingedPanel({ id, piece, ref, hingeSide, pitch, mass, group, latchBreak, hingeBreak, hingeYield, hingeTear = 0.3, suction, EA, yieldForce }) {
+function hingedPanel({ id, piece, ref, hingeSide, pitch, mass, group, latchBreak, hingeBreak, hingeYield, hingeTear = 0.3, suction, EA, yieldForce, stops = false }) {
   const n = unit(piece.n);
   const u = unit(sub(ref, scale(n, dot(ref, n))));
   const v = cross(n, u);
@@ -252,6 +261,13 @@ function hingedPanel({ id, piece, ref, hingeSide, pitch, mass, group, latchBreak
   const latch = [...latchRow].sort((a, c) => dist(b.pos(a), mid) - dist(b.pos(c), mid))[0];
   tie(latch, 2, 'latch', latchBreak, `${id}_latch`);
   tie(latch.replace(/_0$/, '_1'), 2, 'latch', latchBreak, `${id}_latch`);
+  const hinges = new Set([byAxis[0], byAxis[byAxis.length - 1]]);
+  for (const outer of stops ? outers : []) {
+    if (hinges.has(outer) || outer === latch) continue;
+    const p = b.pos(outer);
+    const nearest = [...b.lattice].sort((a, c) => dist(b.pos(a), p) - dist(b.pos(c), p))[0];
+    b.beam(outer, nearest, 'panelStop', { breakForce: latchBreak, breakGroup: `${id}_latch`, minOffset: -0.008, maxOffset: 0.002 });
+  }
   panelParts.push({ id, pieces: [piece.c.map((x) => +x.toFixed(4))], nodePrefix: `p_${id}_` });
 }
 const frontLid = paintPieces.find((p) => p.c[2] > 1.0 && Math.abs(p.c[0]) < 0.1 && p.area > 0.8);
@@ -267,7 +283,7 @@ hingedPanel({ id: 'engineLid', piece: engineLid, ref: [1, 0, 0], hingeSide: [0, 
 for (const door of doors) {
   const left = door.c[0] > 0;
   hingedPanel({ id: left ? 'doorLeft' : 'doorRight', piece: door, ref: [0, 0, 1], hingeSide: [0, 0, 1], pitch: 0.4, mass: 16,
-    group: left ? 7 : 8, latchBreak: 1.1e4, hingeBreak: 2e4, hingeYield: 5e3, suction: 0.2 });
+    group: left ? 7 : 8, latchBreak: 1.1e4, hingeBreak: 2e4, hingeYield: 5e3, suction: 0.2, stops: true });
 }
 
 // ---- powertrain blocks and mounts -------------------------------------------------------------------------------
@@ -519,7 +535,7 @@ const vehicle = {
   // The chassis frame comes from nodes of the passenger cell (it keeps its shape in a crash; a reference in the
   // crumple zone would turn the frame — and every wheel's alignment, the heading, the speed — as the nose folds).
   refCenter: ref, refFront: latticeId(0, 0.36, 0.9), refLeft: latticeId(0.45, 0.36, 0),
-  steering: { channel: hydroChannel, rate: 2.5 },
+  steering: { channel: hydroChannel, rate: 2.5, lock: steeringLock },
   wheels: [
     wheel(corners.FL, 0.15, 3000, 0, 3300, 2.8e5), wheel(corners.FR, 0.15, 3000, 0, 3300, 2.8e5),     // 245/35 ZR20
     wheel(corners.RL, 0.35, 1800, 1500, 4600, 3.2e5), wheel(corners.RR, 0.35, 1800, 1500, 4600, 3.2e5), // 305/30 ZR20

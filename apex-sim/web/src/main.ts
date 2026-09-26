@@ -12,6 +12,7 @@ import './ui/styles.css';
 import './ui/app.css';
 import './ui/shell.css';
 import './ui/mobile/mobile.css';
+import './ui/theme.css';
 import * as THREE from 'three/webgpu';
 import goldenText from '../../core/tests/golden/golden_m0.txt?raw';
 import { DRIVE_VEHICLES } from './app/presets';

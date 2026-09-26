@@ -162,7 +162,10 @@ function generate(id, car) {
   // Links damped like hydro bushings (ζ 0.35): the wheel's fore-aft mode on its arms (≈ 25–35 Hz) otherwise rings,
   // fed by the tyre's slip at speed (the front wheels hopped fore and aft at 200 km/h).
   b.group('link', { k: 1.5e6, zeta: 0.35, ...suspensionYield(+(2.4e4 * heavy).toFixed(0)) });
-  b.group('tierod', { type: 'hydro', k: 1.5e6, zeta: 0.2, ...suspensionYield(+(1.4e4 * heavy).toFixed(0)) });
+  // Rack in rubber bushes (tie rod softer than the ball joints): the heavy outer wheel toes out, not in, under side
+  // force. At 1.5e6 N/m it steered 2.6–2.9° further into the turn at 0.65 g, and the car kept turning with the wheel
+  // let go.
+  b.group('tierod', { type: 'hydro', k: 5e5, zeta: 0.2, ...suspensionYield(+(1.4e4 * heavy).toFixed(0)) });
   b.group('toelink', { k: 1.5e6, zeta: 0.2, ...suspensionYield(+(1.2e4 * heavy).toFixed(0)) });
   b.group('bumpstop', { type: 'bounded', k: 2.0e5, zeta: 0.05 });
   b.group('subframe', { k: 1.2e6, zeta: 0.1, plasticForce: +(3.0e4 * heavy).toFixed(0), hardening: 0.05, unloadRatio: UNLOAD_RATIO });
@@ -447,7 +450,7 @@ function generate(id, car) {
   const refLeft = nearestLattice(add(b.pos(ref), [0.45, 0, 0]));
   const vehicle = {
     refCenter: ref, refFront, refLeft,
-    steering: { channel: hydroChannel, rate: 2.2 },
+    steering: { channel: hydroChannel, rate: 2.2, lock: steeringLock },
     wheels: [
       wheel(corners.FL, car.driveShare.front, car.brakes.front, 0, 'front'), wheel(corners.FR, car.driveShare.front, car.brakes.front, 0, 'front'),
       wheel(corners.RL, car.driveShare.rear, car.brakes.rear, car.brakes.handbrake, 'rear'), wheel(corners.RR, car.driveShare.rear, car.brakes.rear, car.brakes.handbrake, 'rear'),

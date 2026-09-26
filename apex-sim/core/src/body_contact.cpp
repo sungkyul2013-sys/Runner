@@ -636,23 +636,45 @@ int forEachNodeTriangle(BodyT& A, BodyT& B, const Pair& pr, SurfaceCache& surfB,
     s.boxes.push_back({box.lo, box.hi});
   }
   if (s.tri.empty()) return 0;
-  s.cells.clear();
-  Hash hash{s.cells, 1.0f / pr.cell};
+  // The nodes in the region, then every (node, triangle) whose inflated triangle box holds the node. Few candidates
+  // (a wheel against the arch around it, re-paired every step as the wheel turns): tested directly. Many: through a
+  // spatial hash of the node points, queried by the triangle boxes. Both keep exactly the pairs whose box contains
+  // the node, so the choice never changes the result.
+  s.items.clear();
   const int nn = nodes ? static_cast<int>(nodes->size()) : A.nodeCount();
   for (int k = 0; k < nn; ++k) {
     const int i = nodes ? (*nodes)[static_cast<size_t>(k)] : k;
     if (!(A.flags[i] & node_flag::kCollide)) continue;
-    const Vec3 x = A.nodePosition(i);
-    if (pr.region.contains(x)) hash.insert({x, x}, i);
+    if (pr.region.contains(A.nodePosition(i))) s.items.push_back(i);
   }
-  if (s.cells.empty()) return 0;
-  hash.finish();
+  if (s.items.empty()) return 0;
   s.pairs.clear();
-  for (size_t q = 0; q < s.tri.size(); ++q) {
-    const Box box = Box{s.boxes[q].first, s.boxes[q].second}.inflated(pairMargin);
-    hash.query(box, s.items);
-    for (const int32_t i : s.items)
-      if (box.contains(A.nodePosition(i))) s.pairs.push_back({i, s.tri[q]});
+  constexpr size_t kDirectPairs = 16384;  // node × triangle box tests below which a hash does not pay
+  if (s.items.size() * s.tri.size() <= kDirectPairs) {
+    s.points.clear();
+    for (const int32_t i : s.items) s.points.push_back(A.nodePosition(i));
+    for (size_t q = 0; q < s.tri.size(); ++q) {
+      const Box box = Box{s.boxes[q].first, s.boxes[q].second}.inflated(pairMargin);
+      if (!Hash::usable(box)) continue;
+      for (size_t k = 0; k < s.items.size(); ++k)
+        if (box.contains(s.points[k])) s.pairs.push_back({s.items[k], s.tri[q]});
+    }
+  } else {
+    s.cells.clear();
+    Hash hash{s.cells, 1.0f / pr.cell};
+    for (const int32_t i : s.items) {
+      const Vec3 x = A.nodePosition(i);
+      hash.insert({x, x}, i);
+    }
+    if (s.cells.empty()) return 0;
+    hash.finish();
+    std::vector<int32_t>& found = s.found;
+    for (size_t q = 0; q < s.tri.size(); ++q) {
+      const Box box = Box{s.boxes[q].first, s.boxes[q].second}.inflated(pairMargin);
+      hash.query(box, found);
+      for (const int32_t i : found)
+        if (box.contains(A.nodePosition(i))) s.pairs.push_back({i, s.tri[q]});
+    }
   }
   std::sort(s.pairs.begin(), s.pairs.end());
   if (cachedPairs) {
@@ -972,42 +994,60 @@ int forEachSelfContact(BodyT& b, SurfaceCache& surf, ContactScratch& s, Visit&& 
     bool pairsStale = stale || !cache->pairsValid || cache->relG.size() != static_cast<size_t>(gEnd - gBegin);
     for (int k = gBegin; !pairsStale && k < gEnd; ++k)
       pairsStale = moved(b.nodePosition(b.groupNodes[static_cast<size_t>(k)]) - centre[g], cache->relG[static_cast<size_t>(k - gBegin)]);
-    if (pairsStale) {
-      cache->relG.resize(static_cast<size_t>(gEnd - gBegin));
-      for (int k = gBegin; k < gEnd; ++k)
-        cache->relG[static_cast<size_t>(k - gBegin)] = b.nodePosition(b.groupNodes[static_cast<size_t>(k)]) - centre[g];
+    if (!pairsStale) {
+      if (cache->pairs.empty()) return;
+      count += forEachNodeTriangle(b, b, pr, surf, s, true, visit, groupRadius[g], nullptr, &cache->tris, false,
+                                   &cache->pairs, false);
+      return;
     }
-    if (stale) {
+    cache->relG.resize(static_cast<size_t>(gEnd - gBegin));
+    for (int k = gBegin; k < gEnd; ++k)
+      cache->relG[static_cast<size_t>(k - gBegin)] = b.nodePosition(b.groupNodes[static_cast<size_t>(k)]) - centre[g];
+    // The nodes of g in the region widened by the margin (nodes about to enter it included). None: no pair is
+    // possible, and h's triangles need not be looked at (a spinning wheel's, re-listed every step otherwise).
+    Pair wide = pr;
+    wide.region = pr.region.inflated(kSelfMargin);
+    nodes.clear();
+    Box reachBox;
+    for (int k = gBegin; k < gEnd; ++k) {
+      const int i = b.groupNodes[static_cast<size_t>(k)];
+      if (!(b.flags[i] & node_flag::kCollide) || !wide.region.contains(b.nodePosition(i))) continue;
+      nodes.push_back(i);
+      reachBox.add(b.nodePosition(i) - centre[g]);
+    }
+    cache->pairsValid = true;
+    cache->pairs.clear();
+    if (nodes.empty()) return;
+    // h's triangles those nodes can reach (a triangle pairs with a node only within reach + margin of it), kept while
+    // the nodes stay inside the listed region (with slack) and h's nodes have not drifted (stale).
+    reachBox = reachBox.inflated(reach + kSelfMargin);
+    const bool covered = cache->trisValid && reachBox.lo.x >= cache->triLo.x && reachBox.lo.y >= cache->triLo.y &&
+                         reachBox.lo.z >= cache->triLo.z && reachBox.hi.x <= cache->triHi.x &&
+                         reachBox.hi.y <= cache->triHi.y && reachBox.hi.z <= cache->triHi.z;
+    if (stale || !covered) {
+      constexpr float kTriSlack = 0.1f;  // [m] node motion (relative to g) before h's triangles are listed again
       cache->lo = lo;
       cache->hi = hi;
       cache->rel.resize(static_cast<size_t>(hEnd - hBegin));
       for (int k = hBegin; k < hEnd; ++k)
         cache->rel[static_cast<size_t>(k - hBegin)] = b.nodePosition(b.groupNodes[static_cast<size_t>(k)]) - centre[g];
+      const Box keep = reachBox.inflated(kTriSlack);
+      cache->triLo = keep.lo;
+      cache->triHi = keep.hi;
+      cache->trisValid = true;
+      const Box near{keep.lo + centre[g] - Vec3{drift, drift, drift}, keep.hi + centre[g] + Vec3{drift, drift, drift}};
       cache->tris.clear();
-      const Box near = groupBox[g].inflated(reach + kSelfMargin);
       for (int k = b.groupTriBegin2[h]; k < b.groupTriBegin2[h + 1]; ++k) {
         const int t = b.groupTris[static_cast<size_t>(k)];
         if (b.triTorn[t]) continue;
-        surf.ensure(b, t);
-        if (Box{surf.lo[t], surf.hi[t]}.overlaps(near)) cache->tris.push_back(t);
+        const int32_t* v = triNodes(b, t);
+        const Vec3 p0 = b.nodePosition(v[0]), p1 = b.nodePosition(v[1]), p2 = b.nodePosition(v[2]);
+        const Box box{{std::min({p0.x, p1.x, p2.x}), std::min({p0.y, p1.y, p2.y}), std::min({p0.z, p1.z, p2.z})},
+                      {std::max({p0.x, p1.x, p2.x}), std::max({p0.y, p1.y, p2.y}), std::max({p0.z, p1.z, p2.z})}};
+        if (box.overlaps(near)) cache->tris.push_back(t);
       }
     }
-    if (cache->tris.empty()) { cache->pairsValid = false; return; }
-    if (!pairsStale) {
-      count += forEachNodeTriangle(b, b, pr, surf, s, true, visit, groupRadius[g], nullptr, &cache->tris, false,
-                                   &cache->pairs, false);
-      return;
-    }
-    // Rebuild the candidate pairs over the region widened by the margin (nodes about to enter it included).
-    Pair wide = pr;
-    wide.region = pr.region.inflated(kSelfMargin);
-    nodes.clear();
-    for (int k = gBegin; k < gEnd; ++k) {
-      const int i = b.groupNodes[static_cast<size_t>(k)];
-      if ((b.flags[i] & node_flag::kCollide) && wide.region.contains(b.nodePosition(i))) nodes.push_back(i);
-    }
-    cache->pairsValid = true;
-    if (nodes.empty()) { cache->pairs.clear(); return; }
+    if (cache->tris.empty()) return;
     count += forEachNodeTriangle(b, b, wide, surf, s, true, visit, groupRadius[g], &nodes, &cache->tris, false,
                                  &cache->pairs, true, kSelfMargin);
   };

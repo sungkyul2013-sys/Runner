@@ -138,6 +138,8 @@ struct ElectronicsDesc {
   float absSlip = 0.13f;          // target |κ| the ABS holds a braked wheel at (just past the MF peak) [-]
   bool tcs = true;
   float tcsSlip = 0.10f;          // driven-wheel κ above which TCS cuts engine torque [-]
+  bool esc = true;                // electronic stability control (yaw-rate control by single-wheel braking)
+  float escUndersteer = 0.0025f;  // understeer gradient K of the reference single-track model [rad·s²/m]
 };
 
 // ---- damage → function (§4.4) --------------------------------------------------------------------------------------
@@ -242,6 +244,7 @@ struct VehicleDesc {
   AeroDesc aero;
   int32_t steeringChannel = -1;   // hydro channel driven by the steering input (−1 = none)
   float steeringRate = 3.0f;      // max steering input change [1/s] (rack speed)
+  float steeringLock = 0.5f;      // road wheel angle at full rack travel [rad] (the stability control's reference)
   FluidsDesc fluids;
   std::vector<DamageLinkDesc> damageLinks;
 };
@@ -258,6 +261,7 @@ struct VehicleInput {
   int8_t shiftRequest = 0; // manual mode: +1 up / −1 down (edge; consumed when the shift starts)
   bool abs = true;         // driver switches for fitted aids
   bool tcs = true;
+  bool esc = false;        // stability control (off unless the driver switches it on: the assist presets do)
 };
 
 struct WheelTelemetry {
@@ -297,8 +301,10 @@ struct VehicleTelemetry {
   bool shifting = false;
   bool engineRunning = true;
   bool tcsActive = false;
+  bool escActive = false;   // stability control braking a wheel / cutting torque
   float throttle = 0.0f, brake = 0.0f, steer = 0.0f, clutch = 0.0f;  // applied values (after aids)
   float accelLong = 0.0f, accelLat = 0.0f;  // chassis-frame acceleration [m/s²] (filtered)
+  float yawRate = 0.0f;      // about the chassis up axis, positive = turning left [rad/s] (filtered)
   float odometer = 0.0f;     // [m]
   Vec3 position, forward, up, left;  // chassis frame (body-local position, unit axes)
   std::vector<WheelTelemetry> wheels;

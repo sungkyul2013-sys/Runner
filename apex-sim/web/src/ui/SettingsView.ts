@@ -79,7 +79,7 @@ export class SettingsView {
     const pct = (v: number) => `${Math.round(v * 100)} %`;
     switch (tab) {
       case 'gameplay':
-        return [t(s.hud === 'none' ? 'hudNone' : s.hud === 'minimal' ? 'hudMinimal' : s.hud === 'racing' ? 'hudRacing' : 'hudEngineer'), t(s.speedUnit === 'kmh' ? 'unitKmh' : 'unitMph')].join(' · ');
+        return [t(s.assists === 'beginner' ? 'assistBeginner' : s.assists === 'sim' ? 'assistSim' : 'assistStandard'), t(s.hud === 'none' ? 'hudNone' : s.hud === 'minimal' ? 'hudMinimal' : s.hud === 'racing' ? 'hudRacing' : 'hudEngineer'), t(s.speedUnit === 'kmh' ? 'unitKmh' : 'unitMph')].join(' · ');
       case 'controls':
         return [t(p.steer === 'slider' ? 'steerSlider' : p.steer === 'buttons' ? 'steerButtons' : p.steer === 'wheel' ? 'steerWheel' : 'steerTilt'), `${t('setTouchSize')} ${pct(p.size)}`].join(' · ');
       case 'graphics':
@@ -121,6 +121,8 @@ export class SettingsView {
     const s = settings.get();
     const rows: HTMLElement[] = [];
     if (this.tab === 'gameplay') {
+      rows.push(choice('setAssists', s.assists, [['beginner', 'assistBeginner'], ['standard', 'assistStandard'], ['sim', 'assistSim']], (v) => settings.set({ assists: v })));
+      rows.push(el('p', 'settings-note', t('assistNote')));
       rows.push(choice('setHud', s.hud, [['none', 'hudNone'], ['minimal', 'hudMinimal'], ['racing', 'hudRacing'], ['engineer', 'hudEngineer']], (v) => settings.set({ hud: v })));
       rows.push(choice('setSpeedUnit', s.speedUnit, [['kmh', 'unitKmh'], ['mph', 'unitMph']], (v) => settings.set({ speedUnit: v })));
       rows.push(toggle('setMinimap', s.minimapRotate, (v) => settings.set({ minimapRotate: v })));
@@ -170,7 +172,7 @@ export class SettingsView {
     const reset = el('button', 'ghost', t('setReset'));
     reset.onclick = () => {
       const d = defaultSettings();
-      if (this.tab === 'gameplay') settings.set({ hud: d.hud, speedUnit: d.speedUnit });
+      if (this.tab === 'gameplay') settings.set({ hud: d.hud, speedUnit: d.speedUnit, assists: d.assists });
       else if (this.tab === 'controls') settings.set({ touchControls: d.touchControls, touchLayout: null });
       else if (this.tab === 'graphics') settings.set({ quality: d.quality });
       else if (this.tab === 'audio') settings.set({ volume: d.volume, volEngine: d.volEngine, volTyres: d.volTyres, volCrash: d.volCrash, volEnv: d.volEnv, volUi: d.volUi, muted: d.muted });

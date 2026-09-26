@@ -314,6 +314,7 @@ void World::setVehicleInput(int v, const VehicleInput& in) {
   dst.mode = in.mode;
   dst.abs = in.abs;
   dst.tcs = in.tcs;
+  dst.esc = in.esc;
   if (in.shiftRequest != 0) dst.shiftRequest = in.shiftRequest > 0 ? 1 : -1;
 }
 

@@ -49,6 +49,8 @@ class Vehicle {
     h.value(input_.throttle); h.value(input_.brake); h.value(input_.steer); h.value(input_.handbrake);
     h.value(input_.mode); h.value(input_.shiftRequest); h.value(input_.abs); h.value(input_.tcs);
     h.value(engineOmega_); h.value(windup_); h.value(clutch_); h.value(steer_); h.value(shiftTimer_);
+    h.value(input_.esc); h.value(escYaw_); h.value(escThrottle_);
+    for (const double t : escTorque_) h.value(t);
     h.value(sinceShift_); h.value(tcsFactor_); h.value(frontShare_); h.value(gear_); h.value(pendingGear_); h.value(running_); h.value(limiterCut_);
     h.value(prevVelocity_.x); h.value(prevVelocity_.y); h.value(prevVelocity_.z);
     h.value(accelLong_); h.value(accelLat_); h.value(odometer_);
@@ -144,6 +146,10 @@ class Vehicle {
   double shiftTimer_ = 0.0;   // remaining torque interruption [s]
   double sinceShift_ = 10.0;  // [s]
   double tcsFactor_ = 1.0;    // traction-control torque factor [0, 1]
+  double escYaw_ = 0.0;       // filtered yaw rate [rad/s] (stability control)
+  double escThrottle_ = 1.0;  // stability control's engine torque factor [0.25, 1]
+  std::vector<double> escTorque_;  // stability control's brake torque per wheel [N·m]
+  std::vector<double> escScratch_; // its target this step (scratch)
   double frontShare_ = 0.0;   // active centre coupling: current front-axle share of the drive torque [-]
   std::vector<double> shares_;  // current drive share per wheel
   int gear_ = 0, pendingGear_ = 0;

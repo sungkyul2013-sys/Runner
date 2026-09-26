@@ -484,6 +484,7 @@ struct Loader {
     if (const Val s = member(obj, "steering")) {
       v.steeringChannel = static_cast<int32_t>(numberOr(s, "channel", -1.0, "vehicle.steering"));
       v.steeringRate = floatOr(s, "rate", v.steeringRate, "vehicle.steering");
+      v.steeringLock = floatOr(s, "lock", v.steeringLock, "vehicle.steering");
     }
     const Val wheelArr = array(member(obj, "wheels"), "vehicle.wheels");
     std::unordered_map<std::string, int32_t> wheelIndex;
@@ -577,6 +578,8 @@ struct Loader {
       v.electronics.absSlip = floatOr(e, "absSlip", v.electronics.absSlip, path);
       v.electronics.tcs = boolOr(e, "tcs", v.electronics.tcs, path);
       v.electronics.tcsSlip = floatOr(e, "tcsSlip", v.electronics.tcsSlip, path);
+      v.electronics.esc = boolOr(e, "esc", v.electronics.esc, path);
+      v.electronics.escUndersteer = floatOr(e, "escUndersteer", v.electronics.escUndersteer, path);
     }
     if (const Val a = member(obj, "aero")) {
       const std::string path = "vehicle.aero";

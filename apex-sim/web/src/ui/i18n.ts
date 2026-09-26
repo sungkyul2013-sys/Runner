@@ -365,6 +365,13 @@ const STRINGS = {
   crashFollowTip: { ko: '카메라가 차를 따라갑니다. 끄면 카메라가 제자리에 고정됩니다.', en: 'The camera follows the car. Off: the camera stays where it is.' },
   actStatsTip: { ko: '물리 스텝, 에너지 수지, 접촉 수 같은 엔지니어 통계를 보여 줍니다.', en: 'Shows engineer statistics: physics step, energy balance, contacts.' },
   restartTip: { ko: '맵과 모든 물체를 처음 상태로 다시 만듭니다.', en: 'Rebuilds the map and every object from the start.' },
+  rtfBadge: { ko: '물리 속도', en: 'Physics speed' },
+  rtfTip: { ko: '기기가 물리 계산을 실시간으로 따라가지 못해 시간이 느리게 흐릅니다(§21.2). 그래픽 품질을 낮추면 나아질 수 있습니다.', en: 'The device cannot keep the physics in real time, so time runs slower (§21.2). A lower graphics quality may help.' },
+  setAssists: { ko: '주행 보조', en: 'Driving aids' },
+  assistBeginner: { ko: '입문', en: 'Beginner' },
+  assistStandard: { ko: '표준', en: 'Standard' },
+  assistSim: { ko: '시뮬레이션', en: 'Simulation' },
+  assistNote: { ko: '입문: 자동 변속·ABS·TCS·ESC, 조향을 부드럽게 제한. 표준: ABS·TCS·ESC, 타이어 한계까지 조향. 시뮬레이션: 보조 없음. 주행 중 차량 패널에서 하나씩 바꿀 수 있습니다.', en: 'Beginner: automatic, ABS, TCS, ESC and gentle steering limits. Standard: ABS, TCS, ESC, steering up to the tyres\' grip. Simulation: no aids. Each aid can be switched in the car panel while driving.' },
   // ---- phone UI / PC UI ----
   mQuick: { ko: '빠른 메뉴', en: 'Quick menu' },
   mMore: { ko: '더보기', en: 'More' },

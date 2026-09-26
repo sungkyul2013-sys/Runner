@@ -128,7 +128,7 @@ const char* sbc_last_error(void);
 int sbc_world_vehicle_count(sbc_world* w);
 int sbc_vehicle_body(sbc_world* w, int vehicle);
 int sbc_vehicle_wheel_count(sbc_world* w, int vehicle);
-/* mode: 0 drive, 1 reverse, 2 neutral, 3 manual; shift: +1 / −1 manual shift request; aids: bit 0 ABS, bit 1 TCS. */
+/* mode: 0 drive, 1 reverse, 2 neutral, 3 manual; shift: +1 / −1 manual shift request; aids: bit 0 ABS, bit 1 TCS, bit 2 ESC. */
 int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake, float steer, float handbrake,
                           int mode, int shift, int aids);
 /* Packed telemetry: SBC_VT_HEADER floats, then SBC_VT_WHEEL floats per wheel (layout below). Returns the number of
@@ -136,9 +136,9 @@ int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake
 #define SBC_VT_HEADER 62
 #define SBC_VT_WHEEL 30
 /* header: 0 time, 1 speed [m/s], 2 engine rpm, 3 engine torque [N·m], 4 clutch torque, 5 gear (−1 R, 0 N),
-   6 flags (1 shifting, 2 engine running, 4 TCS active), 7 throttle, 8 brake, 9 steer, 10 clutch, 11 accel long,
+   6 flags (1 shifting, 2 engine running, 4 TCS active, 8 ESC active), 7 throttle, 8 brake, 9 steer, 10 clutch, 11 accel long,
    12 accel lat [m/s²], 13 odometer [m], 14–16 chassis position, 17–19 forward, 20–22 up, 23–25 left,
-   26–28 refCenter in the model frame, 29 wheel count, 30–31 reserved, §4.4: 32 coolant [°C], 33 coolant [L],
+   26–28 refCenter in the model frame, 29 wheel count, 30 reserved, 31 yaw rate [rad/s] (positive: left), §4.4: 32 coolant [°C], 33 coolant [L],
    34 oil pressure [bar], 35 oil [L], 36 fuel [L], 37 engine wear [0, 1], 38 power available [0, 1], 39 fault bits,
    40 airbag bits, 41 crash time [s] (−1: none), 42 crash peak [g], 43 crash Δv [m/s]; crash events (§5.3 event
    log, the latest one): 44 count, 45 active, 46 start [s], 47 peak [g], 48 peak force [N], 49 Δv [m/s], 50 absorbed

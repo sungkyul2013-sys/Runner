@@ -1,0 +1,112 @@
+/* Racing-premium layer (§18.1: GT7's showroom calm, Forza's clear hierarchy, Apple's spacing — no neon, no gamer
+   spikes). Both UIs. The display face Saira (variable width) sets the brand, titles and every gauge numeral; the one
+   signature shape is the slanted cut — the underscore of the wordmark, the edge of the primary buttons, the tick
+   before a section title — at the same angle everywhere (--slant). The brand is brushed metal (--metal). */
+:root { --slant: -22deg; --cut: 14px; }
+
+/* ---- the wordmark ---- */
+.brandmark { display: inline-flex; align-items: baseline; gap: 0; margin: 0; font-family: var(--font-display); font-stretch: 125%; font-weight: 800; font-style: normal;
+  font-size: clamp(3.2rem, 7.4vw, 7rem); line-height: 0.92; letter-spacing: 0.035em; text-transform: uppercase; position: relative; isolation: isolate; }
+.brandmark .bm-word { background: var(--metal); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 6px 24px rgba(0, 0, 0, 0.55)); }
+.brandmark .bm-cut { display: inline-block; width: 0.5em; height: 0.13em; margin: 0 0.1em 0 0.12em; background: var(--accent); transform: skewX(var(--slant)); box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 60%, transparent); align-self: flex-end; margin-bottom: 0.04em; }
+/* one light sweep across the letters when the menu opens */
+.brandmark::after { content: ''; position: absolute; inset: -10% -4%; z-index: 1; pointer-events: none; mix-blend-mode: overlay;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.85) 50%, transparent 62%); transform: translateX(-120%); animation: bmSweep 1.6s var(--ease) 0.5s both; }
+@keyframes bmSweep { to { transform: translateX(120%); } }
+.mainmenu .mm-brand.brandmark { animation: brandIn 900ms var(--ease) both; }
+.mm-tagline { font-size: 0.8rem; letter-spacing: 0.34em; text-transform: uppercase; color: var(--text-2); }
+html[lang='ko'] .mm-tagline { letter-spacing: 0.22em; }
+
+/* ---- PC main menu: the car card smaller, figures in one quiet row ---- */
+.mainmenu .mm-hero { gap: 14px; }
+.mainmenu .mm-car { gap: 10px; padding: 14px 16px 12px; max-width: 520px; }
+.mainmenu .mm-car-row b { font-family: var(--font-display); font-stretch: 108%; font-size: 1.14rem; font-weight: 700; letter-spacing: 0.01em; }
+.mainmenu .mm-car-row .icon-btn { min-width: 36px; min-height: 36px; }
+.mainmenu .mm-specs { display: flex; flex-wrap: wrap; gap: 0; }
+.mainmenu .mm-specs div { padding: 0 14px 6px 0; margin-right: 14px; border-right: 1px solid var(--border); }
+.mainmenu .mm-specs div:last-child { border-right: none; margin-right: 0; }
+.mainmenu .mm-specs small { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.mainmenu .mm-specs span { font-family: var(--font-display); font-stretch: 100%; font-style: italic; font-weight: 700; font-size: 0.92rem; }
+.mainmenu .mm-bar { height: 2px; }
+/* mode cards: title in the display face, a slanted accent edge on hover; the primary one cut at its right end */
+.mm-card b, .m-primary b, .m-mode b { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.01em; }
+.mm-card { position: relative; border-radius: 14px; }
+.mm-card::before { content: ''; position: absolute; left: -1px; top: 12px; bottom: 12px; width: 4px; background: var(--accent); transform: skewX(var(--slant)) scaleY(0); transform-origin: center; transition: transform 220ms var(--ease); }
+.mm-card:hover::before, .mm-card:focus-visible::before { transform: skewX(var(--slant)) scaleY(1); }
+.mm-card.primary::before { display: none; }
+.mm-card.primary, .m-primary, .ms3-go, .m-launch .fab {
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+  border-top-right-radius: 0; border-bottom-right-radius: 0;
+}
+
+/* ---- phone main menu: the wordmark large, the figures small ---- */
+.m-menu-top { align-items: flex-start; }
+.m-brandbox { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.m-menu .brandmark { font-size: min(13vw, 3.4rem); }
+.m-menu .mm-tagline { font-size: 0.64rem; letter-spacing: 0.3em; }
+.m-car-name b { font-family: var(--font-display); font-stretch: 108%; font-size: 1.12rem; }
+.m-specs { gap: 4px; }
+.m-specs div { padding: 5px 6px 8px; border-radius: 9px; }
+.m-specs small { font-size: 0.56rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.m-specs span { font-family: var(--font-display); font-style: italic; font-weight: 700; font-size: 0.74rem; }
+.m-specs .mm-bar { bottom: 3px; height: 2px; }
+.m-primary { border-radius: 16px 0 0 16px; }
+@media (orientation: landscape) and (max-height: 600px) { .m-menu .brandmark { font-size: 2.6rem; } .m-brandbox .mm-tagline { display: none; } }
+
+/* ---- section titles: a slanted tick before them ---- */
+.sheet-section h3, .ms3-h > span:first-child, .m-set-row b { position: relative; }
+.sheet-section h3 { padding-left: 12px; font-family: var(--font-display); font-stretch: 110%; letter-spacing: 0.14em; }
+.sheet-section h3::before { content: ''; position: absolute; left: 0; top: 50%; width: 4px; height: 0.9em; margin-top: -0.45em; background: var(--accent); transform: skewX(var(--slant)); }
+
+/* ---- pause menu and settings: the title in the display face ---- */
+.menu-card h2, .settings-head h2, .m-quick-head .m-titles b { font-family: var(--font-display); font-stretch: 112%; font-weight: 800; letter-spacing: 0.02em; }
+.menu-card h2 { font-size: 1.8rem; }
+.menu-item { position: relative; overflow: hidden; }
+.menu-item:not(.primary)::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; background: var(--accent); transform: skewX(var(--slant)) scaleY(0); transition: transform 200ms var(--ease); }
+.menu-item:hover::before, .menu-item:focus-visible::before { transform: skewX(var(--slant)) scaleY(1); }
+.menu-item.primary, .m-row.primary { clip-path: polygon(0 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%); }
+
+/* ---- loading screen: the map's name large, a striped progress bar ---- */
+.loading-screen .ls-brand { position: absolute; top: calc(28px + var(--safe-t)); left: calc(40px + var(--safe-l)); font-size: 1.7rem; }
+.loading-screen .ls-brand::after { display: none; }
+.loading-screen h2 { font-family: var(--font-display); font-stretch: 112%; font-weight: 800; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: 0.01em; }
+.ls-track { height: 6px; border-radius: 0; background: rgba(255, 255, 255, 0.06); transform: skewX(var(--slant)); }
+.ls-track i { background: repeating-linear-gradient(90deg, var(--accent) 0 18px, color-mix(in srgb, var(--accent) 70%, #fff) 18px 22px); background-size: 44px 100%; animation: lsStripes 900ms linear infinite; }
+@keyframes lsStripes { to { background-position: 44px 0; } }
+@media (max-width: 760px) { .loading-screen .ls-brand { left: 20px; font-size: 1.3rem; } }
+
+/* ---- map selection and the crash lab: display face for the big words ---- */
+.ms3-title, .cr-head b, .m-launch-text b, .ms3-go, .fab, .m-sheet-title, .chip-title, .m-title, .route-guide b { font-family: var(--font-display); }
+.ms3-title { font-stretch: 112%; font-weight: 800; }
+.ms3-go { letter-spacing: 0.18em; font-stretch: 115%; border-radius: 16px 0 0 16px; }
+.cr-stats b { font-family: var(--font-display); font-style: italic; font-weight: 800; }
+.m-launch .fab { border-radius: 18px 0 0 18px; padding-right: 26px; font-stretch: 112%; }
+
+/* ---- driving gauge: racing numerals, shift lights, tags ---- */
+.dash-speed { font-family: var(--font-display); font-style: italic; font-stretch: 88%; font-weight: 800; letter-spacing: -0.02em; background: var(--metal); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.6)); }
+.dash-unit { font-family: var(--font-display); font-stretch: 120%; font-weight: 600; }
+.dash-gear { font-family: var(--font-display); font-style: italic; font-weight: 800; border-radius: 6px; transform: skewX(-10deg); border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.dash-svg .tick-num { font-family: var(--font-display); font-style: italic; font-weight: 700; }
+.dash-rpm-text { font-family: var(--font-display); font-style: italic; }
+.dash-tags i { font-family: var(--font-display); font-stretch: 110%; }
+.dash-tags i.act { background: var(--warning); color: #1a1204; }
+.dash-lights { position: absolute; left: 50%; top: 31%; transform: translateX(-50%); display: flex; gap: 3px; }
+.dash-lights i { width: calc(var(--g) * 0.028); height: calc(var(--g) * 0.028); border-radius: 50%; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.06); transition: background 60ms linear, box-shadow 60ms linear; }
+.dash-lights i.g.on { background: #34d399; box-shadow: 0 0 8px #34d399; }
+.dash-lights i.y.on { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
+.dash-lights i.r.on { background: #f4475c; box-shadow: 0 0 9px #f4475c; }
+.dash.shift .dash-lights i { background: #6aa8ff; box-shadow: 0 0 10px #6aa8ff; animation: shiftPulse 120ms ease-in-out infinite alternate; }
+.dash-rtf { align-self: center; padding: 3px 10px; border-radius: 999px; font: 700 0.72rem var(--font-display); letter-spacing: 0.06em; color: #1a1204; background: var(--warning); }
+@media (orientation: portrait) { .dash-lights { display: none; } }
+
+/* PC: the cluster in the bottom-right corner (minimap bottom-left), a little larger */
+html[data-ui='desktop'] .dash { --g: 300px; left: auto; right: calc(28px + var(--safe-r)); bottom: calc(18px + var(--safe-b)); transform: none; align-items: flex-end; }
+html[data-ui='desktop'] body:has(.dash:not([hidden])) { --toast-lift: 24px; }
+@keyframes gaugeInRight { from { opacity: 0; transform: translateY(16px); } }
+html[data-ui='desktop'] .dash { animation-name: gaugeInRight; }
+@media (max-width: 1100px), (max-height: 700px) { html[data-ui='desktop'] .dash { --g: 260px; } }
+
+/* ---- the in-mode top row: titles in the display face ---- */
+.chip-title { font-stretch: 106%; font-weight: 700; letter-spacing: 0.01em; }
+
+@media (prefers-reduced-motion: reduce) { .brandmark::after, .ls-track i { animation: none !important; } }

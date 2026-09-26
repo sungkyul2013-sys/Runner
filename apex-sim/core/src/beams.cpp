@@ -125,15 +125,59 @@ int accumulateBeamForces(Body& b, float dt) {
   Geometry g{};
 
   // kNormal: f = k(L − L0) + c·dL/dt
-  for (int i = b.typeBegin[0]; i < b.typeBegin[1]; ++i) {
-    if (b.broken[i]) continue;
-    const int a = b.beamA[i], c = b.beamB[i];
-    if (!beamGeometry(b, a, c, g)) continue;
-    bool broke = false;
-    const float fe = plasticReturn(b, i, g.length, g.lengthRate, dt, broke, b.stiffness[i]);
-    if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
-    const float fd = b.damping[i] * g.lengthRate;
-    applyBeamForce<kTrack>(b, a, c, g, fe + fd, fd);
+  // Most beams, most steps, are elastic: a force under kUnloadArm of the initial yield force (the yield force only
+  // grows with hardening) and under the break force, not armed for unloading. Those take the fast path below — the
+  // same arithmetic as plasticReturn's elastic branch, on raw arrays; the rest go through plasticReturn.
+  {
+    const uint8_t* __restrict broken = b.broken.data();
+    const int32_t* __restrict beamA = b.beamA.data();
+    const int32_t* __restrict beamB = b.beamB.data();
+    const uint8_t* __restrict armed = b.unloadArmed.data();
+    const float* __restrict rest = b.restLength.data();
+    const float* __restrict stiffness = b.stiffness.data();
+    const float* __restrict yield = b.plasticForce.data();
+    const float* __restrict breakAt = b.breakForce.data();
+    const float* __restrict damping = b.damping.data();
+    const float* __restrict px = b.px.data();
+    const float* __restrict py = b.py.data();
+    const float* __restrict pz = b.pz.data();
+    const float* __restrict vx = b.vx.data();
+    const float* __restrict vy = b.vy.data();
+    const float* __restrict vz = b.vz.data();
+    float* __restrict fx = b.fx.data();
+    float* __restrict fy = b.fy.data();
+    float* __restrict fz = b.fz.data();
+    for (int i = b.typeBegin[0]; i < b.typeBegin[1]; ++i) {
+      if (broken[i]) continue;
+      const int a = beamA[i], c = beamB[i];
+      const float dx = px[c] - px[a];
+      const float dy = py[c] - py[a];
+      const float dz = pz[c] - pz[a];
+      const float l2 = dx * dx + dy * dy + dz * dz;
+      if (!(l2 > kDegenerateLength2)) continue;
+      g.length = std::sqrt(l2);
+      const float inv = 1.0f / g.length;
+      g.ux = dx * inv;
+      g.uy = dy * inv;
+      g.uz = dz * inv;
+      g.lengthRate = (vx[c] - vx[a]) * g.ux + (vy[c] - vy[a]) * g.uy + (vz[c] - vz[a]) * g.uz;
+      float fe = stiffness[i] * (g.length - rest[i]);
+      const float magnitude = std::fabs(fe);
+      if (armed[i] || !(magnitude <= kUnloadArm * yield[i]) || !(magnitude <= breakAt[i])) {
+        bool broke = false;
+        fe = plasticReturn(b, i, g.length, g.lengthRate, dt, broke, stiffness[i]);
+        if (broke) { breakBeam(b, i, fe); ++newlyBroken; continue; }
+      }
+      const float fd = damping[i] * g.lengthRate;
+      if constexpr (kTrack) {
+        applyBeamForce<kTrack>(b, a, c, g, fe + fd, fd);
+      } else {
+        const float f = fe + fd;
+        const float ffx = f * g.ux, ffy = f * g.uy, ffz = f * g.uz;
+        fx[a] += ffx; fy[a] += ffy; fz[a] += ffz;
+        fx[c] -= ffx; fy[c] -= ffy; fz[c] -= ffz;
+      }
+    }
   }
 
   // kSupport: active only while compressed (L < L0); can push, never pull.

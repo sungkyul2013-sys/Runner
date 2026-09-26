@@ -162,6 +162,8 @@ struct SelfPairCache {
   std::vector<Vec3> relG;  // nodes of g relative to g's centroid at the refresh
   std::vector<std::pair<int32_t, int32_t>> pairs;  // (node of g, triangle of h) candidates, built with kSelfMargin
   bool pairsValid = false;
+  Vec3 triLo, triHi;       // relative to g's centroid: the region `tris` covers (the reach of g's nodes, with slack)
+  bool trisValid = false;
 };
 
 // Per-body candidate lists, rebuilt every step (the body is processed by one thread at a time).
@@ -171,6 +173,8 @@ struct ContactScratch {
   SurfaceCache surface;                              // the body's collision triangles this step
   std::vector<std::pair<uint64_t, int32_t>> cells;   // spatial hash (cell key, item), sorted
   std::vector<int32_t> items;                        // candidate buffer
+  std::vector<int32_t> found;                        // hash query results
+  std::vector<Vec3> points;                          // node positions of the candidate nodes (direct pairing)
   std::vector<int32_t> staticHits;                   // static BVH query result
   std::vector<int32_t> tri;                          // candidate triangles of one pass
   std::vector<std::pair<Vec3, Vec3>> boxes;          // their inflated boxes
