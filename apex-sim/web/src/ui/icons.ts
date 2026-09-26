@@ -57,6 +57,11 @@ export const ICONS = {
   grid: svg('<path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'),
   road: svg('<path d="M8 3L5 21M16 3l3 18M12 4v2M12 10v3M12 17v3"/>'),
   mountain: svg('<path d="M2 20l7-12 4 6 3-4 6 10z"/>'),
+  more: svg('<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>'),
+  apps: svg('<rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/>'),
+  expand: svg('<path d="M6 15l6-6 6 6"/>'),
+  phone: svg('<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>'),
+  monitor: svg('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'),
   fullscreen: svg('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
 } as const;
 

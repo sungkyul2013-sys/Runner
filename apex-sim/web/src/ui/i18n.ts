@@ -113,7 +113,7 @@ const STRINGS = {
   setGameplay: { ko: '게임플레이', en: 'Gameplay' },
   setControls: { ko: '조작', en: 'Controls' },
   setGraphics: { ko: '그래픽', en: 'Graphics' },
-  setAccess: { ko: '접근성·언어', en: 'Access & language' },
+  setAccess: { ko: '화면·접근성·언어', en: 'Screen, access & language' },
   setHud: { ko: 'HUD 프리셋', en: 'HUD preset' },
   hudNone: { ko: '없음', en: 'None' },
   hudMinimal: { ko: '미니멀', en: 'Minimal' },
@@ -365,6 +365,25 @@ const STRINGS = {
   crashFollowTip: { ko: '카메라가 차를 따라갑니다. 끄면 카메라가 제자리에 고정됩니다.', en: 'The camera follows the car. Off: the camera stays where it is.' },
   actStatsTip: { ko: '물리 스텝, 에너지 수지, 접촉 수 같은 엔지니어 통계를 보여 줍니다.', en: 'Shows engineer statistics: physics step, energy balance, contacts.' },
   restartTip: { ko: '맵과 모든 물체를 처음 상태로 다시 만듭니다.', en: 'Rebuilds the map and every object from the start.' },
+  // ---- phone UI / PC UI ----
+  mQuick: { ko: '빠른 메뉴', en: 'Quick menu' },
+  mMore: { ko: '더보기', en: 'More' },
+  mPanel: { ko: '패널', en: 'Panel' },
+  mExpand: { ko: '크게 / 작게', en: 'Taller / shorter' },
+  mBack: { ko: '뒤로', en: 'Back' },
+  mSwipeCars: { ko: '좌우로 밀어 차 바꾸기', en: 'Swipe to change car' },
+  mModes: { ko: '다른 모드', en: 'More modes' },
+  mScenario: { ko: '시나리오', en: 'Test' },
+  mTapToChoose: { ko: '눌러서 바꾸기', en: 'Tap to change' },
+  setUiLayout: { ko: '화면 구성', en: 'Screen layout' },
+  uiAuto: { ko: '자동', en: 'Auto' },
+  uiMobile: { ko: '모바일', en: 'Phone' },
+  uiDesktop: { ko: 'PC', en: 'PC' },
+  uiLayoutNote: {
+    ko: '모바일: 터치 우선 — 한 줄 상단 바, 이름이 붙은 빠른 메뉴, 아래에서 끌어 올리는 패널, 전체 화면 설정. PC: 마우스·키보드 — 상단 캡슐, 옮기고 크기를 바꾸는 창, 단축키 툴팁. 자동은 기기에 맞춥니다. 바꾸면 화면을 다시 불러옵니다.',
+    en: 'Phone: touch first — one slim top row, a labelled quick menu, a panel you drag up from the bottom, full-screen settings. PC: mouse and keyboard — capsules along the top, a movable, resizable window, shortcut tooltips. Auto follows the device. Changing it reloads the screen.',
+  },
+  uiNow: { ko: '지금 화면', en: 'In use' },
 } satisfies Record<string, Localized>;
 
 export type StringKey = keyof typeof STRINGS;

@@ -11,6 +11,7 @@
 import './ui/styles.css';
 import './ui/app.css';
 import './ui/shell.css';
+import './ui/mobile/mobile.css';
 import * as THREE from 'three/webgpu';
 import goldenText from '../../core/tests/golden/golden_m0.txt?raw';
 import { DRIVE_VEHICLES } from './app/presets';
@@ -31,6 +32,7 @@ import { MainMenu, type AppMode } from './ui/MainMenu';
 import { openMapSelect, type MapChoice } from './ui/MapSelect';
 import { MAPS } from './world/maps';
 import { applyDocumentSettings, effectiveQuality, settings } from './ui/settings';
+import { applyPlatform, platform, resolvePlatform } from './ui/platform';
 import { startFreeRoam } from './world/FreeRoam';
 
 declare global {
@@ -100,6 +102,7 @@ async function main(): Promise<void> {
   const route = routeOf(params);
   window.__apex!.route = route;
   applyDocumentSettings(settings.get());
+  applyPlatform();
   installTooltips();
   const applySound = (s: ReturnType<typeof settings.get>) =>
     sound?.setMix({ master: s.volume, engine: s.volEngine, tyres: s.volTyres, crash: s.volCrash, env: s.volEnv, ui: s.volUi }, s.muted);
@@ -126,6 +129,8 @@ async function main(): Promise<void> {
     if (s.lang !== lang) {
       lang = s.lang;
       location.reload(); // every label is built once: a new language is a fresh page
+    } else if (resolvePlatform(s.uiLayout) !== platform()) {
+      setTimeout(() => location.reload(), 350); // every screen is built for one UI: the other UI is a fresh page
     }
   });
 

@@ -83,6 +83,9 @@ export class CrashPanel {
   private resultTimer = 0;
   /** Called when a result card appears. */
   onResult: () => void = () => {};
+  /** Called whenever the test changes (a tile, a number): the phone's launch bar shows it. */
+  onSpecChange: () => void = () => {};
+  private presetId = '';
   /** Keep damage: the next test takes the wrecked cars as they are (toggles in the tiles, the details and the card). */
   keep = false;
   private readonly keepToggles: HTMLButtonElement[] = [];
@@ -159,6 +162,8 @@ export class CrashPanel {
       pairOnly.hidden = this.spec.kind !== 'carToCar';
       chips.forEach((c) => c.classList.toggle('active', Number(c.textContent) === this.spec.speedA));
       for (const [p, b] of tiles) b.classList.toggle('active', p.id === preset);
+      this.presetId = preset;
+      this.onSpecChange();
     };
     for (const input of [speedA, overlap, speedB, angle, offset]) input.onchange = () => {
       preset = '';
@@ -197,6 +202,14 @@ export class CrashPanel {
     this.report = el('div', { className: 'sheet-section' }, el('h3', {}, t('crashLog')), table, el('h3', {}, t('wheelTitle')), wheels, ...graphs);
     this.setLog([]);
     this.setWheels([]);
+  }
+
+  /** The test as it stands: its name, the speed(s) and its pictogram (the phone's launch bar). */
+  summary(): { label: string; detail: string; pictogram: HTMLElement } {
+    const p = CRASH_PRESETS.find((x) => x.id === this.presetId);
+    const s = this.spec;
+    const detail = s.kind === 'carToCar' && s.speedB ? `${s.speedA} · ${s.speedB} km/h` : `${s.speedA} km/h`;
+    return { label: p ? tl(p.label) : t('crashCustom'), detail, pictogram: pictogram(p?.id ?? (s.kind === 'carToCar' ? 'headOn' : s.kind === 'offsetWall' ? 'offset' : s.kind === 'pole' ? 'pole' : 'frontal')) };
   }
 
   setLog(rows: CollisionRow[]): void {

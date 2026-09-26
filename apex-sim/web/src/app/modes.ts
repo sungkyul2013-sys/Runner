@@ -17,9 +17,11 @@ import { t, tl } from '../ui/i18n';
 import { icon } from '../ui/icons';
 import { settings, type HudPreset } from '../ui/settings';
 import { SettingsView } from '../ui/SettingsView';
-import { Shell, type ShellActions } from '../ui/Shell';
+import type { ModeShell, ShellActions } from '../ui/Shell';
+import { createShell } from '../ui/createShell';
+import { isMobileUi } from '../ui/platform';
 import { notify, tipOf } from '../ui/feedback';
-import { DEFAULT_TOUCH_LAYOUT, isTouchDevice, normalizeLayout, TouchControls } from '../ui/TouchControls';
+import { DEFAULT_TOUCH_LAYOUT, normalizeLayout, TouchControls } from '../ui/TouchControls';
 import { loadVehicleModel, VEHICLES } from '../vehicles/VehicleModel';
 
 export type Route = 'menu' | 'freeroam' | 'drive' | 'crash' | 'sandbox' | 'garage' | 'bench' | 'golden';
@@ -92,10 +94,10 @@ function carPicker(session: DriveSession, onSwap: (v: VehiclePreset) => void): H
   return list;
 }
 
-/** Touch controls for the driving modes (§15.4): on touch devices by default, or as set. */
-function touchControls(session: DriveSession, shell: Shell): TouchControls | null {
+/** Touch controls for the driving modes (§15.4): with the phone UI by default, or as set. */
+function touchControls(session: DriveSession, shell: ModeShell): TouchControls | null {
   const pref = settings.get().touchControls;
-  if (pref === 'off' || (pref === 'auto' && !isTouchDevice())) return null;
+  if (pref === 'off' || (pref === 'auto' && !isMobileUi())) return null;
   const tc = new TouchControls(normalizeLayout({ ...DEFAULT_TOUCH_LAYOUT, ...((settings.get().touchLayout as object | null) ?? {}) }));
   document.body.append(tc.root);
   document.body.classList.add('touch-on');
@@ -124,8 +126,8 @@ function touchControls(session: DriveSession, shell: Shell): TouchControls | nul
 }
 
 /** Common driving frame: shell, dashboard, touch controls, top-bar actions and the "car" sheet section. */
-export function drivingShell(ctx: AppContext, session: DriveSession, title: string, restart: () => void, sheetOpen?: boolean): Shell {
-  const shell = new Shell(title, tl(session.vehicle.label), { mainMenu: () => ctx.go('menu'), restart, setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) }, sheetOpen);
+export function drivingShell(ctx: AppContext, session: DriveSession, title: string, restart: () => void, sheetOpen?: boolean): ModeShell {
+  const shell = createShell(title, tl(session.vehicle.label), { mainMenu: () => ctx.go('menu'), restart, setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) }, sheetOpen);
   document.body.append(shell.root, session.dashboard.root);
   const repair = async () => {
     await session.repair();
@@ -229,6 +231,7 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
   const panel = new CrashPanel({
     launch: (spec, a, b, keep) => {
       ctx.setPaused(false);
+      if (shell.mobile) shell.sheet.setOpen(false); // the phone's panel would hide the crash
       void crash.launch(spec, a, b, false, keep);
     },
     stage: (spec, a, b, keep) => {
@@ -244,8 +247,11 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
       shell.sheet.setOpen(true);
     },
   }, initial, [crash.energyGraph.root, crash.momentumGraph.root], vehicle.id, vehicleB.id);
-  const shell = new Shell(t('modeCrash'), tl(vehicle.label), { mainMenu: () => ctx.go('menu'), restart: () => panel.launch(), setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) });
-  document.body.append(shell.root, panel.fab, panel.result);
+  const shell = createShell(t('modeCrash'), tl(vehicle.label), { mainMenu: () => ctx.go('menu'), restart: () => panel.launch(), setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) });
+  document.body.append(shell.root, shell.mobile ? mobileLaunchBar(panel, () => {
+    tabs.select(0);
+    shell.sheet.setOpen(true);
+  }) : panel.fab, panel.result);
   shell.addAction('xray', t('actXray'), (b) => crash.setXray(b.ariaPressed === 'true'), false, t('actXrayTip'));
   const follow = shell.addAction('eye', t('crashFollow'), (b) => (crash.follow = b.ariaPressed === 'true'), true, t('crashFollowTip'));
   shell.addAction('lock', t('camLock'), (b) => {
@@ -288,7 +294,7 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
   const sheetToggled = shell.sheet.onToggle;
   shell.sheet.onToggle = (open) => {
     sheetToggled(open);
-    if (open && !matchMedia('(min-width: 761px)').matches) panel.dismissResult();
+    if (open && (shell.mobile || !matchMedia('(min-width: 761px)').matches)) panel.dismissResult();
   };
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || shell.menuOpen) return;
@@ -304,6 +310,30 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
   return { update: (dt, frame) => crash.update(dt, frame), crash, tools };
 }
 
+/**
+ * The crash lab's launch bar on a phone (§18.5 one core action, in thumb reach): the test as it stands — tap it to
+ * choose another — and the launch button. It stays above the panel, so a pick in the tiles launches from the same
+ * place.
+ */
+function mobileLaunchBar(panel: CrashPanel, choose: () => void): HTMLElement {
+  const pic = el('span', 'm-launch-pic');
+  const label = el('b');
+  const detail = el('small');
+  const pickBtn = el('button', 'm-launch-pick', pic, el('span', 'm-launch-text', label, detail), icon('expand'));
+  pickBtn.ariaLabel = t('mScenario');
+  pickBtn.onclick = choose;
+  const render = () => {
+    const s = panel.summary();
+    pic.replaceChildren(s.pictogram);
+    label.textContent = s.label;
+    detail.textContent = `${s.detail} · ${t('mTapToChoose')}`;
+  };
+  panel.onSpecChange = render;
+  render();
+  document.body.classList.add('m-launchbar');
+  return el('div', 'm-launch', pickBtn, panel.fab);
+}
+
 /** Sandbox (§19 프리롬·샌드박스, §20 도구): scenes, spawnable objects, a car to drive in and out of, grab / crane,
  *  time control. */
 export function startSandbox(ctx: AppContext, vehicle: VehiclePreset): ModeRuntime {
@@ -311,7 +341,7 @@ export function startSandbox(ctx: AppContext, vehicle: VehiclePreset): ModeRunti
   let scene = params.get('scene') ?? 'sandbox';
   const info = () => SCENES.find((s) => s.id === scene);
   let session: DriveSession | null = null;
-  const shell = new Shell(t('modeSandbox'), tl(info()?.label ?? { ko: scene, en: scene }), { mainMenu: () => ctx.go('menu'), restart: () => load(scene), setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) });
+  const shell = createShell(t('modeSandbox'), tl(info()?.label ?? { ko: scene, en: scene }), { mainMenu: () => ctx.go('menu'), restart: () => load(scene), setPaused: (p) => ctx.setPaused(p), time: timeHost(ctx) });
   document.body.append(shell.root);
   const target = (): [number, number, number] => [viewer.controls.target.x, 0, viewer.controls.target.z];
   const load = (id: string) => {
@@ -402,7 +432,7 @@ export function startSandbox(ctx: AppContext, vehicle: VehiclePreset): ModeRunti
 /** Garage (§18.3-3 early look): the car models side by side under showroom light; the sheet focuses one. */
 export async function startGarage(ctx: AppContext): Promise<ModeRuntime> {
   const { viewer, params } = ctx;
-  const shell = new Shell(t('modeGarage'), '', { mainMenu: () => ctx.go('menu'), setPaused: () => {} });
+  const shell = createShell(t('modeGarage'), '', { mainMenu: () => ctx.go('menu'), setPaused: () => {} });
   document.body.append(shell.root);
   const pmrem = new THREE.PMREMGenerator(viewer.renderer);
   viewer.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -451,8 +481,9 @@ export async function startGarage(ctx: AppContext): Promise<ModeRuntime> {
 
 /** Settings as an overlay without a shell (the main menu). */
 export function openSettingsOverlay(): void {
-  const layer = el('div', 'overlay-layer');
-  const view = new SettingsView(() => layer.remove());
+  const mobile = isMobileUi();
+  const layer = el('div', mobile ? 'm-layer m-settings-layer' : 'overlay-layer');
+  const view = new SettingsView(() => layer.remove(), mobile);
   layer.append(view.root);
   layer.addEventListener('pointerdown', (e) => {
     if (e.target === layer) layer.remove();

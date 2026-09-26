@@ -38,7 +38,8 @@ export class TimeControl {
   readonly root = el('div', 'timectl');
   private readonly playBtn = el('button', 'tc2-play');
   private readonly scaleBtn = el('button', 'tc2-scale mono');
-  private readonly pop = el('div', 'tc2-pop');
+  /** The scale popover (the phone UI lifts it out of the capsule to span the screen). */
+  readonly pop = el('div', 'tc2-pop');
   private readonly range = el('input', 'tc2-range') as HTMLInputElement;
   private readonly stepRow = el('div', 'tc2-steps');
   private scale = 1;
@@ -73,7 +74,7 @@ export class TimeControl {
     this.pop.hidden = true;
     this.root.append(this.playBtn, this.scaleBtn, this.pop);
     document.addEventListener('pointerdown', (e) => {
-      if (!this.root.contains(e.target as Node)) this.pop.hidden = true;
+      if (!this.root.contains(e.target as Node) && !this.pop.contains(e.target as Node)) this.pop.hidden = true;
     });
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;

@@ -6,6 +6,8 @@ export type HudPreset = 'none' | 'minimal' | 'racing' | 'engineer';
 export type Quality = 'low' | 'medium' | 'high';
 export type SpeedUnit = 'kmh' | 'mph';
 export type Accent = 'orange' | 'blue' | 'mint';
+/** Which UI to wear: by the device, the phone UI or the PC UI (ui/platform). */
+export type UiLayout = 'auto' | 'mobile' | 'desktop';
 
 export interface Settings {
   lang: Lang;
@@ -16,6 +18,7 @@ export interface Settings {
   uiScale: number;          // 0.75 … 1.5
   reduceMotion: boolean;
   touchControls: 'auto' | 'on' | 'off';
+  uiLayout: UiLayout;       // phone UI or PC UI (a change reloads the page)
   touchLayout: unknown;     // TouchLayout (ui/TouchControls), stored as given
   lastMode: string | null;  // "최근 플레이 이어하기" (the main menu's continue card)
   minimapRotate: boolean;   // §18.4 미니맵(회전·고정)
@@ -53,6 +56,7 @@ export function defaultSettings(): Settings {
     uiScale: 1,
     reduceMotion: false,
     touchControls: 'auto',
+    uiLayout: 'auto',
     touchLayout: null,
     lastMode: null,
     minimapRotate: true,
@@ -87,6 +91,7 @@ export function parseSettings(raw: string | null): Settings {
       else if (typeof value === typeof base[k]) (out as unknown as Record<string, unknown>)[k] = value;
     }
     out.uiScale = Math.min(1.5, Math.max(0.75, out.uiScale));
+    if (!['auto', 'mobile', 'desktop'].includes(out.uiLayout)) out.uiLayout = 'auto';
     // Settings from before the redesign: its identity (accent) and the slider steering the player asked for.
     if (!(typeof v.uiVersion === 'number' && v.uiVersion >= UI_VERSION)) {
       if (out.accent === 'orange') out.accent = 'blue';

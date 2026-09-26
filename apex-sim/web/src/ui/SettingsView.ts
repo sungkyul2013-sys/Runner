@@ -6,6 +6,8 @@ import { defaultSettings, settings, type Settings } from './settings';
 import { icon } from './icons';
 import { notify } from './feedback';
 import { DEFAULT_TOUCH_LAYOUT } from './TouchControls';
+import type { IconName } from './icons';
+import { platform } from './platform';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -34,26 +36,81 @@ export function touchPrefs(s: Settings = settings.get()): TouchPrefs {
   return { ...TOUCH_DEFAULTS, ...((s.touchLayout as Partial<TouchPrefs> | null) ?? {}) };
 }
 
+const TABS: Array<[Tab, StringKey, IconName]> = [['gameplay', 'setGameplay', 'gauge'], ['controls', 'setControls', 'touch'], ['graphics', 'setGraphics', 'layers'], ['audio', 'setAudio', 'volume'], ['access', 'setAccess', 'eye']];
+
+/**
+ * PC: a card with tabs across the top. Phone (`mobile`): a full-screen page — the categories as a list (each with its
+ * current values), a tap opens one, the back arrow returns.
+ */
 export class SettingsView {
   readonly root = el('div', 'settings-card');
   /** Opens the on-screen layout editor for the touch controls (set by the app; absent: the button is hidden). */
   static onEditTouchLayout: (() => void) | null = null;
-  private tab: Tab = 'gameplay';
+  private tab: Tab | null = 'gameplay';
   private readonly body = el('div', 'settings-body');
   private readonly tabs = el('nav', 'settings-tabs');
+  private readonly heading = el('h2', '', t('menuSettings'));
+  private readonly backBtn = el('button', 'icon-btn m-settings-back', icon('back'));
 
-  constructor(private readonly onClose: () => void) {
+  constructor(private readonly onClose: () => void, private readonly mobile = false) {
     const close = el('button', 'icon-btn', icon('close'));
     close.ariaLabel = t('close');
     close.onclick = () => this.onClose();
-    this.root.append(el('header', 'settings-head', el('h2', '', t('menuSettings')), close), this.tabs, this.body);
+    if (mobile) {
+      this.tab = null;
+      this.root.classList.add('m-settings');
+      this.backBtn.ariaLabel = t('mBack');
+      this.backBtn.onclick = () => {
+        if (this.tab === null) this.onClose();
+        else {
+          this.tab = null;
+          this.render();
+        }
+      };
+      this.root.append(el('header', 'settings-head', this.backBtn, this.heading, close), this.body);
+    } else this.root.append(el('header', 'settings-head', this.heading, close), this.tabs, this.body);
     settings.onChange(() => this.render());
     this.render();
   }
 
+  /** One line under a category on the phone list: what is set there now. */
+  private summary(tab: Tab, s: Settings): string {
+    const p = touchPrefs(s);
+    const pct = (v: number) => `${Math.round(v * 100)} %`;
+    switch (tab) {
+      case 'gameplay':
+        return [t(s.hud === 'none' ? 'hudNone' : s.hud === 'minimal' ? 'hudMinimal' : s.hud === 'racing' ? 'hudRacing' : 'hudEngineer'), t(s.speedUnit === 'kmh' ? 'unitKmh' : 'unitMph')].join(' · ');
+      case 'controls':
+        return [t(p.steer === 'slider' ? 'steerSlider' : p.steer === 'buttons' ? 'steerButtons' : p.steer === 'wheel' ? 'steerWheel' : 'steerTilt'), `${t('setTouchSize')} ${pct(p.size)}`].join(' · ');
+      case 'graphics':
+        return t(s.quality === 'auto' ? 'qAuto' : s.quality === 'low' ? 'qLow' : s.quality === 'medium' ? 'qMedium' : 'qHigh');
+      case 'audio':
+        return s.muted ? t('setMute') : `${t('setVolume')} ${pct(s.volume)}`;
+      default:
+        return [`${t('setUiLayout')}: ${t(s.uiLayout === 'mobile' ? 'uiMobile' : s.uiLayout === 'desktop' ? 'uiDesktop' : 'uiAuto')}`, t(s.lang === 'ko' ? 'langKo' : 'langEn')].join(' · ');
+    }
+  }
+
   private render(): void {
-    const tabs: [Tab, StringKey][] = [['gameplay', 'setGameplay'], ['controls', 'setControls'], ['graphics', 'setGraphics'], ['audio', 'setAudio'], ['access', 'setAccess']];
-    this.tabs.replaceChildren(...tabs.map(([id, key]) => {
+    const s0 = settings.get();
+    if (this.mobile) {
+      const entry = TABS.find(([id]) => id === this.tab);
+      this.heading.textContent = entry ? t(entry[1]) : t('menuSettings');
+      this.backBtn.hidden = this.tab === null;
+      if (this.tab === null) {
+        this.body.replaceChildren(el('nav', 'm-set-list', ...TABS.map(([id, key, ic]) => {
+          const b = el('button', 'm-set-row', icon(ic), el('span', '', el('b', '', t(key)), el('small', '', this.summary(id, s0))), icon('chevron'));
+          b.onclick = () => {
+            this.tab = id;
+            this.render();
+            this.body.scrollTop = 0;
+          };
+          return b;
+        })));
+        return;
+      }
+    }
+    this.tabs.replaceChildren(...TABS.map(([id, key]) => {
       const b = el('button', id === this.tab ? 'tab active' : 'tab', t(key));
       b.onclick = () => {
         this.tab = id;
@@ -100,6 +157,8 @@ export class SettingsView {
       rows.push(choice('setQuality', s.quality, [['auto', 'qAuto'], ['low', 'qLow'], ['medium', 'qMedium'], ['high', 'qHigh']], (v) => settings.set({ quality: v })));
       rows.push(el('p', 'settings-note', t('qualityNote')));
     } else {
+      rows.push(choice('setUiLayout', s.uiLayout, [['auto', 'uiAuto'], ['mobile', 'uiMobile'], ['desktop', 'uiDesktop']], (v) => settings.set({ uiLayout: v })));
+      rows.push(el('p', 'settings-note', el('b', 'ui-now', `${t('uiNow')}: ${t(platform() === 'mobile' ? 'uiMobile' : 'uiDesktop')}`), el('br'), t('uiLayoutNote')));
       rows.push(choice('setLang', s.lang, [['ko', 'langKo'], ['en', 'langEn']], (v) => {
         setLang(v);
         settings.set({ lang: v });
@@ -117,7 +176,7 @@ export class SettingsView {
       else if (this.tab === 'audio') settings.set({ volume: d.volume, volEngine: d.volEngine, volTyres: d.volTyres, volCrash: d.volCrash, volEnv: d.volEnv, volUi: d.volUi, muted: d.muted });
       else {
         setLang(d.lang);
-        settings.set({ lang: d.lang, accent: d.accent, uiScale: d.uiScale, reduceMotion: d.reduceMotion });
+        settings.set({ lang: d.lang, accent: d.accent, uiScale: d.uiScale, reduceMotion: d.reduceMotion, uiLayout: d.uiLayout });
       }
     };
     this.body.replaceChildren(...rows, reset);

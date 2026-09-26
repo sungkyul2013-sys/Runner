@@ -10,6 +10,7 @@ import { loadVehicleModel, type VehicleModel } from '../vehicles/VehicleModel';
 import { icon, type IconName } from './icons';
 import { MapStage } from './MapStage';
 import { t, tl, type Localized, type StringKey } from './i18n';
+import { isMobileUi } from './platform';
 import { settings, accentHex } from './settings';
 
 export type AppMode = 'freeroam' | 'drive' | 'crash' | 'sandbox' | 'garage';
@@ -47,46 +48,99 @@ export class MainMenu {
   private readonly specs = el('div', 'mm-specs');
   private readonly note = el('div', 'mm-note');
 
+  private readonly mobile = isMobileUi();
+  private readonly dots = el('div', 'm-dots');
+
   constructor(private readonly viewer: Viewer, private readonly actions: MenuActions) {
     const cars = SHOWROOM.map(showroomCar);
-    const hero = el('div', 'mm-hero');
-    const brand = el('h1', 'mm-brand', 'APEX', el('span', '', '_'), 'SIM');
-    const prev = el('button', 'icon-btn', icon('back'));
-    const next = el('button', 'icon-btn', icon('chevron'));
+    const prev = el('button', this.mobile ? 'm-round' : 'icon-btn', icon('back'));
+    const next = el('button', this.mobile ? 'm-round' : 'icon-btn', icon('chevron'));
     prev.ariaLabel = next.ariaLabel = 'car';
     prev.onclick = () => this.select((this.index + cars.length - 1) % cars.length);
     next.onclick = () => this.select((this.index + 1) % cars.length);
-    const car = el('div', 'mm-car', el('div', 'mm-car-row', this.carName, prev, next), this.specs, this.note);
-    hero.append(brand, el('p', 'mm-tagline', t('appTagline')), car);
-
-    const cards = el('nav', 'mm-cards');
-    const last = settings.get().lastMode as AppMode | null;
-    if (last && MODES.some(([m]) => m === last) && last !== 'freeroam') cards.append(this.card(last, 'restart', 'modeContinue', MODES.find(([m]) => m === last)![2], false));
-    for (const [mode, name, title, desc] of MODES) cards.append(this.card(mode, name, title, desc, mode === 'freeroam'));
-
-    const gear = el('button', 'icon-btn', icon('settings'));
+    const gear = el('button', this.mobile ? 'm-round' : 'icon-btn', icon('settings'));
     gear.ariaLabel = t('menuSettings');
     gear.onclick = () => this.actions.settings();
-    this.foot.append(el('span', 'mm-hint', t('menuHint')), gear);
-    this.root.append(hero, cards);
-    document.body.append(this.root, this.foot);
+    const last = settings.get().lastMode as AppMode | null;
+    const cont = last && MODES.some(([m]) => m === last) && last !== 'freeroam' ? last : null;
+    if (this.mobile) this.buildMobile(prev, next, gear, cont, cars.length);
+    else this.buildDesktop(prev, next, gear, cont);
     this.setupStage();
     // The car chosen last (here or in a mode) is on show again.
     this.select(Math.max(0, SHOWROOM.findIndex((c) => c.id === settings.get().car || c.drive === settings.get().car)));
     window.addEventListener('keydown', (e) => {
-      if (!this.root.isConnected || this.maps || document.querySelector('.overlay-layer')) return;
+      if (!this.root.isConnected || this.maps || document.querySelector('.overlay-layer, .m-layer:not([hidden])')) return;
       if (e.key === 'ArrowLeft') prev.click();
       else if (e.key === 'ArrowRight') next.click();
-      else if (e.key === 'Enter') (cards.querySelector('.mm-card.primary') as HTMLButtonElement | null)?.click();
+      else if (e.key === 'Enter') (this.root.querySelector('.mm-card.primary, .m-primary') as HTMLButtonElement | null)?.click();
     });
+  }
+
+  /** PC: the brand, the car card with its figures on the left, the mode cards on the right, hints at the foot. */
+  private buildDesktop(prev: HTMLButtonElement, next: HTMLButtonElement, gear: HTMLButtonElement, cont: AppMode | null): void {
+    const hero = el('div', 'mm-hero');
+    const brand = el('h1', 'mm-brand', 'APEX', el('span', '', '_'), 'SIM');
+    const car = el('div', 'mm-car', el('div', 'mm-car-row', this.carName, prev, next), this.specs, this.note);
+    hero.append(brand, el('p', 'mm-tagline', t('appTagline')), car);
+    const cards = el('nav', 'mm-cards');
+    if (cont) cards.append(this.card(cont, 'restart', 'modeContinue', MODES.find(([m]) => m === cont)![2], false));
+    for (const [mode, name, title, desc] of MODES) cards.append(this.card(mode, name, title, desc, mode === 'freeroam'));
+    this.foot.append(el('span', 'mm-hint', t('menuHint')), gear);
+    this.root.append(hero, cards);
+    document.body.append(this.root, this.foot);
+  }
+
+  /**
+   * Phone: the brand and the settings in a slim row at the top, the car on the stage (swipe it, or the arrows), and
+   * everything to tap in the lower half, in thumb reach — the car's name and figures, free roam as the one big
+   * button, the other modes as a 2 × 2 grid. Sideways: the car on the left, the buttons on the right.
+   */
+  private buildMobile(prev: HTMLButtonElement, next: HTMLButtonElement, gear: HTMLButtonElement, cont: AppMode | null, count: number): void {
+    this.root.className = 'm-menu';
+    const top = el('header', 'm-menu-top', el('h1', 'mm-brand', 'APEX', el('span', '', '_'), 'SIM'), gear);
+    this.specs.className = 'm-specs';
+    this.note.className = 'm-note';
+    const car = el('section', 'm-car', el('div', 'm-car-row', prev, el('div', 'm-car-name', this.carName, this.note), next), this.specs, this.dots);
+    this.dots.replaceChildren(...Array.from({ length: count }, () => el('i')));
+    const [, pIcon, pTitle, pDesc] = MODES[0];
+    const primary = el('button', 'm-primary', icon(pIcon), el('div', '', el('b', '', t(pTitle)), el('small', '', t(pDesc))), el('span', 'go', icon('chevron')));
+    primary.onclick = () => this.startMode(MODES[0][0]);
+    const grid = el('div', 'm-mode-grid', ...MODES.slice(1).map(([mode, name, title]) => {
+      const b = el('button', 'm-mode', icon(name), el('b', '', t(title)));
+      b.onclick = () => this.startMode(mode);
+      return b;
+    }));
+    const modes = el('nav', 'm-modes', ...(cont ? [(() => {
+      const c = el('button', 'm-continue', icon('restart'), el('span', '', `${t('modeContinue')} · ${t(MODES.find(([m]) => m === cont)![2])}`));
+      c.onclick = () => this.startMode(cont);
+      return c;
+    })()] : []), primary, grid);
+    this.root.append(top, el('div', 'm-menu-stage'), el('div', 'm-menu-bottom', car, modes));
+    document.body.append(this.root);
+    // A horizontal swipe over the stage changes the car (the stage does not orbit on a phone).
+    const canvas = this.viewer.renderer.domElement as HTMLCanvasElement;
+    let x0 = 0, y0 = 0, down = false;
+    canvas.addEventListener('pointerdown', (e) => {
+      down = !this.maps && this.root.isConnected;
+      x0 = e.clientX;
+      y0 = e.clientY;
+    });
+    canvas.addEventListener('pointerup', (e) => {
+      if (!down) return;
+      down = false;
+      const dx = e.clientX - x0, dy = e.clientY - y0;
+      if (Math.abs(dx) > 48 && Math.abs(dx) > 1.4 * Math.abs(dy)) (dx < 0 ? next : prev).click();
+    });
+  }
+
+  private startMode(mode: AppMode): void {
+    const c = showroomCar(SHOWROOM[this.index]);
+    this.actions.start(mode, c.drive ?? DEFAULT_DRIVABLE);
   }
 
   private card(mode: AppMode, name: IconName, title: StringKey, desc: StringKey, primary: boolean): HTMLButtonElement {
     const b = el('button', primary ? 'mm-card primary' : 'mm-card', icon(name), el('div', '', el('b', '', t(title)), el('small', '', t(desc))), el('span', 'go', icon('chevron')));
-    b.onclick = () => {
-      const c = showroomCar(SHOWROOM[this.index]);
-      this.actions.start(mode, c.drive ?? DEFAULT_DRIVABLE);
-    };
+    b.onclick = () => this.startMode(mode);
     return b;
   }
 
@@ -98,8 +152,8 @@ export class MainMenu {
     const s = c.specs;
     this.specs.replaceChildren(...(s
       ? ([
-        ['specPower', s.powerKw, (x: number) => `${Math.round(x)} kW · ${Math.round(x * 1.35962)} PS`, s.powerKw / 400],
-        ['specTorque', s.torqueNm, (x: number) => `${Math.round(x)} N·m`, s.torqueNm / 900],
+        ['specPower', s.powerKw, (x: number) => (this.mobile ? `${Math.round(x * 1.35962)} PS` : `${Math.round(x)} kW · ${Math.round(x * 1.35962)} PS`), s.powerKw / 400],
+        ...(this.mobile ? [] : [['specTorque', s.torqueNm, (x: number) => `${Math.round(x)} N·m`, s.torqueNm / 900]]),
         ['specWeight', s.massKg, (x: number) => `${Math.round(x).toLocaleString('en-US')} kg`, s.massKg / 3000],
         ['specDrive', 0, () => s.drive, 1],
         ['specAccel', s.zeroTo100, (x: number) => `${x.toFixed(1)} s`, 3 / s.zeroTo100],
@@ -120,6 +174,7 @@ export class MainMenu {
         return el('div', '', el('small', '', t(k)), out, meter);
       })
       : []));
+    this.dots.querySelectorAll('i').forEach((d, k) => d.classList.toggle('on', k === i));
     this.carName.classList.remove('swap');
     void this.carName.offsetWidth;
     this.carName.classList.add('swap');
@@ -196,12 +251,14 @@ export class MainMenu {
     v.controls.autoRotate = false;
     v.controls.autoRotateSpeed = 0.5;
     v.controls.minDistance = 3.5;
-    v.controls.maxDistance = 12;
+    v.controls.maxDistance = 12 * this.reach();
     v.controls.maxPolarAngle = Math.PI * 0.49;
+    v.controls.enableRotate = !this.mobile; // phones: a swipe changes the car
     // Cinematic intro: a low sweep from the side up to the resting three-quarter view.
     this.intro = settings.get().reduceMotion ? 1 : 0;
     this.placeIntroCamera(this.intro);
     window.addEventListener('pointermove', (e) => {
+      if (this.mobile) return; // a finger on the glass is not a gaze
       this.parallax.set(e.clientX / window.innerWidth - 0.5, e.clientY / window.innerHeight - 0.5);
     });
   }
@@ -221,6 +278,7 @@ export class MainMenu {
     this.maps = new MapStage(this.viewer, labelOf);
     this.intro = 1;
     document.body.classList.add('mm-maps');
+    this.viewer.controls.enableRotate = true;
     this.maps.onDaylight = (day) => {
       for (const [l, i] of this.spots) l.intensity = i * (0.05 + 0.2 * day);
     };
@@ -233,6 +291,8 @@ export class MainMenu {
     this.maps.dispose();
     this.maps = null;
     document.body.classList.remove('mm-maps');
+    this.viewer.controls.enableRotate = !this.mobile;
+    this.framed = '';
     for (const [l, i] of this.spots) l.intensity = i;
     const v = this.viewer;
     const fog = v.scene.fog as THREE.Fog | null;
@@ -247,7 +307,7 @@ export class MainMenu {
     v.sun.intensity = 0.4;
     v.shadowHalf = 30;
     v.controls.minDistance = 3.5;
-    v.controls.maxDistance = 12;
+    v.controls.maxDistance = 12 * this.reach();
     v.controls.maxPolarAngle = Math.PI * 0.49;
     v.controls.autoRotateSpeed = 0.5;
     v.controls.autoRotate = !settings.get().reduceMotion;
@@ -258,14 +318,40 @@ export class MainMenu {
   private placeIntroCamera(t: number): void {
     const e = 1 - Math.pow(1 - Math.min(t, 1), 3);
     const a = THREE.MathUtils.lerp(-0.2, 0.75, e);
-    const d = THREE.MathUtils.lerp(4.6, 7.6, e);
+    const d = THREE.MathUtils.lerp(4.6, 7.6, e) * this.reach();
     const y = THREE.MathUtils.lerp(0.35, 1.55, e);
     this.viewer.camera.position.set(Math.sin(a) * d, y, Math.cos(a) * d);
     this.viewer.controls.target.set(0, THREE.MathUtils.lerp(0.45, 0.6, e), 0);
   }
 
+  /** Phones upright see less width: the camera steps back so the whole car fits between the edges. */
+  private reach(): number {
+    if (!this.mobile) return 1;
+    const aspect = innerWidth / Math.max(innerHeight, 1);
+    return Math.min(Math.max(0.78 / aspect, 1), 1.55);
+  }
+
+  private framed = '';
+
+  /**
+   * Phones: the car stands where the buttons leave room — the upper part upright, the left half sideways — by
+   * shifting the picture (the view offset), not the camera angle.
+   */
+  private frame(): void {
+    if (!this.mobile || this.maps) return;
+    const w = innerWidth, h = innerHeight;
+    const key = `${w}x${h}`;
+    if (key === this.framed) return;
+    this.framed = key;
+    const cam = this.viewer.camera;
+    if (w < h) cam.setViewOffset(w, h, 0, h * 0.2, w, h);
+    else cam.setViewOffset(w, h, w * 0.22, 0, w, h);
+    cam.updateProjectionMatrix();
+  }
+
   /** Per frame: the intro sweep, the slow turntable and the car-change animation. */
   update(dt: number): void {
+    this.frame();
     // The car (and its plinth) give way to the map model and come back after.
     const goal = this.maps ? 0 : 1;
     if (this.carShow !== goal) {
@@ -337,6 +423,11 @@ export class MainMenu {
     this.foot.remove();
     this.stage.removeFromParent();
     this.viewer.controls.autoRotate = false;
+    this.viewer.controls.enableRotate = true;
+    if (this.mobile) {
+      this.viewer.camera.clearViewOffset();
+      this.viewer.camera.updateProjectionMatrix();
+    }
     this.viewer.controls.minDistance = 1;
     this.viewer.controls.maxDistance = 600;
   }

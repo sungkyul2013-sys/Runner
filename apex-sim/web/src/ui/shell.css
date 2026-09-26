@@ -94,21 +94,21 @@
 .sheet-section .row { display: flex; flex-wrap: wrap; gap: 8px; }
 .sheet-section .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .sheet-section .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.sheet .field { display: grid; grid-template-columns: 84px 1fr auto; align-items: center; gap: 8px; color: var(--text-2); font-size: 0.86rem; }
-.sheet .field small { color: var(--text-3); }
-.sheet input[type='number'] { font: inherit; font-family: var(--font-num); color: var(--text); background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-s); padding: 8px; width: 100%; }
-.sheet .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.sheet button.chip { padding: 6px 12px; font-family: var(--font-num); font-size: 0.86rem; min-height: 36px; border-radius: 999px; }
-.sheet button.chip.active { background: color-mix(in srgb, var(--accent) 20%, var(--surface-raised)); border-color: color-mix(in srgb, var(--accent) 60%, transparent); color: var(--text); }
-.sheet button.wide, .settings-body button.wide { width: 100%; }
-.sheet button { min-height: 40px; }
-.sheet .tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 10px 12px; min-height: 64px; border-radius: var(--radius-m); }
-.sheet .tile small { color: var(--text-3); font-size: 0.78rem; }
-.sheet .tile.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.sheet .muted { color: var(--text-3); font-size: 0.8rem; line-height: 1.5; }
-.sheet .act { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; font-size: 0.82rem; white-space: nowrap; min-width: 0; }
-.sheet .act span { overflow: hidden; text-overflow: ellipsis; }
-.sheet .act .icon { width: 18px; height: 18px; }
+:is(.sheet, .m-sheet) .field { display: grid; grid-template-columns: 84px 1fr auto; align-items: center; gap: 8px; color: var(--text-2); font-size: 0.86rem; }
+:is(.sheet, .m-sheet) .field small { color: var(--text-3); }
+:is(.sheet, .m-sheet) input[type='number'] { font: inherit; font-family: var(--font-num); color: var(--text); background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-s); padding: 8px; width: 100%; }
+:is(.sheet, .m-sheet) .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+:is(.sheet, .m-sheet) button.chip { padding: 6px 12px; font-family: var(--font-num); font-size: 0.86rem; min-height: 36px; border-radius: 999px; }
+:is(.sheet, .m-sheet) button.chip.active { background: color-mix(in srgb, var(--accent) 20%, var(--surface-raised)); border-color: color-mix(in srgb, var(--accent) 60%, transparent); color: var(--text); }
+:is(.sheet, .m-sheet) button.wide, .settings-body button.wide { width: 100%; }
+:is(.sheet, .m-sheet) button { min-height: 40px; }
+:is(.sheet, .m-sheet) .tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 10px 12px; min-height: 64px; border-radius: var(--radius-m); }
+:is(.sheet, .m-sheet) .tile small { color: var(--text-3); font-size: 0.78rem; }
+:is(.sheet, .m-sheet) .tile.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+:is(.sheet, .m-sheet) .muted { color: var(--text-3); font-size: 0.8rem; line-height: 1.5; }
+:is(.sheet, .m-sheet) .act { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; font-size: 0.82rem; white-space: nowrap; min-width: 0; }
+:is(.sheet, .m-sheet) .act span { overflow: hidden; text-overflow: ellipsis; }
+:is(.sheet, .m-sheet) .act .icon { width: 18px; height: 18px; }
 
 .sheet-tabs { flex: none; position: sticky; top: -14px; z-index: 1; margin: -14px -16px 0; padding: 10px 12px; display: flex; gap: 4px; background: color-mix(in srgb, var(--surface) 96%, transparent); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
 .sheet-tab { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px !important; padding: 0 10px; border-radius: 999px; border: none; background: transparent; color: var(--text-2); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }

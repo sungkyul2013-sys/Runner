@@ -415,3 +415,4 @@ body.touch-on .sheet:not(.open) { display: none; }
 .mm-hint { color: var(--text-3); font-size: 0.78rem; margin-right: 8px; }
 @media (max-width: 900px) { .mm-hint { display: none; } }
 @media (prefers-reduced-motion: reduce) { .mm-brand, .mm-card, .mm-car, .mm-tagline, .mm-bar::after { animation: none !important; } }
+.settings-note .ui-now { color: var(--text); font-weight: 600; }

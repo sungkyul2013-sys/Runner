@@ -25,6 +25,40 @@ export interface ShellActions {
   time?: TimeHost;
 }
 
+/** The mode's panel, as both UIs have it (PC: a floating window; phone: a bottom sheet / side drawer). */
+export interface ModePanel {
+  readonly root: HTMLElement;
+  readonly body: HTMLElement;
+  readonly open: boolean;
+  onToggle: (open: boolean) => void;
+  setOpen(on: boolean): void;
+  setTitle(title: string): void;
+  /** A titled group of controls in the panel. */
+  section(title: string, ...children: Node[]): HTMLElement;
+  /** Tabs across the top of the panel, one pane each. */
+  tabs(items: Array<{ title: string; icon?: IconName; nodes: Node[] }>, initial?: number): { select(i: number): void };
+}
+
+/** The in-mode frame, as both UIs have it: the modes build on this and never on one UI's layout. */
+export interface ModeShell {
+  readonly root: HTMLElement;
+  readonly sheet: ModePanel;
+  readonly time: TimeControl | null;
+  /** The phone UI (a mode may lay out its own extras, e.g. the crash lab's launch bar, for it). */
+  readonly mobile: boolean;
+  readonly menuOpen: boolean;
+  setTitle(title: string, subtitle?: string): void;
+  /**
+   * A labelled action; `toggle` buttons show their state (aria-pressed). `tip` is the tooltip's description, `key`
+   * its keyboard shortcut. The toast names the new state of a toggle.
+   */
+  addAction(name: IconName, label: string, onClick: (btn: HTMLButtonElement) => void, toggle?: boolean, tip?: string, key?: string): HTMLButtonElement;
+  openPause(): void;
+  closePause(): void;
+  openSettings(): void;
+  closeSettings(): void;
+}
+
 const RECTS_KEY = 'apex.panels.v1';
 type Rect = { x: number; y: number; w: number; h: number };
 
@@ -48,7 +82,7 @@ function saveRect(key: string, r: Rect): void {
  * The mode's panel. Wide screens: a floating window (drag the title bar, resize from the corner grip, double-click
  * the title to fold it). Phones: a bottom sheet (swipe the handle).
  */
-export class Sheet {
+export class Sheet implements ModePanel {
   readonly root = el('aside', 'sheet');
   readonly body = el('div', 'sheet-body');
   private readonly title = el('b');
@@ -181,7 +215,8 @@ export class Sheet {
   }
 }
 
-export class Shell {
+export class Shell implements ModeShell {
+  readonly mobile = false;
   readonly root = el('div', 'shell');
   readonly topbar = el('header', 'topbar');
   readonly actions = el('nav', 'dock');

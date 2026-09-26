@@ -10,6 +10,8 @@
 //   2e. tools (§20): mouse grab lifts a cube, the crane reels it up
 //   2f. tyres (§6): the spike strip punctures all four tyres, they deflate, the pressure warning comes on
 //   2g. free roam (§13): proving-ground oval drive, world map; the open-world city at night in the rain
+//   2h. phone UI vs PC UI: a touch phone gets the phone UI (menu, quick menu, bottom sheet, crash launch bar and
+//       result card), a desktop the PC UI, and ?ui= overrides either way
 // Usage: npm run build && node tools/e2e.mjs [--no-bench] [--only <steps>] [--bench-tag M2] [--chromium /path/to/chrome]
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -26,7 +28,7 @@ const chromiumPath =
 const runBench = !args.includes('--no-bench');
 // Milestone the benchmark result is filed under (bench/results/<tag>-web-headless-swiftshader.json).
 const benchTag = args.includes('--bench-tag') ? args[args.indexOf('--bench-tag') + 1] : 'M2';
-// --only golden,sandbox,drive,crash,crashlab,tyres,tools,freeroam,bench runs just those steps.
+// --only golden,sandbox,drive,crash,crashlab,tyres,tools,freeroam,ui,bench runs just those steps.
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1].split(',') : null;
 const want = (step) => !only || only.includes(step);
 const PORT = 4179;
@@ -65,6 +67,26 @@ async function openPage(browser, query) {
   await page.waitForFunction(() => window.__apex?.ready === true, null, { timeout: 60000 });
   return { page, consoleErrors };
 }
+
+/** A touch phone (390 × 844, no mouse): the page picks the phone UI by itself. */
+async function openPhone(browser, query, viewport = { width: 390, height: 844 }) {
+  const context = await browser.newContext({ viewport, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  const consoleErrors = [];
+  page.on('pageerror', (e) => consoleErrors.push(String(e)));
+  const sep = query.includes('?') ? '&' : '?';
+  await page.goto(base + query + `${sep}bloom=0` + (BACKEND ? `&backend=${BACKEND}` : ''));
+  await page.waitForFunction(() => window.__apex?.ready === true, null, { timeout: 60000 });
+  return { page, context, consoleErrors };
+}
+
+const rectOf = (page, sel) => page.evaluate((s) => {
+  const e = document.querySelector(s);
+  if (!e || e.hidden) return null;
+  const r = e.getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height };
+}, sel);
+const overlaps = (a, b) => !!a && !!b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 async function main() {
   const preview = await startPreview();
@@ -431,6 +453,60 @@ async function main() {
       const cityErrors = await city.page.evaluate(() => window.__apex.errors);
       if (cityErrors.length || city.consoleErrors.length) failures.push(`errors (city): ${[...cityErrors, ...city.consoleErrors].join(' | ')}`);
       await city.page.close();
+    }
+    // 2h. phone UI vs PC UI (ui/platform.ts): the device picks, ?ui= overrides.
+    if (want('ui')) {
+      const dir = join(root, 'docs', 'screenshots');
+      const menu = await openPhone(browser, '');
+      await menu.page.waitForTimeout(2500);
+      const m = await menu.page.evaluate(() => ({ ui: document.documentElement.dataset.ui, phoneMenu: !!document.querySelector('.m-menu .m-primary'), pcMenu: !!document.querySelector('.mainmenu'), modes: document.querySelectorAll('.m-mode').length }));
+      await menu.page.screenshot({ path: join(dir, 'UI-phone-menu.png') });
+      console.log('phone menu:', JSON.stringify(m));
+      if (m.ui !== 'mobile' || !m.phoneMenu || m.pcMenu || m.modes !== 4) failures.push(`phone UI: menu ${JSON.stringify(m)}`);
+      await menu.context.close();
+
+      const { page, context, consoleErrors } = await openPhone(browser, '?crash=porsche_911_turbo_991');
+      await page.waitForTimeout(1500);
+      const frame = await page.evaluate(() => ({ top: !!document.querySelector('.m-top'), pcTop: !!document.querySelector('.topbar'), bar: !!document.querySelector('.m-launch .fab') }));
+      if (!frame.top || frame.pcTop || !frame.bar) failures.push(`phone UI: crash frame ${JSON.stringify(frame)}`);
+      await page.tap('.m-top .m-round[aria-label="' + (await page.evaluate(() => document.querySelectorAll('.m-top .m-round')[2].ariaLabel)) + '"]');
+      await page.waitForTimeout(400);
+      const tiles = await page.evaluate(() => document.querySelectorAll('.m-quick:not([hidden]) .m-tile').length);
+      if (tiles < 6) failures.push(`phone UI: quick menu shows ${tiles} tiles`);
+      await page.mouse.click(195, 60);
+      await page.waitForTimeout(300);
+      await page.tap('.m-launch-pick');
+      await page.waitForTimeout(500);
+      const sheetOpen = await page.evaluate(() => document.querySelector('.m-sheet').classList.contains('open'));
+      await page.locator('.crash-tile').nth(0).tap();
+      await page.tap('.m-launch .fab');
+      await page.waitForTimeout(300);
+      const sheetAfter = await page.evaluate(() => document.querySelector('.m-sheet').classList.contains('open'));
+      for (let i = 0; i < 90 && !(await rectOf(page, '.crash-result')); i++) await page.waitForTimeout(1000);
+      await page.waitForTimeout(1000);
+      const card = await rectOf(page, '.crash-result'), bar = await rectOf(page, '.m-launch');
+      await page.screenshot({ path: join(dir, 'UI-phone-crash.png') });
+      console.log('phone crash lab:', JSON.stringify({ tiles, sheetOpen, sheetAfter, card, bar }));
+      if (!sheetOpen || sheetAfter) failures.push(`phone UI: panel open ${sheetOpen} → after launch ${sheetAfter}`);
+      if (!card) failures.push('phone UI: no result card after the launch');
+      else if (overlaps(card, bar)) failures.push('phone UI: the result card covers the launch bar');
+      if (consoleErrors.length) failures.push(`errors (phone UI): ${consoleErrors.join(' | ')}`);
+      await context.close();
+
+      // Overrides: the PC UI on a phone, the phone UI on a desktop.
+      const pcOnPhone = await openPhone(browser, '?scene=sandbox&ui=desktop');
+      const a = await pcOnPhone.page.evaluate(() => [document.documentElement.dataset.ui, !!document.querySelector('.topbar'), !!document.querySelector('.m-top')]);
+      await pcOnPhone.context.close();
+      const desk = await openPage(browser, '?scene=sandbox');
+      const b = await desk.page.evaluate(() => [document.documentElement.dataset.ui, !!document.querySelector('.topbar'), !!document.querySelector('.m-top')]);
+      await desk.page.close();
+      const phoneOnDesk = await openPage(browser, '?scene=sandbox&ui=mobile');
+      const c = await phoneOnDesk.page.evaluate(() => [document.documentElement.dataset.ui, !!document.querySelector('.topbar'), !!document.querySelector('.m-top')]);
+      await phoneOnDesk.page.close();
+      console.log('ui overrides:', JSON.stringify({ pcOnPhone: a, desktop: b, phoneOnDesktop: c }));
+      if (a.join() !== 'desktop,true,false') failures.push(`?ui=desktop on a phone: ${a}`);
+      if (b.join() !== 'desktop,true,false') failures.push(`desktop: ${b}`);
+      if (c.join() !== 'mobile,false,true') failures.push(`?ui=mobile on a desktop: ${c}`);
     }
     // 3. benchmark
     if (runBench && want('bench')) {
