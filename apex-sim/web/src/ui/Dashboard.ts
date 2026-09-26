@@ -134,6 +134,13 @@ export class Dashboard {
   private tyreLamp = el('span', 'lamp warn', t('warnTyre')); // §6 tyre pressure (TPMS)
   private flicker = 0;
   private unit: SpeedUnit = 'kmh';
+  /** §18.4 G-meter (friction circle, ±1.5 g) and the steering input, beside the dial (racing / engineer). */
+  private readonly aux = el('div', 'dash-aux');
+  private readonly gDot = el('i', 'dash-gdot');
+  private readonly gText = el('span', 'dash-gtext', '0.00 g');
+  private readonly steerMark = el('i', 'dash-steer-mark');
+  private gx = 0;
+  private gz = 0;
 
   constructor(redlineRpm: number) {
     const face = el('div', 'dash-face');
@@ -144,7 +151,15 @@ export class Dashboard {
     this.dial.append(face, this.lights, this.gear, this.rpmText, this.tags, this.pedals);
     this.warnings.append(...this.warnLamps, this.tyreLamp);
     this.rtfBadge.hidden = true;
-    this.root.append(this.warnings, this.rtfBadge, this.dial);
+    const gm = el('div', 'dash-gmeter');
+    gm.append(el('i', 'dash-gring'), this.gDot);
+    const steer = el('div', 'dash-steer');
+    steer.append(this.steerMark);
+    this.aux.append(gm, this.gText, steer);
+    this.aux.setAttribute('aria-hidden', 'true');
+    const row = el('div', 'dash-row');
+    row.append(this.aux, this.dial);
+    this.root.append(this.warnings, this.rtfBadge, row);
     this.root.hidden = true;
     this.setRedline(redlineRpm);
   }
@@ -185,6 +200,15 @@ export class Dashboard {
     this.rpmText.textContent = `${(v.engineRpm / 1000).toFixed(1)}k`;
     this.gear.textContent = v.gear < 0 ? 'R' : v.gear === 0 ? 'N' : String(v.gear);
     this.gear.classList.toggle('shifting', v.shifting);
+    // G-meter: smoothed (τ ≈ 0.08 s); the dot shows the load felt — right in a left turn, up under braking.
+    const k = Math.min(_dt / 0.08, 1);
+    this.gx += (-v.accelLat / 9.81 - this.gx) * k;
+    this.gz += (v.accelLong / 9.81 - this.gz) * k;
+    const gm = Math.hypot(this.gx, this.gz), clip = Math.min(1, 1.5 / Math.max(gm, 1e-6));
+    this.gDot.style.left = `${(50 + this.gx * clip * 33.3).toFixed(1)}%`;
+    this.gDot.style.top = `${(50 + this.gz * clip * 33.3).toFixed(1)}%`;
+    this.gText.textContent = `${gm.toFixed(2)} g`;
+    this.steerMark.style.left = `${(50 - v.steer * 50).toFixed(1)}%`;
     this.throttleBar.style.setProperty('--v', v.throttle.toFixed(2));
     this.brakeBar.style.setProperty('--v', v.brake.toFixed(2));
     if (f) {

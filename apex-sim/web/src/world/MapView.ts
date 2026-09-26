@@ -6,7 +6,7 @@
 import * as THREE from 'three/webgpu';
 import type { Node } from 'three/webgpu';
 import {
-  abs, attribute, clamp, color, exp, float, floor, fract, fwidth, max, mix, mod, mx_noise_float, normalWorld, positionLocal,
+  abs, atan, attribute, clamp, color, exp, float, floor, fract, fwidth, max, mix, mod, mx_noise_float, normalWorld, positionLocal,
   positionWorld, sin, smoothstep, step, texture, time, uniform, vec2, vec3, cameraPosition, length, select,
 } from 'three/tsl';
 import type { MapData, MeshAccum, Sign } from './builder';
@@ -668,6 +668,9 @@ export class MapView {
       g.setAttribute('position', new THREE.BufferAttribute(r.cables, 3));
       this.group.add(new THREE.LineSegments(g, new THREE.LineBasicNodeMaterial({ color: 0xe6e9ee })));
     }
+    this.buildRopes();
+    this.buildCylinders();
+    this.buildFountains();
     if (r.tunnelLights.length) {
       const n = r.tunnelLights.length / 4;
       const lightMat = new THREE.MeshBasicNodeMaterial({ color: 0xfff1d0 });
@@ -723,6 +726,153 @@ export class MapView {
       inst.receiveShadow = true;
       inst.computeBoundingSphere();
       this.group.add(inst);
+    }
+  }
+
+  /** Suspension main cables: thick steel tubes, one instance per segment. */
+  private buildRopes(): void {
+    const r = this.map.render.ropes;
+    const n = r.length / 7;
+    if (!n) return;
+    const inst = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 8, 1, true).translate(0, 0.5, 0), plainMaterial(0xd8473c, 0.45, 0.5), n);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), d = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let i = 0; i < n; i++) {
+      const o = i * 7;
+      p.set(r[o], r[o + 1], r[o + 2]);
+      d.set(r[o + 3] - r[o], r[o + 4] - r[o + 1], r[o + 5] - r[o + 2]);
+      const len = d.length();
+      q.setFromUnitVectors(up, d.divideScalar(len || 1));
+      s.set(r[o + 6], len, r[o + 6]);
+      m.compose(p, q, s);
+      inst.setMatrixAt(i, m);
+    }
+    inst.castShadow = true;
+    inst.computeBoundingSphere();
+    this.group.add(inst);
+  }
+
+  /** Upright cylinders and cones, instanced per look and taper. */
+  private buildCylinders(): void {
+    const mats: Record<string, THREE.MeshStandardNodeMaterial> = {
+      concrete: plainMaterial(0xb3b3ad, 0.85),
+      steel: plainMaterial(0xa7b0ba, 0.3, 0.8),
+      glass: plainMaterial(0x7d9bb3, 0.08, 0.6),
+      white: plainMaterial(0xeef0f2, 0.5),
+      stone: plainMaterial(0xc6bca9, 0.8),
+      dark: plainMaterial(0x2b2e33, 0.6),
+    };
+    // Stone: a little noise so a plaza's granite does not read as plastic.
+    mats.stone.colorNode = mix(color(0xb9ae98), color(0xd4ccbb), mx_noise_float(positionWorld.mul(1.7)).mul(0.5).add(0.5));
+    mats.grass = plainMaterial(0x5d8a3e, 0.95);
+    mats.grass.colorNode = mix(color(0x4f7d35), color(0x6f9c48), mx_noise_float(positionWorld.xz.mul(0.35)).mul(0.5).add(0.5));
+    // Curtain-wall tower: glass with spandrel bands every floor and mullions round the drum; a share of the windows
+    // lit at night (by floor and bay).
+    const tower = new THREE.MeshStandardNodeMaterial({ roughness: 0.12, metalness: 0.65 });
+    const floorF = fract(positionWorld.y.div(3.8));
+    const bay = atan(positionLocal.z, positionLocal.x).div(Math.PI * 2).mul(96);
+    const spandrel = step(floorF, 0.2);
+    const mullion = step(fract(bay), 0.07);
+    const frame = max(spandrel, mullion);
+    tower.colorNode = mix(mix(color(0x4d6a82), color(0x7c9ab2), mx_noise_float(positionWorld.mul(0.02)).mul(0.5).add(0.5)), color(0xc9ced4), frame);
+    tower.roughnessNode = mix(float(0.08), float(0.6), frame);
+    const cell = floor(positionWorld.y.div(3.8)).mul(131.7).add(floor(bay).mul(17.3));
+    const on = step(0.58, fract(sin(cell).mul(43758.5453)));
+    tower.emissiveNode = color(0xffd9a0).mul(on.mul(float(1).sub(frame)).mul(this.uniforms.night).mul(0.8));
+    mats.tower = tower;
+    const groups = new Map<string, typeof this.map.render.cylinders>();
+    for (const c of this.map.render.cylinders) {
+      if (c.look === 'none') continue;
+      const taper = Math.round(((c.r1 ?? c.r0) / c.r0) * 20) / 20;
+      const key = `${c.look}|${taper}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(c);
+    }
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+    const col = new THREE.Color();
+    for (const [key, list] of groups) {
+      const [look, taper] = [key.split('|')[0], Number(key.split('|')[1])];
+      const geo = new THREE.CylinderGeometry(taper, 1, 1, 28).translate(0, 0.5, 0);
+      const inst = new THREE.InstancedMesh(geo, mats[look] ?? mats.concrete, list.length);
+      list.forEach((c, i) => {
+        p.set(c.x, c.y0, c.z);
+        s.set(c.r0, c.y1 - c.y0, c.r0);
+        m.compose(p, q, s);
+        inst.setMatrixAt(i, m);
+        inst.setColorAt(i, col.setHex(c.color ?? 0xffffff));
+      });
+      inst.castShadow = true;
+      inst.receiveShadow = true;
+      inst.computeBoundingSphere();
+      this.group.add(inst);
+    }
+  }
+
+  /**
+   * Fountains: the pool's water surface, a tall central jet and a ring of arcing jets. The jets are open tubes of
+   * translucent water whose surface streams upward (noise scrolled with time), brighter where they catch the light;
+   * a spray cloud of soft particles hangs at the top. Visual only.
+   */
+  private buildFountains(): void {
+    const list = this.map.render.fountains;
+    if (!list.length) return;
+    const water = new THREE.MeshPhysicalNodeMaterial({ roughness: 0.04, metalness: 0, transparent: true });
+    const ripple = mx_noise_float(vec3(positionWorld.xz.mul(1.4), time.mul(1.6)));
+    water.colorNode = mix(color(0x2d6f86), color(0x6fb3c8), ripple.mul(0.5).add(0.5));
+    water.opacityNode = float(0.86);
+    const jet = new THREE.MeshStandardNodeMaterial({ roughness: 0.15, metalness: 0, transparent: true, depthWrite: false });
+    const flow = mx_noise_float(vec3(positionLocal.x.mul(3), positionLocal.y.mul(2.5).sub(time.mul(5)), positionLocal.z.mul(3)));
+    jet.colorNode = mix(color(0xcfe9f2), color(0xffffff), flow.mul(0.5).add(0.5));
+    jet.opacityNode = flow.mul(0.2).add(0.72);
+    jet.emissiveNode = color(0x9fd7ff).mul(this.uniforms.night.mul(0.8)); // lit from below at night
+    jet.side = THREE.DoubleSide;
+    const rimMat = plainMaterial(0xcfc6b4, 0.75);
+    rimMat.colorNode = mix(color(0xbdb29c), color(0xdcd4c3), mx_noise_float(positionWorld.mul(2.1)).mul(0.5).add(0.5));
+    for (const f of list) {
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(f.r - 0.3, 48).rotateX(-Math.PI / 2), water);
+      pool.position.set(f.x, f.y, f.z);
+      pool.renderOrder = 2;
+      this.group.add(pool);
+      // The rim: a stone band standing 35 cm over the water, rounded on top.
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(f.r, f.r, 1.55, 48, 1, true), rimMat);
+      band.position.set(f.x, f.y - 0.42, f.z);
+      const inner = new THREE.Mesh(new THREE.CylinderGeometry(f.r - 0.55, f.r - 0.55, 0.6, 48, 1, true), rimMat);
+      inner.position.set(f.x, f.y + 0.05, f.z);
+      inner.material.side = THREE.DoubleSide;
+      const cap = new THREE.Mesh(new THREE.TorusGeometry(f.r - 0.28, 0.3, 8, 64).rotateX(Math.PI / 2), rimMat);
+      cap.position.set(f.x, f.y + 0.35, f.z);
+      for (const m of [band, inner, cap]) {
+        m.castShadow = m.receiveShadow = true;
+        this.group.add(m);
+      }
+      // Central jet: a column rising from the upper bowl that flares into a falling crown, and a curtain of water
+      // spilling from the lower bowl.
+      const h = f.height;
+      const prof = [
+        new THREE.Vector2(0.32, 0), new THREE.Vector2(0.26, h * 0.45), new THREE.Vector2(0.2, h * 0.8), new THREE.Vector2(0.5, h * 0.96),
+        new THREE.Vector2(1.1, h * 0.93), new THREE.Vector2(1.7, h * 0.78), new THREE.Vector2(2.1, h * 0.55), new THREE.Vector2(2.3, h * 0.35),
+      ];
+      const centre = new THREE.Mesh(new THREE.LatheGeometry(prof, 24), jet);
+      centre.position.set(f.x, f.y + 2.9, f.z);
+      const curtain = new THREE.Mesh(new THREE.CylinderGeometry(f.r * 0.36, f.r * 0.42, 1.3, 32, 1, true), jet);
+      curtain.position.set(f.x, f.y + 0.65, f.z);
+      const upper = new THREE.Mesh(new THREE.CylinderGeometry(f.r * 0.2, f.r * 0.24, 1.6, 24, 1, true), jet);
+      upper.position.set(f.x, f.y + 2.1, f.z);
+      for (const m of [centre, curtain, upper]) {
+        m.renderOrder = 3;
+        this.group.add(m);
+      }
+      // Ring jets: parabolic arcs from the rim toward the centrepiece.
+      for (let k = 0; k < f.jets; k++) {
+        const a = (k / f.jets) * Math.PI * 2;
+        const x0 = Math.cos(a) * (f.r - 0.5), z0 = Math.sin(a) * (f.r - 0.5);
+        const pts: THREE.Vector3[] = [];
+        for (let t = 0; t <= 1.0001; t += 0.1) pts.push(new THREE.Vector3(x0 * (1 - t * 0.72), 4 * t * (1 - t) * (h * 0.42) + 0.3, z0 * (1 - t * 0.72)));
+        const arc = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 0.13, 6, false), jet);
+        arc.position.set(f.x, f.y, f.z);
+        arc.renderOrder = 3;
+        this.group.add(arc);
+      }
     }
   }
 

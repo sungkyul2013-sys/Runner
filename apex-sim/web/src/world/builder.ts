@@ -36,6 +36,9 @@ export interface RoadSpec {
   merge?: { road: string; at: 'start' | 'end'; length: number };
   /** Cable-stayed look for its bridges. */
   landmark?: boolean;
+  /** Its long river span as a suspension bridge instead: two portal towers, main cables over them sagging to the
+   *  deck at mid-span, vertical hangers, anchorages at both ends. */
+  suspension?: boolean;
   /** Keep off the route graph (test tracks, pads' access lanes). */
   noRoute?: boolean;
   /** Directed in the route graph (ramps). */
@@ -140,6 +143,30 @@ export interface BoxSpec {
   color?: number;
 }
 
+/** Upright cylinder (towers, columns, fountain basins, tanks): physics as a prism, drawn round. */
+export interface CylinderSpec {
+  x: number;
+  z: number;
+  y0: number; // bottom
+  y1: number; // top
+  r0: number; // radius at the bottom
+  r1?: number; // at the top (default r0): cones and tapered shafts
+  material: number; // < 0: visual only
+  look: 'concrete' | 'steel' | 'glass' | 'white' | 'stone' | 'dark' | 'grass' | 'tower' | 'none'; // none: physics only
+  color?: number;
+  sides?: number; // physics prism sides (default 16)
+}
+
+/** A fountain: the basin's rim radius and top (the jets, spray and water surface are drawn by MapView). */
+export interface FountainSpec {
+  x: number;
+  z: number;
+  y: number; // water surface
+  r: number; // basin radius
+  jets: number; // ring jets
+  height: number; // central jet height [m]
+}
+
 export interface BuildingSpec {
   x: number;
   z: number;
@@ -239,6 +266,9 @@ export interface MapRender {
   signs: Sign[];
   water: WaterBody[];
   cables: Float32Array; // line segments x0 y0 z0 x1 y1 z1 (bridge stays)
+  ropes: Float32Array; // thick cable segments x0 y0 z0 x1 y1 z1 radius (suspension main cables)
+  cylinders: CylinderSpec[];
+  fountains: FountainSpec[];
   tunnelLights: Float32Array; // x, y, z, yaw
   /** Map drawing of what the route graph leaves out: test tracks (closed loops) and paved areas. */
   lines: Array<{ cls: StyleName; xs: Float32Array; zs: Float32Array; closed: boolean }>;
@@ -296,6 +326,8 @@ export class MapBuilder {
   readonly water: WaterBody[] = [];
   readonly boxes: BoxSpec[] = [];
   readonly buildings: BuildingSpec[] = [];
+  readonly cylinders: CylinderSpec[] = [];
+  readonly fountains: FountainSpec[] = [];
   readonly pads: PadSpec[] = [];
   readonly pois: Poi[] = [];
   readonly areas: AreaLabel[] = [];
@@ -308,6 +340,7 @@ export class MapBuilder {
   private readonly posts: number[] = [];
   private readonly signals: Signal[] = [];
   private readonly cables: number[] = [];
+  private readonly ropes: number[] = [];
   private readonly tunnelLights: number[] = [];
   private readonly rand: () => number;
   private readonly drapeFn: (x: number, z: number) => number;
@@ -565,6 +598,24 @@ export class MapBuilder {
     this.buildings.push(b);
   }
 
+  addCylinder(c: CylinderSpec): void {
+    this.cylinders.push(c);
+  }
+
+  /** A fountain in a round basin: the basin is a solid stone drum (a car stops against it), the water and the jets
+   *  are drawn on top. */
+  addFountain(f: FountainSpec): void {
+    this.fountains.push(f);
+    // Solid to a car up to the rim; drawn as the pool floor under the water (MapView adds the rim and the water).
+    this.addCylinder({ x: f.x, z: f.z, y0: f.y - 1.2, y1: f.y + 0.35, r0: f.r, material: MAT.concrete, look: 'none', sides: 24 });
+    this.addCylinder({ x: f.x, z: f.z, y0: f.y - 1.2, y1: f.y - 0.35, r0: f.r - 0.2, material: -1, look: 'dark', color: 0x3c5560 });
+    // The tiered centrepiece: a pedestal, a lower bowl, a shaft and an upper bowl.
+    this.addCylinder({ x: f.x, z: f.z, y0: f.y - 0.4, y1: f.y + 0.9, r0: f.r * 0.17, r1: f.r * 0.13, material: -1, look: 'stone' });
+    this.addCylinder({ x: f.x, z: f.z, y0: f.y + 0.9, y1: f.y + 1.3, r0: f.r * 0.14, r1: f.r * 0.36, material: -1, look: 'stone' });
+    this.addCylinder({ x: f.x, z: f.z, y0: f.y + 1.3, y1: f.y + 2.6, r0: f.r * 0.06, material: -1, look: 'stone' });
+    this.addCylinder({ x: f.x, z: f.z, y0: f.y + 2.6, y1: f.y + 2.9, r0: f.r * 0.06, r1: f.r * 0.2, material: -1, look: 'stone' });
+  }
+
   addTree(x: number, z: number, scale: number, type: number): void {
     this.treeList.push(x, Number.NaN, z, scale, type);
   }
@@ -632,6 +683,7 @@ export class MapBuilder {
     for (const pad of this.pads) this.emitPad(pad);
     for (const b of this.boxes) this.emitBox(b);
     for (const b of this.buildings) this.emitBuildingPhysics(b);
+    for (const c of this.cylinders) this.emitCylinder(c);
     const trees = new Float32Array(this.treeList.length);
     for (let i = 0; i < this.treeList.length; i += 5) {
       trees[i] = this.treeList[i];
@@ -662,6 +714,9 @@ export class MapBuilder {
         signs: this.signs,
         water: this.water,
         cables: new Float32Array(this.cables),
+        ropes: new Float32Array(this.ropes),
+        cylinders: this.cylinders,
+        fountains: this.fountains,
         tunnelLights: new Float32Array(this.tunnelLights),
         lines: this.roads.filter((r) => r.spec.noRoute).map((r) => {
           const xs: number[] = [], zs: number[] = [];
@@ -1140,8 +1195,10 @@ export class MapBuilder {
       const span = s1 - s0;
       const count = Math.max(1, Math.floor(span / 38));
       const pylons = r.spec.landmark && span > 250;
+      const hung = r.spec.suspension && span > 250; // no piers under the suspended main span
       for (let k = 1; k < count; k++) {
         const s = s0 + (span * k) / count;
+        if (hung && s > s0 + span * 0.18 - 10 && s < s0 + span * 0.82 + 10) continue;
         const p = r.at(s);
         const g = this.terrain.heightAt(p.x, p.z);
         const wl = this.waterLevelAt(p.x, p.z);
@@ -1156,6 +1213,10 @@ export class MapBuilder {
           this.boxes.push({ cx: x, cy: (top + bottom) / 2, cz: z, hx: 1.1, hy: (top - bottom) / 2, hz: 1.1, yaw, material: MAT.concrete, look: 'concrete' });
         }
         this.boxes.push({ cx: p.x, cy: top - 0.6, cz: p.z, hx: halfDeck * 0.9, hy: 0.6, hz: 1.0, yaw: yaw + Math.PI / 2, material: MAT.concrete, look: 'concrete' });
+      }
+      if (hung) {
+        this.emitSuspension(r, s0, s1, halfDeck);
+        continue;
       }
       if (pylons) {
         for (const f of [1 / 3, 2 / 3]) {
@@ -1178,6 +1239,63 @@ export class MapBuilder {
           }
           this.boxes.push({ cx: p.x, cy: p.y + h - 3, cz: p.z, hx: halfDeck + 2.4, hy: 1.2, hz: 1.4, yaw: yaw + Math.PI / 2, material: MAT.concrete, look: 'none', color: 0xd9dde3 });
         }
+      }
+    }
+  }
+
+  /**
+   * Suspension span: two portal towers (legs outside the deck, three cross beams) at 18 % and 82 % of the span, a
+   * main cable each side from an anchorage block beyond the ends over the tower saddles, sagging to 3 m over the deck
+   * at mid-span (a parabola), vertical hangers every 12 m. Towers and anchorages are solid; cables are drawn only.
+   */
+  private emitSuspension(r: Road, s0: number, s1: number, halfDeck: number): void {
+    const span = s1 - s0;
+    const towerS = [s0 + span * 0.18, s0 + span * 0.82];
+    const towerH = Math.min(110, Math.max(60, span * 0.13));
+    const u0 = halfDeck + 1.6; // cable plane offset from the centre line
+    const edgeY = (s: number) => r.at(clamp(s, 0, r.length)).y;
+    for (const s of towerS) {
+      const p = r.at(s);
+      const yaw = Math.atan2(p.tx, p.tz);
+      const g = Math.min(this.terrain.heightAt(p.x, p.z), this.waterLevelAt(p.x, p.z) ?? 1e9) - 6;
+      const top = p.y + towerH;
+      for (const u of [-u0, u0]) {
+        const x = p.x + u * p.tz, z = p.z - u * p.tx;
+        this.boxes.push({ cx: x, cy: (top + g) / 2, cz: z, hx: 1.6, hy: (top - g) / 2, hz: 2.6, yaw, material: MAT.concrete, look: 'none', color: 0xc9423a });
+      }
+      for (const h of [towerH * 0.35, towerH * 0.72, towerH - 2]) {
+        this.boxes.push({ cx: p.x, cy: p.y + h, cz: p.z, hx: u0 + 1.6, hy: 1.4, hz: 1.6, yaw: yaw + Math.PI / 2, material: MAT.concrete, look: 'none', color: 0xc9423a });
+      }
+    }
+    // Cable: anchorage (60 m beyond each end, 6 m over the ground) → saddle A → sag → saddle B → anchorage.
+    const anchorA = Math.max(0, s0 - 60), anchorB = Math.min(r.length, s1 + 60);
+    const [sa, sb] = towerS;
+    const sagY = (s: number) => {
+      // Parabola through both saddles (deck + towerH) with its low point 3 m over the deck at mid-span.
+      const m = (sa + sb) / 2, half = (sb - sa) / 2;
+      const low = edgeY(m) + 3, high = (edgeY(sa) + edgeY(sb)) / 2 + towerH;
+      return low + (high - low) * ((s - m) / half) ** 2;
+    };
+    const cableY = (s: number): number => {
+      if (s <= sa) return lerp(edgeY(anchorA) + 6, edgeY(sa) + towerH, (s - anchorA) / Math.max(sa - anchorA, 1));
+      if (s >= sb) return lerp(edgeY(sb) + towerH, edgeY(anchorB) + 6, (s - sb) / Math.max(anchorB - sb, 1));
+      return sagY(s);
+    };
+    for (const u of [-u0, u0]) {
+      let prev: number[] | null = null;
+      for (let s = anchorA; s <= anchorB + 0.01; s += 6) {
+        const p = r.at(Math.min(s, r.length));
+        const q = [p.x + u * p.tz, cableY(s), p.z - u * p.tx];
+        if (prev) this.ropes.push(prev[0], prev[1], prev[2], q[0], q[1], q[2], 0.45);
+        prev = q;
+        // Hangers down to the deck edge over the suspended part.
+        if (s > sa + 3 && s < sb - 3 && Math.round(s - anchorA) % 12 === 0) this.cables.push(q[0], q[1], q[2], q[0], p.y + 0.9, q[2]);
+      }
+      for (const s of [anchorA, anchorB]) {
+        const p = r.at(s);
+        const x = p.x + u * p.tz, z = p.z - u * p.tx;
+        const g = this.terrain.heightAt(x, z);
+        this.boxes.push({ cx: x, cy: g + 3.5, cz: z, hx: 3, hy: 4.5, hz: 5, yaw: Math.atan2(p.tx, p.tz), material: MAT.concrete, look: 'concrete' });
       }
     }
   }
@@ -1315,6 +1433,25 @@ export class MapBuilder {
     };
     const faces = [0, 4, 6, 0, 6, 2, 1, 3, 7, 1, 7, 5, 0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3, 0, 2, 3, 0, 3, 1, 4, 5, 7, 4, 7, 6];
     for (let f = 0; f < faces.length; f += 3) this.physTri(b.material, corner(faces[f]), corner(faces[f + 1]), corner(faces[f + 2]));
+  }
+
+  /** Physics prism of a cylinder: side quads and the top cap (the bottom stands on the ground). */
+  private emitCylinder(c: CylinderSpec): void {
+    if (c.material < 0) return;
+    const n = c.sides ?? 16;
+    const r1 = c.r1 ?? c.r0;
+    const ring = (y: number, r: number) => Array.from({ length: n }, (_, k) => {
+      const a = (k / n) * Math.PI * 2;
+      return [c.x + Math.cos(a) * r, y, c.z + Math.sin(a) * r];
+    });
+    const lo = ring(c.y0, c.r0), hi = ring(c.y1, r1);
+    const top = [c.x, c.y1, c.z];
+    for (let k = 0; k < n; k++) {
+      const k1 = (k + 1) % n;
+      this.physTri(c.material, lo[k], hi[k1], hi[k]);
+      this.physTri(c.material, lo[k], lo[k1], hi[k1]);
+      this.physTri(c.material, top, hi[k], hi[k1]);
+    }
   }
 
   private emitBuildingPhysics(b: BuildingSpec): void {
