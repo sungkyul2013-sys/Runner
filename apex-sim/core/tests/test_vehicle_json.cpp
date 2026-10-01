@@ -369,7 +369,9 @@ TEST_CASE("Porsche 911 Turbo: the wreck comes to rest after a wall crash and its
   const int body = w->addBody(car.build.body);
   const int v = w->addVehicle(body, car.build.vehicle);
   w->setVehicleInput(v, VehicleInput{});
-  w->step(12000);  // 6 s: the crash is over at ≈ 2.4 s
+  // 10 s: the crash is over at ≈ 2.4 s; at the real ride height the crushed nose's front-right wheel bounces on its
+  // tyre (spinning a little each time it lands) until ≈ 9 s before the wreck settles.
+  w->step(20000);
   const double settled = w->measureEnergy().balance();
   double maxKinetic = 0.0, maxSpin = 0.0;
   for (int k = 0; k < 10; ++k) {

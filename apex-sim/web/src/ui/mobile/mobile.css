@@ -20,7 +20,9 @@ html[data-ui='mobile'] { --topbar-h: 44px; }
 .m-top { position: fixed; z-index: 20; top: calc(8px + var(--safe-t)); left: calc(8px + var(--safe-l)); right: calc(8px + var(--safe-r)); height: 44px; display: flex; align-items: center; gap: 6px; pointer-events: none; }
 .m-top > * { pointer-events: auto; }
 .m-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; line-height: 1.2; }
-.m-top .m-titles { padding: 0 4px; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.75); }
+.m-top .m-titles { flex: 0 1 auto; margin-right: auto; padding: 5px 14px; pointer-events: none; border-radius: 999px; background: var(--cap-bg);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid var(--cap-line); box-shadow: var(--cap-hi); }
+.m-top .m-titles:empty { display: none; }
 .m-title, .m-titles b { font-size: 0.95rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-sub, .m-titles span { font-size: 0.72rem; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-sub:empty { display: none; }
@@ -215,3 +217,12 @@ body.ov3-on .m-top, body.ov3-on .m-sheet, body.ov3-on .m-launch, body.ov3-on .m-
   .m-menu-bottom { width: min(560px, 100%); margin: 0 auto; }
 }
 @media (prefers-reduced-motion: reduce) { .m-sheet, .m-action-card, .m-primary, .m-menu-bottom { animation: none !important; transition: none !important; } }
+
+/* ---- portrait driving: one control deck — a soft scrim ties the steering bar, gauge and pedals together and keeps
+   them legible over a bright road; the car rides above it (DriveSession frames it higher in portrait) ---- */
+@media (orientation: portrait) {
+  html[data-ui='mobile'] .tc::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none;
+    height: calc(var(--steer-b) + var(--steer-h) + 36px); background: linear-gradient(to top, rgba(6, 8, 11, 0.66) 0%, rgba(6, 8, 11, 0.4) 55%, rgba(6, 8, 11, 0) 100%); }
+  html[data-ui='mobile'] .minimap { width: 96px; height: 96px; }
+}
+

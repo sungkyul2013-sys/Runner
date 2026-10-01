@@ -31,8 +31,11 @@ constexpr double kFlat = 0.15;             // below this share of its pressure t
 constexpr double kSpikeForce = 300.0;      // [N] tread load on a spike that pierces it
 constexpr double kSpikeLeak = 1.0 / 12.0;  // [1/s] a spike strip empties a tyre in ≈ 12 s
 constexpr double kPinchLeak = 0.25;        // [1/s] pinch cut: flat in ≈ 4 s
-constexpr double kPinchGap = 0.005;        // [m] a loaded tread node this close to the rim radius is pinched
-constexpr double kBlowoutPast = 0.025;     // [m] … and this far past it bursts the tyre
+// A tyre bottoming out briefly on a kerb or a pothole edge squeezes its sidewall onto the flange without cutting it;
+// the carcass is cut only when the tread is driven well past the flange (the sidewall folded and crushed between rim
+// and edge), and bursts when driven further still.
+constexpr double kPinchPast = 0.025;       // [m] a loaded tread node this far inside the rim radius cuts the tyre
+constexpr double kBlowoutPast = 0.045;     // [m] … and this far bursts it
 constexpr double kBlowoutLeak = 20.0;      // [1/s] ≈ 50 ms
 constexpr double kBeadLeak = 5.0;          // [1/s]
 constexpr double kBendSlow = 0.005, kBendFast = 0.02;          // rim plastic strain: slow and fast leak onset [-]
@@ -150,10 +153,13 @@ void Vehicle::updateTyres(const World& world, Body& b, double dt, double speed, 
     if (wheelLost_[w]) continue;
     auto detached = [&](int32_t i) { return (b.flags[static_cast<size_t>(i)] & node_flag::kDetached) != 0; };
 
-    // Rim contact: its nodes' static contact force and sliding speed (sparks); the tyre between them and the
-    // obstacle is pinched.
-    double rimForce = 0.0, slide = 0.0;
+    // Rim contact: its nodes' static contact force and sliding speed (sparks). The share pressing the rim toward the
+    // axle (radially) is the tyre pinched between rim and obstacle; a flange scraping along a kerb's side does not
+    // cut the tyre.
+    double rimForce = 0.0, rimRadial = 0.0, slide = 0.0;
     DVec3 point;
+    const DVec3 hubL = at(b, wd.axleLeft), hubR = at(b, wd.axleRight);
+    const DVec3 hub = (hubL + hubR) * 0.5, hubAxis = (hubL - hubR) * (1.0 / std::max(norm(hubL - hubR), 1e-9));
     for (const int32_t i : t.rimNodes) {
       const double fn = b.patchForce[static_cast<size_t>(i)];
       if (!(fn > 0.0) || detached(i)) continue;
@@ -161,6 +167,10 @@ void Vehicle::updateTyres(const World& world, Body& b, double dt, double speed, 
       const DVec3 v = velocity(b, i);
       const double nn = dot(n, n);
       const DVec3 vt = nn > 0.0 ? v - n * (dot(v, n) / nn) : v;
+      const DVec3 d = at(b, i) - hub;
+      const DVec3 radial = d - hubAxis * dot(d, hubAxis);
+      const double rl = norm(radial);
+      if (rl > 1e-9 && nn > 0.0) rimRadial += fn * std::fabs(dot(radial, n)) / (rl * std::sqrt(nn));
       rimForce += fn;
       slide += fn * norm(vt);
       point += at(b, i) * fn;
@@ -204,11 +214,11 @@ void Vehicle::updateTyres(const World& world, Body& b, double dt, double speed, 
         closest = std::min(closest, norm(d - axis * dot(d, axis)));
       }
     }
-    if (t.inflation > kFlat && (closest < t.rimRadius + kPinchGap || rimForce > P.pinchForce)) {
+    if (t.inflation > kFlat && (closest < t.rimRadius - kPinchPast || rimRadial > P.pinchForce)) {
       t.leak = std::max(t.leak, kPinchLeak);
       t.flags |= tyre_flag::kPuncture;
     }
-    if (t.inflation > kFlat && (closest < t.rimRadius - kBlowoutPast || rimForce > P.blowoutForce)) {
+    if (t.inflation > kFlat && (closest < t.rimRadius - kBlowoutPast || rimRadial > P.blowoutForce)) {
       t.leak = std::max(t.leak, kBlowoutLeak);
       t.flags |= tyre_flag::kBlowout;
     }

@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readGlb, meshGeometry, surfaceSamples, primitiveGeometry, connectedPieces } from './lib/glb.mjs';
-import { VehicleBuilder, steeringFactor } from './lib/builder.mjs';
+import { VehicleBuilder, steeringFactor, undersidePlace } from './lib/builder.mjs';
 import { add, sub, scale, norm, dist, dot, cross } from './lib/v3.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -112,7 +112,9 @@ const inCavity = (p) => Object.values(powertrain).some(({ lo, hi }) =>
 
 // ---- chassis lattice -------------------------------------------------------------------------------------------
 const xs = [-0.9, -0.675, -0.45, -0.225, 0, 0.225, 0.45, 0.675, 0.9];
-const ys = [0.14, 0.36, 0.58, 0.80, 1.02];
+// The floor layer at 0.19: with the node radius (0.05) and the static sag the settled ground clearance is ≈ 11 cm, the
+// 991 Turbo's.
+const ys = [0.19, 0.36, 0.58, 0.80, 1.02];
 const zs = [];
 for (let z = -2.1; z <= 2.1001; z += 0.3) zs.push(Math.round(z * 1000) / 1000);
 const wheelEnvelope = (p) => wheelsModel.some((w) => {
@@ -128,7 +130,12 @@ const insideHull = (p) => {
   return !wheelEnvelope(p);
 };
 const inside = (p) => insideHull(p) && !inCavity(p);
-const latticeGrid = b.buildLattice({ xs, ys, zs, inside, axialStiffness: CHASSIS_EA });
+// Approach 11°, departure 13° (estimates for the 991 Turbo at its ride height): the nose and tail rise off the
+// flat floor so a kerb or a ramp meets the tyres first.
+const latticeGrid = b.buildLattice({
+  xs, ys, zs, inside, axialStiffness: CHASSIS_EA,
+  place: undersidePlace({ zF, zR, approach: 11, departure: 13, cap: ys[1] - 0.13, blocked: inCavity }),  // cells ≥ 13 cm tall
+});
 // Collision surface: the lattice hull is self-collision group 0, each tyre its own group (1 … 4), so a wheel driven
 // into its arch in a crash hits the body (§5.1 self-collision) while nodes of one group never collide among themselves.
 // The powertrain cavity's walls are part of the hull surface (facing the blocks, group 9).
@@ -180,7 +187,10 @@ const zoneForce = (z) => {
     const zc = zs.includes(zm) ? zm + 0.05 * Math.sign(-zm || 1) : zm;
     if (!cosCache.has(zc)) cosCache.set(zc, sectionCos(zc));
     const zone = zoneForce((pa[2] + pc[2]) / 2);
-    const yieldForce = zone / cosCache.get(zc);
+    // The lowest layer (floor pan, subframe, undertray) in the crumple zones yields at 2.5× the zone's section force:
+    // a kerb or a hump scraping the underside springs back; the rails above crumple in a crash as before.
+    const under = zone < crash.cabin && [beam[0], beam[1]].some((id) => /^c\d+_0_\d+$/.test(id)) ? 2.5 : 1;
+    const yieldForce = (zone * under) / cosCache.get(zc);
     Object.assign(beam[3], {
       plasticForce: Math.round(yieldForce), hardening: crash.hardening, crushLimit: crash.crushLimit, tearLimit: crash.tearLimit,
       ...(zone < crash.cabin ? { unloadRatio: UNLOAD_RATIO } : {}),
@@ -292,8 +302,9 @@ for (const door of doors) {
 // front of the gearbox, each tied to the three nearest lattice nodes — ≈ 1e6 N/m in all, the unit bounces at ≈ 9 Hz
 // on them. Like real mounts they are progressive: past ±15 mm a snubber (travel limiter, parallel stop beam) takes
 // the load, so hard driving and a low-speed knock move the unit a centimetre or two, not into the structure around
-// it. A mount tears loose — its bracket and snubber together — at 25 kN on one of its ties: 64 and 80 km/h into a
-// rigid wall leave them on, 100 km/h tears two (the hardest landings load the unit with ≈ 3 g).
+// it. A mount tears loose — its bracket and snubber together — at 30 kN on one of its ties: 64 and 100 km/h into a
+// rigid wall leave them on (the nose crumples at a steady force, so the unit's deceleration peaks alike), 140 km/h
+// tears them (the hardest landings load the unit with ≈ 3 g).
 b.group('powertrain', { k: 1.5e6, zeta: 0.1 });
 b.group('engineMount', { k: 2.5e5, zeta: 0.3 });
 b.group('mountStop', { type: 'bounded', k: 2.0e6, zeta: 0.1 });
@@ -302,7 +313,7 @@ const gearbox = b.block({ id: 'gearbox', ...powertrain.gearbox, beamGroup: 'powe
 for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
   for (let ei = 0; ei < 3; ei++) for (let ej = 0; ej < 3; ej++) b.beam(gearbox.at(i, j, 0), engine.at(ei, ej, 2), 'powertrain');
 }
-const mountBreak = 2.5e4;
+const mountBreak = 3.0e4;
 const mounts = [
   ['engineMountLeft', engine.at(2, 1, 0)], ['engineMountRight', engine.at(0, 1, 0)],
   ['gearboxMountLeft', gearbox.at(1, 1, 2)], ['gearboxMountRight', gearbox.at(0, 1, 2)],
@@ -323,7 +334,9 @@ const powertrainNodes = [...engine.nodes, ...gearbox.nodes];
 
 // ---- suspension ------------------------------------------------------------------------------------------------
 const hydroChannel = 0, steeringLock = 0.49;  // [rad] ≈ 10.6 m turning circle
-const ride = { front: { freq: 1.8, zeta: 0.3 }, rear: { freq: 2.0, zeta: 0.3 } };
+// Damper ζ 0.35 at the wheel (was 0.3: the body's heave mode measured ζ ≈ 0.21, bouncy for a sports car; test_handling).
+// 0.38 would take the damper beams past the explicit integrator's stable step at 2 kHz (sbc-cli vehicle: stability).
+const ride = { front: { freq: 1.8, zeta: 0.35 }, rear: { freq: 2.0, zeta: 0.35 } };
 const unsprung = { front: 21.5 + 20.6, rear: 25.4 + 17.3 };  // wheel+tyre, upright [kg]
 // Extra spring preload [m of spring length] that cancels the static sag of the links, hardpoint ties and lattice
 // (measured with `sbc-cli vehicle`: the car then settles at the model's design ride height minus tyre deflection).
@@ -458,8 +471,10 @@ function antiRollBar(l, r, dz, k) {
   const pr = b.hardpoint(`${r.name}_arb`, [b.pos(r.KL)[0] * 0.55, 0.20, b.pos(r.KL)[2] + dz], 2.0);
   b.torsionBars.push({ arm1: l.KL, pivot1: pl, pivot2: pr, arm2: r.KL, k, c: 8 });
 }
-antiRollBar(corners.FL, corners.FR, 0.30, 2600);   // [N·m/rad] ≈ 25 kN/m per wheel in roll (estimate)
-antiRollBar(corners.RL, corners.RR, -0.30, 1800);
+// [N·m/rad] (estimates): ≈ 1.5°/g of body roll with the springs, the 991 Turbo's with its active roll control off
+// (was 2600 / 1800: 2.0°/g).
+antiRollBar(corners.FL, corners.FR, 0.30, 3900);
+antiRollBar(corners.RL, corners.RR, -0.30, 2700);
 
 // ---- masses: lattice + ancillaries placed to hit 1,595 kg with 39 % on the front axle ------------------------------
 // The 2 kHz step needs every node heavy enough for the beams on it: m ≥ ½·Σk·t², t = 0.63 ms (the explicit-integration
@@ -481,7 +496,7 @@ for (const n of b.nodes) if (!b.lattice.includes(n.id)) fixedParts.push([n.mass,
 fixedParts.push([2 * wheelMass(tyreFront), zF], [2 * wheelMass(tyreRear), zR]);
 const fixedMass = fixedParts.reduce((s, [m]) => s + m, 0);
 // Mass per lattice layer (floor pan and sills heaviest; the roof layer still needs ≈ 1.5 kg per node for the 2 kHz step).
-const layerWeight = { 0.14: 1.0, 0.36: 1.0, 0.58: 0.9, 0.8: 0.8, 1.02: 0.68 };
+const layerWeight = { [ys[0]]: 1.0, 0.36: 1.0, 0.58: 0.9, 0.8: 0.8, 1.02: 0.68 };
 const latticeNodes = b.lattice.map((lid) => b.byId.get(lid));
 // The mass the weight split still asks for beyond the powertrain blocks: engine-bay ancillaries (turbos,
 // intercoolers, exhaust) on the lattice around the engine when positive, the front bay's (fuel, radiators, battery)
@@ -505,7 +520,7 @@ function spread(nodes, total, weight) {
 }
 function distribute(ancillaryMass) {
   const rest = TARGET_MASS - fixedMass - Math.abs(ancillaryMass);
-  spread(latticeNodes, rest, (n) => layerWeight[n.p[1]]);
+  spread(latticeNodes, rest, (n) => layerWeight[ys[+n.id.split('_')[1]]]); // by layer (the underside's nodes rise at the ends)
   const bay = ancillaryMass >= 0 ? rearBay : frontBay;
   for (const n of bay) n.mass += Math.abs(ancillaryMass) / bay.length;
   let m = fixedMass, mz = fixedParts.reduce((s, [mm, z]) => s + mm * z, 0);
@@ -609,7 +624,7 @@ const damage = {
   windscreen: { strain: 0.0009, impact: 3.0e4 },  // laminated [-] plastic strain of the frame, [N] contact force
   side: { strain: 0.02, impact: 2.0e4 },          // tempered
   quarter: { strain: 0.02, impact: 2.0e4 },
-  rear: { strain: 0.025, impact: 2.0e4 },
+  rear: { strain: 0.035, impact: 2.0e4 },         // its frame over the engine yields a little in a frontal crash
   // The mirror's node is also the door's forward stop: in a 35 g frontal crash the door's own inertia presses on it
   // with ≈ 7–9 kN, which is no strike on the mirror.
   mirror: { strain: 0.05, impact: 1.5e4 },

@@ -46,13 +46,13 @@ struct TyreParams {
   float radialDamping = 0.15f;      // ζ of the tyre's radial damper (against the wheel mass)
   // §6 damage. The pressure is the nominal (cold) inflation, for display and the pressure warning; deflation scales
   // the tyre's air-borne stiffness (cavity gauge, sidewall compression, radial rate), grip, cornering stiffness and
-  // rolling resistance. A tyre that bottoms out on an obstacle is pinched against its rim: a puncture when a loaded
-  // tread node comes within 5 mm of the rim radius, a blowout when it is pushed 2.5 cm past it, and the same when the
-  // rim itself strikes (pinchForce, blowoutForce). A flat tyre driven on shreds after shredDistance of speed-weighted
+  // rolling resistance. A tyre that bottoms out hard on an obstacle is pinched against its rim: a puncture when a
+  // loaded tread node is pushed 2.5 cm inside the rim radius, a blowout at 4.5 cm, and the same when the rim itself
+  // strikes radially (pinchForce, blowoutForce; a flange scraping along a kerb's side does not cut the tyre). A flat tyre driven on shreds after shredDistance of speed-weighted
   // running ((v / 20 m/s)² per metre) and comes off the rim.
   float pressure = 2.5f;            // [bar] nominal gauge
-  float pinchForce = 3000.0f;       // [N] rim contact force through the tyre that punctures it
-  float blowoutForce = 25000.0f;    // [N]
+  float pinchForce = 6000.0f;       // [N] rim contact force through the tyre that punctures it
+  float blowoutForce = 35000.0f;    // [N]
   float shredDistance = 1500.0f;    // [m]
 };
 

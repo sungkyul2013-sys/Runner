@@ -120,12 +120,14 @@ export class VehicleBuilder {
 
   // Box lattice clipped to a hull: node (x_i, y_j, z_k) exists when `inside(p)`; 13 forward neighbour directions.
   // Beam stiffness k = EA / L (uniform axial rigidity, like core makeLattice) when `axialStiffness` is given.
-  buildLattice({ xs, ys, zs, inside, group = 'chassis', radius = 0.05, axialStiffness }) {
+  // `place(i, j, k, p)`: the node's position when it differs from the grid point p (the underside's approach and
+  // departure slopes); `inside` tests the grid point.
+  buildLattice({ xs, ys, zs, inside, group = 'chassis', radius = 0.05, axialStiffness, place }) {
     const grid = new Map();
     const key = (i, j, k) => `${i},${j},${k}`;
     xs.forEach((x, i) => ys.forEach((y, j) => zs.forEach((z, k) => {
       if (!inside([x, y, z])) return;
-      const id = this.node(`c${i}_${j}_${k}`, [x, y, z], 1, { radius });
+      const id = this.node(`c${i}_${j}_${k}`, place ? place(i, j, k, [x, y, z]) : [x, y, z], 1, { radius });
       grid.set(key(i, j, k), id);
       this.lattice.push(id);
     })));
@@ -334,3 +336,22 @@ export function steeringFactor(b, { steerPoint, rack, axisA, axisB, lock }) {
 }
 
 export { dist };
+
+/**
+ * Underside of the lattice (§14.1 제원: approach and departure angles). The lowest layer's nodes ahead of the front
+ * axle rise to the line from the front tyres' contact that climbs at `approach` degrees, and behind the rear axle to
+ * the `departure` line, so the bumpers' lower edges clear a kerb or a ramp as the real car's do. `clear`: node contact
+ * radius plus the static sag allowance above that line; `cap`: the highest the lowest layer may rise to; `blocked`:
+ * positions a node must not be moved to.
+ */
+export function undersidePlace({ zF, zR, approach, departure, clear = 0.08, cap, blocked = () => false }) {
+  const ta = Math.tan((approach * Math.PI) / 180), td = Math.tan((departure * Math.PI) / 180);
+  return (_i, j, _k, [x, y, z]) => {
+    if (j !== 0) return [x, y, z];
+    const line = z > zF ? (z - zF) * ta : z < zR ? (zR - z) * td : 0;
+    const lifted = +Math.min(Math.max(y, line + clear), Math.max(y, cap)).toFixed(3);
+    // Not into the powertrain's cavity (`blocked`): the node keeps its clearance to the engine and gearbox blocks.
+    return blocked([x, lifted, z]) ? [x, y, z] : [x, lifted, z];
+  };
+}
+

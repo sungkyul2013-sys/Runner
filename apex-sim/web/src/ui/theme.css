@@ -7,12 +7,14 @@
 /* ---- the wordmark ---- */
 .brandmark { display: inline-flex; align-items: baseline; gap: 0; margin: 0; font-family: var(--font-display); font-stretch: 125%; font-weight: 800; font-style: normal;
   font-size: clamp(3.2rem, 7.4vw, 7rem); line-height: 0.92; letter-spacing: 0.035em; text-transform: uppercase; position: relative; isolation: isolate; }
-.brandmark .bm-word { background: var(--metal); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 6px 24px rgba(0, 0, 0, 0.55)); }
+/* The shine runs across the letters only: a highlight layer over the metal, both clipped to the glyphs. */
+.brandmark .bm-word { background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.95) 50%, transparent 58%) no-repeat, var(--metal);
+  background-size: 260% 100%, 100% 100%; background-position: 160% 0, 0 0; -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 6px 24px rgba(0, 0, 0, 0.55)); animation: bmShine 1.6s var(--ease) 0.5s both; }
+.brandmark .bm-word + .bm-cut + .bm-word { animation-delay: 0.75s; }
 .brandmark .bm-cut { display: inline-block; width: 0.5em; height: 0.13em; margin: 0 0.1em 0 0.12em; background: var(--accent); transform: skewX(var(--slant)); box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 60%, transparent); align-self: flex-end; margin-bottom: 0.04em; }
 /* one light sweep across the letters when the menu opens */
-.brandmark::after { content: ''; position: absolute; inset: -10% -4%; z-index: 1; pointer-events: none; mix-blend-mode: overlay;
-  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.85) 50%, transparent 62%); transform: translateX(-120%); animation: bmSweep 1.6s var(--ease) 0.5s both; }
-@keyframes bmSweep { to { transform: translateX(120%); } }
+@keyframes bmShine { from { background-position: 160% 0, 0 0; } to { background-position: -60% 0, 0 0; } }
 .mainmenu .mm-brand.brandmark { animation: brandIn 900ms var(--ease) both; }
 .mm-tagline { font-size: 0.8rem; letter-spacing: 0.34em; text-transform: uppercase; color: var(--text-2); }
 html[lang='ko'] .mm-tagline { letter-spacing: 0.22em; }
@@ -68,7 +70,7 @@ html[lang='ko'] .mm-tagline { letter-spacing: 0.22em; }
 
 /* ---- loading screen: the map's name large, a striped progress bar ---- */
 .loading-screen .ls-brand { position: absolute; top: calc(28px + var(--safe-t)); left: calc(40px + var(--safe-l)); font-size: 1.7rem; }
-.loading-screen .ls-brand::after { display: none; }
+.loading-screen .ls-brand .bm-word { animation: none; }
 .loading-screen h2 { font-family: var(--font-display); font-stretch: 112%; font-weight: 800; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: 0.01em; }
 .ls-track { height: 6px; border-radius: 0; background: rgba(255, 255, 255, 0.06); transform: skewX(var(--slant)); }
 .ls-track i { background: repeating-linear-gradient(90deg, var(--accent) 0 18px, color-mix(in srgb, var(--accent) 70%, #fff) 18px 22px); background-size: 44px 100%; animation: lsStripes 900ms linear infinite; }
@@ -109,7 +111,7 @@ html[data-ui='desktop'] .dash { animation-name: gaugeInRight; }
 /* ---- the in-mode top row: titles in the display face ---- */
 .chip-title { font-stretch: 106%; font-weight: 700; letter-spacing: 0.01em; }
 
-@media (prefers-reduced-motion: reduce) { .brandmark::after, .ls-track i { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .brandmark .bm-word, .ls-track i { animation: none !important; } }
 
 /* ---- §18.4 G-meter and steering input beside the dial (racing / engineer, landscape) ---- */
 .dash-row { display: flex; align-items: flex-end; gap: 10px; }

@@ -9,6 +9,7 @@ import { TYRE, type VehicleState, type V3 } from '../physics/telemetry';
 import type { DamageGroupDef } from '../vehicles/Damage';
 import { Flexbody, type CageNode, type NodeLocator, type VehiclePartDef } from '../vehicles/Flexbody';
 import type { VehicleModel } from '../vehicles/VehicleModel';
+import type { CarViewpoints } from './ChaseCamera';
 import { sampleRing, type RingSample, type WheelRest } from '../vehicles/WheelDeform';
 
 /** A physics wheel's ring nodes: body node index of its first node (segment j: base + 4j + tread A, tread B, rim A,
@@ -83,6 +84,39 @@ export class VehicleView {
     }
   }
 
+  /**
+   * The bonnet and bumper cameras' places on this car (§15.3), found on the model itself: the body's front end (the
+   * largest z of its meshes near the centre line) and the bonnet's height 1.1 m behind it (the first surface a ray from
+   * above meets there). Model frame; null when the model has no flexbody meshes to measure.
+   */
+  viewpoints(): CarViewpoints | null {
+    const meshes: THREE.Mesh[] = [];
+    this.flexbody?.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.geometry.getAttribute('position')) meshes.push(m);
+    });
+    if (!meshes.length) return null;
+    // Flexbody meshes carry their vertices in the model frame (identity transforms).
+    let front = -Infinity;
+    for (const m of meshes) {
+      const pos = m.geometry.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getX(i)) < 0.5 && pos.getY(i) > 0.3) front = Math.max(front, pos.getZ(i));
+    }
+    if (!Number.isFinite(front)) return null;
+    const ray = new THREE.Raycaster();
+    const saved = meshes.map((m) => m.matrixWorld.clone());
+    for (const m of meshes) m.matrixWorld.identity();
+    const heightAt = (z: number) => {
+      ray.set(new THREE.Vector3(0, 4, z), new THREE.Vector3(0, -1, 0));
+      const hit = ray.intersectObjects(meshes, false)[0];
+      return hit ? hit.point.y : null;
+    };
+    const hoodZ = front - 1.1;
+    const hoodY = heightAt(hoodZ) ?? heightAt(front - 0.8) ?? 0.9;
+    meshes.forEach((m, i) => m.matrixWorld.copy(saved[i]));
+    return { hood: [0, hoodY + 0.16, hoodZ], bumper: [0, Math.min(0.62, hoodY - 0.15), front + 0.06] };
+  }
+
   /** Respawned into a fresh world as body `body` (same vehicle, same node order). */
   rebind(body: number): void {
     this.body = body;
@@ -117,11 +151,13 @@ export class VehicleView {
 
   /** `frame` and `locate` drive the flexbody (ignored without one). */
   update(v: VehicleState, frame: RenderFrame | null = null, locate: NodeLocator | null = null, islandVersion = 0): void {
-    if (this.flexbody && frame && locate) this.flexbody.update(frame, locate, islandVersion);
     const { x, y, z } = chassisFrame(v);
     const q = basis(x, y, z);
     const ref = new THREE.Vector3(...v.refCenterModel).applyQuaternion(q);
     const origin = new THREE.Vector3(...v.position).sub(ref);
+    if (this.flexbody && frame && locate) {
+      this.flexbody.update(frame, locate, islandVersion, performance.now(), { origin: origin.toArray() as V3, axes: [x.toArray() as V3, y.toArray() as V3, z.toArray() as V3] });
+    }
     this.model.root.matrix.compose(origin, q, new THREE.Vector3(1, 1, 1));
     this.model.root.matrixWorldNeedsUpdate = true;
 

@@ -26,6 +26,14 @@
 // node's piece (its current body); a vertex follows only the nodes in its nearest node's piece, and a triangle whose
 // corners ended up in different pieces is discarded, so the panel parts along the tear instead of stretching across it.
 //
+// Elastic flutter (§4.5): the lattice rings at a few millimetres to a centimetre or two when the car runs over rough
+// road — physically right for a node-beam cage, but on the skin it reads as panels shaking (doors, sills). Each cage
+// node's displacement from where the rigid chassis frame would carry it is split, in the chassis frame, into a slow
+// mean (τ = 0.25 s) and the fast rest; the fast part is drawn only beyond a dead band (fully from 3.5 cm), the same
+// for the node's rotation. Dents, sag, crumpling, a panel swinging open — anything that lasts or is large — show as
+// the physics has them (the mean catches up within a fraction of a second); vibration does not. Nodes torn off with a
+// part are drawn as they are.
+//
 // Glass and lamps (§4.3, Damage.ts): glass and lamp vertices carry their damage group; per-group uniforms drive a
 // spider-web crack and an inward sag on laminated glass, discard shattered tempered glass and darken and hole broken
 // lenses. `onBreak` receives the fragments (sampled on the deformed pane) for the debris particles.
@@ -74,6 +82,14 @@ const TEXELS_PER_NODE = 5; // p (+ piece in w), M column 1, 2, 3, rest position 
 const TEX_WIDTH = 250;     // a multiple of TEXELS_PER_NODE: a node's texels share one row
 const XYZW = ['x', 'y', 'z', 'w'] as const;
 const EPS = 1e-4;          // [m²] weight regulariser: w ∝ 1 / (d² + EPS)
+const FLUTTER_TAU = 0.25;  // [s] the flutter filter's slow mean
+const FLUTTER_BAND: [number, number] = [0.012, 0.035]; // [m] fast displacement hidden below, drawn in full above
+
+/** The rigid chassis frame in render space: the model origin and the model's x (left), y (up), z (forward) axes. */
+export interface ChassisFrame {
+  origin: V3;
+  axes: [V3, V3, V3];
+}
 
 // A vec4 element of a uniform array (the typings leave its node type open).
 type Vec4Node = ReturnType<typeof vec4>;
@@ -561,8 +577,13 @@ export class Flexbody {
     });
   }
 
-  /** Uploads the cage for this frame (positions in render space). */
-  update(frame: RenderFrame, locate: NodeLocator, islandVersion: number, now = performance.now()): void {
+  /** Flutter filter state per cage node: the slow mean of its displacement (3) and of its rotation (9), chassis frame. */
+  private flutter: Float32Array | null = null;
+  private flutterTime = 0;
+
+  /** Uploads the cage for this frame (positions in render space). `chassis`: the rigid chassis frame (the model origin
+   *  and the model's x, y, z axes in render space) — with it, elastic flutter is filtered (see the header). */
+  update(frame: RenderFrame, locate: NodeLocator, islandVersion: number, now = performance.now(), chassis: ChassisFrame | null = null): void {
     this.prevP ??= new Float32Array(this.cage.length * 3);
     for (let k = 0; k < this.cage.length; k++) {
       const o = k * TEXELS_PER_NODE * 4;
@@ -575,6 +596,12 @@ export class Flexbody {
       this.locatedVersion = islandVersion;
     }
     const L = this.located, P = frame.positions, d = this.data;
+    // Flutter filter: the mean's step for this frame's time step (a long gap — paused, hidden — restarts it).
+    const gap = this.flutterTime ? (now - this.flutterTime) / 1000 : Infinity;
+    this.flutterTime = now;
+    if (!this.flutter || gap > 0.5) this.flutter = new Float32Array(this.cage.length * 12).fill(Number.NaN);
+    const alpha = 1 - Math.exp(-Math.min(gap, 0.1) / FLUTTER_TAU);
+    const filter = chassis !== null;
     const at = (slot: number, k: number): V3 | null => {
       const b = L[k * 10 + slot * 2];
       if (b >= frame.bodyCount) return null;
@@ -597,14 +624,21 @@ export class Flexbody {
       }
       if (f) relativeRotation(f, this.restFrames[k]).forEach((col, j) => this.lastM.set(col, k * 9 + j * 3));
       const o = k * TEXELS_PER_NODE * 4;
-      d[o] = p[0]; d[o + 1] = p[1]; d[o + 2] = p[2]; d[o + 3] = piece;
+      let q = p;
+      let m = this.lastM.subarray(k * 9, k * 9 + 9);
+      if (filter && piece === this.body) [q, m] = this.deflutter(k, c.rest, p, m, chassis!, alpha);
+      d[o] = q[0]; d[o + 1] = q[1]; d[o + 2] = q[2]; d[o + 3] = piece;
       for (let j = 0; j < 3; j++) {
-        d[o + 4 + j * 4] = this.lastM[k * 9 + j * 3];
-        d[o + 5 + j * 4] = this.lastM[k * 9 + j * 3 + 1];
-        d[o + 6 + j * 4] = this.lastM[k * 9 + j * 3 + 2];
+        d[o + 4 + j * 4] = m[j * 3];
+        d[o + 5 + j * 4] = m[j * 3 + 1];
+        d[o + 6 + j * 4] = m[j * 3 + 2];
       }
     });
     this.texture.needsUpdate = true;
+  }
+
+  private deflutter(k: number, rest: V3, p: V3, M: Float32Array, c: ChassisFrame, alpha: number): [V3, Float32Array] {
+    return deflutterNode(this.flutter!, k * 12, rest, p, M, c, alpha);
   }
 
   /** Lamps lit (electrics working) or dark. */
@@ -782,4 +816,48 @@ export function vehicleCage(nodes: VehicleJsonNode[], parts: VehiclePartDef[] = 
     }
   });
   return cage;
+}
+
+/**
+ * One cage node through the flutter filter (see the header): `F[o … o+11]` holds its slow means (displacement in the
+ * chassis frame, then the rotation relative to the chassis), NaN before the first sample; `alpha` the mean's step.
+ * Returns the position and the rotation (columns, render space) to draw.
+ */
+export function deflutterNode(F: Float32Array, o: number, rest: V3, p: V3, M: ArrayLike<number>, c: ChassisFrame, alpha: number): [V3, Float32Array] {
+  const [ax, ay, az] = c.axes;
+  const rigid: V3 = [0, 1, 2].map((i) => c.origin[i] + ax[i] * rest[0] + ay[i] * rest[1] + az[i] * rest[2]) as V3;
+  const dw = sub(p, rigid);
+  const dl: V3 = [dot(dw, ax), dot(dw, ay), dot(dw, az)];
+  // Rotation relative to the chassis: Rcᵀ·M (Rc's columns are the axes).
+  const rel = new Float32Array(9);
+  for (let j = 0; j < 3; j++) {
+    const col: V3 = [M[j * 3], M[j * 3 + 1], M[j * 3 + 2]];
+    rel[j * 3] = dot(ax, col); rel[j * 3 + 1] = dot(ay, col); rel[j * 3 + 2] = dot(az, col);
+  }
+  if (Number.isNaN(F[o])) {
+    F.set(dl, o); // first sample: the mean starts at it
+    F.set(rel, o + 3);
+  } else {
+    for (let i = 0; i < 3; i++) F[o + i] += (dl[i] - F[o + i]) * alpha;
+    for (let i = 0; i < 9; i++) F[o + 3 + i] += (rel[i] - F[o + 3 + i]) * alpha;
+  }
+  const hf: V3 = [dl[0] - F[o], dl[1] - F[o + 1], dl[2] - F[o + 2]];
+  const t = Math.min(Math.max((length(hf) - FLUTTER_BAND[0]) / (FLUTTER_BAND[1] - FLUTTER_BAND[0]), 0), 1);
+  const w = t * t * (3 - 2 * t);
+  const vis: V3 = [F[o] + hf[0] * w, F[o + 1] + hf[1] * w, F[o + 2] + hf[2] * w];
+  const q: V3 = [0, 1, 2].map((i) => rigid[i] + ax[i] * vis[0] + ay[i] * vis[1] + az[i] * vis[2]) as V3;
+  // Rotation: the mean plus the weighted fast part, re-orthonormalised (Gram–Schmidt on the columns), back to render space.
+  const r = new Float32Array(9);
+  for (let i = 0; i < 9; i++) r[i] = F[o + 3 + i] + (rel[i] - F[o + 3 + i]) * w;
+  let e1: V3 = [r[0], r[1], r[2]];
+  e1 = scale(e1, 1 / Math.max(length(e1), 1e-9));
+  let e2: V3 = [r[3], r[4], r[5]];
+  e2 = sub(e2, scale(e1, dot(e2, e1)));
+  e2 = scale(e2, 1 / Math.max(length(e2), 1e-9));
+  const e3 = cross(e1, e2);
+  const out = new Float32Array(9);
+  [e1, e2, e3].forEach((col, j) => {
+    for (let i = 0; i < 3; i++) out[j * 3 + i] = ax[i] * col[0] + ay[i] * col[1] + az[i] * col[2];
+  });
+  return [q, out];
 }

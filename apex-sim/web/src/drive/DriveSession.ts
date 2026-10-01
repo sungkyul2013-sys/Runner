@@ -152,6 +152,7 @@ export class DriveSession {
     this.vehicle = vehicle;
     this.actor = this.makeActor(vehicle);
     this.geometryKnown = false;
+    this.chase.viewpoints = null; // measured again on the new car
     this.dashboard.setRedline(vehicle.redlineRpm);
   }
 
@@ -209,7 +210,8 @@ export class DriveSession {
 
   /** The camera's name for the HUD and toasts. */
   get cameraLabel(): string {
-    return this.chase.mode === 'chase' ? t('cameraChase') : this.chase.mode === 'roof' ? t('cameraRoof') : t('cameraOrbit');
+    const m = this.chase.mode;
+    return m === 'chase' ? t('cameraChase') : m === 'roof' ? t('cameraRoof') : m === 'hood' ? t('cameraHood') : m === 'bumper' ? t('cameraBumper') : t('cameraOrbit');
   }
 
   toggleCamera(): void {
@@ -250,7 +252,10 @@ export class DriveSession {
     }
     if (!this.holdCamera) {
       const short = innerHeight < 520 && innerWidth > innerHeight;
-      this.chase.lift = this.dashboard.root.hidden || this.dashboard.root.classList.contains('hud-off') ? 0 : short ? 0.15 : innerHeight > innerWidth ? 0.07 : 0.1;
+      if (!this.chase.viewpoints && this.actor.view) this.chase.viewpoints = this.actor.view.viewpoints();
+      const portrait = innerHeight > innerWidth;
+      this.chase.lift = this.dashboard.root.hidden || this.dashboard.root.classList.contains('hud-off') ? 0 : short ? 0.15 : portrait ? 0.12 : 0.1;
+      this.chase.distanceScale = portrait ? 1.22 : 1;
       this.chase.update(dt, v);
     } else this.chase.release();
     const logic0 = this.input.logic;

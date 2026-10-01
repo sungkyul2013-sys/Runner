@@ -256,6 +256,10 @@ export function superelevation(st: Station[], style: RoadStyle): void {
   for (let i = 0; i < st.length; i++) st[i].e = e[i];
 }
 
+/** City kerb: height and the width of its sloped face [m]. */
+export const KERB_HEIGHT = 0.15;
+export const KERB_RUN = 0.35;
+
 /** Half widths of a style's parts. */
 export function widths(style: RoadStyle) {
   const median = style.median ?? 0;
@@ -264,7 +268,7 @@ export function widths(style: RoadStyle) {
   const inner = oneWay ? 1.0 : 0; // one-way roads: a narrow left shoulder
   const pe = cw + style.shoulder;
   const peLeft = oneWay ? cw + inner : pe;
-  const kerb = style.sidewalk ? 0.15 : 0;
+  const kerb = style.sidewalk ? KERB_HEIGHT : 0;
   const outer = pe + (style.sidewalk ?? 0) + (style.barrier && style.barrier !== 'none' ? 0.6 : 0);
   const outerLeft = peLeft + (style.sidewalk ?? 0) + (style.barrier && style.barrier !== 'none' ? 0.6 : 0);
   return { median, cw, pe, peLeft, kerb, outer, outerLeft, full: Math.max(outer, outerLeft) + style.verge };
@@ -291,10 +295,12 @@ export function crossSection(style: RoadStyle, e: number, onBridge: boolean, inT
     const yEdge = cf(side * pe);
     if (style.sidewalk) {
       const sw = style.sidewalk;
+      // A mountable kerb (경사형 연석): 15 cm up over 35 cm, so a car driven onto the sidewalk climbs it on its tyres
+      // instead of striking a square edge (§11.3; a vertical kerb pinches the tyres and catches the underside).
       return [
         [pe, yEdge, MAT.concrete, 'kerb'],
-        [pe, yEdge + 0.15, MAT.concrete, 'sidewalk'],
-        [pe + sw, yEdge + 0.15, verge, verge >= 0 ? 'verge' : 'none'],
+        [pe + KERB_RUN, yEdge + KERB_HEIGHT, MAT.concrete, 'sidewalk'],
+        [pe + sw, yEdge + KERB_HEIGHT, verge, verge >= 0 ? 'verge' : 'none'],
       ];
     }
     const kind = onBridge || inTunnel || style.barrier === 'wall' ? 'wall' : style.barrier === 'guardrail' ? 'rail' : 'none';

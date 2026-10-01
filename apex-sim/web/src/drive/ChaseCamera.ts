@@ -1,14 +1,22 @@
 // Driving cameras. Chase: trails the car's heading at a distance that grows a little with speed; the field of view
 // widens with speed and the camera lags the car's accelerations (braking pulls it closer, a corner swings it wide) —
-// the cues that make speed readable. Roof: low over the windscreen, looking down the road (the strongest sense of
-// speed). Orbit: the pivot rides along with the car. In every mode a drag on the screen (mouse or finger) looks
+// the cues that make speed readable. Roof: low over the windscreen, looking down the road. Bonnet (§15.3 보닛): just
+// above the bonnet, the driver's line of sight. Bumper (범퍼): at headlamp height ahead of the car, the road rushing
+// under — the strongest sense of speed; both at a natural field of view (62°, as a driver's eye). Orbit: the pivot
+// rides along with the car. In every mode a drag on the screen (mouse or finger) looks
 // around the car and the wheel / a pinch zooms; the view springs back a moment after it is let go.
 import * as THREE from 'three/webgpu';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { VehicleState } from '../physics/telemetry';
 
-export type CameraMode = 'chase' | 'roof' | 'orbit';
-const MODES: CameraMode[] = ['chase', 'roof', 'orbit'];
+export type CameraMode = 'chase' | 'roof' | 'hood' | 'bumper' | 'orbit';
+const MODES: CameraMode[] = ['chase', 'roof', 'hood', 'bumper', 'orbit'];
+
+/** Where the bonnet and bumper cameras sit, in the model frame (+X left, +Y up, +Z forward; y = 0 on the ground). */
+export interface CarViewpoints {
+  hood: [number, number, number]; // just above the bonnet, ahead of the windscreen
+  bumper: [number, number, number]; // just ahead of the front bumper, at headlamp height
+}
 
 const DISTANCE = 5.6; // [m] behind the reference point at rest
 const DISTANCE_PER_MS = 0.012; // [m per m/s] pulls back a little with speed
@@ -40,6 +48,10 @@ export class ChaseCamera {
   private touches = new Map<number, { x: number; y: number }>();
   /** Frames the car higher (a fraction of the view height) where the gauge covers the bottom of the view. */
   lift = 0;
+  /** Chase distance and height scale (portrait phones: a little further back, so the car fits the narrow view). */
+  distanceScale = 1;
+  /** The bonnet and bumper cameras' places on this car (from its model); without them those views are skipped. */
+  viewpoints: CarViewpoints | null = null;
 
   constructor(private readonly camera: THREE.PerspectiveCamera, private readonly controls: OrbitControls) {
     const canvas = controls.domElement as HTMLElement | null;
@@ -56,7 +68,8 @@ export class ChaseCamera {
 
   /** Cycles chase → roof → orbit. */
   toggle(): CameraMode {
-    this.mode = MODES[(MODES.indexOf(this.mode) + 1) % MODES.length];
+    do this.mode = MODES[(MODES.indexOf(this.mode) + 1) % MODES.length];
+    while (!this.viewpoints && (this.mode === 'hood' || this.mode === 'bumper'));
     this.controls.enabled = this.mode === 'orbit';
     this.yawOff = this.pitchOff = 0;
     this.initialized = false;
@@ -154,6 +167,25 @@ export class ChaseCamera {
     const k = 1 - Math.exp(-HEADING_RATE * dt);
     this.heading.lerp(fwd, k).normalize();
     const side = new THREE.Vector3().crossVectors(this.heading, up).normalize(); // right of the heading
+    if ((this.mode === 'hood' || this.mode === 'bumper') && this.viewpoints) {
+      // Fixed to the body (its pitch and roll show), looking along it; a drag still looks around.
+      const L = new THREE.Vector3(...v.left), U = new THREE.Vector3(...v.up), F = new THREE.Vector3(...v.forward);
+      const rc = v.refCenterModel;
+      const vp = this.mode === 'hood' ? this.viewpoints.hood : this.viewpoints.bumper;
+      const eye = car.clone().addScaledVector(L, vp[0] - rc[0]).addScaledVector(U, vp[1] - rc[1]).addScaledVector(F, vp[2] - rc[2]);
+      const dir = F.clone().applyAxisAngle(U, this.yawOff);
+      const drop = this.mode === 'hood' ? 0.9 : 0.45; // look slightly down the road
+      const target = eye.clone().addScaledVector(dir, 25).addScaledVector(U, -drop - this.pitchOff * 10);
+      this.setFov(62, dt * 4);
+      this.camera.position.copy(eye);
+      this.camera.up.copy(U.lerp(up, 0.5).normalize());
+      this.camera.lookAt(target);
+      this.camera.up.set(0, 1, 0);
+      this.controls.target.copy(target);
+      this.lastCar.copy(car);
+      this.initialized = true;
+      return;
+    }
     if (this.mode === 'roof') {
       // Low over the windscreen, following the body's own motion (pitch and roll show).
       const bodyUp = new THREE.Vector3(...v.up);
@@ -170,9 +202,9 @@ export class ChaseCamera {
       this.initialized = true;
       return;
     }
-    const distance = (DISTANCE + DISTANCE_PER_MS * speed) * this.zoom;
+    const distance = (DISTANCE + DISTANCE_PER_MS * speed) * this.zoom * this.distanceScale;
     const back = this.heading.clone().applyAxisAngle(up, this.yawOff);
-    const height = HEIGHT * this.zoom + Math.sin(this.pitchOff) * distance;
+    const height = HEIGHT * this.zoom * this.distanceScale + Math.sin(this.pitchOff) * distance;
     const wantPos = car.clone().addScaledVector(back, -distance * Math.cos(this.pitchOff * 0.8)).addScaledVector(up, height)
       .addScaledVector(this.heading, -this.lag.x * G_LAG).addScaledVector(side, this.lag.y * G_LAG);
     const wantLook = car.clone().addScaledVector(this.heading, LOOK_AHEAD * Math.cos(this.yawOff)).addScaledVector(up, LOOK_HEIGHT);
@@ -206,7 +238,7 @@ export class ChaseCamera {
 
   /** The view window moves down by `lift` of the height so the car sits above the gauge. */
   private frame(): void {
-    const lift = this.mode === 'roof' ? 0 : this.lift;
+    const lift = this.mode === 'chase' || this.mode === 'orbit' ? this.lift : 0;
     const cam = this.camera;
     const w = innerWidth, h = innerHeight;
     if (lift > 0) {

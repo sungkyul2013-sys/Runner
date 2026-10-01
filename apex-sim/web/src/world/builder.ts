@@ -143,6 +143,9 @@ export interface BoxSpec {
   color?: number;
 }
 
+/** Traffic calming kinds (MapBuilder.addCalming). */
+export type CalmKind = 'hump' | 'big' | 'table' | 'cushion' | 'rumble' | 'school';
+
 /** Upright cylinder (towers, columns, fountain basins, tanks): physics as a prism, drawn round. */
 export interface CylinderSpec {
   x: number;
@@ -590,6 +593,86 @@ export class MapBuilder {
     this.pads.push(pad);
   }
 
+  /**
+   * §11.3 traffic calming across road `r` at station `s`, kerb to kerb, as physics pads following the carriageway
+   * (painted per triangle). Korean practice (도로안전시설 설치 및 관리지침): the round hump 3.6 m long and 10 cm high
+   * in yellow and white diagonal bands; the raised crosswalk (고원식 횡단보도) a 10 cm table with 1.5 m ramps and a
+   * zebra on its top; speed cushions (lane pads a truck straddles); rumble strips (1.2 cm ridges every 0.6 m); a
+   * school zone (어린이보호구역) painted red with a hump at each end; and a long, high hump (6 m, 14 cm) for the
+   * estates. Returns false where it does not fit: near a junction, on a structure or a curve.
+   */
+  addCalming(r: Road, s: number, kind: CalmKind): boolean {
+    const half = { hump: 1.8, big: 3.0, table: 3.5, cushion: 1.5, rumble: 3.3, school: 15 }[kind];
+    if (s - half < 12 || s + half > r.length - 12) return false;
+    if (r.junctionS.some((j) => Math.abs(j - s) < half + 22)) return false;
+    for (let q = s - half - 2; q <= s + half + 2; q += 1) {
+      const p = r.at(q);
+      if (p.flags & (STATION.bridge | STATION.tunnel) || Math.abs(p.k) > 0.004) return false;
+    }
+    const p = r.at(s);
+    const uR = -r.w.pe + 0.05, uL = r.w.peLeft - 0.05;
+    const corner = (u: number, v: number): [number, number] => [p.x + u * p.tz + v * p.tx, p.z - u * p.tx + v * p.tz];
+    const local = (x: number, z: number): [number, number] => [(x - p.x) * p.tz - (z - p.z) * p.tx, (x - p.x) * p.tx + (z - p.z) * p.tz];
+    const pad = (u0: number, u1: number, v0: number, v1: number, lift: (u: number, v: number) => number, colorAt: (u: number, v: number) => number, gridV: number, gridU = 0.8) => {
+      this.addPad({
+        outline: [corner(u0, v0), corner(u0, v1), corner(u1, v1), corner(u1, v0)],
+        y: (x, z) => {
+          const [u, v] = local(x, z);
+          return r.surfaceAt(x, z) + 0.006 + lift(u, v);
+        },
+        material: MAT.paint, look: 'paint', grid: gridU, gridU: gridV,
+        colorAt: (x, z) => {
+          const [u, v] = local(x, z);
+          return colorAt(u, v);
+        },
+      });
+    };
+    const YELLOW = 0xf2c230, WHITE = 0xeeeeea, BRICK = 0x8e3b2f, RED = 0xa8322a;
+    const diagonal = (u: number, v: number) => (Math.floor((u + v) / 0.5) & 1 ? YELLOW : WHITE);
+    const round = (L: number, h: number) => (_u: number, v: number) => (Math.abs(v) < L / 2 ? h * Math.sin((Math.PI * (v + L / 2)) / L) : 0);
+    const table = (top: number, ramp: number, h: number) => (_u: number, v: number) => h * Math.min(1, Math.max(0, (top / 2 + ramp - Math.abs(v)) / ramp));
+    switch (kind) {
+      case 'hump':
+        pad(uR, uL, -1.8, 1.8, round(3.6, 0.1), diagonal, 0.3);
+        break;
+      case 'big':
+        pad(uR, uL, -3.0, 3.0, round(6.0, 0.14), (u, v) => (Math.floor((u - v) / 0.6) & 1 ? YELLOW : 0x2a2b2e), 0.4);
+        break;
+      case 'table': {
+        // Ramps with the hump's bands, the flat top a zebra crossing on brick red (three pads: the top needs no rows).
+        const lift = table(4.0, 1.5, 0.1);
+        pad(uR, uL, -3.5, -2.0, lift, diagonal, 0.3);
+        pad(uR, uL, 2.0, 3.5, lift, diagonal, 0.3);
+        pad(uR, uL, -2.0, 2.0, () => 0.1, (u) => (Math.floor((u - uR) / 0.45) & 1 ? BRICK : WHITE), 2.0, 0.45);
+        break;
+      }
+      case 'cushion': {
+        // One pad per lane, 1.8 m wide (a bus or a truck straddles it), 3 m long with 0.7 m ramps, 7 cm high.
+        const lanes = r.style.oneWay ? r.style.lanes : 2 * r.style.lanes;
+        const lw = r.style.laneWidth, u0 = -(lanes * lw) / 2 + (r.style.oneWay ? 0 : 0);
+        const lift = table(1.6, 0.7, 0.07);
+        for (let k = 0; k < lanes; k++) {
+          const c = u0 + (k + 0.5) * lw;
+          pad(c - 0.9, c + 0.9, -1.5, 1.5, lift, (_u, v) => (Math.floor((v + 1.5) / 0.5) & 1 ? RED : WHITE), 0.35, 0.45);
+        }
+        break;
+      }
+      case 'rumble':
+        // Ten ridges 15 cm wide, 1.2 cm high, every 0.6 m: a drone through the car that warns of what is ahead.
+        for (let k = 0; k < 10; k++) {
+          const v0 = -3.0 + k * 0.6 + 0.225;
+          pad(uR, uL, v0, v0 + 0.15, (_u, v) => 0.012 * Math.sin((Math.PI * Math.min(Math.max(v - v0, 0), 0.15)) / 0.15), () => WHITE, 0.075, 1.0);
+        }
+        break;
+      case 'school':
+        pad(uR, uL, -15, 15, () => 0, () => RED, 3, 1.5);
+        this.addCalming(r, s - 16.5, 'hump');
+        this.addCalming(r, s + 16.5, 'hump');
+        break;
+    }
+    return true;
+  }
+
   addBox(b: BoxSpec): void {
     this.boxes.push(b);
   }
@@ -943,7 +1026,7 @@ export class MapBuilder {
         const sm = (a.s + b.s) / 2;
         for (let q = 0; q + 1 < sec.length; q++) {
           const kind = sec[q].kind;
-          if (sec[q].material < 0 || kind === 'verge' || kind === 'none' || kind === 'kerb' || kind === 'barrier' || kind === 'rail') continue;
+          if (sec[q].material < 0 || kind === 'verge' || kind === 'none' || kind === 'barrier' || kind === 'rail') continue;
           if (r.inGap(sm, sec[q].side)) continue;
           const A = secs[i], B = secs[i + 1];
           if (Number.isNaN(A[q * 3 + 1]) || Number.isNaN(A[q * 3 + 4])) continue;

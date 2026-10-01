@@ -7,7 +7,7 @@
 // Landmarks: a fountain roundabout where the two central avenues meet, a suspension bridge (은하대교) east of the city,
 // a winding skyway up the hill north of the city to an observation tower, a round glass tower in the CBD, a stadium
 // south of the river, narrow alleys through the mid-rise blocks and a warren of lanes in the old town.
-import { MapBuilder, offsetPoints, onRoad, pointInPolygon, type MapData, type Road, type RoadSpec } from '../builder';
+import { MapBuilder, offsetPoints, onRoad, pointInPolygon, type CalmKind, type MapData, type Road, type RoadSpec } from '../builder';
 import { CoarseField, fbm, hash2, lerp, noise2, ridged, rng, smoothstep } from '../noise';
 import { widths, STYLES } from '../road';
 import { MAT } from '../types';
@@ -297,25 +297,15 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   }
 
   // ---- apartment complexes (대단지 아파트): an access lane through each, with humps (단지 내 방지턱) ----
-  const hump = (roadId: string, x: number, z: number, halfW: number) => {
-    // Round hump, 3.6 m long, 8 cm high, painted in yellow and black stripes; it follows the lane's crossfall, so it
-    // starts flush with the surface everywhere across the road.
-    const road = b.byId.get(roadId)!;
-    const z0 = z - 1.8, z1 = z + 1.8;
-    b.addPad({
-      outline: [[x - halfW, z0], [x - halfW, z1], [x + halfW, z1], [x + halfW, z0]],
-      y: (px, pz) => road.surfaceAt(px, pz) + 0.006 + 0.08 * Math.sin((Math.PI * Math.min(Math.max(pz - z0, 0), 3.6)) / 3.6),
-      material: MAT.paint, look: 'paint', grid: 0.5, gridU: 0.3,
-      // Bands across the lane, two grid cells each (clean edges on the triangle colours).
-      colorAt: (px) => (Math.floor((px - x + halfW) / 1.0) & 1 ? 0xf0bf2a : 0x1f2022),
-    });
-  };
   const complex = (x0: number, z0: number, x1: number, z1: number, zTop: number, zBot: number, top: string, bottom: string, ground: (x: number, z: number) => number) => {
     const cx = Math.round((x0 + x1) / 2);
     const id = `apt_${cx}_${zTop}`;
     add({ id, style: 'alley', points: [[cx, zTop], [cx, zBot]], start: { join: top }, end: { join: bottom } });
     const half = Math.max(W('alley').pe, W('alley').peLeft);
-    for (let d = 42; d < zBot - zTop - 36; d += 58) hump(id, cx, zTop + d, half);
+    // Estate humps (단지 내 방지턱): round ones, a long high one mid-lane, a raised crosswalk by the entrance.
+    const lane = b.byId.get(id)!;
+    const kinds: CalmKind[] = ['table', 'hump', 'big', 'hump', 'hump', 'big'];
+    for (let d = 30, k = 0; d < lane.length - 30; d += 58, k++) b.addCalming(lane, d, kinds[k % kinds.length]);
     b.addSign({ x: cx + half + 1.5, y: ground(cx + half + 1.5, zTop + 26), z: zTop + 26, yaw: 0, text: { ko: '과속방지턱', en: 'Speed humps' }, sub: { ko: '단지 내 서행 20', en: 'Estate 20 km/h' }, kind: 'info' });
     fillBlock(b, R, x0, z0, cx - 9, z1, 'apart', ground);
     fillBlock(b, R, cx + 9, z0, x1, z1, 'apart', ground);
@@ -366,6 +356,45 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
         continue;
       }
       complex(x0, z0, x1, z1, SEW[j], SEW[j + 1], sewId(SEW[j]), sewId(SEW[j + 1]), southGround);
+    }
+  }
+  // ---- traffic calming on the streets (§11.3): humps, raised crosswalks, cushions and rumble strips, every 120–220 m on
+  // the city's and the south district's streets and lanes (not on the arterials); rumble strips on each approach to the
+  // fountain circus; a school zone in the south district. ----
+  {
+    const RC = rng(4242);
+    const pick = (): CalmKind => {
+      const x = RC();
+      return x < 0.42 ? 'hump' : x < 0.66 ? 'table' : x < 0.84 ? 'cushion' : x < 0.93 ? 'rumble' : 'big';
+    };
+    for (const r of b.roads) {
+      const id = r.spec.id;
+      const city = /^(c_ns|c_ew|s_ns|s_ew|c_gol_|c_alley)/.test(id);
+      if (!city || r.spec.style === 'arterial') continue;
+      for (let s = 50 + RC() * 60; s < r.length - 50; s += 120 + RC() * 100) {
+        const kind = id.startsWith('c_alley') || id.startsWith('c_gol_') ? (RC() < 0.6 ? 'hump' : 'table') : pick();
+        // Where one does not fit (a junction, a bend), the next metres are tried.
+        for (let t = 0; t < 30 && !b.addCalming(r, s + t, kind); t += 6);
+      }
+    }
+    const nsN = b.byId.get(nsId(RB.x))!, nsS = b.byId.get(`${nsId(RB.x)}s`)!, ewW = b.byId.get(`${ewId(RB.z)}w`)!, ewE = b.byId.get(ewId(RB.z))!;
+    b.addCalming(nsN, nsN.length - 75, 'rumble');
+    b.addCalming(nsS, 75, 'rumble');
+    b.addCalming(ewW, ewW.length - 75, 'rumble');
+    b.addCalming(ewE, 75, 'rumble');
+    const school = b.byId.get(sewId(1300))!;
+    // Near x −1480, wherever it fits between the estates' lanes and the cross streets.
+    let sAt = NaN;
+    for (let d = 0; d <= 200 && Number.isNaN(sAt); d += 10) {
+      for (const sg of [1, -1]) {
+        const s0 = school.nearest(-1480, 1300).s + sg * d;
+        if (Number.isNaN(sAt) && b.addCalming(school, s0, 'school')) sAt = s0;
+      }
+    }
+    if (!Number.isNaN(sAt)) {
+      const p = school.at(sAt - 26);
+      const u = -(school.w.pe + 1.2);
+      b.addSign({ x: p.x + u * p.tz, y: southGround(p.x + u * p.tz, p.z - u * p.tx), z: p.z - u * p.tx, yaw: Math.atan2(-p.tx, -p.tz), text: { ko: '어린이보호구역', en: 'School zone' }, sub: { ko: '30 · 방지턱', en: '30 km/h · humps' }, kind: 'info' });
     }
   }
   // Landmark tower (한빛타워) in the CBD.

@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readGlb, meshGeometry, surfaceSamples, primitiveGeometry, connectedPieces } from './lib/glb.mjs';
-import { VehicleBuilder, steeringFactor } from './lib/builder.mjs';
+import { VehicleBuilder, steeringFactor, undersidePlace } from './lib/builder.mjs';
 import { add, sub, scale, norm, dist } from './lib/v3.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -53,10 +53,11 @@ const CARS = {
     tyreFront: { width: 0.21, rimWidth: 0.21, treadMass: 0.24, rimMass: 0.36 },  // 255/45 R20
     tyreRear: { width: 0.235, rimWidth: 0.235, treadMass: 0.26, rimMass: 0.37 },  // 285/40 R20
     ride: { front: { freq: 1.2, zeta: 0.34 }, rear: { freq: 1.3, zeta: 0.34 } },  // air springs: a soft, damped ride
+    underside: { approach: 14, departure: 16, floorLift: 0.031 },  // [°] estimates for a long saloon; ≈ 14 cm clearance
     crash: { front: 4.8e5, cabin: 1.5e6, rear: 5.2e5 },
     chassisEA: 2.2e5, // the stiffest the node masses allow within the kerb weight (m ≥ ½·Σk·t²)
     brakes: { front: 4600, rear: 2800, handbrake: 1800 },
-    arb: { front: 4200, rear: 2600 },
+    arb: { front: 8400, rear: 5200 },  // active roll stabilisation's effect: ≈ 3°/g of roll (4.7 with half)
     aero: { dragArea: 0.75, liftFront: 0.05, liftRear: 0.06 },
     fluids: { coolantL: 22, oilL: 11, fuelL: 82.5, radiatorUA: 7500, heatCapacity: 2.4e5 },
     targets: { zeroTo100: 4.8, topSpeed: 250 / 3.6, braking100: 37.0, skidpadG: 0.85 },
@@ -92,10 +93,11 @@ const CARS = {
     tyreFront: { width: 0.235, rimWidth: 0.24, treadMass: 0.3, rimMass: 0.42 },   // 285/45 R22
     tyreRear: { width: 0.235, rimWidth: 0.24, treadMass: 0.3, rimMass: 0.42 },
     ride: { front: { freq: 1.25, zeta: 0.35 }, rear: { freq: 1.35, zeta: 0.35 } }, // AIRMATIC
+    underside: { approach: 22, departure: 21, floorLift: 0.067 },  // [°] estimates at normal level; ≈ 20 cm clearance
     crash: { front: 5.2e5, cabin: 1.6e6, rear: 5.6e5 },
     chassisEA: 2.0e5,
     brakes: { front: 5200, rear: 3000, handbrake: 1900 },
-    arb: { front: 5200, rear: 3200 },
+    arb: { front: 10400, rear: 6400 },  // E-Active Body Control's effect in part: ≈ 3°/g (4.9 with half)
     aero: { dragArea: 1.08, liftFront: 0.08, liftRear: 0.08 },
     fluids: { coolantL: 16, oilL: 9, fuelL: 90, radiatorUA: 7000, heatCapacity: 2.2e5 },
     targets: { zeroTo100: 4.9, topSpeed: 250 / 3.6, braking100: 38.0, skidpadG: 0.8 },
@@ -179,7 +181,9 @@ function generate(id, car) {
   const half = +(Math.min(halfWidthAt(0.7, 0), 1.2) - 0.07).toFixed(3);
   const xs = Array.from({ length: 9 }, (_, i) => +(-half + (i * 2 * half) / 8).toFixed(3));
   const top = roofAt(0, (zF + zR) / 2 - 0.3);
-  const ys = Array.from({ length: 6 }, (_, j) => +(floorY + 0.04 + (j * (top - floorY - 0.16)) / 5).toFixed(3));
+  // The floor layer rises by `floorLift` over the model's lowest point: the settled ground clearance (node radius and
+  // static sag taken off) comes out at the real car's.
+  const ys = Array.from({ length: 6 }, (_, j) => +(floorY + 0.04 + (j * (top - floorY - 0.16)) / 5 + (j === 0 ? car.underside.floorLift : 0)).toFixed(3));
   const zs = [];
   const nz = Math.round((zMax - zMin - 0.24) / 0.3);
   for (let k = 0; k <= nz; k++) zs.push(+(zMin + 0.12 + (k * (zMax - zMin - 0.24)) / nz).toFixed(3));
@@ -194,7 +198,10 @@ function generate(id, car) {
     return !wheelEnvelope([x, y, z]);
   };
   const inside = (p) => insideHull(p) && !inCavity(p);
-  const latticeGrid = b.buildLattice({ xs, ys, zs, inside, axialStiffness: car.chassisEA });
+  const latticeGrid = b.buildLattice({
+    xs, ys, zs, inside, axialStiffness: car.chassisEA,
+    place: undersidePlace({ zF, zR, ...car.underside, cap: ys[1] - 0.13, blocked: inCavity }),  // cells ≥ 13 cm tall
+  });
   const carved = (i, j, k) => xs[i] !== undefined && ys[j] !== undefined && zs[k] !== undefined &&
     insideHull([xs[i], ys[j], zs[k]]) && inCavity([xs[i], ys[j], zs[k]]);
   const hullTriangles = b.latticeSurface(latticeGrid, 0, {
@@ -228,8 +235,11 @@ function generate(id, car) {
       const zc = zs.includes(zm) ? zm + 0.05 * Math.sign(-zm || 1) : zm;
       if (!cosCache.has(zc)) cosCache.set(zc, sectionCos(zc));
       const zone = zoneForce((pa[2] + pc[2]) / 2);
+      // The lowest layer (floor pan, subframe, undertray) in the crumple zones yields at 2.5× the zone's section
+      // force: a kerb or a hump scraping the underside springs back; the rails above crumple in a crash as before.
+      const under = zone < crash.cabin && [beam[0], beam[1]].some((id) => /^c\d+_0_\d+$/.test(id)) ? 2.5 : 1;
       Object.assign(beam[3], {
-        plasticForce: Math.round(zone / cosCache.get(zc)), hardening: crash.hardening, crushLimit: crash.crushLimit, tearLimit: crash.tearLimit,
+        plasticForce: Math.round((zone * under) / cosCache.get(zc)), hardening: crash.hardening, crushLimit: crash.crushLimit, tearLimit: crash.tearLimit,
         ...(zone < crash.cabin ? { unloadRatio: UNLOAD_RATIO } : {}),
       });
     }
@@ -417,7 +427,7 @@ function generate(id, car) {
   }
   function distribute(ancillaryMass) {
     const rest = car.mass - fixedMass - Math.abs(ancillaryMass);
-    spread(latticeNodes, rest, (nd) => layerWeight[nd.p[1]] ?? 0.7);
+    spread(latticeNodes, rest, (nd) => layerWeight[ys[+nd.id.split('_')[1]]] ?? 0.7); // by layer
     const bay = ancillaryMass >= 0 ? rearBay : frontBay;
     for (const nd of bay) nd.mass += Math.abs(ancillaryMass) / bay.length;
     let m = fixedMass, mz = fixedParts.reduce((s, [mm, z]) => s + mm * z, 0);

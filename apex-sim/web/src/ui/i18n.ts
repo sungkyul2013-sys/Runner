@@ -13,6 +13,8 @@ const STRINGS = {
   cameraChase: { ko: '추적', en: 'Chase' },
   cameraOrbit: { ko: '궤도', en: 'Orbit' },
   cameraRoof: { ko: '루프', en: 'Roof' },
+  cameraHood: { ko: '보닛', en: 'Bonnet' },
+  cameraBumper: { ko: '범퍼', en: 'Bumper' },
   loadingVehicle: { ko: '차량 불러오는 중…', en: 'Loading vehicle…' },
   vehicleFailed: { ko: '차량을 불러오지 못했습니다', en: 'Vehicle failed to load' },
   backToSandbox: { ko: '샌드박스로', en: 'Sandbox' },
