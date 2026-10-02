@@ -31,7 +31,7 @@ void require(bool ok, const std::string& what) {
 constexpr double kLevelGain = 2.0;       // [1/s] self-levelling: offset rate per metre of height error
 constexpr double kLevelDeadband = 0.003; // [m]
 constexpr double kLevelFreeze = 1.5;     // [m/s²] no levelling while the car corners or brakes harder than this
-constexpr double kActiveGain = 12.0;     // [1/s] active roll / pitch: offset rate per metre of travel error
+constexpr double kActiveTrim = 1.5;      // [1/s] active roll / pitch feedback: offset rate per metre of travel error
 constexpr double kDamperValve = 0.012;   // [s] damper valve: full range in this time
 constexpr double kSkyhookSpeed = 0.03;   // [m/s] body speed in the ride band that firms a damper fully
 constexpr double kWheelHopSpeed = 0.10;  // [m/s] wheel-hop speed envelope that firms a damper fully
@@ -76,7 +76,7 @@ void Vehicle::initChassis(const Body& b) {
     c.rest0 = b.restLength[static_cast<size_t>(c.beam)];
     c.damping0 = b.damping[static_cast<size_t>(c.beam)];
     c.ratio = cd.motionRatio;
-    c.lenFast = c.lenSlow = c.design;
+    c.lenBody = c.lenSlow = c.design;
     const WheelDesc& wd = desc_.wheels[w];
     const DVec3 hub = (at(b, wd.axleLeft) + at(b, wd.axleRight)) * 0.5 - pc;
     c.x = dot(hub, fwd);
@@ -114,8 +114,11 @@ void Vehicle::updateChassis(Body& b, double dt, double speed, DVec3 up) {
   if (corners_.empty()) return;
 
   // ---- measurements: spring lengths (ride-height sensors), body roll and pitch over the wheels ---------------------
-  const double fast = dt / (0.02 + dt), slow = dt / (0.5 + dt);
-  double travel[2][2] = {{0.0, 0.0}, {0.0, 0.0}};  // [axle][left?] wheel travel over the normal level (+: body higher), fast filter
+  // Two filters: body (80 ms: the body's own motion — bounce, pitch and roll lie under 3 Hz — without the 10–15 Hz
+  // wheel hop) for the active roll and pitch, slow (0.5 s) for the level. On a 20 ms measure the active control chased
+  // the wheel hop: its struts fed it, and the Maybach's wheels shook ±17 % of their load on new asphalt.
+  const double body = dt / (0.08 + dt), slow = dt / (0.5 + dt);
+  double travel[2][2] = {{0.0, 0.0}, {0.0, 0.0}};  // [axle][left?] wheel travel over the normal level (+: body higher), body filter
   double levelTravel[2] = {0.0, 0.0};
   int perAxle[2] = {0, 0}, perSide[2][2] = {{0, 0}, {0, 0}};
   double halfTrack[2] = {0.0, 0.0};
@@ -123,11 +126,11 @@ void Vehicle::updateChassis(Body& b, double dt, double speed, DVec3 up) {
     const ChassisCornerDesc& cd = C.corners[static_cast<size_t>(&c - corners_.data())];
     const DVec3 d = at(b, cd.wheelNode) - at(b, cd.chassisNode);
     const double L = std::sqrt(dot(d, d));
-    c.lenFast += fast * (L - c.lenFast);
+    c.lenBody += body * (L - c.lenBody);
     c.lenSlow += slow * (L - c.lenSlow);
     const int s = c.side > 0 ? 1 : 0;
     const double normal = c.axle == 0 ? C.normalFront : C.normalRear;  // travel counted from the normal level
-    travel[c.axle][s] += (c.lenFast - c.design) / c.ratio - normal;
+    travel[c.axle][s] += (c.lenBody - c.design) / c.ratio - normal;
     ++perSide[c.axle][s];
     levelTravel[c.axle] += (c.lenSlow - c.design) / c.ratio - normal;
     ++perAxle[c.axle];
@@ -178,32 +181,40 @@ void Vehicle::updateChassis(Body& b, double dt, double speed, DVec3 up) {
   telemetry_.levelMoving = moving;
 
   // ---- active roll and pitch ------------------------------------------------------------------------------------------
+  // Feed-forward from the accelerations, as body control systems work: the struts take the share of the passive roll
+  // (pitch) to be removed — an offset u at one side (axle) and −u at the other turns the body by u over the half track
+  // (2u over the wheelbase) — and a slow feedback trims what is left. A fast feedback alone (12/s) crossed the body's
+  // pitch mode (≈ 1.2 Hz): the Maybach see-sawed ±1.2° at a steady 40 km/h, its front wheels' load swinging ±20 %.
   const double comfort = input_.chassisMode == 0 ? 0.7 : 1.0;
   const bool active = powered && std::fabs(speed) > 1.0;
   const double maxStep = C.activeRate * dt;
   if (C.activeRoll > 0.0f) {
     for (int a = 0; a < 2; ++a) {
       if (!active || perSide[a][0] == 0 || perSide[a][1] == 0) {
+        rollTrim_[a] = approach(rollTrim_[a], 0.0, maxStep);
         rollU_[a] = approach(rollU_[a], 0.0, maxStep);
         continue;
       }
       // Passive roll: the body leans out of the turn (lateral acceleration to the left lifts the left side).
       const double passive = C.rollGradient * accelLat_;
       const double wanted = (1.0 - C.activeRoll * comfort) * passive;
+      const double feed = -C.activeRoll * comfort * passive * halfTrack[a];
       const double error = (roll[a] - wanted) * halfTrack[a];
-      rollU_[a] = clampd(approach(rollU_[a], rollU_[a] - error, std::min(kActiveGain * std::fabs(error) * dt, maxStep)),
-                         -C.activeTravel, C.activeTravel);
+      rollTrim_[a] = clampd(rollTrim_[a] - kActiveTrim * error * dt, -C.activeTravel, C.activeTravel);
+      rollU_[a] = clampd(approach(rollU_[a], feed + rollTrim_[a], maxStep), -C.activeTravel, C.activeTravel);
     }
   }
   if (C.activePitch > 0.0f) {
     if (!active) {
+      pitchTrim_ = approach(pitchTrim_, 0.0, maxStep);
       pitchU_ = approach(pitchU_, 0.0, maxStep);
     } else {
       const double passive = C.pitchGradient * accelLong_;
       const double wanted = (1.0 - C.activePitch * comfort) * passive;
+      const double feed = -C.activePitch * comfort * passive * 0.5 * wheelbase_;
       const double error = (pitch - wanted) * 0.5 * wheelbase_;
-      pitchU_ = clampd(approach(pitchU_, pitchU_ - error, std::min(kActiveGain * std::fabs(error) * dt, maxStep)),
-                       -C.activeTravel, C.activeTravel);
+      pitchTrim_ = clampd(pitchTrim_ - kActiveTrim * error * dt, -C.activeTravel, C.activeTravel);
+      pitchU_ = clampd(approach(pitchU_, feed + pitchTrim_, maxStep), -C.activeTravel, C.activeTravel);
     }
   }
   telemetry_.activeOffset = static_cast<float>(std::max({std::fabs(rollU_[0]), std::fabs(rollU_[1]), std::fabs(pitchU_)}));

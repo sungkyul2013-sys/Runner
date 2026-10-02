@@ -160,41 +160,113 @@ export function stationsOf(dense: Array<[number, number]>, minStep = 2, maxStep 
   return out;
 }
 
-/** Moving average over a window of `w` metres (weighted by station spacing), `passes` times. */
+/** Moving average over about `w` metres (weighted by station spacing), `passes` times. */
 export function smoothProfile(st: Station[], values: Float64Array, w: number, passes = 2): Float64Array {
   if (w <= 0) return values;
+  // A triangular kernel of half-width 0.75 w (the spread of a w-wide box): stations fade in and out of it. A box over
+  // the unevenly spaced stations stepped — the mean stood still while no station entered or left and jumped when two
+  // did — and the roads climbed in stairs (a mountain road's grade swung 3–9 % every few metres: wheels left the road).
+  const h = 0.75 * w;
+  const n = st.length;
+  const segW = (j: number) => {
+    const a = j > 0 ? st[j].s - st[j - 1].s : 0, b = j < n - 1 ? st[j + 1].s - st[j].s : 0;
+    return (a + b) * 0.5 + 1e-6;
+  };
+  const seg = Float64Array.from({ length: n }, (_, j) => segW(j));
   let cur = values;
   for (let p = 0; p < passes; p++) {
-    const next = new Float64Array(cur.length);
-    let lo = 0, hi = 0, sum = 0, weight = 0;
-    const segW = (j: number) => {
-      const a = j > 0 ? st[j].s - st[j - 1].s : 0, b = j < st.length - 1 ? st[j + 1].s - st[j].s : 0;
-      return (a + b) * 0.5 + 1e-6;
-    };
-    for (let i = 0; i < st.length; i++) {
+    const next = new Float64Array(n);
+    let lo = 0;
+    for (let i = 0; i < n; i++) {
       const s = st[i].s;
-      while (hi < st.length && st[hi].s <= s + w / 2) {
-        sum += cur[hi] * segW(hi);
-        weight += segW(hi);
-        hi++;
-      }
-      while (lo < hi && st[lo].s < s - w / 2) {
-        sum -= cur[lo] * segW(lo);
-        weight -= segW(lo);
-        lo++;
+      while (lo < n && st[lo].s < s - h) lo++;
+      let sum = 0, weight = 0;
+      for (let j = lo; j < n && st[j].s <= s + h; j++) {
+        const k = (1 - Math.abs(st[j].s - s) / h) * seg[j];
+        sum += cur[j] * k;
+        weight += k;
       }
       next[i] = weight > 0 ? sum / weight : cur[i];
     }
     // Keep the ends where they were (the averaging window is one-sided there).
     next[0] = cur[0];
-    next[st.length - 1] = cur[st.length - 1];
+    next[n - 1] = cur[n - 1];
     cur = next;
   }
   return cur;
 }
 
-/** Limits the grade to ±g with forward and backward passes. */
-export function limitGrade(st: Station[], y: Float64Array, g: number, fixed?: Uint8Array): void {
+/** Limits the grade to ±g with forward and backward passes (`kmax`: the vertical curvature the stretches between two
+ *  fixed stations too far apart in height for the grade are shaped for). Returns those stretches' stations (steeper than
+ *  g of necessity), or null. */
+export function limitGrade(st: Station[], y: Float64Array, g: number, fixed?: Uint8Array, kmax = 0): Uint8Array | null {
+  let steep: Uint8Array | null = null;
+  // First into the grade's cones from the fixed stations (both sides of each): the neighbour passes alone skip a
+  // fixed station, so the backward pass could pull the station after a pinned junction up to a bridge's height
+  // beyond it — a near-vertical step right after the junction (a branch road's start dropped or rose 4–6 m in 4 m).
+  // With `kmax` the cones bend from the fixed stations' own grade into ±g no faster than it (the vertical curve that
+  // leaves a junction or a merge): a profile clamped to straight cones broke within one station at a pinned junction.
+  if (fixed) {
+    const n = st.length;
+    const up = new Float64Array(n).fill(Infinity), lo = new Float64Array(n).fill(-Infinity);
+    const fx = fixed;
+    const cone = (dir: 1 | -1, upper: Float64Array, lower: Float64Array) => {
+      let gu = g, gl = -g; // grade along the pass of the upper and the lower bound
+      for (let k = 0; k < n; k++) {
+        const i = dir > 0 ? k : n - 1 - k, j = i - dir; // j: the station before i on this pass
+        if (fx[i]) {
+          upper[i] = lower[i] = y[i];
+          const pair = j >= 0 && j < n && fx[j];
+          gu = gl = pair ? (y[i] - y[j]) / Math.max(Math.abs(st[i].s - st[j].s), 1e-6) : 0;
+          if (kmax <= 0) (gu = g), (gl = -g);
+          continue;
+        }
+        if (j < 0 || j >= n) continue;
+        const ds = Math.abs(st[i].s - st[j].s);
+        const gu1 = kmax > 0 ? Math.min(g, gu + kmax * ds) : g, gl1 = kmax > 0 ? Math.max(-g, gl - kmax * ds) : -g;
+        upper[i] = upper[j] + (ds * (gu + gu1)) / 2;
+        lower[i] = lower[j] + (ds * (gl + gl1)) / 2;
+        gu = gu1;
+        gl = gl1;
+      }
+    };
+    const upB = new Float64Array(n).fill(Infinity), loB = new Float64Array(n).fill(-Infinity);
+    cone(1, up, lo);
+    cone(-1, upB, loB);
+    for (let i = 0; i < n; i++) {
+      up[i] = Math.min(up[i], upB[i]);
+      lo[i] = Math.max(lo[i], loB[i]);
+    }
+    // Two fixed stations further apart in height than the grade allows (their cones cross over the whole stretch
+    // between them): the stretch climbs from one to the other on one grade with a vertical curve at each end (as short
+    // as `kmax` allows), held against the passes below. The cones' midpoint put half the excess as a step at each end
+    // — 북악로 rose 16 m in the 8 m after its junction to meet its tunnel's portal.
+    const held = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      if (fixed[i]) continue;
+      if (lo[i] <= up[i]) {
+        y[i] = clamp(y[i], lo[i], up[i]);
+        continue;
+      }
+      let a = i - 1, b = i + 1;
+      while (a >= 0 && !fixed[a]) a--;
+      while (b < n && !fixed[b]) b++;
+      if (a >= 0 && b < n) {
+        const L = Math.max(st[b].s - st[a].s, 1e-6), x = (st[i].s - st[a].s) / L;
+        // Curves over a share τ of the stretch at each end: the grade dy/(L(1−τ)) reached over τL bends by
+        // dy/(L²τ(1−τ)) — the least τ that keeps it under kmax.
+        const need = kmax > 0 ? Math.abs(y[b] - y[a]) / (kmax * L * L) : 0;
+        const tau = need >= 0.25 ? 0.5 : clamp((1 - Math.sqrt(1 - 4 * need)) / 2, 0.02, 0.5);
+        const f = x < tau ? (x * x) / (2 * tau) : x <= 1 - tau ? tau / 2 + (x - tau) : 1 - tau - ((1 - x) * (1 - x)) / (2 * tau);
+        y[i] = y[a] + (y[b] - y[a]) * (f / (1 - tau));
+      } else {
+        y[i] = (lo[i] + up[i]) / 2;
+      }
+      held[i] = 1;
+    }
+    fixed = held.map((h, i) => h | fixed![i]);
+    steep = held;
+  }
   for (let i = 1; i < st.length; i++) {
     if (fixed?.[i]) continue;
     const ds = st[i].s - st[i - 1].s;
@@ -204,6 +276,73 @@ export function limitGrade(st: Station[], y: Float64Array, g: number, fixed?: Ui
     if (fixed?.[i]) continue;
     const ds = st[i + 1].s - st[i].s;
     y[i] = clamp(y[i], y[i + 1] - g * ds, y[i + 1] + g * ds);
+  }
+  return steep;
+}
+
+/**
+ * Vertical curves: rounds the profile's grade breaks (a junction's pin, a grade limit's cone, the end of a merge, a
+ * tunnel's portal) until its curvature is at most `kmax` [1/m] — a car at speed v feels v²·k. The grade limit alone
+ * bends the line within one station: an off-ramp went from +2 % to −6 % in 2 m, a crest that would need 14 m/s²
+ * downward at 70 km/h, and the car flew off its wheels. Fixed stations stay; the curve forms beside them.
+ */
+export function limitCurvature(st: Station[], y: Float64Array, kmax: number, fixed?: Uint8Array, g = Infinity, steep?: Uint8Array | null): void {
+  const n = st.length;
+  if (n < 3) return;
+  const free = (i: number) => (fixed?.[i] ? 0 : 1);
+  // The grade limit holds through the rounding (rounding a crest into a descent at the limit steepened the descent's
+  // first metres from 12 % to 16 %), except over the stretches steeper than it of necessity.
+  const grade = (i: number): number => {
+    const ds = st[i + 1].s - st[i].s;
+    if (ds < 1e-6 || steep?.[i] || steep?.[i + 1]) return 0;
+    const excess = Math.abs(y[i + 1] - y[i]) - g * ds;
+    if (excess <= 0) return 0;
+    const fa = free(i), fb = free(i + 1);
+    if (fa + fb === 0) return 0;
+    const t = (Math.sign(y[i + 1] - y[i]) * excess) / (fa + fb);
+    y[i] += t * fa;
+    y[i + 1] -= t * fb;
+    return excess;
+  };
+  // Each station's bend is projected onto its bound by the smallest move of the free ones among it and its two
+  // neighbours (so a bend at a fixed station, a junction's or a portal's, is taken out beside it), sweeping both ways.
+  const relax = (i: number): number => {
+    const a = st[i].s - st[i - 1].s, b = st[i + 1].s - st[i].s;
+    if (a < 1e-6 || b < 1e-6) return 0;
+    // y_i off the chord of its neighbours by dev bends the line by 2·dev/(a·b).
+    const ca = b / (a + b), cb = a / (a + b);
+    const dev = y[i] - (ca * y[i - 1] + cb * y[i + 1]);
+    const excess = Math.abs(dev) - (kmax * a * b) / 2;
+    if (excess <= 0) return 0;
+    const k0 = free(i), k1 = -ca * free(i - 1), k2 = -cb * free(i + 1);
+    const norm = k0 * k0 + k1 * k1 + k2 * k2;
+    if (norm === 0) return 0;
+    const t = (-Math.sign(dev) * excess) / norm;
+    y[i] += t * k0;
+    y[i - 1] += t * k1;
+    y[i + 1] += t * k2;
+    return excess;
+  };
+  // A worklist: a station whose bend or grade was corrected puts its neighbours back on it. Bounded (two fixed
+  // stations closer than a curve between their grades needs never settle; what is left there stays).
+  const queued = new Uint8Array(n);
+  const queue: number[] = [];
+  const push = (i: number) => {
+    if (i >= 1 && i + 1 < n && !queued[i]) {
+      queued[i] = 1;
+      queue.push(i);
+    }
+  };
+  for (let i = 1; i + 1 < n; i++) push(i);
+  let head = 0;
+  for (let ops = 0; head < queue.length && ops < 400 * n; ops++) {
+    const i = queue[head++];
+    queued[i] = 0;
+    if (head > 65536) {
+      queue.splice(0, head);
+      head = 0;
+    }
+    if (Math.max(relax(i), grade(i - 1), grade(i)) > 1e-6) for (let j = i - 2; j <= i + 2; j++) push(j);
   }
 }
 

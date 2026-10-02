@@ -270,6 +270,24 @@ function proceduralWheel(rimRadius: number, outerRadius: number, width: number, 
 
 const loader = new GLTFLoader();
 
+/**
+ * Normals in float from the mesh itself. The models ship them quantized to 8 bits a component (KHR_mesh_quantization):
+ * a step of ≈ 0.5° that glossy paint shows as lumpy patches and banding in its reflections — the cars looked low in
+ * resolution. Indexed meshes only: their split vertices keep the hard edges (panel gaps, creases).
+ */
+function floatNormals(root: THREE.Object3D): void {
+  const done = new Set<THREE.BufferGeometry>();
+  root.traverse((o) => {
+    const g = (o as THREE.Mesh).isMesh ? (o as THREE.Mesh).geometry : null;
+    if (!g || done.has(g) || !g.index || !g.getAttribute('position')) return;
+    done.add(g);
+    const n = g.getAttribute('normal');
+    if (n && n.array instanceof Float32Array && !n.normalized) return;
+    g.deleteAttribute('normal');
+    g.computeVertexNormals();
+  });
+}
+
 // Builds for hosts that serve no .glb (Claude Artifacts): every model ships as `<name>.glb.txt`, base64.
 const GLB_AS_BASE64 = import.meta.env.VITE_APEX_GLB_BASE64 === '1';
 
@@ -287,6 +305,7 @@ export async function loadVehicleModel(source: string | ArrayBuffer): Promise<Ve
   const url = typeof source === 'string' ? source : 'GLB';
   if (typeof source === 'string' && GLB_AS_BASE64) source = await fetchBase64(`${source}.txt`);
   const gltf = typeof source === 'string' ? await loader.loadAsync(source) : await loader.parseAsync(source, '');
+  floatNormals(gltf.scene);
   const meta = gltf.scene.userData.apex as VehicleMeta;
   const root = new THREE.Group();
   root.name = meta.id;

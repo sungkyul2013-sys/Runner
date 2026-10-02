@@ -50,6 +50,9 @@ export class Viewer {
     sc.near = 1;
     sc.far = 120;
     this.sun.shadow.bias = -0.0004;
+    // Offset along the surface normal (a few centimetres, about a shadow texel): curved panels shadowed themselves in
+    // diagonal stripes and blotches (acne) — paint that looked low in resolution.
+    this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
 
     this.camera.position.set(-9, 6, 11);
@@ -77,15 +80,16 @@ export class Viewer {
     this.renderer.onDeviceLost = (info: { message?: string }) => onDeviceLost(info?.message ?? 'device lost');
   }
 
-  /** Rendering quality (settings → 그래픽): pixel ratio cap and shadows. Low (phones): ratio 1, no shadow map;
-   *  medium: 1.5, 1024² shadows; high: 2, soft 2048² shadows. The physics does not change with it. */
+  /** Rendering quality (settings → 그래픽): pixel ratio cap and shadows. Low (phones): ratio 1.25, no shadow map;
+   *  medium: 1.75, 2048² shadows; high: 2, soft 4096² shadows (the car's own shadows sharp). The adaptive resolution
+   *  lowers the ratio while frames run long. The physics does not change with it. */
   setQuality(q: 'low' | 'medium' | 'high'): void {
-    const ratio = q === 'low' ? 1 : q === 'medium' ? 1.5 : 2;
+    const ratio = q === 'low' ? 1.25 : q === 'medium' ? 1.75 : 2;
     this.setBloom(q === 'high');
     this.ratioCap = ratio;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, ratio) * this.dynScale);
     const shadows = q !== 'low';
-    const size = q === 'high' ? 2048 : 1024;
+    const size = q === 'high' ? 4096 : 2048;
     if (this.renderer.shadowMap.enabled !== shadows || this.sun.shadow.mapSize.x !== size) {
       this.renderer.shadowMap.enabled = shadows;
       this.renderer.shadowMap.type = q === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;

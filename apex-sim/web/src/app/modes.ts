@@ -150,7 +150,16 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
   shell.addAction('reset', t('carReset'), () => void resetCar(), undefined, t('carResetTip'), 'R');
   session.onCamera = (label) => notify(`${t('actCamera')} · ${label}`, '', { icon: 'camera', key: 'cam' });
   shell.addAction('camera', t('actCamera'), () => session.toggleCamera(), undefined, t('camOrbitHint'), 'C');
-  shell.addAction('xray', t('actXray'), () => session.setXray(!session.xrayOn), false, t('actXrayTip'), 'V');
+  // X-ray: off → suspension → lattice → off (the button lit while one is on; V does the same).
+  const xrayBtn = shell.addAction('xray', t('actXray'), () => {}, false, t('actXrayTip'), 'V');
+  xrayBtn.onclick = () => session.cycleXray();
+  session.onXray = (mode) => {
+    const name = t(mode === 'suspension' ? 'xraySuspension' : mode === 'lattice' ? 'xrayLattice' : 'stateOff');
+    xrayBtn.ariaPressed = String(mode !== 'off');
+    const state = xrayBtn.querySelector('.m-tile-state'); // the phone's quick-menu tile names its state
+    if (state) state.textContent = name;
+    notify(`${t('actXray')} · ${name}`, '', { icon: 'xray', key: 'act-xray' });
+  };
   shell.addAction('gauge', t('actHud'), () => {
     const i = HUD_CYCLE.indexOf(settings.get().hud);
     const next = HUD_CYCLE[(i + 1) % HUD_CYCLE.length];

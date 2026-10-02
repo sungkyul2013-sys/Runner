@@ -137,7 +137,7 @@ export function buildProving(onStage?: (stage: string) => void): MapData {
     for (let k = 0; k < 96; k++) {
       const [ax, az] = ring[k], [bx, bz] = ring[k + 1];
       const nx = (ax - PAD.c[0]) / r, nz = (az - PAD.c[1]) / r, mx = (bx - PAD.c[0]) / r, mz = (bz - PAD.c[1]) / r;
-      b.addPad({ outline: [[ax - nx * 0.1, az - nz * 0.1], [bx - mx * 0.1, bz - mz * 0.1], [bx + mx * 0.1, bz + mz * 0.1], [ax + nx * 0.1, az + nz * 0.1]], y: flat(padY + 0.004), material: MAT.paint, look: 'paint', color: 0xf2f2ee, carve: false });
+      b.addPad({ outline: [[ax - nx * 0.1, az - nz * 0.1], [bx - mx * 0.1, bz - mz * 0.1], [bx + mx * 0.1, bz + mz * 0.1], [ax + nx * 0.1, az + nz * 0.1]], y: flat(padY + 0.004), paintLift: 0.004, material: MAT.paint, look: 'paint', color: 0xf2f2ee, carve: false });
     }
   }
   b.addRoad({ id: 'pad_access', style: 'rural', styleOverride: { lights: 0 }, points: [on('s_w', -1650, 0), [-1650, 250], [-1650, PAD.c[1] - PAD.r + 3]], start: { join: 's_w' }, fixed: [{ at: 2, y: padY - 0.015, radius: 80 }] });
@@ -170,7 +170,7 @@ export function buildProving(onStage?: (stage: string) => void): MapData {
   b.addPad({ outline: rect(550, zs, BRAKE.x1, zs + width), y: flat(brakeY), material: MAT.asphalt, look: 'asphalt', grid: 12, gridU: 40, fill: true });
   // Lane dividers painted on the approach.
   for (let i = 1; i < lanes.length; i++) {
-    b.addPad({ outline: rect(BRAKE.x0 + 50, zs + i * laneW - 0.07, 550, zs + i * laneW + 0.07), y: flat(brakeY + 0.004), material: MAT.paint, look: 'paint', color: 0xf2f2ee, carve: false, grid: 1, gridU: 60 });
+    b.addPad({ outline: rect(BRAKE.x0 + 50, zs + i * laneW - 0.07, 550, zs + i * laneW + 0.07), y: flat(brakeY + 0.004), paintLift: 0.004, material: MAT.paint, look: 'paint', color: 0xf2f2ee, carve: false, grid: 1, gridU: 60 });
   }
   b.addRoad({ id: 'brake_access', style: 'rural', styleOverride: { lights: 0 }, points: [on('s_w', -900, 5), [-900, 200], [-760, 330], [BRAKE.x0 + 2, zs + width / 2]], start: { join: 's_w' }, fixed: [{ at: 3, y: brakeY - 0.015, radius: 80 }] });
   lanes.forEach(([, , ko, en], i) => {
@@ -227,7 +227,9 @@ export function buildProving(onStage?: (stage: string) => void): MapData {
   // Cobbles and a steel rail crossing on the same street (their own materials).
   b.addPad({ outline: rect(STREET.x0 + 700, STREET.z - 4, STREET.x0 + 780, STREET.z + 4), y: (x) => sy + 0.01 * Math.sin(x * 9.1) * Math.sin(x * 3.3), material: MAT.cobble, look: 'paint', color: 0x7d766d, grid: 2, gridU: 0.3, fill: true });
   for (const off of [0, 1.5]) b.addBox({ cx: STREET.x0 + 820 + off, cy: sy + 0.01, cz: STREET.z, hx: 0.04, hy: 0.02, hz: 4, yaw: 0, material: MAT.steel, look: 'steel' });
-  b.addRoad({ id: 'street_access', style: 'rural', styleOverride: { lights: 0 }, points: [on('spine', 0, 2250), [-300, 2250], [STREET.x1 - 2, STREET.z]], start: { join: 'spine' }, fixed: [{ at: 2, y: sy - 0.015, radius: 60 }] });
+  // From the spine where it is back on the valley floor (at z 2250 it is a viaduct 54 m up: the access road fell 15 m
+  // in its first 20 m there).
+  b.addRoad({ id: 'street_access', style: 'rural', styleOverride: { lights: 0 }, points: [on('spine', 0, 1540), [-260, 1980], [STREET.x1 - 2, STREET.z]], start: { join: 'spine' }, fixed: [{ at: 2, y: sy - 0.015, radius: 60 }] });
   b.addSign({ x: STREET.x1 + 8, y: sy, z: STREET.z - 8, yaw: -Math.PI / 2, text: { ko: '방지턱·승차감 시험로', en: 'Bump & ride street' }, kind: 'info' });
 
   // ---- off-road: gravel loop, rock garden, mud, hill ----

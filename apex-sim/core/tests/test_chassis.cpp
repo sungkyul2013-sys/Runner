@@ -389,3 +389,33 @@ TEST_CASE("rear-axle steering: counter-phase tightens the 911's and the Ghost's 
     CHECK(r.t().rearSteer > 0.0f);  // in phase with the front (steer positive: left)
   }
 }
+
+TEST_CASE("active body control holds the body still at a steady cruise (no limit cycle)", "[chassis][active]") {
+  // A fast feedback alone (12/s on the body's travel) crossed the body's pitch mode: the Maybach see-sawed ±1.2° at a
+  // steady 40 km/h on new asphalt, its front wheels' load swinging ±20 % (user report: the wheels bounce). With the
+  // feed-forward and a slow trim the body rides still.
+  for (const char* id : {"maybach_gls", "porsche_911_turbo_991"}) {
+    Rig r = rig(id, 40.0f);
+    std::vector<double> pitch, load;
+    for (int k = 0; k < 400; ++k) {  // 4 s, the first 1.5 s left out
+      const VehicleTelemetry& t = r.t();
+      VehicleInput in;
+      in.throttle = std::clamp(static_cast<float>(0.2 + 0.3 * (40.0 / 3.6 - t.speed)), 0.0f, 1.0f);
+      r.input(in);
+      r.run(0.01);
+      if (k < 150) continue;
+      pitch.push_back(r.t().pitchAngle);
+      load.push_back(r.t().wheels[0].load);
+    }
+    const auto spread = [](const std::vector<double>& x) {
+      const auto [lo, hi] = std::minmax_element(x.begin(), x.end());
+      return *hi - *lo;
+    };
+    double mean = 0.0;
+    for (double l : load) mean += l;
+    mean /= static_cast<double>(load.size());
+    INFO(id << ": pitch range " << spread(pitch) << " rad, front-left load range " << spread(load) << " N of " << mean);
+    CHECK(spread(pitch) < 0.012);        // was 0.042 (±1.2°)
+    CHECK(spread(load) < 0.2 * mean);    // was ≈ 0.4 of the mean
+  }
+}

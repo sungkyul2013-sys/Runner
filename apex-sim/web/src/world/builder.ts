@@ -5,7 +5,7 @@
 import { MAT, type AreaLabel, type MapPhysics, type Poi, type StaticMeshData } from './types';
 import { clamp, hash2, lerp, rng, smoothstep } from './noise';
 import {
-  bumpProfile, crossfall, crossSection, interp, lampOffset, limitGrade, PATTERN, smoothProfile, splinePolyline, STATION,
+  bumpProfile, crossfall, crossSection, interp, lampOffset, limitCurvature, limitGrade, PATTERN, smoothProfile, splinePolyline, STATION,
   stationIndex, stationsOf, STYLES, superelevation, widths, type RoadStyle, type SegmentKind, type Station, type StyleName,
 } from './road';
 import { Terrain } from './terrain';
@@ -13,6 +13,9 @@ import type { Localized } from '../ui/i18n';
 
 /** Road shader surface code (MapView roadMaterial): 0 asphalt, 1 worn asphalt, 2 setts (cobbles), 3 gravel, 4 dirt,
  *  5 concrete. */
+/** [m] paint drawn over the surface it is painted on (the physics takes it flush: emitPad). */
+const PAINT_LIFT = 0.006;
+
 export function surfaceLook(material: number): number {
   switch (material) {
     case MAT.asphaltOld: return 1;
@@ -248,6 +251,8 @@ export interface PadSpec {
   color?: number;
   /** Paint colour by position (look 'paint'; per triangle, at its centre): stripes. */
   colorAt?: (x: number, z: number) => number;
+  /** Paint drawn this far [m] over the surface it lies on: the physics takes it 1 mm over that surface (flush). */
+  paintLift?: number;
 }
 
 export interface MeshAccum {
@@ -521,10 +526,25 @@ export class MapBuilder {
         target[i] = wl !== null && ground[i] < wl + 1 ? Math.max(ground[i], wl + 9) : ground[i];
       }
       y = smoothProfile(st, target, style.smooth, 3);
+      // The smoothing keeps the end stations at their raw ground; continue the smoothed line to them instead. A
+      // junction's pin adds its height difference with a falloff, measured from the end: from a raw end 7 m under
+      // the smoothed road (a branch leaving a main road that crosses a gully) it lifted the branch's first metres
+      // 6.5 m too high — a cliff behind the junction.
+      if (n >= 3) {
+        y[0] = y[1] - ((y[2] - y[1]) * (st[1].s - st[0].s)) / Math.max(st[2].s - st[1].s, 1e-6);
+        y[n - 1] = y[n - 2] + ((y[n - 2] - y[n - 3]) * (st[n - 1].s - st[n - 2].s)) / Math.max(st[n - 2].s - st[n - 3].s, 1e-6);
+      }
       const fixed = new Uint8Array(n);
       const pin = (s: number, value: number, radius: number, raiseOnly = false) => {
-        bumpProfile(st, y, s, value, radius, raiseOnly);
         const i = stationIndex(st, s);
+        const raise = !raiseOnly || interp(st, y, s) < value;
+        bumpProfile(st, y, s, value, radius, raiseOnly);
+        // The two stations around s hold the height itself: left at the bump's share of it, the farther one kept a
+        // step on a steep profile, fixed in place (a junction's first 2 m at 15 %, an underpass's portal 1.3 m high).
+        if (raise) {
+          y[i] = value;
+          if (i + 1 < n) y[i + 1] = value;
+        }
         fixed[i] = 1;
         if (i + 1 < n) fixed[i + 1] = 1;
       };
@@ -540,18 +560,27 @@ export class MapBuilder {
           road.endParent = parent;
           road.endBlend = spec.merge.length;
         }
-        // Heights along the whole merge follow the parent's edge.
-        for (let i = 0; i < n; i++) {
+        // Heights along the whole merge follow the parent's edge — and on until this road's paved width has left the
+        // parent's: a ramp that began to climb or fall while it still overlapped the parent's shoulder had the
+        // parent's deck edge run diagonally across its lane as a step (up to a metre on the interchange's off-ramps).
+        let merged = spec.merge.length;
+        const order = Array.from({ length: n }, (_, k) => (atStart ? k : n - 1 - k));
+        for (const i of order) {
           const d = atStart ? st[i].s : L - st[i].s;
-          if (d > spec.merge.length) continue;
+          if (d > spec.merge.length) {
+            const pn = parent.nearest(st[i].x, st[i].z);
+            const reach = (pn.u >= 0 ? parent.w.peLeft : parent.w.pe) + Math.max(road.w.pe, road.w.peLeft) + 0.3;
+            if (Math.abs(pn.u) >= reach || pn.s < 0 || pn.s > parent.length) break;
+            merged = d;
+          }
           y[i] = parent.surfaceAt(st[i].x, st[i].z) - 0.015;
           fixed[i] = 1;
         }
         // Gaps: the parent's outer parts on that side, this road's left outer parts, along the merge.
-        const s0 = atStart ? 0 : L - spec.merge.length, s1 = atStart ? spec.merge.length : L;
+        const s0 = atStart ? 0 : L - merged, s1 = atStart ? merged : L;
         const pa = parent.nearest(road.st.length ? st[stationIndex(st, s0)].x : 0, st[stationIndex(st, s0)].z);
         const pb = parent.nearest(st[stationIndex(st, s1)].x, st[stationIndex(st, s1)].z);
-        const side = pa.u >= 0 ? 4 : 1;
+        const side = (atStart ? pa : pb).u >= 0 ? 4 : 1;
         parent.gaps.push({ s0: Math.min(pa.s, pb.s) - 25, s1: Math.max(pa.s, pb.s) + 25, mask: side });
         road.gaps.push({ s0: atStart ? -1 : s0, s1: atStart ? s1 + 25 : L + 1, mask: 4 });
         if (atStart) road.gaps[road.gaps.length - 1].s1 = s1 + 25;
@@ -572,12 +601,11 @@ export class MapBuilder {
         if (!hit) continue;
         pin(hit.sa, other.at(hit.sb).y + (o.clearance ?? 7.5), Math.max(style.smooth, 260), true);
       }
-      // Tunnels: straight between the portals.
-      for (const [a, b] of spec.tunnels ?? []) {
-        const s0 = road.ctrlS[a], s1 = road.ctrlS[b];
-        for (let i = 0; i < n; i++) if (st[i].s >= s0 && st[i].s <= s1) fixed[i] = 1;
-      }
-      limitGrade(st, y, style.maxGrade, fixed);
+      // The grade holds through tunnels too: held at the hill's own profile until the portals were placed, a tunnel's
+      // portals stood where its junctions could not reach on the grade (북악로 rose 16 m in 8 m after its junction and
+      // fell at 21 % to the other).
+      const kmax = 2.0 / ((1.2 * style.designSpeed) / 3.6) ** 2;
+      const steep = limitGrade(st, y, style.maxGrade, fixed, kmax);
       for (const [a, b] of spec.tunnels ?? []) {
         let s0 = road.ctrlS[a], s1 = road.ctrlS[b];
         // Portals move out until their cutting is at most 14 m deep (at most 400 m).
@@ -588,10 +616,14 @@ export class MapBuilder {
         for (let i = 0; i < n; i++) {
           if (st[i].s < s0 || st[i].s > s1) continue;
           y[i] = lerp(y0, y1, (st[i].s - s0) / Math.max(s1 - s0, 1));
+          fixed[i] = 1;
           st[i].flags |= STATION.tunnel;
           if (st[i].s - s0 < 16 || s1 - st[i].s < 16) st[i].flags |= STATION.portal;
         }
       }
+      // Vertical curves for a car a fifth over the design speed at 2 m/s² (a 6 % break takes 22 m on a 60 km/h ramp):
+      // the grade limit's cones, the junctions' pins, the merges' ends and the portals bend the line within a station.
+      limitCurvature(st, y, kmax, fixed, style.maxGrade, steep);
     }
     for (let i = 0; i < n; i++) st[i].y = y[i];
     for (let i = 0; i < n; i++) {
@@ -620,9 +652,25 @@ export class MapBuilder {
         if (last && r[0] - last[1] < 40) last[1] = r[1];
         else merged.push([...r]);
       }
+      // A deck never runs in the hillside: where the ground across the carriageway stands within a metre of it (a
+      // spur between two gullies, a dilated abutment against a slope) the road is at grade and its cutting is dug. On
+      // 필례로 a bridge over two gullies ran through the spur between them 3 m under the terrain, a wall in the lane.
+      const buried = (p: Station) => {
+        const tx = p.tx, tz = p.tz;
+        const g = Math.max(p.ground, this.opts.natural(p.x - tz * road.w.pe, p.z + tx * road.w.pe), this.opts.natural(p.x + tz * road.w.peLeft, p.z - tx * road.w.peLeft));
+        return g > p.y - 1;
+      };
+      const deck = new Uint8Array(n);
       for (const [a, b] of merged) {
         if (b - a < 30) continue;
-        for (const p of st) if (p.s >= a && p.s <= b && !(p.flags & STATION.tunnel)) p.flags |= STATION.bridge;
+        for (let i = 0; i < n; i++) if (st[i].s >= a && st[i].s <= b && !(st[i].flags & STATION.tunnel) && !buried(st[i])) deck[i] = 1;
+      }
+      for (let i = 0; i < n; i++) {
+        if (!deck[i]) continue;
+        let j = i;
+        while (j + 1 < n && deck[j + 1]) j++;
+        if (st[j].s - st[i].s >= 20) for (let k = i; k <= j; k++) st[k].flags |= STATION.bridge;
+        i = j;
       }
     }
     // ---- superelevation
@@ -687,9 +735,9 @@ export class MapBuilder {
         outline: [corner(u0, v0), corner(u0, v1), corner(u1, v1), corner(u1, v0)],
         y: (x, z) => {
           const [u, v] = local(x, z);
-          return r.surfaceAt(x, z) + 0.006 + lift(u, v);
+          return r.surfaceAt(x, z) + PAINT_LIFT + lift(u, v);
         },
-        material: MAT.paint, look: 'paint', grid: gridU, gridU: gridV,
+        material: MAT.paint, look: 'paint', grid: gridU, gridU: gridV, paintLift: PAINT_LIFT,
         colorAt: (x, z) => {
           const [u, v] = local(x, z);
           return colorAt(u, v);
@@ -1557,8 +1605,13 @@ export class MapBuilder {
 
   private emitPad(pad: PadSpec): void {
     const tris = padTriangles(pad);
+    // Paint lies a few millimetres over the road so it draws over it; in the physics that edge was a step a tyre struck
+    // at every marking, hump end and school zone (a 7 mm lip lifts a wheel off for 10 ms at 50 km/h): the physics
+    // takes it at 1 mm over the road, flush as paint is.
+    const sink = Math.max(0, (pad.paintLift ?? 0) - 0.001);
     for (const [a, b, c] of tris) {
-      this.physTri(pad.material, a, c, b);
+      if (sink > 0) this.physTri(pad.material, [a[0], a[1] - sink, a[2]], [c[0], c[1] - sink, c[2]], [b[0], b[1] - sink, b[2]]);
+      else this.physTri(pad.material, a, c, b);
       const tile = this.tile((a[0] + b[0] + c[0]) / 3, (a[2] + b[2] + c[2]) / 3);
       const acc = pad.look === 'asphalt' ? tile.pads : pad.look === 'terrain' ? tile.verges : pad.look === 'paint' ? tile.paint : tile.concrete;
       if (pad.look === 'none') continue;

@@ -11,6 +11,10 @@ import { Flexbody, type CageNode, type NodeLocator, type VehiclePartDef } from '
 import type { VehicleModel } from '../vehicles/VehicleModel';
 import type { CarViewpoints } from './ChaseCamera';
 import { sampleRing, type RingSample, type WheelRest } from '../vehicles/WheelDeform';
+import { SuspensionView, type SuspensionDef } from '../vehicles/SuspensionView';
+
+/** Car x-ray (투시): off, the suspension through a glass body, or every node and beam of the lattice. */
+export type XrayMode = 'off' | 'suspension' | 'lattice';
 
 /** A physics wheel's ring nodes: body node index of its first node (segment j: base + 4j + tread A, tread B, rim A,
  *  rim B — core addPressureWheel) and its rest geometry. Indexed like the telemetry's wheels. */
@@ -65,17 +69,25 @@ export class VehicleView {
   private mountScale: THREE.Vector3[] = [];
   private map: number[] | null = null; // physics wheel → model wheel
   readonly flexbody: Flexbody | null = null;
+  /** The suspension x-ray (null: the document has no suspension members). */
+  readonly suspension: SuspensionView | null = null;
+  private xray: XrayMode = 'off';
 
   /** `cage`: the chassis lattice of physics body `body` (null: the body mesh stays rigid on the chassis frame);
-   *  `damage`: the vehicle's damage groups and node rest positions (glass and lamps). */
+   *  `damage`: the vehicle's damage groups and node rest positions (glass and lamps); `suspension`: its suspension
+   *  members (the x-ray). */
   constructor(readonly model: VehicleModel, cage: CageNode[] | null = null, private body = -1,
               damage: { defs: DamageGroupDef[]; nodeRest: (node: number) => [number, number, number]; parts?: VehiclePartDef[] } | null = null,
-              private readonly rings: Array<WheelRings | undefined> = []) {
+              private readonly rings: Array<WheelRings | undefined> = [], suspension: SuspensionDef | null = null) {
     this.group.add(model.root);
     model.root.matrixAutoUpdate = false;
     if (cage && cage.length > 0 && body >= 0) {
       this.flexbody = new Flexbody(model.root, model.body, cage, body, damage);
       this.group.add(this.flexbody.group);
+    }
+    if (suspension && body >= 0) {
+      this.suspension = new SuspensionView(suspension, body);
+      this.group.add(this.suspension.group);
     }
     // Wheel mounts leave the body's hierarchy: they are placed in world space from the physics hubs.
     for (const spin of model.wheels) {
@@ -125,11 +137,51 @@ export class VehicleView {
   rebind(body: number): void {
     this.body = body;
     this.flexbody?.rebind(body);
+    this.suspension?.rebind(body);
     for (const d of this.model.deforms) d.reset();
   }
 
   set visible(on: boolean) {
     this.group.visible = on;
+  }
+
+  private wheelSaved: Map<THREE.Material, { transparent: boolean; opacity: number; depthWrite: boolean }> | null = null;
+
+  /** X-ray (투시): 'suspension' — the body a glass shell, the wheels half see-through (the knuckle inside the rim
+   *  shows), the suspension drawn; 'lattice' — the model hidden (the debug view draws every node and beam); 'off'. */
+  setXray(mode: XrayMode): void {
+    this.xray = mode;
+    const ghost = mode === 'suspension' && !!this.suspension;
+    this.group.visible = mode !== 'lattice' && !(mode === 'suspension' && !this.suspension);
+    this.flexbody?.setGhost(ghost);
+    if (this.suspension) this.suspension.visible = ghost;
+    if (ghost && !this.wheelSaved) {
+      this.wheelSaved = new Map();
+      for (const mount of this.mounts) {
+        mount.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+            if (this.wheelSaved!.has(m)) continue;
+            this.wheelSaved!.set(m, { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite });
+            m.transparent = true;
+            m.opacity = Math.min(m.opacity, 0.45);
+            m.depthWrite = false;
+            m.needsUpdate = true;
+          }
+        });
+      }
+    } else if (!ghost && this.wheelSaved) {
+      for (const [m, saved] of this.wheelSaved) {
+        Object.assign(m, saved);
+        m.needsUpdate = true;
+      }
+      this.wheelSaved = null;
+    }
+  }
+
+  get xrayMode(): XrayMode {
+    return this.xray;
   }
 
   /** Nearest model wheel for every physics wheel, in the model frame (done once, at the first pose). */
@@ -162,6 +214,7 @@ export class VehicleView {
     if (this.flexbody && frame && locate) {
       this.flexbody.update(frame, locate, islandVersion, performance.now(), { origin: origin.toArray() as V3, axes: [x.toArray() as V3, y.toArray() as V3, z.toArray() as V3] });
     }
+    if (this.suspension && frame && locate) this.suspension.update(frame, locate, Math.abs(v.speed) < 0.3 && v.wheels.every((w) => w.contact));
     this.model.root.matrix.compose(origin, q, new THREE.Vector3(1, 1, 1));
     this.model.root.matrixWorldNeedsUpdate = true;
 

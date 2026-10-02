@@ -176,6 +176,34 @@ async function main() {
       if (turn < 0.15) failures.push(`drive: steering left turned the car by only ${turn.toFixed(3)} rad`);
       if (braked.kmh > 5) failures.push(`drive: still ${braked.kmh.toFixed(1)} km/h after 15 s of braking`);
       if (minUp < 0.9) failures.push('drive: the car tipped over');
+      // X-ray (V): off → suspension (glass body, arms, coils, dampers, per-corner travel HUD) → lattice → off.
+      const xray = () =>
+        page.evaluate(() => {
+          const d = window.__apex.drive, sv = d.view.suspension, hud = document.querySelector('.susp-hud');
+          return {
+            mode: d.xrayMode,
+            parts: sv ? sv.group.children.length : 0,
+            shown: sv ? sv.visible : false,
+            travel: sv ? sv.travel.map((c) => c.travel) : [],
+            hud: !!hud && !hud.hidden,
+          };
+        });
+      await page.keyboard.press('KeyV');
+      await page.waitForTimeout(2500);
+      const susp = await xray();
+      await page.screenshot({ path: join(dir, 'J-xray-suspension.png') });
+      await page.keyboard.press('KeyV');
+      await page.waitForTimeout(1000);
+      const lattice = await xray();
+      await page.keyboard.press('KeyV');
+      await page.waitForTimeout(500);
+      const off = await xray();
+      console.log('xray:', JSON.stringify({ susp, lattice: lattice.mode, off: off.mode }));
+      if (susp.mode !== 'suspension' || !susp.shown || !susp.hud) failures.push(`xray: suspension view not shown (${JSON.stringify(susp)})`);
+      if (susp.parts < 8) failures.push(`xray: only ${susp.parts} suspension parts drawn`);
+      if (susp.travel.length !== 4 || susp.travel.some((x) => !Number.isFinite(x) || Math.abs(x) > 0.2)) failures.push(`xray: corner travel ${susp.travel}`);
+      if (lattice.mode !== 'lattice' || lattice.shown || lattice.hud) failures.push(`xray: lattice step ${JSON.stringify(lattice)}`);
+      if (off.mode !== 'off' || off.shown || off.hud) failures.push(`xray: off step ${JSON.stringify(off)}`);
       const errors = await page.evaluate(() => window.__apex.errors);
       if (errors.length || consoleErrors.length) failures.push(`errors (drive): ${[...errors, ...consoleErrors].join(' | ')}`);
       await page.close();
@@ -222,7 +250,7 @@ async function main() {
       });
       await page.waitForTimeout(1500);
       await page.screenshot({ path: join(dir, 'M2-crash-flexbody.png') });
-      await page.keyboard.press('KeyV');
+      await page.evaluate(() => window.__apex.drive.setXray('lattice')); // V steps through the suspension view first
       await page.waitForTimeout(1200);
       await page.screenshot({ path: join(dir, 'M2-crash-cage.png') });
       console.log('crash:', JSON.stringify(s));

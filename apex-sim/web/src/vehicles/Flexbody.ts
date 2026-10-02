@@ -747,6 +747,32 @@ export class Flexbody {
     this.group.visible = on;
   }
 
+  private ghostSaved: Map<THREE.Material, { transparent: boolean; opacity: number; depthWrite: boolean }> | null = null;
+
+  /** Suspension x-ray: the body as a glass shell (`opacity`, no depth writes, so what is inside shows through it);
+   *  still deformed by the cage. false restores the materials as they were. */
+  setGhost(on: boolean, opacity = 0.14): void {
+    if (on === !!this.ghostSaved) return;
+    const materials = new Set<THREE.Material>();
+    for (const mesh of this.meshes) for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) materials.add(m);
+    if (on) {
+      this.ghostSaved = new Map();
+      for (const m of materials) {
+        this.ghostSaved.set(m, { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite });
+        m.transparent = true;
+        m.opacity = Math.min(m.opacity, opacity);
+        m.depthWrite = false;
+        m.needsUpdate = true;
+      }
+    } else {
+      for (const [m, saved] of this.ghostSaved!) {
+        Object.assign(m, saved);
+        m.needsUpdate = true;
+      }
+      this.ghostSaved = null;
+    }
+  }
+
   dispose(): void {
     this.group.removeFromParent();
     this.texture.dispose();

@@ -417,3 +417,19 @@ body.touch-on .sheet:not(.open) { display: none; }
 @media (max-width: 900px) { .mm-hint { display: none; } }
 @media (prefers-reduced-motion: reduce) { .mm-brand, .mm-card, .mm-car, .mm-tagline, .mm-bar::after { animation: none !important; } }
 .settings-note .ui-now { color: var(--text); font-weight: 600; }
+
+/* ---- suspension x-ray readout (SuspensionHud): four corners, travel bars either side of zero ---- */
+.susp-hud { position: fixed; z-index: 12; left: calc(12px + var(--safe-l)); top: 50%; transform: translateY(-50%); width: 168px; display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-radius: var(--radius-m); background: var(--glass); backdrop-filter: blur(16px); border: 1px solid var(--border); pointer-events: none; animation: rise 200ms var(--ease); }
+.susp-title { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
+.susp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.susp-cell { display: grid; grid-template-columns: auto 10px; grid-template-rows: auto auto; column-gap: 8px; align-items: center; }
+.susp-label { font-family: var(--font-num); font-size: 0.72rem; color: var(--text-3); }
+.susp-track { grid-row: 1 / span 2; grid-column: 2; position: relative; height: 54px; border-radius: 4px; background: var(--surface-raised); overflow: hidden; }
+.susp-track::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--text-3); }
+.susp-track i { position: absolute; left: 0; right: 0; bottom: 50%; height: 0; border-radius: 3px; }
+.susp-track i.bump { background: #ff6a2b; }
+.susp-track i.rebound { background: #4cc9f0; }
+.susp-cell b { font-size: 0.8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.susp-hud small { font-size: 0.66rem; color: var(--text-3); }
+@media (max-width: 520px) { .susp-hud { width: 150px; top: calc(76px + var(--safe-t)); transform: none; } }

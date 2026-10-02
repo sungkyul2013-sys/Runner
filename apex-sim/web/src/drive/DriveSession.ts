@@ -13,7 +13,8 @@ import { Sparks } from '../vehicles/Sparks';
 import type { Leaks } from '../vehicles/Leaks';
 import type { Airbags } from '../vehicles/Airbags';
 import { VehicleActor } from '../vehicles/VehicleActor';
-import { spawnPoseOf, type VehicleView } from './VehicleView';
+import { spawnPoseOf, type VehicleView, type XrayMode } from './VehicleView';
+import { SuspensionHud } from '../ui/SuspensionHud';
 import { ChaseCamera } from './ChaseCamera';
 import { DriveInput } from './DriveInput';
 import { sound } from '../audio/Sound';
@@ -26,7 +27,10 @@ export class DriveSession {
   private chase: ChaseCamera;
   private actor: VehicleActor;
 
-  private xray = false;
+  private xray: XrayMode = 'off';
+  private readonly suspensionHud = new SuspensionHud();
+  /** The x-ray mode changed (the shell's button shows it). */
+  onXray: ((mode: XrayMode) => void) | null = null;
   private starting: Promise<void> | null = null;
   // Glass granules and lamp shards (§4.3 side-effect particles).
   readonly glassDebris: Debris = glassDebris();
@@ -61,7 +65,7 @@ export class DriveSession {
     this.input.onAction = (a) => {
       if (a === 'camera') this.toggleCamera();
       else if (a === 'reset') void this.resetCar().then(() => this.onReset?.());
-      else if (a === 'xray') this.setXray(!this.xray);
+      else if (a === 'xray') this.cycleXray();
     };
     window.addEventListener('keydown', (e) => {
       if (this.input.enabled && e.code === 'KeyP' && !e.repeat) this.onPauseToggle();
@@ -183,7 +187,17 @@ export class DriveSession {
   }
 
   get xrayOn(): boolean {
+    return this.xray !== 'off';
+  }
+
+  get xrayMode(): XrayMode {
     return this.xray;
+  }
+
+  /** X-ray, one step on: off → suspension → lattice → off. */
+  cycleXray(): void {
+    const order: XrayMode[] = ['off', 'suspension', 'lattice'];
+    this.setXray(order[(order.indexOf(this.xray) + 1) % order.length]);
   }
 
   /** Called after the reset key put the car back (the shell announces it). */
@@ -201,6 +215,7 @@ export class DriveSession {
     this.active = on;
     this.input.enabled = on;
     this.dashboard.root.hidden = !on;
+    this.suspensionHud.visible = on && this.xray === 'suspension';
     this.viewer.freeMove = !on;
     if (!on) {
       this.viewer.controls.enabled = true;
@@ -225,17 +240,23 @@ export class DriveSession {
   /** §9 electronic chassis notices (the lift dropped at speed, or the car has none). */
   onChassis: (event: 'liftDropped' | 'liftMissing') => void = () => {};
 
-  setXray(on: boolean): void {
-    this.xray = on;
+  /** `true` is the lattice view (the sandbox's x-ray toggle). */
+  setXray(mode: XrayMode | boolean): void {
+    const m: XrayMode = mode === true ? 'lattice' : mode === false ? 'off' : mode;
+    const changed = m !== this.xray;
+    this.xray = m;
     const hasModel = this.actor.hasModel;
+    const lattice = m === 'lattice';
     if (this.manageDebug) {
-      this.debug.showBeams = on || !hasModel;
-      this.debug.showNodes = on || !hasModel;
+      this.debug.showBeams = lattice || !hasModel;
+      this.debug.showNodes = lattice || !hasModel;
     } else {
-      this.debug.xray = on;
+      this.debug.xray = lattice;
       if (this.actor.spawned && hasModel) this.debug.hidden.add(this.actor.spawned.body);
     }
-    this.actor.setXray(on);
+    this.actor.setXray(m);
+    this.suspensionHud.visible = m === 'suspension' && this.active;
+    if (changed) this.onXray?.(m);
   }
 
   /** Per rendered frame: pose the model, follow with the camera, send the driver's input. */
@@ -246,6 +267,8 @@ export class DriveSession {
     this.glassDebris.update(dt);
     this.lampDebris.update(dt);
     this.sparks.update(dt);
+    const suspension = this.actor.view?.suspension;
+    if (suspension) this.suspensionHud.update(suspension.travel);
     const stats = this.physics.latestStats();
     sound?.update(this.active ? v : null, stats?.timeScale ?? 1, stats?.paused ?? false);
     if (!this.active) {

@@ -157,6 +157,8 @@ if(SBC_BUILD_TESTS)
     tests/test_kerb.cpp
     tests/test_chassis.cpp
     tests/test_roughness.cpp
+    tests/test_wheelhop.cpp
+    tests/test_mapdrive.cpp
     tests/test_handling.cpp
     tests/test_aero.cpp
     tests/test_static_bvh.cpp

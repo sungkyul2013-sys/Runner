@@ -77,11 +77,11 @@ class Vehicle {
     h.value(quietVelocity_.x); h.value(quietVelocity_.y); h.value(quietVelocity_.z);
     h.value(input_.chassisMode); h.value(input_.lift);
     for (const CornerState& c : corners_) {
-      h.value(c.offset); h.value(c.lenFast); h.value(c.lenSlow); h.value(c.bodyVelFast); h.value(c.bodyVelLow); h.value(c.damp);
+      h.value(c.offset); h.value(c.lenBody); h.value(c.lenSlow); h.value(c.bodyVelFast); h.value(c.bodyVelLow); h.value(c.damp);
       h.value(c.stretchLow); h.value(c.hopEnvelope);
     }
-    for (int a = 0; a < 2; ++a) { h.value(levelSym_[a]); h.value(rollU_[a]); }
-    h.value(pitchU_); h.value(liftBlocked_); h.value(lowOn_); h.value(lowTimer_); h.value(rearSteer_);
+    for (int a = 0; a < 2; ++a) { h.value(levelSym_[a]); h.value(rollU_[a]); h.value(rollTrim_[a]); }
+    h.value(pitchU_); h.value(pitchTrim_); h.value(liftBlocked_); h.value(lowOn_); h.value(lowTimer_); h.value(rearSteer_);
   }
 
  private:
@@ -241,7 +241,7 @@ class Vehicle {
     int32_t beam = -1;
     double design = 0.0, rest0 = 0.0, damping0 = 0.0, ratio = 1.0, halfTrack = 0.8, x = 0.0;
     int axle = 0, side = 1;
-    double offset = 0.0, lenFast = 0.0, lenSlow = 0.0, bodyVelFast = 0.0, bodyVelLow = 0.0, damp = 1.0;
+    double offset = 0.0, lenBody = 0.0, lenSlow = 0.0, bodyVelFast = 0.0, bodyVelLow = 0.0, damp = 1.0;
     double stretchLow = 0.0, hopEnvelope = 0.0;
   };
   std::vector<CornerState> corners_;
@@ -249,6 +249,8 @@ class Vehicle {
   double levelSym_[2] = {0.0, 0.0};  // per axle: ride-height offset [m]
   double rollU_[2] = {0.0, 0.0};     // per axle: active roll offset, + on the left [m]
   double pitchU_ = 0.0;              // active pitch offset, + at the front [m]
+  double rollTrim_[2] = {0.0, 0.0};  // their slow feedback parts (the rest is feed-forward from the accelerations) [m]
+  double pitchTrim_ = 0.0;
   bool liftBlocked_ = false, lowOn_ = false;
   double lowTimer_ = 0.0;
   double rearSteer_ = 0.0;           // [rad]

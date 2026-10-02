@@ -6,13 +6,14 @@ import { FAULT, type VehicleState } from '../physics/telemetry';
 import type { Viewer } from '../render/Viewer';
 import type { VehiclePreset } from '../app/presets';
 import { t } from '../ui/i18n';
-import { VehicleView, type WheelRings } from '../drive/VehicleView';
+import { VehicleView, type WheelRings, type XrayMode } from '../drive/VehicleView';
 import { Airbags, type AirbagDef } from './Airbags';
 import { decodeDamage, type DamageGroupDef } from './Damage';
 import type { Debris } from './Debris';
 import { vehicleCage, type CageNode, type VehicleJsonNode, type VehiclePartDef } from './Flexbody';
 import { InternalParts, type InternalPartDef } from './InternalParts';
 import { Leaks } from './Leaks';
+import { suspensionOf, type SuspensionDef } from './SuspensionView';
 import { LooseParts } from './LooseParts';
 import type { Sparks } from './Sparks';
 import { loadVehicleModel } from './VehicleModel';
@@ -27,7 +28,7 @@ export class VehicleActor {
   internals: InternalParts | null = null; // engine and gearbox blocks (§4.4 internal parts)
   readonly loose = new LooseParts(); // torn-off parts the model does not cover (a shredded tyre's carcass)
   private looseVersion = -1;
-  private xray = false;
+  private xray: XrayMode = 'off';
 
   constructor(
     private readonly physics: PhysicsClient,
@@ -68,7 +69,7 @@ export class VehicleActor {
       try {
         const [model, doc] = await Promise.all([modelPromise, docPromise]);
         this.view = new VehicleView(model, doc?.cage ?? null, this.spawned.body,
-          doc ? { defs: doc.damageGroups, nodeRest: doc.nodeRest, parts: doc.parts } : null, doc?.wheelRings ?? []);
+          doc ? { defs: doc.damageGroups, nodeRest: doc.nodeRest, parts: doc.parts } : null, doc?.wheelRings ?? [], doc?.suspension ?? null);
         this.viewer.scene.add(this.view.group, this.loose.group);
         if (doc) {
           this.leaks = new Leaks(doc.damageGroups);
@@ -109,11 +110,13 @@ export class VehicleActor {
     this.state = null;
   }
 
-  setXray(on: boolean): void {
-    this.xray = on;
-    if (this.view) this.view.visible = !on;
-    this.loose.group.visible = !on; // x-ray shows every node anyway
-    if (this.internals) this.internals.group.visible = !on;
+  /** X-ray: true is the lattice view (every node and beam; the crash lab's), or a mode (the drive's). */
+  setXray(mode: XrayMode | boolean): void {
+    const m: XrayMode = mode === true ? 'lattice' : mode === false ? 'off' : mode;
+    this.xray = m;
+    this.view?.setXray(m);
+    this.loose.group.visible = m !== 'lattice'; // the lattice view shows every node anyway
+    if (this.internals) this.internals.group.visible = m === 'off'; // the engine block would hide the front suspension
   }
 
   /** Per rendered frame: the vehicle's latest state, its model posed and its damage shown. Null before it exists. */
@@ -167,6 +170,7 @@ export async function loadVehicleDoc(url: string): Promise<{
   airbags: AirbagDef[];
   internals: InternalPartDef[];
   wheelRings: Array<WheelRings | undefined>;
+  suspension: SuspensionDef | null;
   nodeRest: (i: number) => [number, number, number];
   nodeIndex: (id: string) => number;
 } | null> {
@@ -178,7 +182,9 @@ export async function loadVehicleDoc(url: string): Promise<{
     visual?: { airbags?: AirbagDef[]; parts?: VehiclePartDef[]; internals?: InternalPartDef[] };
     pressureWheels?: Array<{ id: string; segments?: number; tyreRadius: number; rimRadius: number; treadWidth?: number;
       rimWidth?: number; treadNodeRadius?: number }>;
-    vehicle?: { wheels?: Array<{ pressureWheel?: string }> };
+    vehicle?: { wheels?: Array<{ pressureWheel?: string; carrier?: string[] }>; chassis?: { corners?: Array<{ chassis: string; wheel: string; motionRatio?: number }> } };
+    beams?: Array<[string, string, string, ...unknown[]]>;
+    torsionBars?: Array<{ arm1: string; pivot1: string; pivot2: string; arm2: string }>;
   };
   if (!doc.nodes) return null;
   const nodes = doc.nodes;
@@ -200,6 +206,7 @@ export async function loadVehicleDoc(url: string): Promise<{
   const wheelRings = (doc.vehicle?.wheels ?? []).map((w) => ringsById.get(w.pressureWheel ?? ''));
   return {
     wheelRings,
+    suspension: suspensionOf(doc, (id) => index.get(id) ?? -1),
     cage: vehicleCage(nodes, parts),
     parts,
     damageGroups: doc.damageGroups ?? [],

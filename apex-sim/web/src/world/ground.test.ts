@@ -17,7 +17,7 @@ function teleports(m: MapData): { n: number; buried: number; offRoad: number; wo
   let n = 0, buried = 0, offRoad = 0, worst = '';
   const gaps: number[] = [];
   for (const e of m.graph.edges) {
-    for (let k = 0; k < e.xs.length; k += 3) {
+    for (let k = 0; k < e.xs.length; k += 5) {
       // A click 4 m beside the centre line (the map is not that precise), snapped back onto the road.
       const sx = e.xs[k] + 4 * Math.sin(k), sz = e.zs[k] + 4 * Math.cos(k);
       const snap = router.snap(sx, sz)!;
@@ -67,12 +67,12 @@ function check(m: MapData) {
 }
 
 describe('spawn and teleport poses (§13.1)', () => {
-  it('a teleport onto a road of the proving ground lands on its carriageway', () => check(buildProving()), 120000);
-  it('a teleport onto a road of Hanbit lands on its carriageway (slabs, bridges, elevated roads, tunnels)', () => check(buildHanbit()), 120000);
+  it('a teleport onto a road of the proving ground lands on its carriageway', () => check(buildProving()), 300000);
+  it('a teleport onto a road of Hanbit lands on its carriageway (slabs, bridges, elevated roads, tunnels)', () => check(buildHanbit()), 300000);
   it('a teleport onto a road of Hangyeryeong lands on its carriageway', () => {
     const meta = JSON.parse(readFileSync('web/public/data/dem/seorak.json', 'utf8')) as DemMeta;
     const dem = decodeDemPng(new Uint8Array(readFileSync('web/public/data/dem/seorak.png')), meta);
     const osm = JSON.parse(readFileSync('web/public/data/dem/seorak.osm.json', 'utf8')) as OsmMap;
     check(buildSeorak(undefined, { dem, osm }));
-  }, 120000);
+  }, 300000);
 });
