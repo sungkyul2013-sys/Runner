@@ -110,6 +110,18 @@ double cos(double x) {
   }
 }
 
+void sincos(double x, double& s, double& c) {
+  double r;
+  const int q = reduce(x, r);
+  const double sp = sinPoly(r), cp = cosPoly(r);
+  switch (q) {
+    case 0: s = sp; c = cp; break;
+    case 1: s = cp; c = -sp; break;
+    case 2: s = -sp; c = -cp; break;
+    default: s = -cp; c = sp; break;
+  }
+}
+
 double asin(double x) {
   const double c = std::clamp(x, -1.0, 1.0);
   return atan2(c, std::sqrt((1.0 - c) * (1.0 + c)));  // sqrt is correctly rounded (IEEE)

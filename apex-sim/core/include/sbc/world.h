@@ -170,6 +170,13 @@ class World {
   // The surface library in use (applySurfaces; §11 roughness and loose layers). Null until one is set.
   void setSurfaces(const SurfaceLibrary& library);
   const SurfaceLibrary* surfaces() const { return surfaces_.get(); }
+  // §11.4 micro-roughness in the contacts (off by default): static contacts on a surface with a roughness (ISO 8608
+  // road, cobbles, slab joints, washboard) see its height and slope at the contact point — the tyres feel the road's
+  // texture. Needs a surface library (applySurfaces).
+  void setRoughness(bool on);
+  bool roughness() const { return roughness_; }
+  float roughnessPad() const { return roughnessPad_; }  // [m] the highest bump of any rough surface (0: off)
+  float roughnessPeak(uint16_t material) const { return roughnessPeaks_[material]; }  // [m] its highest bump (0: off)
 
   // ---- surface decals (§11.1 µ-split lanes, road paint, spills): the material of static contacts whose point lies
   // inside a decal (seen from above, within 1 m of its height) is the decal's. The latest decal wins. ----
@@ -219,8 +226,9 @@ class World {
   // test): the parts that broke off it are retired, its body is moved rigidly (no beam, plastic or pressure state
   // changes) so the chassis stands upright at heading `yaw` with the model origin at `position` — lifted until no
   // collision node is below `floorY` — and every node gets the forward `speed` (wheels spinning to match). Stick
-  // anchors, the crash sensor and the slip states start fresh; the energy change is booked as external work.
-  void relaunchVehicle(int vehicle, DVec3 position, double yaw, float speed, double floorY);
+  // anchors, the crash sensor and the slip states start fresh; the energy change is booked as external work. `pitch`
+  // (nose up) and `roll` (left side up) [rad] lay it on a slope instead of level.
+  void relaunchVehicle(int vehicle, DVec3 position, double yaw, float speed, double floorY, double pitch = 0.0, double roll = 0.0);
 
   // ---- vehicles (§6–§10) ----
   // Attaches a vehicle controller to body `body` (node indices in `desc` refer to that body). Returns its id.
@@ -298,6 +306,9 @@ class World {
   std::vector<ContactPairParams> pairTable_;  // dense (kMaxMaterials²) lookup
   std::vector<float> tyreGrip_, tyreCrr_;       // kMaxMaterials × kTyreTypeCount
   std::shared_ptr<const SurfaceLibrary> surfaces_;
+  bool roughness_ = false;
+  float roughnessPad_ = 0.0f;  // [m] the highest bump of any rough surface: contact queries reach this much further
+  std::array<float, kMaxMaterials> roughnessPeaks_{};  // [m] per material (0 while roughness is off)
   std::vector<SurfaceDecal> decals_;
   uint64_t stepIndex_ = 0;
   StepStats stats_;

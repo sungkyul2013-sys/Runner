@@ -12,10 +12,25 @@ export interface RawControls {
 
 const REVERSE_ENGAGE_S = 0.35; // hold the back pedal this long at a standstill to select reverse (and vice versa)
 const STANDSTILL = 0.6; // [m/s]
+// Auto hold (§9 경사로 밀림 방지): stopped with neither pedal pressed, the brakes stay on (the car does not roll back
+// on a slope or creep); the throttle releases them.
+const HOLD_SPEED = 0.3; // [m/s]
+const HOLD_BRAKE = 0.5;
 const KEY_STEER_RATE = 2.6; // [1/s] towards the target
 const KEY_STEER_RETURN = 4.5; // [1/s] back to centre
 const ANALOG_STEER_RATE = 5; // [1/s] a thumb or stick may move this fast (full lock in 0.2 s)
 const ANALOG_SMOOTH = 0.05; // [s] low-pass of a thumb or stick (finger tremor, stick noise)
+// Pedal travel: a foot takes about 0.2 s to floor a pedal, so a key or a button squeezes it on like one instead of a
+// step (a step of full engine torque rocks the body on its springs and shakes the driveline); lifting is quicker.
+const THROTTLE_RISE = 5; // [1/s]
+const THROTTLE_FALL = 10;
+const BRAKE_RISE = 7;
+const BRAKE_FALL = 12;
+
+function slew(from: number, to: number, rise: number, fall: number, dt: number): number {
+  const d = to - from;
+  return from + (d > 0 ? Math.min(d, rise * dt) : Math.max(d, -fall * dt));
+}
 
 /** Driving aids preset (§15.2): 입문 (every aid, gentle steering), 표준, 시뮬레이션 (no aids, the raw steering). */
 export type AssistLevel = 'beginner' | 'standard' | 'sim';
@@ -47,6 +62,8 @@ export class DriveLogic {
   abs = true;
   tcs = true;
   esc = true;
+  /** Holds the car at a standstill without pedals (auto hold). */
+  autoHold = true;
   assist: AssistLevel = 'standard';
   geometry: SteerGeometry = DEFAULT_GEOMETRY;
   /** 0 drive, 1 reverse (the automatic's selector; manual mode keeps its own gear but reverses the same way). */
@@ -54,10 +71,19 @@ export class DriveLogic {
   private hold = 0;
   private steer = 0;
   private smooth = 0;
+  private pedal = 0; // the "go" pedal after travel (throttle, or the brake key in reverse)
+  private stop = 0;
   private shift: -1 | 0 | 1 = 0;
+  private flip = false;
+  private holding = true; // a car put down holds still until the driver moves it
 
   requestShift(dir: -1 | 1): void {
     this.shift = dir;
+  }
+
+  /** The D / R selector (a touch button): switches at a standstill on the next update. */
+  requestReverse(): void {
+    this.flip = true;
   }
 
   get reversing(): boolean {
@@ -69,7 +95,11 @@ export class DriveLogic {
     this.hold = 0;
     this.steer = 0;
     this.smooth = 0;
+    this.pedal = 0;
+    this.stop = 0;
     this.shift = 0;
+    this.flip = false;
+    this.holding = true;
   }
 
   /** Sets the aids of a preset (the driver may still switch each one after). */
@@ -85,6 +115,13 @@ export class DriveLogic {
   /** Advances by `dt` seconds at forward speed `speed` [m/s]; `yawRate` [rad/s] (positive: turning left). */
   update(dt: number, speed: number, c: RawControls, yawRate = 0): VehicleInput {
     // Reverse selection at a standstill: in reverse the pedals swap (back = go, forward = brake), as in most games.
+    if (this.flip) {
+      this.flip = false;
+      if (Math.abs(speed) < STANDSTILL) {
+        this.reverse = !this.reverse;
+        this.hold = 0;
+      }
+    }
     const back = this.reverse ? c.throttle : c.brake;
     const go = this.reverse ? c.brake : c.throttle;
     if (Math.abs(speed) < STANDSTILL && back > 0.5 && go < 0.1) {
@@ -96,8 +133,16 @@ export class DriveLogic {
     } else {
       this.hold = 0;
     }
-    const throttle = this.reverse ? c.brake : c.throttle;
-    const brake = this.reverse ? c.throttle : c.brake;
+    this.pedal = slew(this.pedal, Math.max(0, Math.min(1, this.reverse ? c.brake : c.throttle)), THROTTLE_RISE, THROTTLE_FALL, dt);
+    this.stop = slew(this.stop, Math.max(0, Math.min(1, this.reverse ? c.throttle : c.brake)), BRAKE_RISE, BRAKE_FALL, dt);
+    const throttle = this.pedal;
+    let brake = this.stop;
+    // Auto hold: engages once stopped, then stays until a pedal is pressed (a bounce or a slope's first roll does not
+    // let go of it); it never engages while coasting.
+    const pedals = c.throttle >= 0.05 || c.brake >= 0.05 || c.handbrake >= 0.5;
+    if (!this.autoHold || pedals || Math.abs(speed) > 3) this.holding = false;
+    else if (Math.abs(speed) < HOLD_SPEED) this.holding = true;
+    if (this.holding) brake = Math.max(brake, HOLD_BRAKE);
 
     const raw = Math.max(-1, Math.min(1, c.steer));
     // Countersteer — against the rotation while the car yaws faster than the steering asks — may use the whole lock.
@@ -132,11 +177,13 @@ export class DriveLogic {
   }
 }
 
-export type Action = 'shiftUp' | 'shiftDown' | 'toggleManual' | 'toggleTcs' | 'toggleAbs' | 'toggleEsc' | 'camera' | 'reset' | 'xray';
+export type Action = 'shiftUp' | 'shiftDown' | 'toggleManual' | 'toggleTcs' | 'toggleAbs' | 'toggleEsc' | 'camera' | 'reset' | 'xray' | 'reverse';
 
 /** An analog control surface next to keyboard and gamepad (§15.4 touch controls): read once per frame. */
 export interface AnalogSource {
   readonly state: { throttle: number; brake: number; steer: number; handbrake: number; analog: boolean };
+  /** What the car made of it (applied pedals after the aids, rack position, gear), to show on the controls. */
+  feedback?(f: { throttle: number; brake: number; steer: number; gear: number; reversing: boolean; manual: boolean; tcs: boolean; abs: boolean; speed: number }): void;
 }
 
 const KEY_ACTIONS: Record<string, Action> = {
@@ -193,6 +240,7 @@ export class DriveInput {
     else if (a === 'toggleTcs') this.logic.tcs = !this.logic.tcs;
     else if (a === 'toggleAbs') this.logic.abs = !this.logic.abs;
     else if (a === 'toggleEsc') this.logic.esc = !this.logic.esc;
+    else if (a === 'reverse') this.logic.requestReverse();
     this.onAction(a);
   }
 

@@ -11,6 +11,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "sbc/scenes.h"
 #include "sbc/vehicle_json.h"
@@ -191,5 +192,43 @@ TEST_CASE("ride height probe", "[.kerbprobe]") {
     }
     std::printf("%-22s clearance %.3f m at %s (model frame %.3f); front overhang %.3f, rear %.3f\n", id, low, at.c_str(),
                 restLow, lowFront, lowRear);
+  }
+}
+
+TEST_CASE("a car put down on a 21 % slope along it stands there unharmed (relaunch with pitch)", "[kerb][spawn][porsche]") {
+  // A spawn on a steep old-town lane: laid along the slope (World::relaunchVehicle pitch), the car settles on its
+  // wheels and holds on its brakes; put down level instead, one end would be buried in the road.
+  for (const char* id : {"porsche_911_turbo_991", "rolls_royce_ghost", "maybach_gls"}) {
+    WorldParams wp;
+    wp.threadCount = 1;
+    World w(wp);
+    applyDefaultContactPairs(w);
+    const double grade = 0.21;
+    std::vector<float> verts = {-40.0f, static_cast<float>(-40.0 * grade), -40.0f, 40.0f, static_cast<float>(-40.0 * grade), -40.0f,
+                                40.0f, static_cast<float>(40.0 * grade), 40.0f, -40.0f, static_cast<float>(40.0 * grade), 40.0f};
+    w.addStaticMesh({0.0, 0.0, 0.0}, verts, {0, 2, 1, 0, 3, 2}, material::kAsphalt);
+    const LoadedVehicle car = loadVehicleJson(vehicleText(id), {{0.0, 0.0, 0.0}, 0.0, 0.0f});
+    const int body = w.addBody(car.build.body);
+    const int v = w.addVehicle(body, car.build.vehicle);
+    w.relaunchVehicle(v, {0.0, 0.12, 0.0}, 0.0, 0.0f, -1e9, std::atan(grade), 0.0);  // facing uphill
+    VehicleInput hold;
+    hold.brake = 0.5f;
+    w.setVehicleInput(v, hold);
+    const DVec3 start = w.body(body).origin + toDouble(w.vehicleTelemetry(v).position);
+    w.step(static_cast<int>(2.0 / w.params().dt));
+    const VehicleTelemetry& t = w.vehicleTelemetry(v);
+    const DVec3 end = w.body(body).origin + toDouble(t.position);
+    const DVec3 d = end - start;
+    const double moved = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    double plastic = 0.0;
+    const Body& b = w.body(body);
+    for (int i = 0; i < b.beamCount(); ++i) plastic += std::fabs(b.plasticDeformation[static_cast<size_t>(i)]);
+    uint32_t tyres = 0;
+    for (const WheelTelemetry& wt : t.wheels) tyres |= wt.tyreFlags;
+    INFO(id << ": faults " << t.faults << ", tyre flags " << tyres << ", plastic " << plastic * 1e3 << " mm, moved " << moved << " m");
+    CHECK(t.faults == 0u);
+    CHECK(tyres == 0u);
+    CHECK(plastic < 0.005);
+    CHECK(moved < 0.3);
   }
 }

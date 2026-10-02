@@ -107,6 +107,7 @@ function touchControls(session: DriveSession, shell: ModeShell): TouchControls |
     if (a === 'pause') shell.openPause();
     else if (a === 'camera') session.input.trigger('camera');
     else if (a === 'reset') session.input.trigger('reset');
+    else if (a === 'reverse') session.input.trigger('reverse');
     else session.input.trigger(a);
   };
   tc.onLayoutChange = (l) => settings.set({ touchLayout: l });

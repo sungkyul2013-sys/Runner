@@ -8,6 +8,7 @@ _sbc_world_add_static_box
 _sbc_world_add_static_mesh
 _sbc_world_set_heightfield
 _sbc_world_set_material_remap
+_sbc_world_set_roughness
 _sbc_world_static_triangle_count
 _sbc_world_static_triangles
 _sbc_world_static_triangle_materials
@@ -15,6 +16,7 @@ _sbc_world_spawn_lattice
 _sbc_world_add_body_velocity
 _sbc_world_retire_family
 _sbc_world_relaunch_vehicle
+_sbc_world_relaunch_vehicle_tilted
 _sbc_world_set_wind
 _sbc_vehicle_set_wing_angle
 _sbc_world_add_tether

@@ -92,6 +92,7 @@ export class PhysicsClient {
   /** Playback clock in sim time, its rate (sim s per wall s, measured) and the wall time of the last update. */
   private playTime = -1;
   private playRate = 1;
+  private frameGap = 0.016; // smoothed sim time between published frames [s]
   private lastUpdate = 0;
   private render: RenderFrame | null = null;
   private stats: FrameStats | null = null;
@@ -259,6 +260,7 @@ export class PhysicsClient {
       else if (last && frame.simTime > last.simTime && frame.arrival > last.arrival) {
         const rate = (frame.simTime - last.simTime) / ((frame.arrival - last.arrival) / 1000);
         this.playRate += (Math.min(rate, 4) - this.playRate) * 0.15;
+        this.frameGap += (Math.min(frame.simTime - last.simTime, 0.15) - this.frameGap) * 0.1;
       }
       if (last && frame.simTime === last.simTime) this.spare.push(this.history.pop()!); // paused: keep the newest only
       this.history.push(frame);
@@ -268,8 +270,9 @@ export class PhysicsClient {
     const cur = hist[hist.length - 1];
     if (!cur) return null;
     if (this.stats?.paused) this.playRate = 0;
-    // Aim a bit more than one publish interval behind the newest frame, in sim time at the current rate.
-    const target = cur.simTime - 0.022 * Math.max(this.playRate, 0.05);
+    // Aim a bit more than one publish interval behind the newest frame, in sim time at the current rate (a slow phone
+    // publishes less often: the clock then stays further back so it never runs out of frames and stalls).
+    const target = cur.simTime - Math.max(0.022 * Math.max(this.playRate, 0.05), 1.35 * this.frameGap);
     if (this.playTime < 0 || Math.abs(target - this.playTime) > 0.25 * Math.max(this.playRate, 0.05)) this.playTime = target;
     else this.playTime += wallDt * this.playRate + (target - this.playTime) * Math.min(1, wallDt * 4);
     this.playTime = Math.min(Math.max(this.playTime, hist[0].simTime), cur.simTime);

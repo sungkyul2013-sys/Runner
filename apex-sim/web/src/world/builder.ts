@@ -11,6 +11,19 @@ import {
 import { Terrain } from './terrain';
 import type { Localized } from '../ui/i18n';
 
+/** Road shader surface code (MapView roadMaterial): 0 asphalt, 1 worn asphalt, 2 setts (cobbles), 3 gravel, 4 dirt,
+ *  5 concrete. */
+export function surfaceLook(material: number): number {
+  switch (material) {
+    case MAT.asphaltOld: return 1;
+    case MAT.cobble: case MAT.cobbleWet: return 2;
+    case MAT.gravel: case MAT.gravelTrap: case MAT.washboard: return 3;
+    case MAT.dirt: case MAT.mud: return 4;
+    case MAT.concrete: return 5;
+    default: return 0;
+  }
+}
+
 export interface RoadSpec {
   id: string;
   name?: Localized;
@@ -1223,7 +1236,7 @@ export class MapBuilder {
           const sa = a.s, sb = b.s;
           for (const [u, s] of [[uA, sa], [uB, sa], [uA, sb], [uB, sb]]) {
             acc.road!.push(u, s, nextJ(s), prevJ(s));
-            acc.style!.push(r.style.laneWidth, r.style.lanes, (r.style.median ?? 0) / 2 + (r.style.oneWay ? -1 : 0) * 0, r.style.pattern + 8 * (jflags && js.length ? 1 : 0) + (r.style.oneWay ? 16 : 0));
+            acc.style!.push(r.style.laneWidth, r.style.lanes, (r.style.median ?? 0) / 2 + (r.style.oneWay ? -1 : 0) * 0, r.style.pattern + 8 * (jflags && js.length ? 1 : 0) + (r.style.oneWay ? 16 : 0) + 32 * surfaceLook(material));
             acc.lamp!.push(tunnel ? 0 : lampSpacing, lampOff);
           }
         }
@@ -1279,9 +1292,22 @@ export class MapBuilder {
       const count = Math.max(1, Math.floor(span / 38));
       const pylons = r.spec.landmark && span > 250;
       const hung = r.spec.suspension && span > 250; // no piers under the suspended main span
+      // Two columns under wide decks, one under narrow ones, and a cross beam.
+      const cols = halfDeck > 8 ? [-halfDeck * 0.55, halfDeck * 0.55] : [0];
+      // A pier never stands on a road, pad or junction below (an elevated road over the streets): it moves along the
+      // deck to the nearest clear spot within 15 m, or is left out.
+      const clear = (s: number) => {
+        const q = r.at(s);
+        return cols.every((u) => !this.nearPaved(q.x + u * q.tz, q.z - u * q.tx, 2.5));
+      };
       for (let k = 1; k < count; k++) {
-        const s = s0 + (span * k) / count;
+        let s = s0 + (span * k) / count;
         if (hung && s > s0 + span * 0.18 - 10 && s < s0 + span * 0.82 + 10) continue;
+        if (!clear(s)) {
+          const found = [3, -3, 6, -6, 9, -9, 12, -12, 15, -15].find((d) => s + d > s0 && s + d < s1 && clear(s + d));
+          if (found === undefined) continue;
+          s += found;
+        }
         const p = r.at(s);
         const g = this.terrain.heightAt(p.x, p.z);
         const wl = this.waterLevelAt(p.x, p.z);
@@ -1289,8 +1315,6 @@ export class MapBuilder {
         const top = p.y - 1.6;
         if (top - bottom < 1) continue;
         const yaw = Math.atan2(p.tx, p.tz);
-        // Two columns under wide decks, one under narrow ones, and a cross beam.
-        const cols = halfDeck > 8 ? [-halfDeck * 0.55, halfDeck * 0.55] : [0];
         for (const u of cols) {
           const x = p.x + u * p.tz, z = p.z - u * p.tx;
           this.boxes.push({ cx: x, cy: (top + bottom) / 2, cz: z, hx: 1.1, hy: (top - bottom) / 2, hz: 1.1, yaw, material: MAT.concrete, look: 'concrete' });

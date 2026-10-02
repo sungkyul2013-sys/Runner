@@ -154,6 +154,7 @@ if(SBC_BUILD_TESTS)
     tests/test_tethers.cpp
     tests/test_tyres.cpp
     tests/test_kerb.cpp
+    tests/test_roughness.cpp
     tests/test_handling.cpp
     tests/test_aero.cpp
     tests/test_static_bvh.cpp

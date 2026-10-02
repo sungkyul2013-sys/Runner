@@ -18,12 +18,13 @@ class World;
 
 // Micro-roughness (§11.4, KICKOFF C6): a deterministic height function of the world position, shared by physics
 // and rendering. kIso8608: random road of an ISO 8608 class (A best … H worst); kCobble: rounded stones on a grid
-// with gaps; kJoints: transverse slab joints; kWashboard: corrugation across the direction of travel.
+// with gaps; kJoints: transverse slab joints; kWashboard: corrugation across the direction of travel. The last three
+// may lie on an ISO 8608 undulation of their own ("class"): a sett street is not flat between its joints.
 enum class RoughnessKind : uint8_t { kNone, kIso8608, kCobble, kJoints, kWashboard };
 
 struct RoughnessParams {
   RoughnessKind kind = RoughnessKind::kNone;
-  int isoClass = 0;          // kIso8608: 0 = A … 7 = H
+  int isoClass = 0;          // kIso8608: 0 = A … 7 = H; the other kinds: an ISO 8608 undulation under them (−1: none)
   float size = 0.12f;        // kCobble: stone pitch [m]
   float gap = 0.015f;        // kCobble: joint width [m]
   float depth = 0.01f;       // kCobble / kJoints: joint depth [m]
@@ -91,6 +92,11 @@ std::string_view tyreTypeName(TyreType type);
 struct RoughnessSample {
   double height = 0.0, dx = 0.0, dz = 0.0;
 };
-RoughnessSample sampleRoughness(const RoughnessParams& r, uint16_t material, double x, double z);
+// `footprint` [m]: the length of what touches it (a tyre's contact patch, a node's diameter; 0 = a point). A tyre
+// envelopes what is short against its patch: waves shorter than it are attenuated (1 / (1 + (footprint/λ)²)) and a
+// narrow joint is felt as a shallower, wider dip (its depth averaged over the footprint).
+RoughnessSample sampleRoughness(const RoughnessParams& r, uint16_t material, double x, double z, double footprint = 0.0);
+// Upper bound of sampleRoughness(r, …).height over all positions [m] (≥ 0).
+double roughnessPeak(const RoughnessParams& r);
 
 }  // namespace sbc

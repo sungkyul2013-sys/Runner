@@ -130,6 +130,14 @@ int sbc_world_set_material_remap(sbc_world* w, int from, int to) {
   });
 }
 
+int sbc_world_set_roughness(sbc_world* w, int on) {
+  if (!w) return -1;
+  return guarded([&] {
+    w->world.setRoughness(on != 0);
+    return 0;
+  });
+}
+
 int sbc_world_static_triangle_count(sbc_world* w) { return w ? w->world.staticTriangleCount() : 0; }
 
 int sbc_world_static_triangle_materials(sbc_world* w, int first, int count, int* out) {
@@ -193,6 +201,14 @@ int sbc_world_relaunch_vehicle(sbc_world* w, int vehicle, double x, double y, do
   if (!validVehicle(w, vehicle)) return -1;
   return guarded([&] {
     w->world.relaunchVehicle(vehicle, {x, y, z}, yaw, speed, floor_y);
+    return 0;
+  });
+}
+
+int sbc_world_relaunch_vehicle_tilted(sbc_world* w, int vehicle, double x, double y, double z, double yaw, double pitch, double roll, float speed, double floor_y) {
+  if (!validVehicle(w, vehicle)) return -1;
+  return guarded([&] {
+    w->world.relaunchVehicle(vehicle, {x, y, z}, yaw, speed, floor_y, pitch, roll);
     return 0;
   });
 }

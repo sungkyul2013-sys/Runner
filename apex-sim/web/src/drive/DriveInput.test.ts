@@ -44,3 +44,39 @@ describe('speed-sensitive steering (§15.2)', () => {
     expect(logic.update(1 / 60, 10, pad(0)).esc).toBe(true);
   });
 });
+
+const keys = (throttle: number, brake: number): RawControls => ({ throttle, brake, steer: 0, handbrake: 0, analogSteer: false });
+
+describe('pedals, auto hold and the D / R selector', () => {
+  it('squeezes a key-press pedal on over ≈ 0.2 s and lifts it faster', () => {
+    const logic = new DriveLogic();
+    const first = logic.update(1 / 60, 10, keys(1, 0)).throttle;
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(0.2);
+    let t = first;
+    for (let i = 0; i < 12; i++) t = logic.update(1 / 60, 10, keys(1, 0)).throttle;
+    expect(t).toBe(1); // floored within 0.22 s
+    let up = 0;
+    while (logic.update(1 / 60, 10, keys(0, 0)).throttle > 0) up++;
+    expect(up).toBeLessThan(8); // off within 0.13 s
+  });
+
+  it('holds the car at a standstill without pedals, also through a bounce, until the throttle', () => {
+    const logic = new DriveLogic();
+    expect(logic.update(1 / 60, 0, keys(0, 0)).brake).toBeGreaterThanOrEqual(0.5); // put down: held at once
+    expect(logic.update(1 / 60, 1.2, keys(0, 0)).brake).toBeGreaterThanOrEqual(0.5); // a roll on landing does not release it
+    expect(logic.update(1 / 60, 0, keys(1, 0)).brake).toBe(0); // the throttle releases it
+    for (let i = 0; i < 30; i++) logic.update(1 / 60, 8, keys(0, 0));
+    expect(logic.update(1 / 60, 8, keys(0, 0)).brake).toBe(0); // coasting: never engages
+  });
+
+  it('switches drive and reverse from the selector only at a standstill', () => {
+    const logic = new DriveLogic();
+    logic.requestReverse();
+    logic.update(1 / 60, 5, keys(0, 0));
+    expect(logic.reversing).toBe(false);
+    logic.requestReverse();
+    expect(logic.update(1 / 60, 0, keys(0, 0)).mode).toBe(1);
+    expect(logic.reversing).toBe(true);
+  });
+});

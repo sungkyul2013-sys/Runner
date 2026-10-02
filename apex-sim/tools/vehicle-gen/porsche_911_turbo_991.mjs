@@ -541,7 +541,7 @@ cgY += (2 * wheelMass(tyreFront) + 2 * wheelMass(tyreRear)) * R;
 cgY /= total;
 
 // ---- vehicle section -------------------------------------------------------------------------------------------
-const tyre = (nominalLoad, verticalStiffness) => ({ radius: R, mu: 1.18, nominalLoad, verticalStiffness, relaxationX: 0.10, relaxationY: 0.28 });
+const tyre = (nominalLoad, verticalStiffness) => ({ radius: R, mu: 1.18, nominalLoad, verticalStiffness, relaxationX: 0.10, relaxationY: 0.28, By: 15 });  // By 15: an ultra-high-performance tyre's cornering stiffness (peak ≈ 6.3°)
 const wheel = (c, driveShare, brakeTorque, handbrakeTorque, nominalLoad, verticalStiffness) => ({
   name: c.name, pressureWheel: c.name, carrier: c.upright, tyre: tyre(nominalLoad, verticalStiffness), brakeTorque, handbrakeTorque, driveShare,
 });

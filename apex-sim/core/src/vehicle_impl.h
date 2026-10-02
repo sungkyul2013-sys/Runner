@@ -38,10 +38,11 @@ class Vehicle {
   const VehicleTelemetry& telemetry() const { return telemetry_; }
 
   // Rigid re-placement with the damage kept (World::relaunchVehicle): moves every node of the body so the chassis
-  // stands upright at heading `yaw` with the model origin at `position` (world), lifted until no collision node is
-  // below `floorY`; every node gets the forward `speed`, the wheels the matching spin. Stick anchors, the crash
-  // sensor, the slip and brake states start fresh (the damage, tyres, fluids and airbags stay as they are).
-  void relaunch(Body& body, DVec3 position, double yaw, double speed, double floorY);
+  // stands at heading `yaw` — tilted nose-up by `pitch` and left-side-up by `roll` to lie on a slope — with the model
+  // origin at `position` (world), lifted until no collision node is below `floorY`; every node gets the forward
+  // `speed`, the wheels the matching spin. Stick anchors, the crash sensor, the slip and brake states start fresh
+  // (the damage, tyres, fluids and airbags stay as they are).
+  void relaunch(Body& body, DVec3 position, double yaw, double speed, double floorY, double pitch = 0.0, double roll = 0.0);
 
   // Feeds every state variable that influences the future into a hash (A§4.5).
   template <typename Hash>
@@ -51,7 +52,7 @@ class Vehicle {
     h.value(engineOmega_); h.value(windup_); h.value(clutch_); h.value(steer_); h.value(shiftTimer_);
     h.value(input_.esc); h.value(escYaw_); h.value(escThrottle_);
     for (const double t : escTorque_) h.value(t);
-    h.value(sinceShift_); h.value(tcsFactor_); h.value(frontShare_); h.value(gear_); h.value(pendingGear_); h.value(running_); h.value(limiterCut_);
+    h.value(sinceShift_); h.value(tcsFactor_); h.value(tcsTraction_); h.value(tcsHold_); h.value(frontShare_); h.value(gear_); h.value(pendingGear_); h.value(running_); h.value(limiterCut_);
     h.value(prevVelocity_.x); h.value(prevVelocity_.y); h.value(prevVelocity_.z);
     h.value(accelLong_); h.value(accelLat_); h.value(odometer_);
     for (const WheelState& w : wheels_) {
@@ -146,6 +147,8 @@ class Vehicle {
   double shiftTimer_ = 0.0;   // remaining torque interruption [s]
   double sinceShift_ = 10.0;  // [s]
   double tcsFactor_ = 1.0;    // traction-control torque factor [0, 1]
+  double tcsTraction_ = -1.0; // traction control's low-passed feed-forward wheel torque [N·m] (< 0: not yet set)
+  double tcsHold_ = 0.0;      // traction control's indicator hold [s]
   double escYaw_ = 0.0;       // filtered yaw rate [rad/s] (stability control)
   double escThrottle_ = 1.0;  // stability control's engine torque factor [0.25, 1]
   std::vector<double> escTorque_;  // stability control's brake torque per wheel [N·m]

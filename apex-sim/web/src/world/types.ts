@@ -64,6 +64,9 @@ export interface Poi {
   z: number;
   yaw: number; // heading [rad] (0: +z, like the vehicle spawn)
   y?: number;
+  /** The road surface's slope there: nose up, left side up [rad] (a spawn lies along it). */
+  pitch?: number;
+  roll?: number;
 }
 
 /** Named area label for the maps (district names). */

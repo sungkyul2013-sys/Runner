@@ -62,20 +62,28 @@ RoughnessParams roughness(Val v, const std::string& path) {
     r.isoClass = c[0] - 'A';
   } else if (kind == "cobble") {
     r.kind = RoughnessKind::kCobble;
+    r.isoClass = -1;
     r.size = floatOr(v, "size", r.size, path);
     r.gap = floatOr(v, "gap", r.gap, path);
     r.depth = floatOr(v, "depth", r.depth, path);
   } else if (kind == "joints") {
     r.kind = RoughnessKind::kJoints;
+    r.isoClass = -1;
     r.spacing = floatOr(v, "spacing", r.spacing, path);
     r.depth = floatOr(v, "depth", r.depth, path);
     r.width = floatOr(v, "width", r.width, path);
   } else if (kind == "washboard") {
     r.kind = RoughnessKind::kWashboard;
+    r.isoClass = -1;
     r.wavelength = floatOr(v, "wavelength", r.wavelength, path);
     r.amplitude = floatOr(v, "amplitude", r.amplitude, path);
   } else {
     fail(path + ".kind", "unknown roughness '" + kind + "'");
+  }
+  if (r.kind != RoughnessKind::kIso8608 && member(v, "class")) {  // the undulation under the stones, joints, ridges
+    const std::string c = string(member(v, "class"), path + ".class");
+    if (c.size() != 1 || c[0] < 'A' || c[0] > 'H') fail(path + ".class", "expected A … H");
+    r.isoClass = c[0] - 'A';
   }
   return r;
 }
@@ -236,73 +244,163 @@ void grooves(double u, double period, double width, double depth, double& h, dou
   dh = depth * ds / half * (d < 0.0 ? -1.0 : 1.0);
 }
 
+// ISO 8608: displacement PSD G(n) = G(n0)·(n/n0)^-2, n0 = 0.1 cycle/m, G(n0) = 16e-6 m³ for class A and ×4 per
+// class. 20 components log-spaced over 0.1 … 10 cycle/m (10 m … 0.1 m waves; longer waves are the road's geometry),
+// each with amplitude √(2·G(n)·Δn), a pseudo-random heading and phase: an isotropic random surface.
+constexpr int kIsoComponents = 20;
+constexpr double kIsoN0 = 0.1, kIsoLo = 0.1, kIsoHi = 10.0;
+
+// Component k: spatial frequency [cycle/m] and amplitude [m] (before the footprint).
+void isoComponent(int isoClass, int k, double& nk, double& amp) {
+  const double g0 = 16e-6 * std::ldexp(1.0, 2 * isoClass);
+  const double logStep = det::log(kIsoHi / kIsoLo) / kIsoComponents;
+  const double a = kIsoLo * det::exp(logStep * k), b = kIsoLo * det::exp(logStep * (k + 1));
+  nk = std::sqrt(a * b);
+  amp = std::sqrt(2.0 * g0 * (kIsoN0 / nk) * (kIsoN0 / nk) * (b - a));
+}
+
+// The components' frequencies and amplitudes per class, and their wave vectors and phases per material (the material
+// seeds the headings), computed once.
+constexpr int kIsoClasses = 8, kIsoMaterials = 64;
+struct IsoTables {
+  double nk[kIsoComponents];
+  double amp[kIsoClasses][kIsoComponents];
+  double kx[kIsoMaterials][kIsoComponents], kz[kIsoMaterials][kIsoComponents], phase[kIsoMaterials][kIsoComponents];
+};
+
+void isoWave(uint16_t material, int k, double nk, double& kx, double& kz, double& phase) {
+  const uint64_t seed = (static_cast<uint64_t>(material) << 32) ^ static_cast<uint64_t>(k) * 0x51ED27u;
+  const double heading = 2.0 * kPi * hash01(seed);
+  phase = 2.0 * kPi * hash01(seed ^ 0xABCDEFu);
+  const double w = 2.0 * kPi * nk;
+  kx = w * det::cos(heading);
+  kz = w * det::sin(heading);
+}
+
+const IsoTables& isoTables() {
+  static const IsoTables t = [] {
+    IsoTables r{};
+    for (int c = 0; c < kIsoClasses; ++c) {
+      for (int k = 0; k < kIsoComponents; ++k) isoComponent(c, k, r.nk[k], r.amp[c][k]);
+    }
+    for (int m = 0; m < kIsoMaterials; ++m) {
+      for (int k = 0; k < kIsoComponents; ++k) isoWave(static_cast<uint16_t>(m), k, r.nk[k], r.kx[m][k], r.kz[m][k], r.phase[m][k]);
+    }
+    return r;
+  }();
+  return t;
+}
+
+void isoField(int isoClass, uint16_t material, double x, double z, double footprint, RoughnessSample& out) {
+  if (isoClass < 0) return;
+  const IsoTables& t = isoTables();
+  const int c = std::min(isoClass, kIsoClasses - 1);
+  for (int k = 0; k < kIsoComponents; ++k) {
+    const double nk = t.nk[k];
+    const double amp = t.amp[c][k] / (1.0 + (footprint * nk) * (footprint * nk));  // the tyre envelopes short waves
+    double kx, kz, phase;
+    if (material < kIsoMaterials) {
+      kx = t.kx[material][k];
+      kz = t.kz[material][k];
+      phase = t.phase[material][k];
+    } else {
+      isoWave(material, k, nk, kx, kz, phase);
+    }
+    double sn, cs;
+    det::sincos(kx * x + kz * z + phase, sn, cs);
+    out.height += amp * sn;
+    out.dx += amp * kx * cs;
+    out.dz += amp * kz * cs;
+  }
+}
+
+double isoPeak(int isoClass) {
+  if (isoClass < 0) return 0.0;
+  double sum = 0.0;
+  for (int k = 0; k < kIsoComponents; ++k) {
+    double nk, amp;
+    isoComponent(isoClass, k, nk, amp);
+    sum += amp;
+  }
+  return sum;
+}
+
 }  // namespace
 
-RoughnessSample sampleRoughness(const RoughnessParams& r, uint16_t material, double x, double z) {
+double roughnessPeak(const RoughnessParams& r) {
+  switch (r.kind) {
+    case RoughnessKind::kNone: return 0.0;
+    case RoughnessKind::kIso8608: return isoPeak(r.isoClass);
+    case RoughnessKind::kCobble: return 0.002 + isoPeak(r.isoClass);
+    case RoughnessKind::kJoints: return isoPeak(r.isoClass);
+    case RoughnessKind::kWashboard: return 2.0 * r.amplitude + isoPeak(r.isoClass);
+  }
+  return 0.0;
+}
+
+namespace {
+
+// A joint of `width` and `depth` seen through a footprint L: as wide as both, as deep as its share of it (the widened
+// joint stays within 80 % of the period).
+void envelopeJoint(double period, double& width, double& depth, double footprint) {
+  if (footprint <= 0.0) return;
+  const double wide = std::min(width + footprint, std::max(width, 0.8 * period));
+  depth *= width / wide;
+  width = wide;
+}
+
+}  // namespace
+
+RoughnessSample sampleRoughness(const RoughnessParams& r, uint16_t material, double x, double z, double footprint) {
   RoughnessSample out;
   switch (r.kind) {
     case RoughnessKind::kNone: break;
-    case RoughnessKind::kIso8608: {
-      // ISO 8608: displacement PSD G(n) = G(n0)·(n/n0)^-2, n0 = 0.1 cycle/m, G(n0) = 16e-6 m³ for class A and ×4 per
-      // class. 20 components log-spaced over 0.1 … 10 cycle/m (10 m … 0.1 m waves; longer waves are the road's
-      // geometry), each with amplitude √(2·G(n)·Δn), a pseudo-random heading and phase: an isotropic random surface.
-      constexpr int kComponents = 20;
-      constexpr double n0 = 0.1, nLo = 0.1, nHi = 10.0;
-      const double g0 = 16e-6 * std::ldexp(1.0, 2 * r.isoClass);
-      const double logStep = det::log(nHi / nLo) / kComponents;
-      for (int k = 0; k < kComponents; ++k) {
-        const double a = nLo * det::exp(logStep * k), b = nLo * det::exp(logStep * (k + 1)), nk = std::sqrt(a * b);
-        const double amp = std::sqrt(2.0 * g0 * (n0 / nk) * (n0 / nk) * (b - a));
-        const uint64_t seed = (static_cast<uint64_t>(material) << 32) ^ static_cast<uint64_t>(k) * 0x51ED27u;
-        const double heading = 2.0 * kPi * hash01(seed), phase = 2.0 * kPi * hash01(seed ^ 0xABCDEFu);
-        const double cx = det::cos(heading), cz = det::sin(heading);
-        const double w = 2.0 * kPi * nk;
-        const double arg = w * (x * cx + z * cz) + phase;
-        const double c = det::cos(arg);
-        out.height += amp * det::sin(arg);
-        out.dx += amp * w * cx * c;
-        out.dz += amp * w * cz * c;
-      }
-      break;
-    }
+    case RoughnessKind::kIso8608: isoField(r.isoClass, material, x, z, footprint, out); break;
     case RoughnessKind::kCobble: {
       // Stones of pitch `size`, every other row shifted half a stone; each stone's top is 0 … +2 mm (per stone),
-      // the joints between them `depth` deep, rounded over `gap`.
+      // the joints between them `depth` deep, rounded over `gap` (through a footprint: shallower and wider).
       const double s = r.size;
       const double row = std::floor(z / s);
       const double shift = (static_cast<int64_t>(row) & 1) ? 0.5 * s : 0.0;
       const double col = std::floor((x + shift) / s);
       const double stone = 0.002 * hash01((static_cast<uint64_t>(static_cast<int64_t>(row)) << 32) ^
                                           static_cast<uint64_t>(static_cast<int64_t>(col)) ^ (uint64_t{material} << 48));
+      double gap = r.gap, depth = r.depth;
+      envelopeJoint(s, gap, depth, footprint);
       double hx, dhx, hz, dhz;
-      grooves(x + shift, s, r.gap, r.depth, hx, dhx);  // joints on the stones' edges
-      grooves(z, s, r.gap, r.depth, hz, dhz);
+      grooves(x + shift, s, gap, depth, hx, dhx);  // joints on the stones' edges
+      grooves(z, s, gap, depth, hz, dhz);
       // The deeper of the two joints (min of heights, smoothly: both grooves are 0 away from a joint).
-      const double joint = hx + hz - (hx * hz) / (-r.depth);  // union of two grooves, ≥ −depth
-      const double djx = dhx * (1.0 + hz / r.depth), djz = dhz * (1.0 + hx / r.depth);
-      const double inside = 1.0 + joint / r.depth;  // 1 on a stone's face, 0 in a joint
+      const double joint = hx + hz - (hx * hz) / (-depth);  // union of two grooves, ≥ −depth
+      const double djx = dhx * (1.0 + hz / depth), djz = dhz * (1.0 + hx / depth);
+      const double inside = 1.0 + joint / depth;  // 1 on a stone's face, 0 in a joint
       out.height = joint + stone * inside;
-      out.dx = djx * (1.0 + stone / r.depth);
-      out.dz = djz * (1.0 + stone / r.depth);
+      out.dx = djx * (1.0 + stone / depth);
+      out.dz = djz * (1.0 + stone / depth);
       break;
     }
     case RoughnessKind::kJoints: {
+      double width = r.width, depth = r.depth;
+      envelopeJoint(r.spacing, width, depth, footprint);
       double hx, dhx, hz, dhz;
-      grooves(x, r.spacing, r.width, r.depth, hx, dhx);
-      grooves(z, r.spacing, r.width, r.depth, hz, dhz);
-      out.height = hx + hz - (hx * hz) / (-r.depth);
-      out.dx = dhx * (1.0 + hz / r.depth);
-      out.dz = dhz * (1.0 + hx / r.depth);
+      grooves(x, r.spacing, width, depth, hx, dhx);
+      grooves(z, r.spacing, width, depth, hz, dhz);
+      out.height = hx + hz - (hx * hz) / (-depth);
+      out.dx = dhx * (1.0 + hz / depth);
+      out.dz = dhz * (1.0 + hx / depth);
       break;
     }
     case RoughnessKind::kWashboard: {
       // Corrugation across +Z (the lane's direction of travel), from 0 to 2·amplitude.
       const double w = 2.0 * kPi / r.wavelength;
-      out.height = r.amplitude * (1.0 + det::sin(w * z));
-      out.dz = r.amplitude * w * det::cos(w * z);
+      const double ratio = footprint / r.wavelength;
+      const double amp = r.amplitude / (1.0 + ratio * ratio);
+      out.height = amp * (1.0 + det::sin(w * z));
+      out.dz = amp * w * det::cos(w * z);
       break;
     }
   }
+  if (r.kind != RoughnessKind::kIso8608) isoField(r.isoClass, material, x, z, footprint, out);
   return out;
 }
 

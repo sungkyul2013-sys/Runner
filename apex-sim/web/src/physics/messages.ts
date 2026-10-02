@@ -63,6 +63,9 @@ export interface VehiclePose {
   yaw: number; // [rad] about +Y (0 = facing +Z)
   speed: number; // [m/s] forward
   velocity?: [number, number, number]; // [m/s] extra world-frame velocity at spawn (a side-pole car moves sideways)
+  /** Laid on a slope: nose up [rad], left side up [rad] (0: level). */
+  pitch?: number;
+  roll?: number;
 }
 
 /** Driver input (core VehicleInput). mode: 0 drive, 1 reverse, 2 neutral, 3 manual. */

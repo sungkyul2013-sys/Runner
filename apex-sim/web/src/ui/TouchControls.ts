@@ -7,8 +7,8 @@ import './touch.css';
 import { tl, type Localized } from './i18n';
 
 export type SteerMode = 'buttons' | 'wheel' | 'tilt' | 'slider';
-export type TouchAction = 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause';
-export type ControlId = 'steer' | 'throttle' | 'brake' | 'handbrake' | 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause';
+export type TouchAction = 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause' | 'reverse';
+export type ControlId = 'steer' | 'throttle' | 'brake' | 'handbrake' | 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause' | 'reverse';
 export interface TouchLayout {
   steer: SteerMode;
   size: number; // 0.75 … 1.5, scales every control
@@ -21,8 +21,20 @@ export interface TouchLayout {
 }
 /** steer −1 … 1, positive = left; analog = false in 'buttons' mode (the caller rate-limits it like a keyboard). */
 export interface TouchState { throttle: number; brake: number; steer: number; handbrake: number; analog: boolean }
+/** What the car actually does with the controls, shown on them (TouchControls.feedback). */
+export interface TouchFeedback {
+  throttle: number; // applied after the aids [0, 1]
+  brake: number;
+  steer: number; // rack position, positive = left (after the speed-sensitive limit)
+  gear: number; // −1 R, 0 N, 1…
+  reversing: boolean; // the selector is in R
+  manual: boolean;
+  tcs: boolean; // traction control cutting the throttle
+  abs: boolean; // any wheel's ABS releasing
+  speed: number; // [m/s]
+}
 
-export const CONTROL_IDS: readonly ControlId[] = ['steer', 'throttle', 'brake', 'handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause'];
+export const CONTROL_IDS: readonly ControlId[] = ['steer', 'throttle', 'brake', 'handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause', 'reverse'];
 const STEER_MODES: readonly SteerMode[] = ['buttons', 'wheel', 'tilt', 'slider'];
 export const DEFAULT_TOUCH_LAYOUT: TouchLayout = { steer: 'slider', size: 1, pedalSize: 1, opacity: 0.9, autoAccelerate: false, haptics: true, showShift: true, positions: {} };
 
@@ -125,6 +137,7 @@ const L = {
   camera: { ko: '카메라', en: 'Camera' },
   reset: { ko: '리셋', en: 'Reset' },
   pause: { ko: '일시정지', en: 'Pause' },
+  reverse: { ko: '전진/후진 (정지 중)', en: 'Drive / reverse (when stopped)' },
 } satisfies Record<string, Localized>;
 
 // 2 px line icons, 24 × 24, currentColor (static markup only).
@@ -198,11 +211,14 @@ export class TouchControls {
   private dot: HTMLElement | null = null;
   private hint: HTMLElement | null = null;
   private calBtn: HTMLElement | null = null;
+  private ghost: HTMLElement | null = null; // slider: where the front wheels actually point
+  private gearText: HTMLElement;
+  private shown = '';
 
   constructor(layout: TouchLayout = DEFAULT_TOUCH_LAYOUT) {
     const labels: Record<ControlId, Localized> = {
       steer: L.steer, throttle: L.throttle, brake: L.brake, handbrake: L.handbrake, shiftUp: L.shiftUp,
-      shiftDown: L.shiftDown, camera: L.camera, reset: L.reset, pause: L.pause,
+      shiftDown: L.shiftDown, camera: L.camera, reset: L.reset, pause: L.pause, reverse: L.reverse,
     };
     for (const id of CONTROL_IDS) {
       const n = el('div', `tc-c tc-${id}`);
@@ -211,8 +227,10 @@ export class TouchControls {
       n.setAttribute('aria-label', tl(labels[id]));
       this.nodes[id] = n;
     }
+    // Pedals: the finger's amount fills the face; a bright line marks what the car applies (after TCS / ABS), and a
+    // badge lights while an aid intervenes.
     const pedal = (id: 'throttle' | 'brake') =>
-      this.nodes[id].append(el('i', 'tc-fill'), el('span', 'tc-ridges'), icon(id === 'throttle' ? ICON.gas : ICON.brakeIcon, 'tc-pic', 24), el('b', 'tc-label', tl(labels[id])));
+      this.nodes[id].append(el('i', 'tc-fill'), el('span', 'tc-ridges'), el('i', 'tc-applied'), el('em', 'tc-badge', id === 'throttle' ? 'TCS' : 'ABS'), icon(id === 'throttle' ? ICON.gas : ICON.brakeIcon, 'tc-pic', 24), el('b', 'tc-label', tl(labels[id])));
     pedal('throttle');
     pedal('brake');
     this.nodes.throttle.classList.add('tc-pedal');
@@ -223,7 +241,10 @@ export class TouchControls {
     this.nodes.camera.append(icon(ICON.camera));
     this.nodes.reset.append(icon(ICON.reset));
     this.nodes.pause.append(icon(ICON.pause));
-    for (const id of ['handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause'] as const) this.nodes[id].classList.add('tc-btn');
+    // Drive / reverse selector (D ⇄ R at a standstill) with the gear in use.
+    this.gearText = el('b', 'tc-gear', 'D');
+    this.nodes.reverse.append(this.gearText);
+    for (const id of ['handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause', 'reverse'] as const) this.nodes[id].classList.add('tc-btn');
     for (const id of ['camera', 'reset', 'pause'] as const) this.nodes[id].classList.add('tc-small');
     for (const id of CONTROL_IDS) if (id !== 'steer') this.nodes[id].append(icon(ICON.grip, 'tc-grip')); // edit-mode handle
     this.root.append(...CONTROL_IDS.map((id) => this.nodes[id]));
@@ -293,6 +314,30 @@ export class TouchControls {
     this.root.remove();
   }
 
+  /**
+   * The car's answer to the controls, once per frame: the applied throttle and brake as a line on each pedal, the
+   * TCS / ABS badge while an aid intervenes, where the front wheels point on the steering bar (the speed-sensitive
+   * limit shows as the gap to the finger), and the gear on the D / R selector.
+   */
+  feedback(f: TouchFeedback): void {
+    if (this.root.hidden) return;
+    const set = (id: 'throttle' | 'brake', applied: number, aid: boolean) => {
+      const n = this.nodes[id];
+      n.style.setProperty('--a', clamp(applied, 0, 1).toFixed(3));
+      n.classList.toggle('aid', aid);
+    };
+    set('throttle', f.throttle, f.tcs && this.pedal('throttle') > 0.05);
+    set('brake', f.brake, f.abs);
+    if (this.ghost) this.ghost.style.left = `${(50 - clamp(f.steer, -1, 1) * 50).toFixed(1)}%`;
+    const gear = f.reversing || f.gear < 0 ? 'R' : f.gear === 0 ? 'N' : `${f.manual ? 'M' : 'D'}${f.gear}`;
+    if (gear !== this.shown) {
+      this.shown = gear;
+      this.gearText.textContent = gear;
+      this.nodes.reverse.classList.toggle('rev', gear === 'R');
+    }
+    this.nodes.reverse.classList.toggle('locked', Math.abs(f.speed) > 0.6);
+  }
+
   // ---- pointer handling ----
 
   private down(e: PointerEvent): void {
@@ -310,7 +355,7 @@ export class TouchControls {
     this.presses.set(e.pointerId, p);
     node.classList.add('on');
     if (p.edit) return;
-    if (id === 'shiftUp' || id === 'shiftDown') {
+    if (id === 'shiftUp' || id === 'shiftDown' || id === 'reverse') {
       this.haptic(15);
       this.onAction(id); // on press, not release: shifting must not lag
     } else if (id === 'steer' && this.lay.steer === 'tilt') {
@@ -455,7 +500,7 @@ export class TouchControls {
     n.className = `tc-c tc-steer tc-${this.lay.steer}`;
     this.root.dataset.steer = this.lay.steer; // CSS stacks camera/reset above whichever steering control is shown
     this.halves = [];
-    this.wheelFace = this.thumb = this.dot = this.hint = this.calBtn = null;
+    this.wheelFace = this.thumb = this.dot = this.hint = this.calBtn = this.ghost = null;
     this.wheelAngle = this.wheelVel = this.slider = 0;
     cancelAnimationFrame(this.raf);
     const parts: HTMLElement[] = [];
@@ -472,6 +517,8 @@ export class TouchControls {
       this.thumb.append(el('i'), el('i'), el('i'));
       const track = el('span', 'tc-track');
       track.append(el('span', 'tc-sfill'));
+      this.ghost = el('span', 'tc-ghost');
+      track.append(this.ghost);
       parts.push(track, icon(ICON.left, 'tc-end'), el('span', 'tc-mid'), this.thumb, icon(ICON.right, 'tc-end'));
     } else {
       this.dot = el('i', 'tc-dot');

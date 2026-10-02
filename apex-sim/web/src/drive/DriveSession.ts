@@ -123,9 +123,10 @@ export class DriveSession {
     this.setXray(this.xray);
   }
 
-  /** The car where it stands as a spawn pose (upright, on the ground, lifted by `lift`); null before it is out. */
+  /** The car where it stands as a spawn pose (on the ground — along the slope it stands on — lifted by `lift`); null
+   *  before it is out. */
   currentPose(lift = 0.3): VehiclePose | null {
-    return this.state ? spawnPoseOf(this.state, lift) : null;
+    return this.state ? spawnPoseOf(this.state, lift, true) : null;
   }
 
   /** Replaces the car by a fresh one at `pose` without rebuilding the world: the old one (and every part that broke
@@ -271,6 +272,10 @@ export class DriveSession {
     }
     this.physics.setVehicleInput(this.actor.spawned.vehicle, this.input.update(dt, v.speed, v.yawRate));
     const logic = this.input.logic;
+    this.input.touch?.feedback?.({
+      throttle: v.throttle, brake: v.brake, steer: v.steer, gear: v.gear, reversing: logic.reversing, manual: logic.manual,
+      tcs: v.tcs, abs: v.wheels.some((w) => w.abs), speed: v.speed,
+    });
     this.dashboard.update(v, {
       manual: logic.manual,
       abs: logic.abs,

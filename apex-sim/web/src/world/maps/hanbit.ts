@@ -25,6 +25,28 @@ const LAKE_C: [number, number] = [2250, -2560];
 const CITY = { x0: -2720, x1: 720, z0: -1420, z1: 60 }; // north bank city
 const SOUTH = { x0: -2460, x1: 140, z0: 960, z1: 1640 }; // south bank district
 const TOWN: [number, number] = [1650, 2150]; // farming town (roundabout)
+// 한빛 오프로드 파크: moguls, a whoops lane, a mud bowl, a hill climb and a rock garden on dirt south-west of the town.
+const PARK = { x: 1300, z: 2420, hx: 130, hz: 95 };
+
+/** The off-road park's relief added to the natural ground [m] (0 outside), and whether (x, z) is in its mud bowl. */
+function parkRelief(x: number, z: number): number {
+  const u = x - PARK.x, v = z - PARK.z;
+  const inside = smoothstep(PARK.hx + 20, PARK.hx - 10, Math.abs(u)) * smoothstep(PARK.hz + 20, PARK.hz - 10, Math.abs(v));
+  if (inside <= 0) return 0;
+  let h = 0;
+  // Moguls (egg crate, 13 m pitch, ±0.75 m) over the west part.
+  const mog = smoothstep(-125, -115, u) * smoothstep(-15, -25, u) * smoothstep(85, 75, Math.abs(v));
+  h += mog * 0.75 * Math.sin((2 * Math.PI * u) / 13) * Math.sin((2 * Math.PI * v) / 13);
+  // Whoops: a lane of ridges every 9 m, 0.45 m high, running north–south.
+  const whoop = smoothstep(-2, 2, u) * smoothstep(14, 10, u) * smoothstep(88, 80, Math.abs(v));
+  h += whoop * 0.45 * (0.5 + 0.5 * Math.cos((2 * Math.PI * v) / 9));
+  // Mud bowl (0.9 m deep) and the hill climb (7 m, up to ≈ 35 %).
+  h -= 0.9 * smoothstep(22, 6, Math.hypot(u - 60, v + 40));
+  h += 7 * smoothstep(36, 4, Math.hypot(u - 70, v - 48));
+  return h * inside;
+}
+const inMud = (x: number, z: number) => Math.hypot(x - PARK.x - 60, z - PARK.z + 40) < 17;
+const inPark = (x: number, z: number) => Math.abs(x - PARK.x) < PARK.hx + 10 && Math.abs(z - PARK.z) < PARK.hz + 10;
 
 function riverDist(x: number, z: number): number {
   let best = Infinity;
@@ -99,7 +121,7 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   // Fine detail (not in the districts or on the river bed): its mask is smooth, so it is sampled coarsely too.
   const roughness = new CoarseField(-SIZE / 2 - 60, -SIZE / 2 - 60, SIZE + 120, 20, (x, z) => (1 - rectMask(CITY, x, z, 90)) * (1 - rectMask(SOUTH, x, z, 90)) * smoothstep(RIVER_HALF - 20, RIVER_HALF + 80, riverDist(x, z)));
   const natural = (x: number, z: number) => {
-    const base = coarse.at(x, z);
+    const base = coarse.at(x, z) + parkRelief(x, z);
     const rough = roughness.at(x, z);
     return rough > 0.01 ? base + rough * (0.9 * fbm(x / 70, z / 70, 2) + 0.25 * noise2(x / 17, z / 17)) : base;
   };
@@ -107,6 +129,7 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   const inRect = (r: typeof CITY, x: number, z: number, m: number) => x > r.x0 - m && x < r.x1 + m && z > r.z0 - m && z < r.z1 + m;
   const material = (x: number, z: number, y: number, slope: number): number => {
     if (inRect(CITY, x, z, 10) || inRect(SOUTH, x, z, 10)) return MAT.concrete; // paved plazas and lots
+    if (inPark(x, z)) return inMud(x, z) ? MAT.mud : MAT.dirt; // off-road park (rough dirt, §11.4)
     if (y < WATER + 1.5 && riverDist(x, z) < RIVER_HALF + 40) return MAT.sand;
     if (y > 285) return MAT.snowPacked;
     if (slope > 0.3) return MAT.concrete; // rock
@@ -190,7 +213,8 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   add({ id: 'c_alley1', name: { ko: '달동네길', en: 'Daldongne-gil' }, style: 'alley', points: [[-2400, -1300], [-2400, -1050]], start: { join: ewId(-1300) }, end: { join: ewId(-1050) } });
   add({ id: 'c_alley2', name: { ko: '언덕길', en: 'Eondeok-gil' }, style: 'alley', points: [[-2600, -1180], [-2200, -1180]], start: { join: nsId(-2600) }, end: { join: nsId(-2200) } });
   // Winding lanes (골목): one lane wide between walls of low houses.
-  const lane = { sidewalk: 1.4, lights: 22, laneWidth: 2.7, shoulder: 0.1 };
+  // Old-town lanes (구도심 돌길): granite setts, felt through the tyres (§11.4 roughness).
+  const lane = { sidewalk: 1.4, lights: 22, laneWidth: 2.7, shoulder: 0.1, surface: MAT.cobble };
   add({ id: 'c_alley3', name: { ko: '꼬불길', en: 'Kkobul-gil' }, style: 'alley', styleOverride: lane, points: [[-2100, -1300], [-2085, -1245], [-2035, -1205], [-2020, -1150], [-1965, -1105], [-1950, -1050]], start: { join: ewId(-1300) }, end: { join: ewId(-1050) } });
   add({ id: 'c_alley4', name: { ko: '우물길', en: 'Umul-gil' }, style: 'alley', styleOverride: lane, points: [[-2350, -1050], [-2335, -995], [-2385, -945], [-2362, -885], [-2305, -850], [-2300, -800]], start: { join: ewId(-1050) }, end: { join: ewId(-800) } });
   add({ id: 'c_alley5', name: { ko: '계단길', en: 'Gyedan-gil' }, style: 'alley', styleOverride: lane, points: [[-2200, -935], [-2140, -920], [-2080, -950], [-2000, -940], [-1930, -905], [-1800, -900]], start: { join: nsId(-2200) }, end: { join: nsId(-1800) } });
@@ -296,6 +320,27 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
     b.addSign({ x: end.x + end.tz * 8, y, z: end.z - end.tx * 8, yaw: Math.atan2(-end.tx, -end.tz), text: { ko: '북악타워 전망대', en: 'Bugak Tower' }, kind: 'place' });
   }
 
+  // ---- 한빛고가로 (도시고속화도로): an elevated expressway across the city between 다솜로 and 강변대로, 11 m over the
+  // streets it passes (no junctions), on concrete piers that keep off the streets below; it climbs from the west edge
+  // street and comes down to the east one. ----
+  const EZ = -175;
+  const elevPts: Array<[number, number]> = [[NS[0] - 30, EZ]];
+  const elevFixed: Array<{ at: number; y: number; radius: number }> = [];
+  for (let i = 0; i + 1 < NS.length; i++) {
+    const mid = (NS[i] + NS[i + 1]) / 2;
+    if (i > 0 && i < NS.length - 2) elevFixed.push({ at: elevPts.length, y: cityGround(mid, EZ) + 11, radius: 60 });
+    elevPts.push([mid, EZ]);
+    if (i + 2 < NS.length) {
+      elevFixed.push({ at: elevPts.length, y: cityGround(NS[i + 1], EZ) + 11, radius: 60 });
+      elevPts.push([NS[i + 1], EZ]);
+    }
+  }
+  elevPts.push([NS[NS.length - 1] + 30, EZ]);
+  add({
+    id: 'E1', name: { ko: '한빛고가로', en: 'Hanbit Elevated Road' }, style: 'connector', styleOverride: { lights: 40 },
+    points: elevPts, fixed: elevFixed, start: { join: nsId(NS[0]) }, end: { join: nsId(NS[NS.length - 1]) },
+  });
+
   // ---- apartment complexes (대단지 아파트): an access lane through each, with humps (단지 내 방지턱) ----
   const complex = (x0: number, z0: number, x1: number, z1: number, zTop: number, zBot: number, top: string, bottom: string, ground: (x: number, z: number) => number) => {
     const cx = Math.round((x0 + x1) / 2);
@@ -312,6 +357,7 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   };
 
   // ---- buildings: city blocks ----
+  let carParkAt = { x: 0, z: 0, y: 0 };
   const oldAlleys = ['c_alley1', 'c_alley2', 'c_alley3', 'c_alley4', 'c_alley5'].map((id) => b.byId.get(id)!);
   const golName = ['먹자골목', '공방길', '책방골목', '꽃담길', '빵집골목', '카페거리', '은행나무길', '공구상가길', '인쇄골목', '한옥길', '사진관길', '국숫집골목'];
   let gol = 0;
@@ -332,6 +378,24 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       else if (cx > -1300 && cx < 0 && cz > -1100 && cz < -300) kind = 'cbd';
       else if (cx > 0 || cz > -300) kind = 'apart';
       if (i === 5 && j === 2) kind = 'park'; // city hall plaza
+      if (j === EW.length - 2) {
+        // Under the elevated road: apartment rows north and south of it, a strip of trees and parking beneath.
+        fillBlock(b, R, x0, z0, x1, EZ - 24, 'apart', cityGround);
+        fillBlock(b, R, x0, EZ + 24, x1, z1, 'apart', cityGround);
+        for (let x = x0 + 10; x < x1 - 10; x += 19) {
+          if (!b.nearPaved(x, EZ - 14, 3)) b.addTree(x, EZ - 14, 0.8, 0);
+          if (!b.nearPaved(x + 9, EZ + 14, 3)) b.addTree(x + 9, EZ + 14, 0.8, 0);
+        }
+        continue;
+      }
+      if (kind === 'park') {
+        // City hall park, and the public car park at its east end.
+        fillBlock(b, R, x0, z0, x1 - 100, z1, 'park', cityGround);
+        // Spawn on the ground floor, by the east entrance, facing in.
+        const gy = carPark(b, x1 - 50, (z0 + z1) / 2, cityGround);
+        carParkAt = { x: x1 - 50 + 30, z: (z0 + z1) / 2 - 4, y: gy + 0.02 };
+        continue;
+      }
       if (NS[i] < UX && NS[i + 1] > UX && j < 2) {
         // The underpass runs through these blocks: buildings keep clear of its cuts.
         fillBlock(b, R, x0, z0, UX - 26, z1, kind, cityGround);
@@ -430,6 +494,19 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
     b.addBox({ cx: q.x - 60 + R() * 120, cy: q.y + 1.5, cz: q.z - 100 + R() * 90, hx: 1 + R() * 2.5, hy: 1 + R() * 1.5, hz: 1 + R() * 2.5, yaw: R() * 3, material: MAT.concrete, look: 'rock' });
   }
 
+  // ---- 한빛 오프로드 파크: a dirt track from 남산길 into the park; a rock garden; a washboard strip along its west edge ----
+  add({ id: 'OP1', name: { ko: '오프로드 파크 진입로', en: 'Off-road park access' }, style: 'trail', points: [on('R5', 1570, 2505), [1500, 2470], [PARK.x + PARK.hx - 8, PARK.z + 10]], start: { join: 'R5' } });
+  for (let k = 0; k < 22; k++) {
+    const x = PARK.x + 95 + R() * 28, z = PARK.z - 75 + R() * 50;
+    const s = 0.35 + R() * 0.5;
+    b.addBox({ cx: x, cy: b.opts.natural(x, z) + s * 0.4, cz: z, hx: s * (1 + R()), hy: s, hz: s * (1 + R()), yaw: R() * 3, material: MAT.concrete, look: 'rock' });
+  }
+  {
+    const x0 = PARK.x - PARK.hx + 2, x1 = x0 + 7, z0 = PARK.z - PARK.hz + 5, z1 = PARK.z + PARK.hz - 5;
+    b.addPad({ outline: [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], y: (x, z) => b.opts.natural(x, z) + 0.05, material: MAT.washboard, look: 'terrain', grid: 3, fill: true });
+    b.addSign({ x: PARK.x + PARK.hx - 4, y: b.opts.natural(PARK.x + PARK.hx - 4, PARK.z + 22), z: PARK.z + 22, yaw: -Math.PI / 2, text: { ko: '한빛 오프로드 파크', en: 'Hanbit Off-road Park' }, sub: { ko: '모글 · 우프스 · 진흙 · 언덕 · 바위', en: 'Moguls · whoops · mud · hill · rocks' }, kind: 'place' });
+  }
+
   // ---- riverside park: parking lot, trees ----
   const lot = { x0: -1450, x1: -1250, z0: 70, z1: 150 };
   b.addPad({ outline: [[lot.x0, lot.z0], [lot.x1, lot.z0], [lot.x1, lot.z1], [lot.x0, lot.z1]], y: (x, z) => b.opts.natural(x, z) - 0.1, material: MAT.asphalt, look: 'asphalt', grid: 10 });
@@ -457,7 +534,10 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
     const p = r.at(s);
     const u = r.style.oneWay ? 0 : -dir * ((r.style.median ?? 0) / 2 + r.style.laneWidth * (r.style.lanes - 0.5)); // outer right lane
     const x = p.x + u * p.tz, z = p.z - u * p.tx;
-    return { x, z, yaw: Math.atan2(dir * p.tx, dir * p.tz), y: r.surfaceAt(x, z) };
+    // The road surface's own slope under the car (a draped lane follows the hillside, along and across).
+    const fx = dir * p.tx, fz = dir * p.tz;
+    const at = (a: number, l: number) => r.surfaceAt(x + a * fx + l * fz, z + a * fz - l * fx);
+    return { x, z, yaw: Math.atan2(fx, fz), y: r.surfaceAt(x, z), pitch: Math.atan2(at(2, 0) - at(-2, 0), 4), roll: Math.atan2(at(0, 0.8) - at(0, -0.8), 1.6) };
   };
   const poi = (id: string, kind: MapData['pois'][number]['kind'], ko: string, en: string, at: { x: number; z: number; yaw: number; y?: number }) => b.pois.push({ id, kind, label: { ko, en }, ...at });
   poi('cityhall', 'spawn', '한빛시청 앞', 'City Hall', face(ewId(-550), 480));
@@ -486,6 +566,9 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   const apt = b.roads.find((r) => r.spec.id.startsWith('apt_') && r.spec.id.endsWith('_1050'))!;
   poi('estate', 'scenic', '아파트 단지 (방지턱)', 'Apartment estate (speed humps)', face(apt.spec.id, 8));
   poi('trail', 'scenic', '숲길 (비포장)', 'Forest trail (unpaved)', face('T2', 60));
+  poi('elevated', 'landmark', '한빛고가로 (고가도로)', 'Hanbit Elevated Road', face('E1', 120));
+  poi('offroad', 'scenic', '한빛 오프로드 파크', 'Hanbit Off-road Park', face('OP1', b.byId.get('OP1')!.length - 12));
+  poi('carpark', 'service', '시청 공영주차장 (지하·옥상)', 'City Hall car park', { x: carParkAt.x, z: carParkAt.z, yaw: -Math.PI / 2, y: carParkAt.y });
   b.areas.push(
     { label: { ko: '한빛시', en: 'Hanbit City' }, x: -1100, z: -700, size: 2 },
     { label: { ko: '구도심', en: 'Old Town' }, x: -2250, z: -1150, size: 1 },
@@ -697,3 +780,88 @@ function forests(b: MapBuilder, R: () => number): void {
 }
 
 export { pointInPolygon };
+
+/**
+ * 한빛시청 주차빌딩: a split-level car park, ground floor + two decks + the roof, and a basement (B1), 72 × 36 m (the
+ * ground slab and the basement 78 × 42). Ramps run in the side strips (7 m wide): up 0→1 and 2→3 along the north strip
+ * heading east, 1→2 along the south strip heading west, and down to B1 along the south strip under it. Every edge a
+ * car could drop from has a wall; the decks are concrete slabs on columns, all of it physical.
+ */
+function carPark(b: MapBuilder, cx: number, cz: number, ground: (x: number, z: number) => number): number {
+  const H = 3.2;
+  let gy = -Infinity;
+  for (const [u, v] of [[-39, -21], [39, -21], [-39, 21], [39, 21], [0, 0]]) gy = Math.max(gy, ground(cx + u, cz + v) + 0.15);
+  gy += 0.05;
+  const L = (k: number) => gy + k * H; // deck tops; L(−1): the basement floor
+  const box = (u0: number, u1: number, v0: number, v1: number, y0: number, y1: number, look: 'concrete' | 'stripe' | 'dark' = 'concrete', color?: number) =>
+    b.addBox({ cx: cx + (u0 + u1) / 2, cy: (y0 + y1) / 2, cz: cz + (v0 + v1) / 2, hx: (u1 - u0) / 2, hy: (y1 - y0) / 2, hz: (v1 - v0) / 2, yaw: 0, material: MAT.concrete, look, color });
+  const slab = (k: number, u0: number, u1: number, v0: number, v1: number) => box(u0, u1, v0, v1, L(k) - 0.3, L(k), 'concrete', 0xb9b6ae);
+  const ramp = (u0: number, u1: number, v0: number, v1: number, y0: number, y1: number) => {
+    const a = Math.min(u0, u1), c = Math.max(u0, u1);
+    b.addPad({ outline: [[cx + a, cz + v0], [cx + c, cz + v0], [cx + c, cz + v1], [cx + a, cz + v1]], y: (x) => y0 + ((x - cx - u0) / (u1 - u0)) * (y1 - y0), material: MAT.concrete, look: 'concrete', grid: 2, carve: false });
+  };
+  // Basement: its floor (the terrain is dug out under it), retaining walls under the ground slab's edge.
+  b.addPad({ outline: [[cx - 39, cz - 21], [cx + 39, cz - 21], [cx + 39, cz + 21], [cx - 39, cz + 21]], y: () => L(-1), material: MAT.concrete, look: 'concrete', grid: 6, fill: true });
+  box(-39.6, -39, -21.6, 21.6, L(-1) - 0.3, gy - 0.3);
+  box(39, 39.6, -21.6, 21.6, L(-1) - 0.3, gy - 0.3);
+  box(-39, 39, -21.6, -21, L(-1) - 0.3, gy - 0.3);
+  box(-39, 39, 21, 21.6, L(-1) - 0.3, gy - 0.3);
+  // An apron over the dug-out edge outside the walls.
+  for (const [u0, u1, v0, v1] of [[-43, 43, -25, -21.6], [-43, 43, 21.6, 25], [-43, -39.6, -21.6, 21.6], [39.6, 43, -21.6, 21.6]]) {
+    b.addPad({ outline: [[cx + u0, cz + v0], [cx + u1, cz + v0], [cx + u1, cz + v1], [cx + u0, cz + v1]], y: () => gy - 0.03, material: MAT.concrete, look: 'concrete', grid: 6, carve: false });
+  }
+  // Ground slab with the opening of the ramp down (south strip, u −28 … 0).
+  slab(0, -39, 39, -21, 11);
+  slab(0, -39, -28, 11, 21);
+  slab(0, 0, 39, 11, 21);
+  // Decks 1, 2 and the roof: the middle bay, and the strips where no ramp passes.
+  for (const k of [1, 2, 3]) {
+    slab(k, -36, 36, -11, 11);
+    slab(k, -36, -28, -18, -11);
+    slab(k, 0, 36, -18, -11);
+    if (k === 3) slab(k, -36, 36, 11, 18);
+    else {
+      slab(k, -36, -28, 11, 18);
+      slab(k, 0, 36, 11, 18);
+    }
+  }
+  ramp(-28, 0, -18, -11, L(0), L(1)); // 0 → 1, north strip, eastward
+  ramp(-28, 0, -18, -11, L(2), L(3)); // 2 → 3
+  ramp(0, -28, 11, 18, L(1), L(2)); // 1 → 2, south strip, westward
+  ramp(0, -28, 11, 18, L(0), L(-1)); // 0 → B1
+  // Walls along the ramps (inner and outer), and across the strips where a deck ends over a drop.
+  const wall = 0.3;
+  box(-28, 0, -11 - wall / 2, -11 + wall / 2, L(0), L(1) + 0.9);
+  box(-28, 0, -11 - wall / 2, -11 + wall / 2, L(2) - 0.3, L(3) + 0.9);
+  box(-28, 0, -18 - wall, -18, L(0), L(1) + 0.9);
+  box(-28, 0, -18 - wall, -18, L(2) - 0.3, L(3) + 0.9);
+  box(-28, 0, 11 - wall / 2, 11 + wall / 2, L(-1), L(0) + 0.9);
+  box(-28, 0, 11 - wall / 2, 11 + wall / 2, L(1) - 0.3, L(2) + 0.9);
+  box(-28, 0, 18, 18 + wall, L(1) - 0.3, L(2) + 0.9);
+  box(-28, 0, 18, 18 + wall, gy - 0.3, L(0) + 0.9);
+  box(-1.3, -1, -18, -11, L(0), L(0) + 1.0); // under the first ramp's high end
+  box(-28, -27.7, -18, -11, L(1), L(1) + 1.0);
+  box(0, 0.3, -18, -11, L(2), L(2) + 1.0);
+  box(-28, -27.7, -18, -11, L(3), L(3) + 1.0);
+  box(-28.3, -28, 11, 18, L(0), L(0) + 0.9);
+  box(-28.3, -28, 11, 18, L(1), L(1) + 1.0);
+  box(0, 0.3, 11, 18, L(2), L(2) + 1.0);
+  // Parapets around decks 1–3 (yellow-striped at the corners of the ramps), columns down to the ground.
+  for (const k of [1, 2, 3]) {
+    box(-36, 36, -18.3, -18, L(k), L(k) + 1.0);
+    box(-36, 36, 18, 18.3, L(k), L(k) + 1.0);
+    box(-36.3, -36, -18.3, 18.3, L(k), L(k) + 1.0);
+    box(36, 36.3, -18.3, 18.3, L(k), L(k) + 1.0);
+  }
+  for (const u of [-36, 12, 24, 36]) {
+    for (const v of [-18, -11, 11, 18]) {
+      const uc = Math.max(-35.7, Math.min(35.7, u)), vc = Math.sign(v) * (Math.abs(v) === 18 ? 17.7 : 11);
+      box(uc - 0.3, uc + 0.3, vc - 0.3, vc + 0.3, L(-1), L(3) - 0.3, 'concrete', 0xc9c5bd);
+    }
+  }
+  for (const u of [-24, 0, 24]) box(u - 0.3, u + 0.3, -0.3, 0.3, L(-1), L(0) - 0.3, 'concrete', 0xc9c5bd); // basement only
+  // Lift and stair core at the west end, the name on top.
+  box(-39, -36.3, -6, 6, L(0), L(3) + 3.2, 'dark');
+  b.addSign({ x: cx + 41, y: gy, z: cz - 14, yaw: Math.PI / 2, text: { ko: '시청 공영주차장', en: 'City Hall car park' }, sub: { ko: '지상 3층 · 지하 1층', en: '3 decks · 1 basement' }, kind: 'info' });
+  return gy;
+}

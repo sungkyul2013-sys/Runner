@@ -111,7 +111,24 @@ void World::setTyreFactors(uint16_t material, TyreType type, float grip, float c
   tyreCrr_[k] = crr;
 }
 
-void World::setSurfaces(const SurfaceLibrary& library) { surfaces_ = std::make_shared<SurfaceLibrary>(library); }
+void World::setSurfaces(const SurfaceLibrary& library) {
+  surfaces_ = std::make_shared<SurfaceLibrary>(library);
+  setRoughness(roughness_);
+}
+
+void World::setRoughness(bool on) {
+  roughness_ = on;
+  double pad = 0.0;
+  roughnessPeaks_.fill(0.0f);
+  if (surfaces_ && on) {
+    for (const SurfaceParams& s : surfaces_->surfaces) {
+      const double peak = sbc::roughnessPeak(s.roughness);
+      pad = std::max(pad, peak);
+      if (s.material < kMaxMaterials) roughnessPeaks_[s.material] = static_cast<float>(peak);
+    }
+  }
+  roughnessPad_ = static_cast<float>(pad);
+}
 
 int World::addSurfaceDecal(const SurfaceDecal& decal) {
   pairIndex(decal.material, decal.material);
@@ -268,7 +285,7 @@ int World::retireFamily(int body) {
   return count;
 }
 
-void World::relaunchVehicle(int vehicle, DVec3 position, double yaw, float speed, double floorY) {
+void World::relaunchVehicle(int vehicle, DVec3 position, double yaw, float speed, double floorY, double pitch, double roll) {
   Vehicle& v = *vehicles_.at(static_cast<size_t>(vehicle));
   const size_t bi = static_cast<size_t>(v.bodyIndex());
   const int32_t family = bodies_[bi].family;
@@ -285,7 +302,7 @@ void World::relaunchVehicle(int vehicle, DVec3 position, double yaw, float speed
   }
   Body& b = bodies_[bi];
   const double before = kineticEnergy(b) + gravityPotential(b, params_.gravity);
-  v.relaunch(b, position, yaw, speed, floorY);
+  v.relaunch(b, position, yaw, speed, floorY, pitch, roll);
   b.losses.external += kineticEnergy(b) + gravityPotential(b, params_.gravity) - before;
 }
 

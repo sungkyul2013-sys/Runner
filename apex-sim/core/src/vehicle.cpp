@@ -254,7 +254,7 @@ Vehicle::Vehicle(const VehicleDesc& desc, int bodyIndex, const Body& body) : des
   initAero(body);
 }
 
-void Vehicle::relaunch(Body& b, DVec3 position, double yaw, double speed, double floorY) {
+void Vehicle::relaunch(Body& b, DVec3 position, double yaw, double speed, double floorY, double pitch, double roll) {
   const VehicleDesc& D = desc_;
   const DVec3 pc = pos(b, D.refCenter);
   const DVec3 fwd = normalized(pos(b, D.refFront) - pc);
@@ -263,11 +263,17 @@ void Vehicle::relaunch(Body& b, DVec3 position, double yaw, double speed, double
   const DVec3 up = cross(fwd, left);
   DVec3 now[3];  // the model axes as the chassis carries them now (world)
   for (int k = 0; k < 3; ++k) now[k] = fwd * modelAxes_[k].x + left * modelAxes_[k].y + up * modelAxes_[k].z;
+  // Target model axes (left, up, forward): heading `yaw`, then the nose up by `pitch`, then the left side up by `roll`
+  // (with both 0 exactly the upright axes).
   const double c = det::cos(yaw), s = det::sin(yaw);
-  const DVec3 target[3] = {{c, 0.0, -s}, {0.0, 1.0, 0.0}, {s, 0.0, c}};
+  const double cp = det::cos(pitch), sp = det::sin(pitch), cr = det::cos(roll), sr = det::sin(roll);
+  const DVec3 forward{s * cp, sp, c * cp};
+  const DVec3 up0{-s * sp, cp, -c * sp};
+  const DVec3 left0{c, 0.0, -s};
+  const DVec3 target[3] = {left0 * cr + up0 * sr, up0 * cr - left0 * sr, forward};
   auto turn = [&](DVec3 v) { return target[0] * dot(now[0], v) + target[1] * dot(now[1], v) + target[2] * dot(now[2], v); };
   const Vec3 rc = D.refCenterModel;
-  const DVec3 refWorld = position + DVec3{c * rc.x + s * rc.z, rc.y, -s * rc.x + c * rc.z};
+  const DVec3 refWorld = position + target[0] * rc.x + target[1] * rc.y + target[2] * rc.z;
   for (int i = 0; i < b.nodeCount(); ++i) {
     const DVec3 p = turn(pos(b, i) - pc);
     b.px[i] = static_cast<float>(p.x); b.py[i] = static_cast<float>(p.y); b.pz[i] = static_cast<float>(p.z);
@@ -309,6 +315,8 @@ void Vehicle::relaunch(Body& b, DVec3 position, double yaw, double speed, double
   }
   windup_ = 0.0;
   tcsFactor_ = 1.0;
+  tcsTraction_ = -1.0;
+  tcsHold_ = 0.0;
   escYaw_ = 0.0;
   escThrottle_ = 1.0;
   std::fill(escTorque_.begin(), escTorque_.end(), 0.0);
@@ -785,6 +793,11 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     if (f.contact) driveSlip = std::max(driveSlip, -f.slipVx / std::max(std::fabs(f.vx), 2.0));
   }
   if (!std::isfinite(tractionTorque)) tractionTorque = 0.0;
+  // The node tyres' loads ripple at the wheel-hop and tread frequencies; the limit follows them through a 50 ms
+  // low-pass (a real controller's load estimate is as smooth), so the engine torque does not chatter with them.
+  if (tcsTraction_ < 0.0) tcsTraction_ = tractionTorque;
+  tcsTraction_ += (tractionTorque - tcsTraction_) * std::min(1.0, dt / 0.05);
+  tractionTorque = tcsTraction_;
   const double gearNow = gearRatio(gear_);
   double tcsClutchLimit = std::numeric_limits<double>::infinity();
   if (D.electronics.tcs && input_.tcs && !electricalFailed_ && gear_ != 0 && gearNow != 0.0) {
@@ -1053,7 +1066,10 @@ void Vehicle::step(const World& world, Body& b, bool track) {
   telemetry_.gear = shiftTimer_ > 0.0 ? pendingGear_ : gear_;
   telemetry_.shifting = shiftTimer_ > 0.0;
   telemetry_.engineRunning = running_;
-  telemetry_.tcsActive = D.electronics.tcs && input_.tcs && !electricalFailed_ && throttle < std::min(throttleIn * escThrottle_, 0.999);
+  // The TCS lamp: on while the limit cuts the throttle by more than 2 %, held 0.4 s (a lamp, not a strobe).
+  const bool tcsCut = D.electronics.tcs && input_.tcs && !electricalFailed_ && throttle < std::min(throttleIn * escThrottle_, 1.0) - 0.02;
+  tcsHold_ = tcsCut ? 0.4 : std::max(0.0, tcsHold_ - dt);
+  telemetry_.tcsActive = tcsHold_ > 0.0;
   telemetry_.escActive = escThrottle_ < 0.99 || std::any_of(escTorque_.begin(), escTorque_.end(), [](double t) { return t > 1.0; });
   telemetry_.coolantC = static_cast<float>(coolantC_);
   telemetry_.coolantL = static_cast<float>(coolantL_);

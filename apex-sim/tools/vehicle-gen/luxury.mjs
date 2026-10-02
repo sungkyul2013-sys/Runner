@@ -450,7 +450,7 @@ function generate(id, car) {
   // ---- vehicle section ----
   const cornerLoad = (axle) => ((axle === 'front' ? car.front : 1 - car.front) * car.mass * 9.81) / 2;
   // Relaxation lengths of these large tyres (255–285 section, 20–22 in): 0.18 m along, 0.45 m across.
-  const tyre = (nominalLoad, verticalStiffness) => ({ radius: R, mu: 1.1, nominalLoad, verticalStiffness, relaxationX: 0.18, relaxationY: 0.45 });
+  const tyre = (nominalLoad, verticalStiffness) => ({ radius: R, mu: 1.1, nominalLoad, verticalStiffness, relaxationX: 0.18, relaxationY: 0.45, By: 13 });  // By 13: a touring run-flat's cornering stiffness (peak ≈ 7.2°)
   const wheel = (c, driveShare, brakeTorque, handbrakeTorque, axle) => ({
     name: c.name, pressureWheel: c.name, carrier: c.upright, tyre: tyre(+cornerLoad(axle).toFixed(0), 3.2e5), brakeTorque, handbrakeTorque, driveShare,
   });

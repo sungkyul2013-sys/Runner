@@ -152,6 +152,8 @@ function addMap(m: MapPhysics): void {
     if (r < 0) post({ type: 'error', message: `map mesh rejected: ${readCString(heap(), sbc._sbc_last_error())}` });
   }
   staticFirst = sbc._sbc_world_static_triangle_count(world);
+  // §11.4: on a map the tyres feel the surfaces' texture (worn asphalt, setts, gravel, grass).
+  sbc._sbc_world_set_roughness(world, 1);
   for (const params of mapLattices) {
     const ptr = ensureScratch(LATTICE_PARAM_COUNT * 8);
     new Float64Array(heap(), ptr, LATTICE_PARAM_COUNT).set(params);
@@ -247,6 +249,10 @@ async function spawnVehicle(msg: Extract<ToWorker, { type: 'spawnVehicle' }>): P
     sbc._free(ptr);
   }
   if (vehicle < 0) return fail(readCString(heap(), sbc._sbc_last_error()) || 'vehicle rejected by the core');
+  // On a slope: laid along it at once (spawned level, one end would be buried in the road).
+  if (msg.pose.pitch || msg.pose.roll) sbc._sbc_world_relaunch_vehicle_tilted(world, vehicle, x, y, z, yaw, msg.pose.pitch ?? 0, msg.pose.roll ?? 0, speed, -1e9);
+  // Parked until the driver's first input arrives (a slow first frame must not let it roll down a slope).
+  if (speed === 0) setVehicleInput(vehicle, { throttle: 0, brake: 1, steer: 0, handbrake: 1, mode: 0, shift: 0, abs: true, tcs: true, esc: true });
   const dv = msg.pose.velocity;
   if (dv) sbc._sbc_world_add_body_velocity(world, sbc._sbc_vehicle_body(world, vehicle), dv[0], dv[1], dv[2]);
   post({
@@ -549,8 +555,9 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
         return;
       case 'relaunch': {
         if (!world || msg.vehicle < 0 || msg.vehicle >= sbc._sbc_world_vehicle_count(world)) return;
-        const { position: [x, y, z], yaw, speed, velocity: dv } = msg.pose;
-        sbc._sbc_world_relaunch_vehicle(world, msg.vehicle, x, y, z, yaw, speed, msg.floorY);
+        const { position: [x, y, z], yaw, speed, velocity: dv, pitch, roll } = msg.pose;
+        if (pitch || roll) sbc._sbc_world_relaunch_vehicle_tilted(world, msg.vehicle, x, y, z, yaw, pitch ?? 0, roll ?? 0, speed, msg.floorY);
+        else sbc._sbc_world_relaunch_vehicle(world, msg.vehicle, x, y, z, yaw, speed, msg.floorY);
         if (dv) sbc._sbc_world_add_body_velocity(world, sbc._sbc_vehicle_body(world, msg.vehicle), dv[0], dv[1], dv[2]);
         forceStats = true;
         return;

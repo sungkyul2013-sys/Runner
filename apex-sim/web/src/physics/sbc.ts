@@ -17,6 +17,7 @@ export interface SbcModule {
   _sbc_world_add_static_mesh(w: Ptr, ox: number, oy: number, oz: number, vertices: Ptr, vertexCount: number, indices: Ptr, indexCount: number, material: number): number;
   _sbc_world_set_heightfield(w: Ptr, ox: number, oz: number, cell: number, nx: number, nz: number, heights: Ptr, materials: Ptr): number;
   _sbc_world_set_material_remap(w: Ptr, from: number, to: number): number;
+  _sbc_world_set_roughness(w: Ptr, on: number): number;
   _sbc_world_set_wind(w: Ptr, x: number, y: number, z: number): void;
   _sbc_world_static_triangle_count(w: Ptr): number;
   _sbc_world_static_triangles(w: Ptr, first: number, count: number, out: Ptr): number;
@@ -25,6 +26,7 @@ export interface SbcModule {
   _sbc_world_add_body_velocity(w: Ptr, body: number, dvx: number, dvy: number, dvz: number): number;
   _sbc_world_retire_family(w: Ptr, body: number): number;
   _sbc_world_relaunch_vehicle(w: Ptr, vehicle: number, x: number, y: number, z: number, yaw: number, speed: number, floorY: number): number;
+  _sbc_world_relaunch_vehicle_tilted(w: Ptr, vehicle: number, x: number, y: number, z: number, yaw: number, pitch: number, roll: number, speed: number, floorY: number): number;
   _sbc_world_add_tether(w: Ptr, body: number, node: number, anchorBody: number, anchorNode: number, x: number, y: number, z: number, length: number, rope: number, maxForce: number, reelSpeed: number): number;
   _sbc_world_set_tether_anchor(w: Ptr, id: number, x: number, y: number, z: number): number;
   _sbc_world_set_tether_length(w: Ptr, id: number, length: number): number;

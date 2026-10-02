@@ -72,12 +72,27 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
   // ---- the car ----
   const spawnPoi = map.pois.find((p) => p.id === params.get('spawn')) ?? map.pois.find((p) => p.kind === 'spawn') ?? map.pois[0];
   // Spawn height: a point of interest knows its road surface (+12 cm); elsewhere the terrain is at most 15 cm under
-  // any road surface, so 40 cm over it clears both (the car settles onto its wheels).
-  const poseAt = (p: { x: number; z: number; yaw: number; y?: number }) => ({
-    position: [p.x, Math.max((p.y ?? -Infinity) + 0.12, map.terrain.heightAt(p.x, p.z) + 0.4), p.z] as [number, number, number],
-    yaw: p.yaw,
-    speed: 0,
-  });
+  // any road surface, so 40 cm over it clears both (the car settles onto its wheels). On a slope the car is laid along
+  // it (pitch and roll from the ground 2 m ahead / behind and 1 m to the sides; level, a 21 % lane buried the uphill
+  // bumper half a metre deep and the drop onto its wheels damaged the car), lifted by what the fit leaves over.
+  const poseAt = (p: { x: number; z: number; yaw: number; y?: number; pitch?: number; roll?: number }) => {
+    const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
+    const h = (a: number, l: number) => map.terrain.heightAt(p.x + a * fx + l * fz, p.z + a * fz - l * fx);
+    const h0 = h(0, 0);
+    // A point of interest knows its road's slope (a draped lane follows the hillside); elsewhere the terrain's.
+    const pitch = p.pitch ?? Math.atan2(h(2, 0) - h(-2, 0), 4);
+    const roll = p.roll ?? Math.atan2(h(0, 1) - h(0, -1), 2);
+    const tilted = Math.abs(pitch) > 0.03 || Math.abs(roll) > 0.03;
+    let rest = 0; // off the roads: the ground above the tilted plane under the car's footprint
+    if (p.pitch === undefined) for (const [a, l] of [[2.3, 0.9], [2.3, -0.9], [-2.3, 0.9], [-2.3, -0.9]]) rest = Math.max(rest, h(a, l) - (h0 + a * Math.tan(pitch) + l * Math.tan(roll)));
+    return {
+      // A known road surface: 12 cm over it; elsewhere 40 cm over the terrain (a road may lie 15 cm above it).
+      position: [p.x, (p.y !== undefined ? p.y + 0.12 : h0 + 0.4) + Math.min(rest, 1), p.z] as [number, number, number],
+      yaw: p.yaw,
+      speed: 0,
+      ...(tilted ? { pitch: Math.max(-0.5, Math.min(0.5, pitch)), roll: Math.max(-0.4, Math.min(0.4, roll)) } : {}),
+    };
+  };
   const session = new DriveSession(physics, viewer, debug, vehicle, ctx.fail, () => ctx.setPaused(!ctx.isPaused()), poseAt(spawnPoi), 'map');
   window.__apex!.drive = session;
   // The first loadScene('map') came with loadMap; restarts (reset, teleport) rebuild it from the stored map.

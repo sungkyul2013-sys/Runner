@@ -10,6 +10,8 @@ namespace sbc::det {
 // Taylor polynomials on [−π/4, π/4]).
 double sin(double x);
 double cos(double x);
+// Both at once (one argument reduction); the same bits as sin(x) and cos(x).
+void sincos(double x, double& s, double& c);
 // atan2(y, x) in (−π, π]. Absolute error < 1e-15. atan2(0, 0) = 0.
 double atan2(double y, double x);
 // asin(x) for x ∈ [−1, 1] (clamped), = atan2(x, √(1 − x²)).

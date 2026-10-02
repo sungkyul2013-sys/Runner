@@ -35,6 +35,8 @@ int sbc_world_set_heightfield(sbc_world* w, double ox, double oz, double cell, i
                               const uint8_t* materials);
 /* Weather: static surfaces of material `from` act as `to` (to == from restores it). Returns 0, or −1. */
 int sbc_world_set_material_remap(sbc_world* w, int from, int to);
+// §11.4 micro-roughness of the surfaces in the static contacts (World::setRoughness); 0 off, 1 on.
+int sbc_world_set_roughness(sbc_world* w, int on);
 int sbc_world_static_triangle_count(sbc_world* w);
 /* Copies static triangles [first, first+count) as 9 floats each (world-space vertices, relative to the world
  * origin, float) into out. Returns the number written. */
@@ -54,6 +56,8 @@ int sbc_world_retire_family(sbc_world* w, int body);
 // Relaunches a vehicle with its damage (World::relaunchVehicle): model origin at x y z, heading yaw [rad], forward
 // speed [m/s], no collision node below floor_y. 0, or −1 on a bad index.
 int sbc_world_relaunch_vehicle(sbc_world* w, int vehicle, double x, double y, double z, double yaw, float speed, double floor_y);
+// The same, laid on a slope: nose up by pitch, left side up by roll [rad].
+int sbc_world_relaunch_vehicle_tilted(sbc_world* w, int vehicle, double x, double y, double z, double yaw, double pitch, double roll, float speed, double floor_y);
 /* §10 steady wind [m/s] (world frame) and a vehicle wing's angle adjustment [rad]. */
 void sbc_world_set_wind(sbc_world* w, float x, float y, float z);
 int sbc_vehicle_set_wing_angle(sbc_world* w, int vehicle, int wing, float angle);

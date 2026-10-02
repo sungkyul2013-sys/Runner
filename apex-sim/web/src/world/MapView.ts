@@ -6,8 +6,8 @@
 import * as THREE from 'three/webgpu';
 import type { Node } from 'three/webgpu';
 import {
-  abs, atan, attribute, clamp, color, exp, float, floor, fract, fwidth, max, mix, mod, mx_noise_float, normalWorld, positionLocal,
-  positionWorld, sin, smoothstep, step, texture, time, uniform, vec2, vec3, cameraPosition, length, select,
+  abs, atan, attribute, clamp, color, dot, exp, float, floor, fract, fwidth, max, mix, mod, mx_noise_float, normalize, normalWorld,
+  positionLocal, positionWorld, pow, sin, smoothstep, step, texture, time, uniform, vec2, vec3, cameraPosition, length, select,
 } from 'three/tsl';
 import type { MapData, MeshAccum, Sign } from './builder';
 import { MAT } from './types';
@@ -94,7 +94,9 @@ function roadMaterial(u: MapUniforms, pads = false): THREE.MeshStandardNodeMater
   const lw = st.x, lanes = st.y, medianHalf = st.z, code = st.w;
   const pattern = mod(code, 8);
   const junction = mod(floor(code.div(8)), 2);
-  const oneWay = floor(code.div(16));
+  const oneWay = mod(floor(code.div(16)), 2);
+  const surf = floor(code.div(32)); // builder surfaceLook: 0 asphalt, 1 worn, 2 setts, 3 gravel, 4 dirt, 5 concrete
+  const isSurf = (k: number) => step(abs(surf.sub(k)), 0.5);
   const au = abs(lu);
   const aa = fwidth(lu).mul(1.2).add(0.004);
   const line = (d: Node<'float'>, w: number): Node<'float'> => float(1).sub(smoothstep(float(w / 2).sub(aa), float(w / 2).add(aa), d));
@@ -151,12 +153,42 @@ function roadMaterial(u: MapUniforms, pads = false): THREE.MeshStandardNodeMater
   // Asphalt: grain, patch variation, darker and glossier when wet.
   const grain = mx_noise_float(positionWorld.xz.mul(2.7)).mul(0.04);
   const patches = mx_noise_float(positionWorld.xz.mul(0.06)).mul(0.05);
-  const asphalt = color(0x3d3e40).mul(grain.add(patches).add(1)).mul(float(1).sub(u.wet.mul(0.35)));
-  let c = mix(asphalt, color(0xe8e8e2), white.mul(0.92));
-  c = mix(c, color(0xe0b52c), yellow.mul(0.95));
+  const dry = float(1).sub(u.wet.mul(0.35));
+  let asphalt = color(0x3d3e40).mul(grain.add(patches).add(1));
+  // Worn asphalt: paler and blotchy, with dark sealed cracks (a crazed network) and patched repairs.
+  const wornBase = color(0x55534f).mul(mx_noise_float(positionWorld.xz.mul(0.35)).mul(0.08).add(grain).add(1));
+  const crackField = abs(mx_noise_float(positionWorld.xz.mul(0.9)));
+  const cracks = float(1).sub(smoothstep(0.0, 0.035, crackField));
+  const repair = step(0.55, mx_noise_float(positionWorld.xz.mul(0.045)));
+  const worn = mix(mix(wornBase, color(0x2e2f31), cracks.mul(0.75)), color(0x343537).mul(grain.add(1)), repair.mul(0.85));
+  // Setts (화강석 포장): 12 × 12 cm granite blocks in running bond, each its own shade, dark sand joints.
+  const sx = positionWorld.x.div(0.12), sz = positionWorld.z.div(0.12);
+  const row = floor(sz);
+  const col = floor(sx.add(mod(row, 2).mul(0.5)));
+  const jx = abs(fract(sx.add(mod(row, 2).mul(0.5))).sub(0.5)), jz = abs(fract(sz).sub(0.5));
+  const joint = smoothstep(0.38, 0.47, max(jx, jz));
+  const stone = fract(sin(col.mul(12.9898).add(row.mul(78.233))).mul(43758.5453));
+  const setts = mix(mix(color(0x6f6a64), color(0x8d877e), stone).mul(float(1).sub(max(jx, jz).mul(0.25))), color(0x3b3833), joint);
+  // Gravel and dirt: speckled aggregate, wheel tracks pressed darker, a grassy crown on the dirt.
+  const speck = mx_noise_float(positionWorld.xz.mul(9)).mul(0.12).add(mx_noise_float(positionWorld.xz.mul(1.3)).mul(0.08));
+  const tracks = smoothstep(0.45, 0.15, abs(au.sub(0.85)));
+  const gravel = color(0x8f8676).mul(speck.add(1)).mul(float(1).sub(tracks.mul(0.12)));
+  const dirt = mix(color(0x7a5f43).mul(speck.add(1)).mul(float(1).sub(tracks.mul(0.15))), color(0x5d6f3a), smoothstep(0.35, 0.1, au).mul(0.55));
+  // Concrete: pale slabs with sawn joints every 4.5 m.
+  const slabJoint = step(0.985, fract(s.div(4.5))).add(step(0.985, fract(lu.div(3.2).add(0.5)))).min(1);
+  const concrete = color(0x9c9a94).mul(grain.mul(1.5).add(1)).mul(float(1).sub(slabJoint.mul(0.3)));
+  asphalt = mix(asphalt, worn, isSurf(1));
+  asphalt = mix(asphalt, setts, isSurf(2));
+  asphalt = mix(asphalt, gravel, isSurf(3));
+  asphalt = mix(asphalt, dirt, isSurf(4));
+  asphalt = mix(asphalt, concrete, isSurf(5));
+  asphalt = asphalt.mul(dry);
+  const paved = float(1).sub(isSurf(3)).sub(isSurf(4));
+  let c = mix(asphalt, color(0xe8e8e2), white.mul(0.92).mul(paved));
+  c = mix(c, color(0xe0b52c), yellow.mul(0.95).mul(paved));
   // Cast-iron cover: dark, a lighter rim, a cross-hatch.
   const hatch = step(0.5, fract(positionWorld.x.mul(9))).mul(step(0.5, fract(positionWorld.z.mul(9)))).mul(0.25);
-  c = mix(c, mix(color(0x2e3033).mul(hatch.add(1)), color(0x55585d), manholeRim), manhole.mul(0.96));
+  c = mix(c, mix(color(0x2e3033).mul(hatch.add(1)), color(0x55585d), manholeRim), manhole.mul(0.96).mul(paved));
   if (pads) c = asphalt;
   m.colorNode = c;
   const paint = max(white, yellow);
@@ -205,15 +237,38 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const plantWall = mix(color(0x8f959b), color(0xa9adb1), h1); // rooftop plant, lift cores, masts
   let wall = glassWall.mul(isType(0));
   wall = wall.add(apartWall.mul(isType(1))).add(lowWall.mul(isType(2))).add(indWall.mul(isType(3))).add(houseWall.mul(isType(4))).add(shopWall.mul(isType(5))).add(plantWall.mul(isType(6)));
-  const glass = mix(color(0x1d2733), color(0x39516b), h2);
+  // Glass: the room behind (dark, a curtain or blind drawn part-way in some), and the sky it reflects — stronger at
+  // grazing angles (Fresnel) and towards the top of tall buildings; curtain-wall panels vary a little in tint.
+  const cell = floor(fu.div(bay)).mul(17.3).add(floor(fv.div(floorH)).mul(91.7)).add(seed);
+  // Per-window variation fades out with the distance (it would shimmer as moiré where windows are under a pixel).
+  const near = float(1).sub(smoothstep(120, 420, length(positionWorld.sub(cameraPosition))));
+  const r1 = mix(float(0.35), fract(sin(cell.mul(7.13)).mul(24634.6345)), near), r2 = mix(float(0.3), fract(sin(cell.mul(3.71)).mul(43758.5453)), near);
+  const room = mix(color(0x141b24), color(0x2b3644), r1.mul(0.7));
+  const blind = step(0.55, r2).mul(step(mix(float(0.86), float(0.45), r1), fy)); // drawn down from the top
+  const interior = mix(room, mix(color(0xd9d2c3), color(0xb9c4cf), r1), blind.mul(0.8));
+  const viewDir = normalize(cameraPosition.sub(positionWorld));
+  const fresnel = pow(float(1).sub(max(dot(n, viewDir), 0)), 3).mul(0.75).add(0.12);
+  const skyRefl = mix(color(0x8fa9c2), color(0xd6e3ef), smoothstep(0, 120, fv)).mul(float(1).sub(u.night.mul(0.85)));
+  const glass = mix(interior, skyRefl, fresnel.add(isType(0).mul(0.35)).clamp(0, 0.92)).mul(mix(float(0.92), float(1.08), r2.mul(isType(0))));
   const industrialNoWin = isType(3).mul(step(fv, 6));
   // Far away the window grid would shimmer: its contrast fades with the distance.
   const far = smoothstep(180, 700, length(positionWorld.sub(cameraPosition)));
   const winMask = win.mul(float(1).sub(roof)).mul(float(1).sub(industrialNoWin)).mul(float(1).sub(isType(6)));
   const roofCol = mix(color(0x5b5e63), mix(color(0x6b3b2e), color(0x3a4750), h1), isType(4).max(isType(7)));
   let c = mix(wall, glass, winMask.mul(float(1).sub(isType(0).mul(0.3))).mul(far.mul(-0.65).add(1)));
-  // Apartment slabs: a pale balcony band along every floor.
+  // Window frames: a mullion splitting each window, a darker spandrel line at each floor (towers: thin vertical fins).
+  const mullion = step(abs(fx.sub(0.5)), 0.018).mul(winMask).mul(float(1).sub(far));
+  c = mix(c, mix(color(0x5a6068), color(0xb8bec6), isType(0)), mullion.mul(0.85));
+  const spandrel = step(fy, 0.05).mul(step(1.6, fv)).mul(float(1).sub(roof)).mul(float(1).sub(isType(6)));
+  c = mix(c, c.mul(0.78), spandrel.mul(float(1).sub(far.mul(0.7))));
+  const fin = isType(0).mul(step(abs(fx.sub(0.08)), 0.03)).mul(float(1).sub(roof)).mul(float(1).sub(far));
+  c = mix(c, color(0xc9ced4), fin.mul(0.7));
+  // Apartment slabs: a pale balcony band along every floor, and the estate's colour band under the roof line (the
+  // brand stripe Korean apartment blocks carry near the top).
   c = mix(c, color(0xf3f1ec), isType(1).mul(step(fy, 0.14)).mul(float(1).sub(roof)).mul(step(3, fv)));
+  const brand = mix(mix(color(0x2a7f8f), color(0x1f3f74), step(0.33, h2)), mix(color(0x3d8a4a), color(0xc0663a), step(0.5, h1)), step(0.66, h2));
+  const stripe = isType(1).mul(step(top.sub(7.4), fv)).mul(step(fv, top.sub(4.6))).mul(float(1).sub(roof));
+  c = mix(c, brand, stripe.mul(0.9));
   // Plant: louvre stripes.
   c = mix(c, c.mul(0.72), isType(6).mul(step(0.5, fract(fv.mul(2.2)))).mul(float(1).sub(roof)));
   c = mix(c, roofCol, roof);
@@ -221,10 +276,10 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const band = isType(5).mul(step(fv, 3.2)).mul(float(1).sub(roof));
   c = mix(c, mix(color(0xc0392b), color(0x2e86c1), h2), band.mul(0.8));
   m.colorNode = c;
-  m.roughnessNode = mix(float(0.85), float(0.12), winMask.add(isType(0).mul(0.6)).clamp(0, 1));
-  m.metalnessNode = isType(0).mul(0.4).mul(float(1).sub(roof));
+  m.roughnessNode = mix(float(0.85), float(0.08), winMask.add(isType(0).mul(0.6)).clamp(0, 1));
+  m.metalnessNode = isType(0).mul(0.4).add(winMask.mul(0.25)).clamp(0, 0.6).mul(float(1).sub(roof));
   // Night: a share of the windows lit (warm or cool), by floor and bay; tower crowns lit; shop fronts glow.
-  const cellId = floor(fu.div(bay)).mul(17.3).add(floor(fv.div(floorH)).mul(91.7)).add(seed);
+  const cellId = cell;
   const lit = step(0.62, fract(sin(cellId).mul(43758.5453)));
   const tint = mix(color(0xffd9a0), color(0xcfe4ff), step(0.7, fract(sin(cellId.mul(3.1)).mul(9631.7))));
   const crown = isType(0).mul(step(top.sub(2.2), fv)).mul(float(1).sub(roof));

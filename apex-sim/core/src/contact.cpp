@@ -13,6 +13,7 @@
 #include <cmath>
 #include <utility>
 
+#include "sbc/surfaces.h"
 #include "sbc/world.h"
 
 namespace sbc {
@@ -21,6 +22,7 @@ namespace {
 constexpr float kTwoPi = 6.283185307179586f;
 constexpr int kMaxCandidates = 8;          // contacts examined per node per step
 constexpr int kMaxContactsPerNode = 3;     // distinct surfaces a node can press against (e.g. floor + two walls)
+constexpr double kTyreFootprint = 0.15;    // [m] contact patch length a tread node stands for (§11.4 enveloping)
 constexpr float kSameSurfaceCos = 0.9f;    // normals closer than ~26° count as one surface (no double counting
                                            // across coplanar neighbouring triangles)
 constexpr float kCandidateMargin = 0.05f;     // [m] extra broadphase inflation
@@ -91,6 +93,54 @@ int collectStaticContacts(const ContactScratch& s, Vec3 x, float r, Contact* out
       if (dot(cand[i].normal, out[k].normal) > kSameSurfaceCos) { duplicate = true; break; }
     }
     if (!duplicate) out[kept++] = cand[i];
+  }
+  return kept;
+}
+
+// The static surfaces a node sphere (body-local centre x) touches, deepest first: this step's candidates, materials
+// after the decals, and the micro-roughness's height and slope when it is on (World::setRoughness).
+int nodeStaticContacts(const World& w, const ContactScratch& s, const Body& b, int i, Vec3 x, Contact* out) {
+  const float r = b.radius[i];
+  const float pad = w.roughnessPad();  // a bump can reach a node that the nominal surface does not
+  int n = collectStaticContacts(s, x, r + pad, out);
+  if (n == 0) return 0;
+  if (w.surfaceDecalCount() > 0) {  // §11.1 decals: µ-split lanes, road paint, spills
+    for (int k = 0; k < n; ++k) {
+      const Vec3 surfacePoint = x - out[k].normal * (r + pad - out[k].penetration);
+      out[k].material = w.remapMaterial(w.surfaceMaterialAt(b.origin + toDouble(surfacePoint), out[k].material));
+    }
+  }
+  if (pad <= 0.0f) return n;
+  // §11.4 micro-roughness: the surface lies h higher (along world up) and tilts by its slope at the contact point.
+  const std::vector<SurfaceParams>& lib = w.surfaces()->surfaces;
+  int kept = 0;
+  for (int k = 0; k < n; ++k) {
+    Contact c = out[k];
+    c.penetration -= pad;
+    const float peak = c.normal.y > 0.3f && c.material < kMaxMaterials ? w.roughnessPeak(c.material) : 0.0f;
+    if (c.penetration + peak * c.normal.y <= 0.0f) continue;  // out of reach of the highest bump
+    if (peak > 0.0f && c.material < lib.size()) {
+      const Vec3 local = x - c.normal * (r - c.penetration);
+      const DVec3 p = b.origin + toDouble(local);
+      // What touches it: a tread node stands for the tyre's patch (≈ 15 cm, it envelopes short bumps), others their
+      // own diameter.
+      const double footprint = (b.flags[i] & node_flag::kTread) ? kTyreFootprint : 2.0 * r;
+      const RoughnessSample h = sampleRoughness(lib[c.material].roughness, c.material, p.x, p.z, footprint);
+      c.penetration += static_cast<float>(h.height) * c.normal.y;
+      const Vec3 tilted = c.normal + Vec3{static_cast<float>(-h.dx), 0.0f, static_cast<float>(-h.dz)} * c.normal.y;
+      c.normal = tilted * (1.0f / length(tilted));
+    }
+    if (c.penetration > 0.0f) out[kept++] = c;
+  }
+  // Deepest first again (ties by surface id): the primary contact holds the friction anchor and the material.
+  for (int a = 1; a < kept; ++a) {
+    const Contact key = out[a];
+    int j = a - 1;
+    while (j >= 0 && (key.penetration != out[j].penetration ? key.penetration > out[j].penetration : key.surfaceId < out[j].surfaceId)) {
+      out[j + 1] = out[j];
+      --j;
+    }
+    out[j + 1] = key;
   }
   return kept;
 }
@@ -221,14 +271,8 @@ int ContactSolver::staticContacts(World& w, int bodyIndex) {
   for (int i = 0; i < b.nodeCount(); ++i) {
     if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) continue;
     const Vec3 x = b.nodePosition(i), v = b.nodeVelocity(i);
-    const int n = collectStaticContacts(s, x, b.radius[i], contacts);
+    const int n = nodeStaticContacts(w, s, b, i, x, contacts);
     if (n == 0) { b.anchorContact[i] = -1; continue; }
-    if (!w.decals_.empty()) {  // §11.1 decals: µ-split lanes, road paint, spills
-      for (int k = 0; k < n; ++k) {
-        const Vec3 surfacePoint = x - contacts[k].normal * (b.radius[i] - contacts[k].penetration);
-        contacts[k].material = w.remap_[w.surfaceMaterialAt(b.origin + toDouble(surfacePoint), contacts[k].material)];
-      }
-    }
     const float m = b.mass[i];
     s.capacity[static_cast<size_t>(i)] = contactCapacity(m, n);
     if (b.flags[i] & node_flag::kTread) {
@@ -417,7 +461,7 @@ double ContactSolver::staticContactPotential(const World& w, int bodyIndex) {
   double e = 0.0;
   for (int i = 0; i < b.nodeCount(); ++i) {
     if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) continue;
-    const int n = collectStaticContacts(s, b.nodePosition(i), b.radius[i], contacts);
+    const int n = nodeStaticContacts(w, s, b, i, b.nodePosition(i), contacts);
     const bool tread = (b.flags[i] & node_flag::kTread) != 0;
     for (int k = 0; k < n; ++k) {
       const ContactPairParams& pp = w.contactPair(b.material[i], contacts[k].material);
@@ -435,7 +479,7 @@ double ContactSolver::staticNodePotential(const World& w, int bodyIndex, int nod
   const size_t i = static_cast<size_t>(node);
   if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) return 0.0;
   Contact contacts[kMaxContactsPerNode];
-  const int n = collectStaticContacts(s, position, b.radius[i], contacts);
+  const int n = nodeStaticContacts(w, s, b, node, position, contacts);
   const bool tread = (b.flags[i] & node_flag::kTread) != 0;
   double e = 0.0;
   for (int k = 0; k < n; ++k) {
@@ -461,7 +505,7 @@ double ContactSolver::contactPotential(const World& w, bool extendedBand) {
     if (!b.enabled || (s.tris.empty() && s.planes.empty())) continue;  // a retired body touches nothing
     for (int i = 0; i < b.nodeCount(); ++i) {
       if (!(b.flags[i] & node_flag::kCollide) || b.invMass[i] == 0.0f) continue;
-      const int n = collectStaticContacts(s, b.nodePosition(i), b.radius[i], contacts);
+      const int n = nodeStaticContacts(w, s, b, i, b.nodePosition(i), contacts);
       cap[static_cast<size_t>(i)] = contactCapacity(b.mass[i], n);
       // A tread node's wheel share is not a node spring: its work is booked by the vehicle (A§4.7).
       const bool tread = (b.flags[i] & node_flag::kTread) != 0;
