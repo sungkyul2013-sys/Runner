@@ -574,6 +574,8 @@ void World::finishBody(int bi) {
       b.sx[i] -= sx; b.sy[i] -= sy; b.sz[i] -= sz;
     }
     b.origin += DVec3{sx, sy, sz};
+    for (const std::unique_ptr<Vehicle>& v : vehicles_)
+      if (v->bodyIndex() == bi) v->rebaseTelemetry(Vec3{sx, sy, sz});
   }
 }
 

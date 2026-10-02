@@ -103,6 +103,7 @@ export function buildSeorak(onStage?: (stage: string) => void, assets?: MapAsset
     if (f.pts.length < 4) continue;
     const box = footprintBox(f.pts);
     if (Math.abs(box.x) > 3950 || Math.abs(box.z) > 3950) continue;
+    if (b.footprintOnRoad(box.x, box.z, box.w, box.d, box.yaw, 0.5)) continue; // a footprint over a road we laid
     const h = f.height ?? (f.floors ? f.floors * 3.2 : 6);
     b.addBuilding({ x: box.x, z: box.z, y: b.terrain.heightAt(box.x, box.z), w: box.w, d: box.d, h, yaw: box.yaw, type: f.class === 'commercial' ? 5 : 4, seed: Math.floor(R() * 1e6) });
   }
@@ -116,10 +117,12 @@ export function buildSeorak(onStage?: (stage: string) => void, assets?: MapAsset
       const p = r.at(Math.min(Math.max(s, 0), r.length));
       const side = R() < 0.5 ? -1 : 1, off = 15 + R() * 24;
       const x = p.x + side * off * p.tz, z = p.z - side * off * p.tx;
-      if (slopeAt(x, z) > 0.18 || b.nearPaved(x, z, 9) || (bedAt(x, z)?.d ?? 99) < 12) continue;
+      if (slopeAt(x, z) > 0.18 || (bedAt(x, z)?.d ?? 99) < 12) continue;
       const shop = off < 21 && R() < 0.4;
-      const w = shop ? 9 + R() * 6 : 7 + R() * 4, d = shop ? 8 + R() * 4 : 7 + R() * 3;
-      b.addBuilding({ x, z, y: b.terrain.heightAt(x, z), w, d, h: shop ? 4.5 + R() * 3 : 5 + R() * 3.5, yaw: Math.atan2(p.tx, p.tz), type: shop ? 5 : 4, seed: Math.floor(R() * 1e6) });
+      const w = shop ? 9 + R() * 6 : 7 + R() * 4, d = shop ? 8 + R() * 4 : 7 + R() * 3, yaw = Math.atan2(p.tx, p.tz);
+      // Clear of every road, not only the one it lines (대청봉길 runs behind the houses on Route 44).
+      if (b.footprintOnRoad(x, z, w, d, yaw, 2)) continue;
+      b.addBuilding({ x, z, y: b.terrain.heightAt(x, z), w, d, h: shop ? 4.5 + R() * 3 : 5 + R() * 3.5, yaw, type: shop ? 5 : 4, seed: Math.floor(R() * 1e6) });
       placed++;
     }
   };

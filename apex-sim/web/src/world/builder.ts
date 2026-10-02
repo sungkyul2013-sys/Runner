@@ -420,7 +420,29 @@ export class MapBuilder {
     return this.rand();
   }
 
-  /** True when a terrain sample within `r` metres of (x, z) is under or next to a road, pad or junction. */
+  /** Whether a building's footprint (w × d about (x, z), turned by `yaw`) comes within `margin` of a road's formation
+   *  (carriageway, shoulders, verges). Usable before the build: nearPaved reads the terrain's lock mask, which the
+   *  build fills — a village placed before it stood a house across 대청봉길 (cars drove into its wall). */
+  footprintOnRoad(x: number, z: number, w: number, d: number, yaw: number, margin: number): boolean {
+    const c = Math.cos(yaw), sn = Math.sin(yaw), reach = Math.hypot(w, d) / 2 + margin;
+    for (const r of this.roads) {
+      const half = r.w.full + margin;
+      const centre = r.nearest(x, z);
+      if (Math.abs(centre.u) > half + reach) continue;
+      // The footprint on a 5 × 5 grid (≤ 4 m apart: no formation passes between the samples).
+      for (let a = -0.5; a <= 0.5; a += 0.25) {
+        for (let b = -0.5; b <= 0.5; b += 0.25) {
+          const px = x + a * w * c + b * d * sn, pz = z - a * w * sn + b * d * c;
+          const n = r.nearest(px, pz);
+          if (n.s >= -margin && n.s <= r.length + margin && Math.abs(n.u) < half) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** True when a terrain sample within `r` metres of (x, z) is under or next to a road, pad or junction (after the
+   *  build has laid them: see footprintOnRoad before it). */
   nearPaved(x: number, z: number, r: number): boolean {
     let hit = false;
     this.terrain.forSamples(x - r, z - r, x + r, z + r, (idx) => {

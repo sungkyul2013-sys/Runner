@@ -419,3 +419,35 @@ TEST_CASE("active body control holds the body still at a steady cruise (no limit
     CHECK(spread(load) < 0.2 * mean);    // was ≈ 0.4 of the mean
   }
 }
+
+TEST_CASE("the car's reported pose stays continuous across the body's re-basing (no jump for a step)", "[chassis][rebase]") {
+  // The telemetry's points are body-local and measured before the step re-bases the body (by whole metres, every
+  // ≈ 4 m of travel): read with the moved origin they were a re-basing off for that step, and a frame published on
+  // it drew the car and its wheels 4 m away (user report: the wheels jump while driving).
+  Rig r = rig("porsche_911_turbo_991", 100.0f);
+  VehicleInput in;
+  in.throttle = 0.35f;
+  r.input(in);
+  r.w().step(1);  // the telemetry is written by the first step
+  const auto world = [&](Vec3 local) { return r.w().body(r.body).origin + toDouble(local); };
+  DVec3 car = world(r.t().position), wheel = world(r.t().wheels[0].center), origin = r.w().body(r.body).origin;
+  int rebases = 0;
+  double worstCar = 0.0, worstWheel = 0.0;
+  const double dt = r.w().params().dt;
+  for (int k = 0; k < 4000; ++k) {  // 2 s at ≈ 100 km/h: 50 m, a dozen re-basings
+    r.w().step(1);
+    const DVec3 o = r.w().body(r.body).origin;
+    if (o.x != origin.x || o.y != origin.y || o.z != origin.z) ++rebases;
+    origin = o;
+    const DVec3 c = world(r.t().position), w0 = world(r.t().wheels[0].center);
+    const auto dist = [](DVec3 a, DVec3 b) { return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)); };
+    worstCar = std::max(worstCar, dist(c, car) / dt);
+    worstWheel = std::max(worstWheel, dist(w0, wheel) / dt);
+    car = c;
+    wheel = w0;
+  }
+  INFO("re-basings " << rebases << ", fastest step of the car " << worstCar << " m/s, of a wheel centre " << worstWheel << " m/s");
+  CHECK(rebases >= 5);
+  CHECK(worstCar < 60.0);    // the car moves at ≈ 28 m/s; a re-basing step read ≈ 8,000 m/s
+  CHECK(worstWheel < 60.0);
+}

@@ -145,6 +145,9 @@ TEST_CASE("map drive probe", "[.probe][mapdrive]") {
   const double seconds = std::getenv("MAPDRIVE_SECONDS") ? std::atof(std::getenv("MAPDRIVE_SECONDS")) : 40.0;
   const double speedScale = std::getenv("MAPDRIVE_SPEED") ? std::atof(std::getenv("MAPDRIVE_SPEED")) : 1.0;
   const std::vector<std::string> filters = split(std::getenv("MAPDRIVE_ROUTES"), "");
+  // MAPDRIVE_TRACE=<t>: a line every half second, and every sample from t [s] on.
+  const bool trace = std::getenv("MAPDRIVE_TRACE") != nullptr;
+  const double traceAll = trace ? std::atof(std::getenv("MAPDRIVE_TRACE")) : 1e9;
   for (const std::string& id : split(std::getenv("MAPDRIVE_CARS"), "porsche_911_turbo_991,rolls_royce_ghost,maybach_gls")) {
     WorldParams wp;
     wp.threadCount = std::getenv("MAPDRIVE_THREADS") ? std::atoi(std::getenv("MAPDRIVE_THREADS")) : 4;
@@ -224,6 +227,13 @@ TEST_CASE("map drive probe", "[.probe][mapdrive]") {
         if (in.brake > 0.0f) in.throttle = 0.0f;
         in.steer = static_cast<float>(std::clamp(steerAngle / lock, -1.0, 1.0));
         in.esc = true;
+        // Trace: where the car is and what it does.
+        if (trace && (steps % static_cast<int>(0.5 / dtSample) == 0 || (traceAll > 0.0 && t >= traceAll))) {
+          double ratio = 0.0;
+          for (size_t i = 0; i < nw && i < tm.wheels.size(); ++i) if (loadRef[i] > 0.0) ratio = std::max(ratio, tm.wheels[i].load / loadRef[i]);
+          std::printf("      t %5.1f at (%7.1f, %7.1f) route %4zu off %4.1f m  %5.1f km/h  yaw %+5.2f rad/s  steer %+5.2f  thr %.2f brk %.2f  max load %4.1fx  esc %d tcs %d\n",
+                      t, p.x, p.z, near, best, vms * 3.6, tm.yawRate, in.steer, in.throttle, in.brake, ratio, tm.escActive ? 1 : 0, tm.tcsActive ? 1 : 0);
+        }
         w.setVehicleInput(v, in);
         w.step(4);
         ++steps;

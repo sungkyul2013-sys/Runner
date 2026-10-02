@@ -33,6 +33,16 @@ class Vehicle {
 
   const VehicleDesc& desc() const { return desc_; }
   int bodyIndex() const { return body_; }
+  // The body's local frame moved by `shift` (re-basing, A§4.4): the telemetry's body-local points follow it. They were
+  // measured before the move in the same step, and a reader adding the moved origin put the car and its wheels a
+  // re-basing step (≈ 4 m) off for a frame — the car and its wheels jumped while driving.
+  void rebaseTelemetry(Vec3 shift) {
+    telemetry_.position = telemetry_.position - shift;
+    for (WheelTelemetry& w : telemetry_.wheels) {
+      w.center = w.center - shift;
+      w.sparkPoint = w.sparkPoint - shift;
+    }
+  }
   VehicleInput& input() { return input_; }
   const VehicleInput& input() const { return input_; }
   const VehicleTelemetry& telemetry() const { return telemetry_; }
