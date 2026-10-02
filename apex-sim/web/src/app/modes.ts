@@ -197,6 +197,35 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
       act('restart', t('restart'), t('restartTip'), restart)),
     el('div', 'chips', aid('TCS', () => logic.tcs, (on) => (logic.tcs = on)), aid('ABS', () => logic.abs, (on) => (logic.abs = on)),
       aid('ESC', () => logic.esc, (on) => (logic.esc = on)), aid(t('aidManual'), () => logic.manual, (on) => (logic.manual = on))));
+  // §9 electronic chassis: the setting (comfort / normal / sport) and the ride-height lift (cars that have them).
+  const modeChips = (['chassisComfort', 'chassisNormal', 'chassisSport'] as const).map((key, i) => {
+    const b = el('button', logic.chassisMode === i ? 'chip active' : 'chip', t(key));
+    b.onclick = () => {
+      logic.chassisMode = i as 0 | 1 | 2;
+      syncChassis();
+      notify(`${t('chassisTitle')} · ${t(key)}`, '', { key: 'chassis' });
+    };
+    return b;
+  });
+  const liftChip = aid(t('chassisLift'), () => logic.lift, (on) => (logic.lift = on));
+  const syncChassis = () => modeChips.forEach((b, i) => b.classList.toggle('active', logic.chassisMode === i));
+  aidChips.push(syncChassis);
+  shell.sheet.section(t('chassisTitle'), el('div', 'chips', ...modeChips, liftChip), el('p', 'muted', t('chassisNote')));
+  session.onChassis = (e) => {
+    aidChips.forEach((sync) => sync());
+    notify(t(e), '', { key: 'lift' });
+  };
+  const keyAction = session.input.onAction;
+  session.input.onAction = (a) => {
+    keyAction(a);
+    if (a === 'chassisMode') {
+      syncChassis();
+      notify(`${t('chassisTitle')} · ${t((['chassisComfort', 'chassisNormal', 'chassisSport'] as const)[logic.chassisMode])}`, '', { key: 'chassis' });
+    } else if (a === 'toggleLift') {
+      aidChips.forEach((sync) => sync());
+      notify(`${t('chassisLift')} · ${logic.lift ? t('stateOn') : t('stateOff')}`, '', { key: 'lift' });
+    }
+  };
   shell.sheet.section(t('carSwap'), carPicker(session, (v) => void swap(v)));
   shell.sheet.section(t('sheetKeys'), el('p', 'muted', t('keysHelp')));
   touchControls(session, shell);

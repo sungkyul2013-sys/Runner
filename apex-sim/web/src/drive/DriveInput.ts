@@ -64,6 +64,10 @@ export class DriveLogic {
   esc = true;
   /** Holds the car at a standstill without pedals (auto hold). */
   autoHold = true;
+  /** §9 electronic chassis setting (cars that have one): 0 comfort, 1 normal, 2 sport. */
+  chassisMode: 0 | 1 | 2 = 1;
+  /** Ride-height lift requested (cars with a lift system; it drops back at speed, the car does that). */
+  lift = false;
   assist: AssistLevel = 'standard';
   geometry: SteerGeometry = DEFAULT_GEOMETRY;
   /** 0 drive, 1 reverse (the automatic's selector; manual mode keeps its own gear but reverses the same way). */
@@ -173,11 +177,19 @@ export class DriveLogic {
       abs: this.abs,
       tcs: this.tcs,
       esc: this.esc,
+      chassisMode: this.chassisMode,
+      lift: this.lift,
     };
+  }
+
+  /** Next electronic chassis setting: comfort → normal → sport → comfort. */
+  cycleChassis(): void {
+    this.chassisMode = ((this.chassisMode + 1) % 3) as 0 | 1 | 2;
   }
 }
 
-export type Action = 'shiftUp' | 'shiftDown' | 'toggleManual' | 'toggleTcs' | 'toggleAbs' | 'toggleEsc' | 'camera' | 'reset' | 'xray' | 'reverse';
+export type Action = 'shiftUp' | 'shiftDown' | 'toggleManual' | 'toggleTcs' | 'toggleAbs' | 'toggleEsc' | 'camera' | 'reset' | 'xray' | 'reverse'
+  | 'chassisMode' | 'toggleLift';
 
 /** An analog control surface next to keyboard and gamepad (§15.4 touch controls): read once per frame. */
 export interface AnalogSource {
@@ -196,6 +208,8 @@ const KEY_ACTIONS: Record<string, Action> = {
   KeyC: 'camera',
   KeyR: 'reset',
   KeyV: 'xray',
+  KeyK: 'chassisMode',
+  KeyH: 'toggleLift',
 };
 
 // Standard gamepad mapping (W3C): 0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 6 LT, 7 RT, 8 Back, 9 Start.
@@ -241,6 +255,8 @@ export class DriveInput {
     else if (a === 'toggleAbs') this.logic.abs = !this.logic.abs;
     else if (a === 'toggleEsc') this.logic.esc = !this.logic.esc;
     else if (a === 'reverse') this.logic.requestReverse();
+    else if (a === 'chassisMode') this.logic.cycleChassis();
+    else if (a === 'toggleLift') this.logic.lift = !this.logic.lift;
     this.onAction(a);
   }
 

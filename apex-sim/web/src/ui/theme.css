@@ -101,11 +101,11 @@ html[lang='ko'] .mm-tagline { letter-spacing: 0.22em; }
 .dash-rtf { align-self: center; padding: 3px 10px; border-radius: 999px; font: 700 0.72rem var(--font-display); letter-spacing: 0.06em; color: #1a1204; background: var(--warning); }
 @media (orientation: portrait) { .dash-lights { display: none; } }
 
-/* PC: the cluster in the bottom-right corner (minimap bottom-left), a little larger */
-html[data-ui='desktop'] .dash { --g: 300px; left: auto; right: calc(28px + var(--safe-r)); bottom: calc(18px + var(--safe-b)); transform: none; align-items: flex-end; }
-html[data-ui='desktop'] body:has(.dash:not([hidden])) { --toast-lift: 24px; }
-@keyframes gaugeInRight { from { opacity: 0; transform: translateY(16px); } }
-html[data-ui='desktop'] .dash { animation-name: gaugeInRight; }
+/* PC: the dial at the bottom centre (minimap bottom-left), a little larger; the G-meter hangs to its right so the dial
+   itself stays centred; toasts rise above it */
+html[data-ui='desktop'] .dash { --g: 300px; bottom: calc(14px + var(--safe-b)); }
+html[data-ui='desktop'] .dash-row { position: relative; }
+html[data-ui='desktop'] .dash-aux { position: absolute; left: calc(100% + 12px); bottom: 4px; }
 @media (max-width: 1100px), (max-height: 700px) { html[data-ui='desktop'] .dash { --g: 260px; } }
 
 /* ---- the in-mode top row: titles in the display face ---- */

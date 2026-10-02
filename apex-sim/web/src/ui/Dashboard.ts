@@ -3,7 +3,7 @@
 // dial that rises from the bottom edge. Gear, shift light, TCS / ABS / manual tags, and (§4.4) warning lights only
 // while a fault is present; failed electrics make it flicker. Numbers use the tabular mono face.
 import './gauge.css';
-import { FAULT, TYRE, type VehicleState } from '../physics/telemetry';
+import { CHASSIS, FAULT, TYRE, type VehicleState } from '../physics/telemetry';
 import { t, type StringKey } from './i18n';
 import type { HudPreset, SpeedUnit } from './settings';
 
@@ -36,6 +36,8 @@ export interface DashboardFlags {
   abs: boolean;
   tcs: boolean;
   esc?: boolean;
+  /** §9 electronic chassis setting: 0 comfort, 1 normal, 2 sport (shown on cars that have one). */
+  chassisMode?: number;
   /** Real-time factor of the physics (§21.2: shown when the simulation runs slower than real time). */
   rtf?: number;
   camera: string;
@@ -118,6 +120,7 @@ export class Dashboard {
   private tagAbs = el('i', '', 'ABS');
   private tagMan = el('i', '', 'M');
   private tagEsc = el('i', '', 'ESC');
+  private tagRide = el('i', '', '');  // §9: LIFT / LOW level, or the chassis setting when not normal
   private rtfBadge = el('span', 'dash-rtf');
   private rtfShown = 1;
   private lit = -1;
@@ -145,7 +148,8 @@ export class Dashboard {
   constructor(redlineRpm: number) {
     const face = el('div', 'dash-face');
     face.append(this.speed, this.unitLabel);
-    this.tags.append(this.tagMan, this.tagTcs, this.tagAbs, this.tagEsc);
+    this.tags.append(this.tagMan, this.tagTcs, this.tagAbs, this.tagEsc, this.tagRide);
+    this.tagRide.hidden = true;
     this.pedals.append(this.brakeBar, this.throttleBar);
     for (let i = 0; i < 10; i++) this.lights.append(el('i', i < 4 ? 'g' : i < 7 ? 'y' : 'r'));
     this.dial.append(face, this.lights, this.gear, this.rpmText, this.tags, this.pedals);
@@ -216,6 +220,16 @@ export class Dashboard {
       this.tagAbs.className = f.abs ? 'on' : '';
       this.tagMan.className = f.manual ? 'on' : '';
       this.tagEsc.className = f.esc ? (v.esc ? 'on act' : 'on') : '';
+      // Ride level (moving: lit), else the chassis setting when it is not normal; nothing on a passive chassis.
+      const level = v.rideLevel > 0 ? t('rideLift') : v.rideLevel < 0 ? t('rideLow') : '';
+      const mode = v.chassisFlags & (CHASSIS.adaptiveDamping | CHASSIS.activeRoll) && f.chassisMode !== undefined && f.chassisMode !== 1
+        ? t(f.chassisMode === 0 ? 'chassisComfortShort' : 'chassisSportShort') : '';
+      const ride = level || mode;
+      this.tagRide.hidden = !ride;
+      if (ride) {
+        this.tagRide.textContent = ride;
+        this.tagRide.className = level && v.chassisFlags & CHASSIS.moving ? 'on act' : 'on';
+      }
       // §21.2: the physics running slower than real time is shown, not hidden (the car then looks slow).
       if (f.rtf !== undefined) {
         this.rtfShown += (f.rtf - this.rtfShown) * 0.05;

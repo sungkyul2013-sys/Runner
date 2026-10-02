@@ -3,7 +3,7 @@
 import type { DriveVehicle } from './types';
 import type { PhysicsClient, RenderFrame, SpawnedVehicle } from '../physics/PhysicsClient';
 import type { VehiclePose } from '../physics/messages';
-import type { VehicleState } from '../physics/telemetry';
+import { CHASSIS, type VehicleState } from '../physics/telemetry';
 import type { DebugBodies } from '../render/DebugBodies';
 import type { Viewer } from '../render/Viewer';
 import { Dashboard } from '../ui/Dashboard';
@@ -222,6 +222,8 @@ export class DriveSession {
 
   /** Called when the camera changes (the shell announces it). */
   onCamera: ((label: string) => void) | null = null;
+  /** §9 electronic chassis notices (the lift dropped at speed, or the car has none). */
+  onChassis: (event: 'liftDropped' | 'liftMissing') => void = () => {};
 
   setXray(on: boolean): void {
     this.xray = on;
@@ -255,7 +257,9 @@ export class DriveSession {
       const short = innerHeight < 520 && innerWidth > innerHeight;
       if (!this.chase.viewpoints && this.actor.view) this.chase.viewpoints = this.actor.view.viewpoints();
       const portrait = innerHeight > innerWidth;
-      this.chase.lift = this.dashboard.root.hidden || this.dashboard.root.classList.contains('hud-off') ? 0 : short ? 0.15 : portrait ? 0.12 : 0.1;
+      // The car framed above the centred gauge (PC: the dial takes ≈ 23 % of the height at the bottom centre).
+      const desktop = document.documentElement.dataset.ui === 'desktop';
+      this.chase.lift = this.dashboard.root.hidden || this.dashboard.root.classList.contains('hud-off') ? 0 : short ? 0.15 : portrait ? 0.12 : desktop ? 0.17 : 0.1;
       this.chase.distanceScale = portrait ? 1.22 : 1;
       this.chase.update(dt, v);
     } else this.chase.release();
@@ -270,6 +274,11 @@ export class DriveSession {
       if (wheelbase > 1.5 && wheelbase < 5) logic0.geometry = { wheelbase, lock: logic0.geometry.lock };
       this.geometryKnown = true;
     }
+    // §9 lift: the car lowers it at speed (or has none): the request lapses, as the button's light goes out.
+    if (logic0.lift && (!(v.chassisFlags & CHASSIS.lift) || (v.rideLevel !== 1 && Math.abs(v.speed) > 3))) {
+      logic0.lift = false;
+      this.onChassis(v.chassisFlags & CHASSIS.lift ? 'liftDropped' : 'liftMissing');
+    }
     this.physics.setVehicleInput(this.actor.spawned.vehicle, this.input.update(dt, v.speed, v.yawRate));
     const logic = this.input.logic;
     this.input.touch?.feedback?.({
@@ -281,6 +290,7 @@ export class DriveSession {
       abs: logic.abs,
       tcs: logic.tcs,
       esc: logic.esc,
+      chassisMode: logic.chassisMode,
       rtf: this.physics.latestStats()?.rtf ?? 1,
       camera: this.cameraLabel,
     });

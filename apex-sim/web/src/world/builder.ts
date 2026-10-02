@@ -618,14 +618,29 @@ export class MapBuilder {
     const half = { hump: 1.8, big: 3.0, table: 3.5, cushion: 1.5, rumble: 3.3, school: 15 }[kind];
     if (s - half < 12 || s + half > r.length - 12) return false;
     if (r.junctionS.some((j) => Math.abs(j - s) < half + 22)) return false;
+    let kMax = 0;
     for (let q = s - half - 2; q <= s + half + 2; q += 1) {
       const p = r.at(q);
-      if (p.flags & (STATION.bridge | STATION.tunnel) || Math.abs(p.k) > 0.004) return false;
+      if (p.flags & (STATION.bridge | STATION.tunnel)) return false;
+      kMax = Math.max(kMax, Math.abs(p.k));
     }
+    // On a bend the pad follows the carriageway (its corners on the curved stations, its points located by the
+    // nearest station): the straight edges between the corners stray by the chord's sagitta, kept under 0.25 m. A
+    // school zone (30 m) wants a straight road.
+    const curved = kMax > 0.004;
+    if (curved && (kind === 'school' || (kMax * (2 * half) ** 2) / 8 > 0.25)) return false;
     const p = r.at(s);
     const uR = -r.w.pe + 0.05, uL = r.w.peLeft - 0.05;
-    const corner = (u: number, v: number): [number, number] => [p.x + u * p.tz + v * p.tx, p.z - u * p.tx + v * p.tz];
-    const local = (x: number, z: number): [number, number] => [(x - p.x) * p.tz - (z - p.z) * p.tx, (x - p.x) * p.tx + (z - p.z) * p.tz];
+    const corner = (u: number, v: number): [number, number] => {
+      if (!curved) return [p.x + u * p.tz + v * p.tx, p.z - u * p.tx + v * p.tz];
+      const q = r.at(s + v);
+      return [q.x + u * q.tz, q.z - u * q.tx];
+    };
+    const local = (x: number, z: number): [number, number] => {
+      if (!curved) return [(x - p.x) * p.tz - (z - p.z) * p.tx, (x - p.x) * p.tx + (z - p.z) * p.tz];
+      const n = r.nearest(x, z);
+      return [n.u, n.s - s];
+    };
     const pad = (u0: number, u1: number, v0: number, v1: number, lift: (u: number, v: number) => number, colorAt: (u: number, v: number) => number, gridV: number, gridU = 0.8) => {
       this.addPad({
         outline: [corner(u0, v0), corner(u0, v1), corner(u1, v1), corner(u1, v0)],

@@ -132,12 +132,13 @@ const char* sbc_last_error(void);
 int sbc_world_vehicle_count(sbc_world* w);
 int sbc_vehicle_body(sbc_world* w, int vehicle);
 int sbc_vehicle_wheel_count(sbc_world* w, int vehicle);
-/* mode: 0 drive, 1 reverse, 2 neutral, 3 manual; shift: +1 / −1 manual shift request; aids: bit 0 ABS, bit 1 TCS, bit 2 ESC. */
+/* mode: 0 drive, 1 reverse, 2 neutral, 3 manual; shift: +1 / −1 manual shift request; aids: bit 0 ABS, bit 1 TCS, bit 2 ESC,
+   bits 3–4 electronic chassis setting + 1 (0: normal, 1 comfort, 2 normal, 3 sport), bit 5 ride-height lift. */
 int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake, float steer, float handbrake,
                           int mode, int shift, int aids);
 /* Packed telemetry: SBC_VT_HEADER floats, then SBC_VT_WHEEL floats per wheel (layout below). Returns the number of
    floats written, or −(floats needed) when capacity is too small. Positions are body-local (add sbc_body_origin). */
-#define SBC_VT_HEADER 62
+#define SBC_VT_HEADER 70
 #define SBC_VT_WHEEL 30
 /* header: 0 time, 1 speed [m/s], 2 engine rpm, 3 engine torque [N·m], 4 clutch torque, 5 gear (−1 R, 0 N),
    6 flags (1 shifting, 2 engine running, 4 TCS active, 8 ESC active), 7 throttle, 8 brake, 9 steer, 10 clutch, 11 accel long,
@@ -147,7 +148,11 @@ int sbc_vehicle_set_input(sbc_world* w, int vehicle, float throttle, float brake
    40 airbag bits, 41 crash time [s] (−1: none), 42 crash peak [g], 43 crash Δv [m/s]; crash events (§5.3 event
    log, the latest one): 44 count, 45 active, 46 start [s], 47 peak [g], 48 peak force [N], 49 Δv [m/s], 50 absorbed
    [J], 51 speed at the start [m/s], 52–54 position at the start (world frame), 55–57 velocity at the start;
-   §10 aerodynamics: 58 drag [N], 59 downforce front [N], 60 downforce rear [N], 61 airspeed [m/s]
+   §10 aerodynamics: 58 drag [N], 59 downforce front [N], 60 downforce rear [N], 61 airspeed [m/s];
+   §9 electronic chassis: 62 ride height over the normal level [m], 63 level aimed at (−1 low, 0 normal, 1 lift),
+   64 flags (1 level changing, 2 adaptive dampers, 4 self-levelling, 8 lift fitted, 16 active roll, 32 rear-axle
+   steering, 64 low level fitted), 65 body roll [rad] (positive: left up), 66 body pitch [rad] (positive: nose up),
+   67 active roll/pitch offset [m], 68 damper scale, 69 rear steer angle [rad] (positive: left)
    wheel: 0 spin [rad/s], 1 spin angle [rad], 2 load [N], 3 slip ratio, 4 slip angle [rad], 5 Fx, 6 Fy [N],
    7 brake torque, 8 drive torque [N·m], 9 loaded radius [m], 10 flags (1 contact, 2 ABS active), 11–13 centre,
    14–16 axis (points left), 17 tyre radius [m], 18 tyre pressure [bar], 19 tyre flags (tyre_flag::), 20 rim sparks

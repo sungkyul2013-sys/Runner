@@ -7,7 +7,7 @@ import * as THREE from 'three/webgpu';
 import type { Node } from 'three/webgpu';
 import {
   abs, atan, attribute, clamp, color, dot, exp, float, floor, fract, fwidth, max, mix, mod, mx_noise_float, normalize, normalWorld,
-  positionLocal, positionWorld, pow, sin, smoothstep, step, texture, time, uniform, vec2, vec3, cameraPosition, length, select,
+  positionGeometry, positionLocal, positionWorld, pow, sin, smoothstep, step, texture, time, uniform, vec2, vec3, cameraPosition, length, select,
 } from 'three/tsl';
 import type { MapData, MeshAccum, Sign } from './builder';
 import { MAT } from './types';
@@ -223,7 +223,15 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const floorH = mix(float(3.1), float(4.0), isType(0));
   const bay = mix(mix(float(3.0), float(1.6), isType(0)), float(4.5), isType(3));
   const fx = fract(fu.div(bay)), fy = fract(fv.div(floorH));
-  const win = step(0.18, fx).mul(step(fx, 0.82)).mul(step(0.28, fy)).mul(step(fy, 0.86)).mul(step(1.6, fv));
+  // Antialiased facade lines: each edge is smoothed over the pixel's footprint (fwidth of the unwrapped bay and floor
+  // coordinates), and a feature narrower than about two pixels fades to its average shade instead of flickering
+  // between its colour and the wall's as the camera moves (the moiré of distant mullions, fins and window rows).
+  const ax = fwidth(fu.div(bay)).max(1e-4), ay = fwidth(fv.div(floorH)).max(1e-4);
+  const box = (x: typeof fx, a: number, b: number, aa: typeof ax) =>
+    smoothstep(float(a).sub(aa), float(a).add(aa), x).mul(float(1).sub(smoothstep(float(b).sub(aa), float(b).add(aa), x)));
+  const resolved = (width: number, aa: typeof ax) => smoothstep(1, 3, float(width).div(aa));
+  const winSharp = box(fx, 0.18, 0.82, ax).mul(box(fy, 0.28, 0.86, ay));
+  const win = mix(float(0.64 * 0.58), winSharp, resolved(0.36, ax).mul(resolved(0.3, ay))).mul(step(1.6, fv));
   const roof = step(0.6, n.y).max(isType(7));
   // Wall colours per type, varied by the seed.
   const h1 = fract(sin(seed.mul(12.9898)).mul(43758.5453));
@@ -257,11 +265,12 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const roofCol = mix(color(0x5b5e63), mix(color(0x6b3b2e), color(0x3a4750), h1), isType(4).max(isType(7)));
   let c = mix(wall, glass, winMask.mul(float(1).sub(isType(0).mul(0.3))).mul(far.mul(-0.65).add(1)));
   // Window frames: a mullion splitting each window, a darker spandrel line at each floor (towers: thin vertical fins).
-  const mullion = step(abs(fx.sub(0.5)), 0.018).mul(winMask).mul(float(1).sub(far));
+  const mullion = mix(float(0.036), box(fx, 0.482, 0.518, ax), resolved(0.036, ax)).mul(winMask).mul(float(1).sub(far));
   c = mix(c, mix(color(0x5a6068), color(0xb8bec6), isType(0)), mullion.mul(0.85));
-  const spandrel = step(fy, 0.05).mul(step(1.6, fv)).mul(float(1).sub(roof)).mul(float(1).sub(isType(6)));
+  const spandrel = mix(float(0.05), float(1).sub(smoothstep(float(0.05).sub(ay), float(0.05).add(ay), fy)), resolved(0.05, ay))
+    .mul(step(1.6, fv)).mul(float(1).sub(roof)).mul(float(1).sub(isType(6)));
   c = mix(c, c.mul(0.78), spandrel.mul(float(1).sub(far.mul(0.7))));
-  const fin = isType(0).mul(step(abs(fx.sub(0.08)), 0.03)).mul(float(1).sub(roof)).mul(float(1).sub(far));
+  const fin = isType(0).mul(mix(float(0.06), box(fx, 0.05, 0.11, ax), resolved(0.06, ax))).mul(float(1).sub(roof)).mul(float(1).sub(far));
   c = mix(c, color(0xc9ced4), fin.mul(0.7));
   // Apartment slabs: a pale balcony band along every floor, and the estate's colour band under the roof line (the
   // brand stripe Korean apartment blocks carry near the top).
@@ -343,8 +352,10 @@ function treeGeometry(kind: number): THREE.BufferGeometry {
 
 function treeMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const m = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.9 });
-  // Sway: the top moves most, phase from the instance position.
-  const h = positionLocal.y.max(0);
+  // Sway: the top moves most, phase from the instance position. The height is the tree's own (the geometry's): the
+  // instanced local position already stands at the terrain height, which made a mountain's trees sway by hundreds of
+  // metres.
+  const h = positionGeometry.y.max(0);
   const phase = positionWorld.x.mul(0.13).add(positionWorld.z.mul(0.17));
   const sway = sin(time.mul(1.6).add(phase)).mul(u.wind).mul(h.mul(h).mul(0.004));
   m.positionNode = positionLocal.add(vec3(sway, 0, sway.mul(0.6)));

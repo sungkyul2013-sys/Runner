@@ -26,10 +26,11 @@ interface TouchPrefs {
   opacity: number;
   autoAccelerate: boolean;
   haptics: boolean;
+  gearButtons: 'manual' | 'always' | 'off';
 }
 const TOUCH_DEFAULTS: TouchPrefs = {
   steer: DEFAULT_TOUCH_LAYOUT.steer, size: DEFAULT_TOUCH_LAYOUT.size, pedalSize: DEFAULT_TOUCH_LAYOUT.pedalSize, opacity: DEFAULT_TOUCH_LAYOUT.opacity,
-  autoAccelerate: DEFAULT_TOUCH_LAYOUT.autoAccelerate, haptics: DEFAULT_TOUCH_LAYOUT.haptics,
+  autoAccelerate: DEFAULT_TOUCH_LAYOUT.autoAccelerate, haptics: DEFAULT_TOUCH_LAYOUT.haptics, gearButtons: DEFAULT_TOUCH_LAYOUT.gearButtons,
 };
 
 export function touchPrefs(s: Settings = settings.get()): TouchPrefs {
@@ -136,6 +137,7 @@ export class SettingsView {
       rows.push(slider('setTouchOpacity', p.opacity, 0.2, 1, 0.05, (v) => `${Math.round(v * 100)} %`, (v) => setTouch({ opacity: v })));
       rows.push(toggle('setAutoAccel', p.autoAccelerate, (v) => setTouch({ autoAccelerate: v })));
       rows.push(toggle('setHaptics', p.haptics, (v) => setTouch({ haptics: v })));
+      rows.push(choice('setGearButtons', p.gearButtons, [['manual', 'gearButtonsManual'], ['always', 'gearButtonsAlways'], ['off', 'off']], (v) => setTouch({ gearButtons: v })));
       if (SettingsView.onEditTouchLayout) {
         const edit = el('button', 'wide', t('setEditLayout'));
         edit.onclick = () => {

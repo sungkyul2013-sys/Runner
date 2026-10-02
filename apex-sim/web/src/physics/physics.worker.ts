@@ -286,7 +286,10 @@ function publishDamage(): void {
 
 function setVehicleInput(vehicle: number, i: VehicleInput): void {
   if (!world || vehicle < 0 || vehicle >= sbc._sbc_world_vehicle_count(world)) return;
-  sbc._sbc_vehicle_set_input(world, vehicle, i.throttle, i.brake, i.steer, i.handbrake, i.mode, i.shift, (i.abs ? 1 : 0) | (i.tcs ? 2 : 0) | (i.esc ? 4 : 0));
+  // aids: bits 0–2 ABS, TCS, ESC; bits 3–4 chassis setting + 1 (0: the core's default, normal); bit 5 lift.
+  const chassis = i.chassisMode === undefined ? 0 : i.chassisMode + 1;
+  sbc._sbc_vehicle_set_input(world, vehicle, i.throttle, i.brake, i.steer, i.handbrake, i.mode, i.shift,
+    (i.abs ? 1 : 0) | (i.tcs ? 2 : 0) | (i.esc ? 4 : 0) | (chassis << 3) | (i.lift ? 32 : 0));
 }
 
 /** Copies every vehicle's packed telemetry into the slot (body index in the header's reserved field 30). */

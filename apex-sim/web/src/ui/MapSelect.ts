@@ -15,6 +15,8 @@ export interface MapChoice {
   areaKm2: number;
   kind?: 'open' | 'test' | 'grid';
   spawns: Array<{ id: string; label: Localized }>;
+  /** Attribution of external data (a real-terrain DEM). */
+  credit?: Localized;
 }
 
 const WEATHERS: Array<[string, IconName]> = [
@@ -51,8 +53,9 @@ export function openMapSelect(maps: MapChoice[], preselect: string, start: (map:
   const kind = el('small', 'ms3-kind');
   const title = el('h1', 'ms3-title');
   const desc = el('p', 'ms3-desc');
+  const credit = el('small', 'ms3-credit');
   const status = el('div', 'ms3-status');
-  const info = el('section', 'ms3-info', kind, title, desc, status);
+  const info = el('section', 'ms3-info', kind, title, desc, credit, status);
 
   // ---- right: start point, time, weather, start ----
   const spawnList = el('div', 'ms3-spawns');
@@ -89,6 +92,8 @@ export function openMapSelect(maps: MapChoice[], preselect: string, start: (map:
     kind.textContent = [t(map.kind === 'open' ? 'mapKindOpen' : 'mapKindTest'), map.areaKm2 ? `${map.areaKm2} km²` : ''].filter(Boolean).join(' · ');
     title.textContent = tl(map.label).replace(/\s*\(.*\)$/, '');
     desc.textContent = tl(map.desc);
+    credit.textContent = map.credit ? tl(map.credit) : '';
+    credit.hidden = !map.credit;
     for (const e of [title, desc, kind]) {
       e.classList.remove('in');
       void e.offsetWidth;

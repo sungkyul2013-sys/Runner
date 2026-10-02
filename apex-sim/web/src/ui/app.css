@@ -252,6 +252,7 @@ body.mm-maps .mm-foot { opacity: 0; pointer-events: none; }
 .ms3-kind { display: inline-block; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em; color: var(--accent); padding: 4px 10px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .ms3-title { margin: 10px 0 8px; font-size: clamp(2.2rem, 5.4vw, 4.4rem); font-weight: 800; line-height: 1; letter-spacing: -0.02em; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.6); }
 .ms3-desc { color: var(--text-2); font-size: 0.98rem; line-height: 1.55; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8); }
+.ms3-credit { display: block; color: var(--text-3); font-size: 0.74rem; line-height: 1.4; margin-top: 6px; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8); }
 .ms3-info .in { animation: msRise 560ms var(--ease) both; }
 .ms3-info .ms3-title.in { animation-delay: 60ms; }
 .ms3-info .ms3-desc.in { animation-delay: 120ms; }

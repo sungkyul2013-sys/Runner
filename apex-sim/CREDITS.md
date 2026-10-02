@@ -20,6 +20,14 @@
 | [Inter](https://rsms.me/inter/) (@fontsource/inter 5.3) | SIL OFL 1.1 |
 | [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (@fontsource/jetbrains-mono 5.3) | SIL OFL 1.1 |
 
+## 지형 데이터 (운설령 맵)
+
+| 데이터 | 출처 | 라이선스·표기 |
+|---|---|---|
+| 표고(DEM) — 설악산 한계령 일대 8 × 8 km (`web/public/data/dem/seorak.*`, `tools/dem/fetch-dem.mjs`) | [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen / Linux Foundation, AWS Open Data; Terrarium 인코딩, z13) | 원자료별 표기 필요: SRTM(NASA, 퍼블릭 도메인) 등 — 등록 페이지의 출처 목록에 따른다. 맵 선택 화면에 표기 |
+
+지명과 도로는 가상이다(실제 도로선은 쓰지 않았다, KNOWN_ISSUES M15).
+
 ## 3D 에셋
 
 M0에는 외부 3D 에셋이 없다(모든 형상은 코드로 생성).

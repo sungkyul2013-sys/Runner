@@ -40,16 +40,25 @@ export class VehicleBuilder {
   // one of its sample points (a beam near several groups goes to the nearest) for plastic strain past `strain`, and the
   // lattice nodes within `nodeRadius` of them (and the group's own `nodes`) for contact forces past `impact` [N].
   // Beams already watched by an earlier call keep their group (a beam belongs to one group).
-  tagDamageGroups(groups, { beamGroups = ['chassis'], radius = 0.2, nodeRadius = 0.15 } = {}) {
+  tagDamageGroups(groups, { beamGroups = ['chassis'], radius = 0.2, nodeRadius = 0.15, skipLayers = 0 } = {}) {
     const mid = (beam) => scale(add(this.pos(beam[0]), this.pos(beam[1])), 0.5);
     const near = (p, g) => g.samples.some((s) => dist(p, s) < nodeRadius);
+    // `skipLayers`: the lowest lattice layers (ids c<i>_<layer>_<k>) stand for the undertray, the floor pan and the
+    // subframes' skid faces — what scrapes a kerb, a ramp or a hump. Their contacts and strains are no strike on a lamp
+    // or a radiator above them: those layers are not watched (a part's own `nodes` still are).
+    const layerOf = (id) => {
+      const m = /^c\d+_(\d+)_\d+$/.exec(id);
+      return m ? +m[1] : Infinity;
+    };
+    const underside = (id) => layerOf(id) < skipLayers;
     for (const g of groups) {
       // Watched nodes: the lattice near the samples, plus the group's own (`nodes`: a part's node block).
-      const nodes = g.impact ? [...(g.nodes ?? []), ...this.lattice.filter((id) => near(this.pos(id), g))] : [];
+      const nodes = g.impact ? [...(g.nodes ?? []), ...this.lattice.filter((id) => !underside(id) && near(this.pos(id), g))] : [];
       this.damageGroups.push({ id: g.id, strain: g.strain, ...(g.impact ? { impact: g.impact, nodes } : {}), ...(g.visual ? { visual: g.visual } : {}) });
     }
     for (const beam of this.beams) {
       if (!beamGroups.includes(beam[2]) || beam[3]?.damage) continue;
+      if (underside(beam[0]) && underside(beam[1])) continue;
       const m = mid(beam);
       let best = null, bestD = radius;
       for (const g of groups) {
@@ -139,6 +148,52 @@ export class VehicleBuilder {
         const other = grid.get(key(i + di, j + dj, k + dk));
         if (!other) continue;
         if (axialStiffness) this.beam(id, other, group, { k: Math.round(axialStiffness / dist(this.pos(id), this.pos(other))) });
+        else this.beam(id, other, group);
+      }
+    }
+    // A node at the clipped fringe can end up with all its neighbours in one plane (the last station's top centre
+    // under a sloping bonnet): it then has no stiffness across that plane and swings freely by centimetres. Brace each
+    // such node to the nearest grid nodes off its plane (index distance ≤ 2), one on each side where there is one.
+    const neighbours = new Map();
+    for (const [a, b] of this.beams) {
+      if (!neighbours.has(a)) neighbours.set(a, []);
+      if (!neighbours.has(b)) neighbours.set(b, []);
+      neighbours.get(a).push(b);
+      neighbours.get(b).push(a);
+    }
+    const unit = (p, q) => { const d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]]; const l = Math.hypot(...d); return d.map((v) => v / l); };
+    const spread = (p, ids) => {
+      // det of Σ d dᵀ over the unit directions: 0 when they lie in one plane
+      const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+      for (const o of ids) { const d = unit(p, this.pos(o)); for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) M[r][c] += d[r] * d[c]; }
+      return M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
+        M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+    };
+    for (const [k0, id] of grid) {
+      const linked = neighbours.get(id) ?? [];
+      const p = this.pos(id);
+      if (linked.length >= 3 && spread(p, linked) > 1e-3) continue;
+      const [i, j, k] = k0.split(',').map(Number);
+      const candidates = [];
+      for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) for (let dk = -2; dk <= 2; dk++) {
+        const other = grid.get(key(i + di, j + dj, k + dk));
+        if (other && other !== id && !linked.includes(other)) candidates.push(other);
+      }
+      candidates.sort((a, c) => dist(this.pos(a), p) - dist(this.pos(c), p));
+      const added = [];
+      for (const other of candidates) {
+        if (added.length >= 2) break;
+        const trial = [...linked, ...added, other];
+        if (spread(p, trial) <= 1e-3) continue;
+        // the second brace on the other side of the plane from the first
+        if (added.length === 1) {
+          const a = unit(p, this.pos(added[0])), b = unit(p, this.pos(other));
+          if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] > 0.0) continue;
+        }
+        added.push(other);
+      }
+      for (const other of added) {
+        if (axialStiffness) this.beam(id, other, group, { k: Math.round(axialStiffness / dist(p, this.pos(other))) });
         else this.beam(id, other, group);
       }
     }

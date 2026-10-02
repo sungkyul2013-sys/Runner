@@ -252,6 +252,7 @@ Vehicle::Vehicle(const VehicleDesc& desc, int bodyIndex, const Body& body) : des
   }
   initTyres(body);
   initAero(body);
+  initChassis(body);
 }
 
 void Vehicle::relaunch(Body& b, DVec3 position, double yaw, double speed, double floorY, double pitch, double roll) {
@@ -687,6 +688,9 @@ void Vehicle::step(const World& world, Body& b, bool track) {
     b.hydroInputs[static_cast<size_t>(D.steeringChannel)] = static_cast<float>(steer_);
   }
 
+  // ---- electronic chassis: ride height, adaptive damping, active roll / pitch, rear-axle steering (§9) ------------
+  updateChassis(b, dt, speed, up);
+
   // ---- electronic stability control (§9, §15.2) ----------------------------------------------------------------
   // Yaw-rate control. The reference is a linear single-track model on the driver's steer angle δ (rack position ×
   // steering lock), r_ref = v·δ / (L + K·v²), capped at what µ ≈ 1 allows (0.9 g / v). Yawing faster than that (oversteer, a spin
@@ -718,7 +722,7 @@ void Vehicle::step(const World& world, Body& b, bool track) {
         }
       }
       if (nf > 0 && nr > 0) {
-        const double delta = steer_ * D.steeringLock;
+        const double delta = steer_ * D.steeringLock - rearSteer_;  // single-track: front minus rear angle
         const double L = std::max(xf / nf - xr / nr, 1.0);
         const double cap = 0.9 * 9.81 / speed;
         const double ref = clampd(speed * delta / (L + D.electronics.escUndersteer * speed * speed), -cap, cap);

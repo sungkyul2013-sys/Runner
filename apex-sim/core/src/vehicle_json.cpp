@@ -296,6 +296,7 @@ struct Loader {
         bd.minLength = member(over, "min") ? floatOr(over, "min", 0.0f, path) : initial + floatOr(over, "minOffset", 0.0f, path);
         bd.maxLength = member(over, "max") ? floatOr(over, "max", 0.0f, path) : initial + floatOr(over, "maxOffset", 0.0f, path);
         if (const Val h = member(over, "hydro")) {
+          bd.type = BeamType::kHydro;  // an actuated beam of a passive group (a rear-steer toe link)
           bd.hydroChannel = static_cast<int32_t>(numberOr(h, "channel", 0.0, path + ".hydro"));
           bd.hydroFactor = floatOr(h, "factor", 0.0f, path + ".hydro");
           bd.hydroSpeed = floatOr(h, "speed", 0.0f, path + ".hydro");
@@ -580,6 +581,49 @@ struct Loader {
       v.electronics.tcsSlip = floatOr(e, "tcsSlip", v.electronics.tcsSlip, path);
       v.electronics.esc = boolOr(e, "esc", v.electronics.esc, path);
       v.electronics.escUndersteer = floatOr(e, "escUndersteer", v.electronics.escUndersteer, path);
+    }
+    if (const Val c = member(obj, "chassis")) {
+      const std::string path = "vehicle.chassis";
+      ChassisDesc& x = v.chassis;
+      if (const Val list = member(c, "corners")) {
+        array(list, path + ".corners");
+        size_t ci, cn;
+        Val corner;
+        yyjson_arr_foreach(list, ci, cn, corner) {
+          const std::string cp = path + ".corners[" + std::to_string(ci) + "]";
+          ChassisCornerDesc cd;
+          cd.chassisNode = node(member(corner, "chassis"), cp + ".chassis");
+          cd.wheelNode = node(member(corner, "wheel"), cp + ".wheel");
+          cd.motionRatio = floatOr(corner, "motionRatio", cd.motionRatio, cp);
+          x.corners.push_back(cd);
+        }
+      }
+      x.levelling = boolOr(c, "levelling", x.levelling, path);
+      x.normalFront = floatOr(c, "normalFront", x.normalFront, path);
+      x.normalRear = floatOr(c, "normalRear", x.normalRear, path);
+      x.liftHeight = floatOr(c, "liftHeight", x.liftHeight, path);
+      x.liftFrontOnly = boolOr(c, "liftFrontOnly", x.liftFrontOnly, path);
+      x.liftMaxKmh = floatOr(c, "liftMaxKmh", x.liftMaxKmh, path);
+      x.lowHeight = floatOr(c, "lowHeight", x.lowHeight, path);
+      x.lowAboveKmh = floatOr(c, "lowAboveKmh", x.lowAboveKmh, path);
+      x.heightRate = floatOr(c, "heightRate", x.heightRate, path);
+      x.adaptiveDamping = boolOr(c, "adaptiveDamping", x.adaptiveDamping, path);
+      x.dampingMin = floatOr(c, "dampingMin", x.dampingMin, path);
+      x.activeRoll = floatOr(c, "activeRoll", x.activeRoll, path);
+      x.rollGradient = floatOr(c, "rollGradient", x.rollGradient, path);
+      x.activePitch = floatOr(c, "activePitch", x.activePitch, path);
+      x.pitchGradient = floatOr(c, "pitchGradient", x.pitchGradient, path);
+      x.activeTravel = floatOr(c, "activeTravel", x.activeTravel, path);
+      x.activeRate = floatOr(c, "activeRate", x.activeRate, path);
+      if (const Val r = member(c, "rearSteer")) {
+        const std::string rp = path + ".rearSteer";
+        x.rearSteerChannel = static_cast<int32_t>(numberOr(r, "channel", -1.0, rp));
+        x.rearSteerLock = floatOr(r, "lock", x.rearSteerLock, rp);
+        x.rearSteerLow = floatOr(r, "low", x.rearSteerLow, rp);
+        x.rearSteerHigh = floatOr(r, "high", x.rearSteerHigh, rp);
+        x.rearSteerLowKmh = floatOr(r, "lowKmh", x.rearSteerLowKmh, rp);
+        x.rearSteerHighKmh = floatOr(r, "highKmh", x.rearSteerHighKmh, rp);
+      }
     }
     if (const Val a = member(obj, "aero")) {
       const std::string path = "vehicle.aero";

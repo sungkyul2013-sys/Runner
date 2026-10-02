@@ -75,6 +75,13 @@ class Vehicle {
     h.value(eventVelocity_.x); h.value(eventVelocity_.y); h.value(eventVelocity_.z);
     h.value(quietTime_); h.value(quietPosition_.x); h.value(quietPosition_.y); h.value(quietPosition_.z);
     h.value(quietVelocity_.x); h.value(quietVelocity_.y); h.value(quietVelocity_.z);
+    h.value(input_.chassisMode); h.value(input_.lift);
+    for (const CornerState& c : corners_) {
+      h.value(c.offset); h.value(c.lenFast); h.value(c.lenSlow); h.value(c.bodyVelFast); h.value(c.bodyVelLow); h.value(c.damp);
+      h.value(c.stretchLow); h.value(c.hopEnvelope);
+    }
+    for (int a = 0; a < 2; ++a) { h.value(levelSym_[a]); h.value(rollU_[a]); }
+    h.value(pitchU_); h.value(liftBlocked_); h.value(lowOn_); h.value(lowTimer_); h.value(rearSteer_);
   }
 
  private:
@@ -90,6 +97,10 @@ class Vehicle {
   // §4.4: link severities from the body's damage groups, fluids, temperatures and engine wear for this step; sets the
   // modifiers below (vehicle_damage.cpp).
   void updateDamage(const Body& body, double dt, double speed);
+  // §9 electronic chassis (vehicle_chassis.cpp): the corners' springs (constructor), then each step ride height,
+  // adaptive damping, active roll / pitch and rear-axle steering. `up`: chassis frame; `speed` forward [m/s].
+  void initChassis(const Body& body);
+  void updateChassis(Body& body, double dt, double speed, DVec3 up);
   // §6 tyre damage (vehicle_tyres.cpp): the wheels' tyre topology (constructor), then each step the damage triggers,
   // deflation and its effects on the body (cavity gauge, sidewall stiffness; energy booked), shredding.
   void initTyres(const Body& body);
@@ -222,6 +233,25 @@ class Vehicle {
   // The last quiet sample (under 1 g) before an event: its onset, before a soft first contact slows the cabin.
   double quietTime_ = -1.0;
   DVec3 quietPosition_{}, quietVelocity_{};
+
+  // §9 electronic chassis. Per corner: the spring beam, its design length and rest length and damping as built, the
+  // axle (0 front, 1 rear) and side (+1 left); the state: the offset applied [m of wheel travel], fast and slow
+  // filtered spring lengths, the body's vertical speed through two low-passes (skyhook band) and the damper scale.
+  struct CornerState {
+    int32_t beam = -1;
+    double design = 0.0, rest0 = 0.0, damping0 = 0.0, ratio = 1.0, halfTrack = 0.8, x = 0.0;
+    int axle = 0, side = 1;
+    double offset = 0.0, lenFast = 0.0, lenSlow = 0.0, bodyVelFast = 0.0, bodyVelLow = 0.0, damp = 1.0;
+    double stretchLow = 0.0, hopEnvelope = 0.0;
+  };
+  std::vector<CornerState> corners_;
+  double wheelbase_ = 2.5;
+  double levelSym_[2] = {0.0, 0.0};  // per axle: ride-height offset [m]
+  double rollU_[2] = {0.0, 0.0};     // per axle: active roll offset, + on the left [m]
+  double pitchU_ = 0.0;              // active pitch offset, + at the front [m]
+  bool liftBlocked_ = false, lowOn_ = false;
+  double lowTimer_ = 0.0;
+  double rearSteer_ = 0.0;           // [rad]
 
   // Per-step scratch (no allocation in step()).
   struct WheelFrame {

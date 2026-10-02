@@ -7,6 +7,8 @@ import './touch.css';
 import { tl, type Localized } from './i18n';
 
 export type SteerMode = 'buttons' | 'wheel' | 'tilt' | 'slider';
+export type GearButtons = 'manual' | 'always' | 'off';
+const GEAR_BUTTONS: readonly GearButtons[] = ['manual', 'always', 'off'];
 export type TouchAction = 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause' | 'reverse';
 export type ControlId = 'steer' | 'throttle' | 'brake' | 'handbrake' | 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause' | 'reverse';
 export interface TouchLayout {
@@ -16,7 +18,9 @@ export interface TouchLayout {
   opacity: number; // 0.2 … 1
   autoAccelerate: boolean; // throttle held at 100 % unless braking (brake pedal still works)
   haptics: boolean; // navigator.vibrate on shifts / pedal floor / reset
-  showShift: boolean; // shift buttons (manual gearbox) visible
+  /** The gear cluster (D / R selector, shift + / −): only while the manual gearbox is selected (default), always, or
+   *  never. In the default automatic mode it stays hidden — the back pedal held at a standstill selects reverse. */
+  gearButtons: GearButtons;
   positions: Partial<Record<ControlId, { x: number; y: number }>>; // user offsets [px] from each control's default anchor
 }
 /** steer −1 … 1, positive = left; analog = false in 'buttons' mode (the caller rate-limits it like a keyboard). */
@@ -36,7 +40,7 @@ export interface TouchFeedback {
 
 export const CONTROL_IDS: readonly ControlId[] = ['steer', 'throttle', 'brake', 'handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause', 'reverse'];
 const STEER_MODES: readonly SteerMode[] = ['buttons', 'wheel', 'tilt', 'slider'];
-export const DEFAULT_TOUCH_LAYOUT: TouchLayout = { steer: 'slider', size: 1, pedalSize: 1, opacity: 0.9, autoAccelerate: false, haptics: true, showShift: true, positions: {} };
+export const DEFAULT_TOUCH_LAYOUT: TouchLayout = { steer: 'slider', size: 1, pedalSize: 1, opacity: 0.9, autoAccelerate: false, haptics: true, gearButtons: 'manual', positions: {} };
 
 const WHEEL_MAX = 2.1; // [rad] ≈ 120° lock to lock / 2
 const AUTO_BRAKE = 0.05; // brake above this cancels auto-acceleration
@@ -111,7 +115,7 @@ export function normalizeLayout(l: unknown): TouchLayout {
     opacity: num(o.opacity, 0.2, 1, d.opacity),
     autoAccelerate: bool(o.autoAccelerate, d.autoAccelerate),
     haptics: bool(o.haptics, d.haptics),
-    showShift: bool(o.showShift, d.showShift),
+    gearButtons: GEAR_BUTTONS.includes(o.gearButtons as GearButtons) ? (o.gearButtons as GearButtons) : d.gearButtons,
     positions,
   };
 }
@@ -214,6 +218,7 @@ export class TouchControls {
   private ghost: HTMLElement | null = null; // slider: where the front wheels actually point
   private gearText: HTMLElement;
   private shown = '';
+  private manual = false; // the car's gearbox is in manual mode (from feedback)
 
   constructor(layout: TouchLayout = DEFAULT_TOUCH_LAYOUT) {
     const labels: Record<ControlId, Localized> = {
@@ -281,7 +286,8 @@ export class TouchControls {
     this.root.style.setProperty('--ps', String(this.lay.pedalSize));
     this.root.style.setProperty('--o', String(this.lay.opacity));
     this.nodes.throttle.hidden = this.lay.autoAccelerate;
-    this.nodes.shiftUp.hidden = this.nodes.shiftDown.hidden = !this.lay.showShift;
+    this.showGears();
+    this.reserve();
     for (const id of CONTROL_IDS) this.place(id);
     if (this.builtSteer !== this.lay.steer) {
       this.release(); // a finger held on the old steering control must not leak into the new one
@@ -298,6 +304,7 @@ export class TouchControls {
 
   setVisible(on: boolean): void {
     this.root.hidden = !on;
+    this.reserve();
     this.release();
     this.syncListeners();
   }
@@ -308,6 +315,7 @@ export class TouchControls {
 
   dispose(): void {
     this.root.hidden = true;
+    this.reserve();
     this.release();
     this.syncListeners();
     cancelAnimationFrame(this.raf);
@@ -336,6 +344,53 @@ export class TouchControls {
       this.nodes.reverse.classList.toggle('rev', gear === 'R');
     }
     this.nodes.reverse.classList.toggle('locked', Math.abs(f.speed) > 0.6);
+    if (f.manual !== this.manual) {
+      this.manual = f.manual;
+      this.showGears();
+    }
+  }
+
+  /**
+   * The width the controls take at the bottom corners in portrait (pedals right, camera and reset left), published on
+   * the document as --tc-right / --tc-left so the centred gauge sizes itself between them (gauge.css).
+   */
+  private reserve(): void {
+    const st = document.documentElement.style;
+    if (this.root.hidden) {
+      st.removeProperty('--tc-right');
+      st.removeProperty('--tc-left');
+      return;
+    }
+    const s = this.lay.size, ps = this.lay.pedalSize;
+    const gas = this.lay.autoAccelerate ? 0 : 54 * s * ps + 6 * s;
+    st.setProperty('--tc-right', `${(10 + gas + 60 * s * ps).toFixed(1)}px`);
+    st.setProperty('--tc-left', `${(10 + 2 * 46 * s + 6 * s).toFixed(1)}px`);
+  }
+
+  /** The gear cluster per the layout: with the manual gearbox only (default), always or never. */
+  private showGears(): void {
+    const on = this.lay.gearButtons === 'always' || (this.lay.gearButtons === 'manual' && this.manual);
+    for (const id of ['shiftUp', 'shiftDown', 'reverse'] as const) {
+      if (this.nodes[id].hidden === on) {
+        this.nodes[id].hidden = !on;
+        if (!on) this.releaseControl(id);
+      }
+    }
+    this.root.classList.toggle('gears', on);
+  }
+
+  /** Ends the presses on one control (it was hidden under a finger). */
+  private releaseControl(id: ControlId): void {
+    for (const [pid, p] of this.presses) {
+      if (p.id !== id) continue;
+      try {
+        p.node.releasePointerCapture(pid);
+      } catch {
+        /* already released */
+      }
+      p.node.classList.remove('on');
+      this.presses.delete(pid);
+    }
   }
 
   // ---- pointer handling ----

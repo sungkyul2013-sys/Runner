@@ -142,6 +142,52 @@ struct ElectronicsDesc {
   float escUndersteer = 0.0025f;  // understeer gradient K of the reference single-track model [rad·s²/m]
 };
 
+// ---- electronic chassis control (§9: air suspension, adaptive damping, active roll, rear-axle steering) -------------
+// The systems act on each corner's suspension spring (ChassisDesc::corners, one per wheel in wheel order): its rest
+// length moves by an offset — an air spring's volume, a lift piston in series with a steel spring, an active strut —
+// and its damper's coefficient is scaled (a continuously variable damper valve). Offsets are kept in wheel-travel
+// units (the body's height over the wheel) and reach the spring through its motion ratio.
+struct ChassisCornerDesc {
+  int32_t chassisNode = -1, wheelNode = -1;  // the spring beam's ends (body side, wheel side)
+  float motionRatio = 1.0f;                  // spring travel per wheel travel [-]
+};
+
+struct ChassisDesc {
+  std::vector<ChassisCornerDesc> corners;  // empty: a passive chassis (only rear-axle steering may apply)
+  // Ride height. Levels: lift (on the driver's request, below liftMaxKmh; it stays down after exceeding it until the
+  // request is released), normal, low (automatic above lowAboveKmh held for 3 s, back up below 75 % of it; always in
+  // the sport setting). Self-levelling air springs hold the level under any load (each axle's mean, frozen in hard
+  // cornering and braking); a lift piston on steel springs (levelling false) just extends by the level's height.
+  bool levelling = false;
+  float normalFront = 0.0f, normalRear = 0.0f;  // [m] wheel travel the normal level holds, per axle (the car's stance)
+  float liftHeight = 0.0f;       // [m] body raised at the lift level (0: no lift)
+  bool liftFrontOnly = false;    // a lift system on the front axle only
+  float liftMaxKmh = 40.0f;
+  float lowHeight = 0.0f;        // [m] body lowered at the low level (0: none)
+  float lowAboveKmh = 120.0f;
+  float heightRate = 0.01f;      // [m/s] body height change (compressor, valve block, lift pump)
+  // Adaptive damping: skyhook control of each damper between a soft floor and the data's coefficient (the explicit
+  // integration's ceiling, KNOWN_ISSUES P31) — firm while the damper force works against the body's own vertical
+  // motion, soft while it would push the body along. Floor: dampingMin in comfort, midway in normal, none in sport.
+  bool adaptiveDamping = false;
+  float dampingMin = 0.55f;      // [-] of the data's coefficient
+  // Active roll and pitch control (active anti-roll bars or struts): the fraction of the passive body roll (pitch)
+  // taken out, against the passive gradient of the car without it (sport: as given; comfort: 70 % of it).
+  float activeRoll = 0.0f;       // [0, 1]
+  float rollGradient = 0.0f;     // [rad per m/s²] passive, positive (body leans out of the turn)
+  float activePitch = 0.0f;      // [0, 1]
+  float pitchGradient = 0.0f;    // [rad per m/s²] passive, positive (nose up accelerating, down braking)
+  float activeTravel = 0.04f;    // [m] wheel travel the actuators can add or take per corner
+  float activeRate = 0.15f;      // [m/s]
+  // Rear-axle steering: a hydro channel lengthens the rear toe links (input ±1 = rear wheels ±rearSteerLock, positive
+  // left). Rear angle = ratio × front angle, the ratio blended from rearSteerLow (≤ rearSteerLowKmh, negative:
+  // counter-phase, a tighter turn) to rearSteerHigh (≥ rearSteerHighKmh, positive: in phase, a steadier lane change).
+  int32_t rearSteerChannel = -1;
+  float rearSteerLock = 0.0f;    // [rad]
+  float rearSteerLow = 0.0f, rearSteerHigh = 0.0f;
+  float rearSteerLowKmh = 50.0f, rearSteerHighKmh = 80.0f;
+};
+
 // ---- damage → function (§4.4) --------------------------------------------------------------------------------------
 // Fluids and engine health (engineering models, parameters per vehicle). The engine heats its coolant with a share of
 // its output (plus idle heat); above the thermostat the radiator sheds heat in proportion to the temperature above
@@ -245,6 +291,7 @@ struct VehicleDesc {
   int32_t steeringChannel = -1;   // hydro channel driven by the steering input (−1 = none)
   float steeringRate = 3.0f;      // max steering input change [1/s] (rack speed)
   float steeringLock = 0.5f;      // road wheel angle at full rack travel [rad] (the stability control's reference)
+  ChassisDesc chassis;
   FluidsDesc fluids;
   std::vector<DamageLinkDesc> damageLinks;
 };
@@ -262,6 +309,8 @@ struct VehicleInput {
   bool abs = true;         // driver switches for fitted aids
   bool tcs = true;
   bool esc = false;        // stability control (off unless the driver switches it on: the assist presets do)
+  int8_t chassisMode = 1;  // electronic chassis setting (ChassisDesc): 0 comfort, 1 normal, 2 sport
+  bool lift = false;       // ride-height lift requested (kerbs, ramps, steep drives)
 };
 
 struct WheelTelemetry {
@@ -338,6 +387,15 @@ struct VehicleTelemetry {
   float aeroDownforceFront = 0.0f;     // [N] front axle share
   float aeroDownforceRear = 0.0f;      // [N]
   float airspeed = 0.0f;               // [m/s] forward speed through the air (wind and wakes included)
+  // §9 electronic chassis (ChassisDesc)
+  float rideHeight = 0.0f;    // body height over the wheels against the normal level, mean over the corners [m]
+  int8_t rideLevel = 0;       // level aimed at: −1 low, 0 normal, 1 lift
+  bool levelMoving = false;   // the system is raising or lowering the body
+  float rollAngle = 0.0f;     // body roll over the wheels [rad] (positive: left side up)
+  float pitchAngle = 0.0f;    // body pitch over the wheels [rad] (positive: nose up)
+  float activeOffset = 0.0f;  // largest wheel-travel offset the active roll / pitch system holds [m]
+  float damperScale = 1.0f;   // adaptive dampers: mean coefficient over the data's [-]
+  float rearSteer = 0.0f;     // rear wheels' commanded angle [rad] (positive: left)
 };
 
 // Airbags (VehicleTelemetry::airbags): the front pair fires on a frontal velocity change over 25 km/h within 50 ms,

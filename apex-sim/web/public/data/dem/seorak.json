@@ -1,0 +1,11 @@
+{
+  "lat": 38.09,
+  "lon": 128.43,
+  "size": 8000,
+  "cell": 16,
+  "n": 500,
+  "min": 269,
+  "zoom": 13,
+  "source": "Terrain Tiles (Terrarium), AWS Open Data — https://registry.opendata.aws/terrain-tiles/",
+  "attribution": "Terrain Tiles: Mapzen / Linux Foundation; source data SRTM (NASA), and others (see the registry page)"
+}

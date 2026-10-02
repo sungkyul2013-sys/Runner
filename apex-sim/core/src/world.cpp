@@ -332,6 +332,8 @@ void World::setVehicleInput(int v, const VehicleInput& in) {
   dst.abs = in.abs;
   dst.tcs = in.tcs;
   dst.esc = in.esc;
+  dst.chassisMode = static_cast<int8_t>(std::min(std::max(static_cast<int>(in.chassisMode), 0), 2));
+  dst.lift = in.lift;
   if (in.shiftRequest != 0) dst.shiftRequest = in.shiftRequest > 0 ? 1 : -1;
 }
 

@@ -80,6 +80,10 @@ export interface VehicleInput {
   tcs: boolean;
   /** Stability control (core VehicleInput::esc). */
   esc: boolean;
+  /** §9 electronic chassis setting (core VehicleInput::chassisMode): 0 comfort, 1 normal (default), 2 sport. */
+  chassisMode?: 0 | 1 | 2;
+  /** Ride-height lift requested (core VehicleInput::lift; cars with a lift system). */
+  lift?: boolean;
 }
 
 export interface BodyTopology {

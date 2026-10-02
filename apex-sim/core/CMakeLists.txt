@@ -45,6 +45,7 @@ add_library(sbc STATIC
   src/scenes.cpp
   src/vehicle.cpp
   src/vehicle_tyres.cpp
+  src/vehicle_chassis.cpp
   src/vehicle_aero.cpp
     src/vehicle_damage.cpp
   src/proto_car.cpp
@@ -154,6 +155,7 @@ if(SBC_BUILD_TESTS)
     tests/test_tethers.cpp
     tests/test_tyres.cpp
     tests/test_kerb.cpp
+    tests/test_chassis.cpp
     tests/test_roughness.cpp
     tests/test_handling.cpp
     tests/test_aero.cpp

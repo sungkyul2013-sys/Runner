@@ -61,7 +61,8 @@
 
 /* portrait: a round dial whose foot sinks under the bottom edge */
 @media (orientation: portrait) {
-  .dash { --g: min(37vw, 190px); bottom: calc(var(--g) * -0.2 + var(--safe-b)); }
+  /* centred, and never under the touch controls in the bottom corners (TouchControls publishes their widths) */
+  .dash { --g: min(37vw, 190px, calc(100vw - 2 * max(var(--tc-right, 0px), var(--tc-left, 0px)) - 14px)); bottom: calc(var(--g) * -0.2 + var(--safe-b)); }
   .dash-dial { aspect-ratio: 1; }
   .dash-dial::before { border-radius: 50%; background: radial-gradient(circle at 50% 42%, rgba(24, 28, 35, 0.86), rgba(10, 12, 16, 0.9) 70%); }
   .dash-svg.half { display: none; }

@@ -80,6 +80,9 @@ const CHASSIS_EA = 2.3e5;
 // passenger cell keeps its elastic spring-back (set by the crash lattice below): it must come out of a crash its own
 // shape, not set where the impact squeezed it.
 const UNLOAD_RATIO = 5;
+// Passive body roll of the generated car [rad per m/s² of lateral acceleration], measured without the active roll
+// control (core test "chassis gradients"): the active system's reference.
+const CHASSIS_GRADIENTS = { roll: 0.0022, stance: [0.0175, 0.0005] };  // stance: wheel travel over the model pose at rest [m]
 b.group('chassis', { k: 7.7e5, zeta: 0.25 });
 b.group('hardpoint', { k: 8e5, zeta: 0.2, plasticForce: 3.0e4, hardening: 0.05, unloadRatio: UNLOAD_RATIO });
 b.group('knuckle', { k: 2e6, zeta: 0.1 });
@@ -219,8 +222,9 @@ b.group('seal', { type: 'support', k: 5e4, zeta: 0.1 });
 // Frame stops (doors): a closed door lies in its frame all round (the seal pressed by the latch), so its free edges
 // cannot bow out: each outer node other than the hinges and the latch is held within −8 … +2 mm of the body by a
 // bounded tie, part of the latch's break group — a torn latch frees the door whole (swinging on its hinges). Without
-// them the 16 kg door skins, held at three points, flapped 6–12 cm at 120–150 km/h (suction and road shake). The
-// lids, small and stiff between their hinges and latch, move a few millimetres and keep their free edges.
+// them the 16 kg door skins, held at three points, flapped 6–12 cm at 120–150 km/h (suction and road shake). The lids
+// have them too: a 50 km/h strike on a kerb flexed the front lid until its edge caught over the bumper's skin, and it
+// stayed propped open 5 cm with its latch and hinges intact (a lid that looked sprung).
 b.group('panelStop', { type: 'bounded', k: 5e4, zeta: 0.3 });
 const paintPieces = connectedPieces(primitiveGeometry(glb, 'body', 'paint'));
 const unit = (x) => norm(x);
@@ -288,8 +292,8 @@ if (!frontLid || !engineLid || doors.length !== 2) throw new Error('GLB paint pi
 // beams' axial rigidity and yield force scale with the pitch, so the lid is as stiff and as strong as a coarse one.
 // The finer lid flexes as it slams into the windscreen at 280 km/h and stretches its hinges ≈ 27 %: its lighter
 // hinges tear at 25 % (a 100 km/h wall crash bends them ≈ 19 %).
-hingedPanel({ id: 'frontLid', piece: frontLid, ref: [1, 0, 0], hingeSide: [0, 0, -1], pitch: 0.21, mass: 9, group: 5, latchBreak: 6e3, hingeBreak: 1e4, hingeYield: 2.5e3, hingeTear: 0.25, suction: 0.3, EA: 1.0e4, yieldForce: 750 });
-hingedPanel({ id: 'engineLid', piece: engineLid, ref: [1, 0, 0], hingeSide: [0, 0, 1], pitch: 0.38, mass: 8, group: 6, latchBreak: 6e3, hingeBreak: 1e4, hingeYield: 2.5e3, suction: 0.2 });
+hingedPanel({ id: 'frontLid', piece: frontLid, ref: [1, 0, 0], hingeSide: [0, 0, -1], pitch: 0.21, mass: 9, group: 5, latchBreak: 6e3, hingeBreak: 1e4, hingeYield: 2.5e3, hingeTear: 0.25, suction: 0.3, EA: 1.0e4, yieldForce: 750, stops: true });
+hingedPanel({ id: 'engineLid', piece: engineLid, ref: [1, 0, 0], hingeSide: [0, 0, 1], pitch: 0.38, mass: 8, group: 6, latchBreak: 6e3, hingeBreak: 1e4, hingeYield: 2.5e3, suction: 0.2, stops: true });
 for (const door of doors) {
   const left = door.c[0] > 0;
   hingedPanel({ id: left ? 'doorLeft' : 'doorRight', piece: door, ref: [0, 0, 1], hingeSide: [0, 0, 1], pitch: 0.4, mass: 16,
@@ -334,6 +338,7 @@ const powertrainNodes = [...engine.nodes, ...gearbox.nodes];
 
 // ---- suspension ------------------------------------------------------------------------------------------------
 const hydroChannel = 0, steeringLock = 0.49;  // [rad] ≈ 10.6 m turning circle
+const rearSteerChannel = 1, rearSteerLock = (2.8 * Math.PI) / 180;  // rear-axle steering: ±2.8° (estimate)
 // Damper ζ 0.35 at the wheel (was 0.3: the body's heave mode measured ζ ≈ 0.21, bouncy for a sports car; test_handling).
 // 0.38 would take the damper beams past the explicit integrator's stable step at 2 kHz (sbc-cli vehicle: stability).
 const ride = { front: { freq: 1.8, zeta: 0.35 }, rear: { freq: 2.0, zeta: 0.35 } };
@@ -400,7 +405,7 @@ function macpherson(name, W, s) {
   b.beam(rack, KS, 'tierod', { hydro: { channel: hydroChannel, factor: +factor.toFixed(6), speed: 0 } });
   const [axleRight, axleLeft] = s > 0 ? [Ai, Ao] : [Ao, Ai];
   pressureWheel(name, W, s, axleRight, axleLeft, tyreFront);
-  return { name, upright, KL, laF, laR, axleRight, axleLeft, rackPoint, spring };
+  return { name, upright, KL, laF, laR, axleRight, axleLeft, rackPoint, spring, springEnds: [top, K5], motionRatio: 0.93 };
 }
 
 function fiveLink(name, W, s) {
@@ -439,10 +444,13 @@ function fiveLink(name, W, s) {
   };
   const toePoint = b.zeroBumpSteerPoint(knuckle, b.pos(KS), P(0.46, 0.25, -0.20));
   const toe = b.hardpoint(`${name}_toe`, toePoint, 2.0);
-  b.beam(toe, KS, 'toelink');
+  // Rear-axle steering: an electric actuator sets the toe links' length (input ±1 = ±rearSteerLock of road wheel angle
+  // about the ball joints' axis).
+  const rearFactor = steeringFactor(b, { steerPoint: b.pos(KS), rack: toePoint, axisA: b.pos(KL), axisB: b.pos(KU), lock: rearSteerLock });
+  b.beam(toe, KS, 'toelink', { hydro: { channel: rearSteerChannel, factor: +rearFactor.toFixed(6), speed: 0 } });
   const [axleRight, axleLeft] = s > 0 ? [Ai, Ao] : [Ao, Ai];
   pressureWheel(name, W, s, axleRight, axleLeft, tyreRear);
-  return { name, upright, KL, laF, laR, axleRight, axleLeft, toePoint, spring };
+  return { name, upright, KL, laF, laR, axleRight, axleLeft, toePoint, spring, springEnds: [top, KL], motionRatio: mr };
 }
 
 b.group('springFront', { k: 1, c: 0 });
@@ -574,6 +582,17 @@ const vehicle = {
   },
   brakes: { stiffness: 1.0e5, damping: 40 },
   electronics: { abs: true, absSlip: 0.13, tcs: true, tcsSlip: 0.10 },
+  // §9 electronic chassis (core ChassisDesc): PASM adaptive dampers, PDCC active roll stabilisation (standard on the
+  // Turbo S, optional on the Turbo), the front-axle lift (+40 mm up to ≈ 35 km/h; a hydraulic piston on each front
+  // strut, steel springs: no self-levelling) and rear-axle steering (counter-phase below 50 km/h, in phase above
+  // 80 km/h). rollGradient: the car's passive roll, measured without PDCC (core test "chassis gradients").
+  chassis: {
+    corners: ['FL', 'FR', 'RL', 'RR'].map((k) => ({ chassis: corners[k].springEnds[0], wheel: corners[k].springEnds[1], motionRatio: +corners[k].motionRatio.toFixed(4) })),
+    levelling: false, normalFront: CHASSIS_GRADIENTS.stance[0], normalRear: CHASSIS_GRADIENTS.stance[1], liftHeight: 0.04, liftFrontOnly: true, liftMaxKmh: 35, heightRate: 0.008,
+    adaptiveDamping: true, dampingMin: 0.6,
+    activeRoll: 0.85, rollGradient: CHASSIS_GRADIENTS.roll, activeTravel: 0.035, activeRate: 0.15,
+    rearSteer: { channel: rearSteerChannel, lock: +rearSteerLock.toFixed(5), low: -0.1, high: 0.05, lowKmh: 50, highKmh: 80 },
+  },
   aero: {
     // liftArea* count downforce positive; the latched panels' suction lifts (panelLift, up positive), so the residual
     // carries that much more downforce and the closed car keeps its totals (a sign slip here once doubled the lift:
@@ -685,10 +704,12 @@ const components = [
   // Leak drips come from the component's place (web: coolant, oil and fuel drips and stains, §4.4).
   const fluid = c.id.startsWith('radiator') || c.id === 'coolant_lines' ? 'coolant' : c.id === 'oil_sump' ? 'oil' : c.id === 'fuel_tank' ? 'fuel' : null;
   const at = [0, 1, 2].map((k) => +(c.samples.reduce((sum, p) => sum + p[k], 0) / c.samples.length).toFixed(3));
-  return { ...c, ...component, ...(fluid ? { visual: { kind: 'component', fluid, at } } : {}) };
+  // The sump and the gearbox are cast housings over a skid plate: a scrape on a kerb or a ramp does not crack them.
+  const housing = c.id === 'oil_sump' || c.id === 'gearbox' ? { impact: 6.0e4 } : {};
+  return { ...c, ...component, ...housing, ...(fluid ? { visual: { kind: 'component', fluid, at } } : {}) };
 });
-b.tagDamageGroups([...damageGroups.values()]);
-b.tagDamageGroups(components);  // from the beams the glass and lamps left
+b.tagDamageGroups([...damageGroups.values()], { skipLayers: 1 });
+b.tagDamageGroups(components, { skipLayers: 1 });  // from the beams the glass and lamps left
 // Leak rates [L/s] at full severity: a crushed radiator empties the 20 L circuit (three radiators) in under a minute.
 const damageLinks = [
   ...['radiator_left', 'radiator_right', 'radiator_centre'].map((group) => ({ group, effect: 'coolantLeak', rate: 0.35 })),
@@ -732,7 +753,7 @@ const json = b.toJSON({
     model: { glb: `vehicles/${id}/${id}.glb` },
     generator: 'tools/vehicle-gen/porsche_911_turbo_991.mjs',
   },
-  hydroChannels: 1,
+  hydroChannels: 2,
   vehicle,
   targets: {
     mass: TARGET_MASS, frontWeightFraction: TARGET_FRONT, zeroTo100: 3.4, topSpeed: 315 / 3.6, braking100: 35.0, skidpadG: 1.0,
@@ -746,6 +767,8 @@ json.sources = {
   braking100: 'estimate from magazine tests (33–36 m); §23.2 band 35–42 m',
   skidpadG: 'estimate from magazine tests (≈ 1.0 g)',
   springs: 'estimate from 1.8 / 2.0 Hz ride frequencies',
+  chassis: 'Porsche AG press information 2016 (front-axle lift +40 mm up to ≈ 35 km/h; rear-axle steering, PDCC, PASM); ' +
+    'rear steer angle, lift speed and the controllers\' gains are estimates',
 };
 json.visual = visual;
 fs.writeFileSync(outPath, JSON.stringify(json) + '\n');

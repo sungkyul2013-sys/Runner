@@ -202,7 +202,7 @@ async function main(): Promise<void> {
   if (route === 'menu') {
     grid.visible = false;
     const choices: MapChoice[] = [
-      ...MAPS.map((m) => ({ id: m.id, label: m.label, desc: m.desc, areaKm2: m.areaKm2, kind: m.kind, spawns: m.spawns })),
+      ...MAPS.map((m) => ({ id: m.id, label: m.label, desc: m.desc, areaKm2: m.areaKm2, kind: m.kind, spawns: m.spawns, credit: m.credit })),
       { id: 'grid', label: { ko: '무한 그리드 주행장', en: 'Infinite grid ground' }, desc: { ko: '§13.3-6 튜닝·디버그용 평지: 방지턱, 점프대, 스파이크, 슬라럼', en: '§13.3-6 flat tuning ground: bumps, jump, spikes, slalom' }, areaKm2: 0, kind: 'grid' as const, spawns: [{ id: 'start', label: { ko: '출발점', en: 'Start' } }] },
     ];
     menu = new MainMenu(viewer, {

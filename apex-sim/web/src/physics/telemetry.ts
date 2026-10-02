@@ -56,6 +56,15 @@ export const VT = {
   downforceFront: 59,
   downforceRear: 60,
   airspeed: 61,
+  // §9 electronic chassis
+  rideHeight: 62, // [m] over the normal level
+  rideLevel: 63, // −1 low, 0 normal, 1 lift
+  chassisFlags: 64, // 1 level changing, 2 adaptive dampers, 4 self-levelling, 8 lift, 16 active roll, 32 rear steer, 64 low level
+  rollAngle: 65,
+  pitchAngle: 66,
+  activeOffset: 67,
+  damperScale: 68,
+  rearSteer: 69,
 } as const;
 
 /** Wheel field indices (Float32, relative to the wheel's record). */
@@ -181,7 +190,19 @@ export interface VehicleState {
   downforceFront: number; // [N]
   downforceRear: number; // [N]
   airspeed: number; // [m/s] forward through the air (wind and slipstream included)
+  // §9 electronic chassis (absent systems read 0)
+  rideHeight: number; // [m] body over the wheels against the normal level
+  rideLevel: number; // −1 low, 0 normal, 1 lift
+  chassisFlags: number; // CHASSIS bits
+  rollAngle: number; // [rad] positive: left side up
+  pitchAngle: number; // [rad] positive: nose up
+  activeOffset: number; // [m]
+  damperScale: number; // adaptive dampers: mean coefficient over the data's
+  rearSteer: number; // [rad] rear wheels' commanded angle, positive: left
 }
+
+/** Electronic chassis bits (VehicleState.chassisFlags). */
+export const CHASSIS = { moving: 1, adaptiveDamping: 2, levelling: 4, lift: 8, activeRoll: 16, rearSteer: 32, low: 64 } as const;
 
 /** Core airbag bits (sbc/vehicle.h airbag::). */
 export const AIRBAG = { driver: 1, passenger: 2, sideLeft: 4, sideRight: 8 } as const;
@@ -287,6 +308,14 @@ export function decodeVehicle(r: Float32Array, origin: V3, renderOrigin: V3 = [0
     downforceFront: r[VT.downforceFront],
     downforceRear: r[VT.downforceRear],
     airspeed: r[VT.airspeed],
+    rideHeight: r[VT.rideHeight],
+    rideLevel: Math.round(r[VT.rideLevel]),
+    chassisFlags: Math.round(r[VT.chassisFlags]),
+    rollAngle: r[VT.rollAngle],
+    pitchAngle: r[VT.pitchAngle],
+    activeOffset: r[VT.activeOffset],
+    damperScale: r[VT.damperScale],
+    rearSteer: r[VT.rearSteer],
     wheels,
   };
 }

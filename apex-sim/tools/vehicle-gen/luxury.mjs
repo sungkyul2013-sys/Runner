@@ -27,6 +27,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 // Chassis lattice: loaded hard (a crash), it springs back along a 5× steeper slope (core BeamDesc::unloadRatio).
 const UNLOAD_RATIO = 5;
+// Passive body roll and pitch of the generated cars [rad per m/s² of lateral / longitudinal acceleration], measured
+// without the active control, and their stance at rest (wheel travel over the model pose per axle [m]: the normal
+// level the self-levelling holds, so the clearances tuned below stay as they were) — core test "chassis gradients".
+const CHASSIS_GRADIENTS = {
+  rolls_royce_ghost: { roll: 0.0044, pitch: 0.0030, stance: [0.0115, 0.0150] },
+  maybach_gls: { roll: 0.0050, pitch: 0.0033, stance: [0.0116, 0.0146] },
+};
 
 /** Per-car data. Heights are in the model frame (y = 0 on the ground, +Z forward, +X left). */
 const CARS = {
@@ -57,7 +64,13 @@ const CARS = {
     crash: { front: 4.8e5, cabin: 1.5e6, rear: 5.2e5 },
     chassisEA: 2.2e5, // the stiffest the node masses allow within the kerb weight (m ≥ ½·Σk·t²)
     brakes: { front: 4600, rear: 2800, handbrake: 1800 },
-    arb: { front: 8400, rear: 5200 },  // active roll stabilisation's effect: ≈ 3°/g of roll (4.7 with half)
+    arb: { front: 8400, rear: 5200 },  // stiff bars for the flat cornering of the Planar suspension (≈ 3.7°/g measured)
+    // §9 electronic chassis: self-levelling air springs, adaptive dampers (the Flagbearer camera preview is not
+    // modelled), all-wheel steering. No lift or low level and no active roll control are claimed for this car.
+    chassis: {
+      levelling: true, heightRate: 0.012, adaptiveDamping: true, dampingMin: 0.5,
+      rearSteer: { lockDeg: 3, low: -0.1, high: 0.05, lowKmh: 50, highKmh: 80 },
+    },
     aero: { dragArea: 0.75, liftFront: 0.05, liftRear: 0.06 },
     fluids: { coolantL: 22, oilL: 11, fuelL: 82.5, radiatorUA: 7500, heatCapacity: 2.4e5 },
     targets: { zeroTo100: 4.8, topSpeed: 250 / 3.6, braking100: 37.0, skidpadG: 0.85 },
@@ -68,6 +81,8 @@ const CARS = {
       topSpeed: 'Rolls-Royce Motor Cars press information 2020 (limited, 250 km/h)',
       engine: 'Rolls-Royce Motor Cars press information 2020 (420 kW / 850 N·m); curve shape estimate',
       springs: 'estimate from 1.2 / 1.3 Hz ride frequencies (air suspension)',
+      chassis: 'Rolls-Royce Motor Cars press information 2020 (Planar suspension, air springs, all-wheel steering); ' +
+        'rear steer angle and the controllers\' gains are estimates',
     },
     airbags: { driver: [0.4, 0.98, 0.45], passenger: [-0.4, 1.02, 0.6], side: [0.72, 1.0, 0.0] },
     sound: { cylinders: 12, turbo: true },
@@ -97,7 +112,14 @@ const CARS = {
     crash: { front: 5.2e5, cabin: 1.6e6, rear: 5.6e5 },
     chassisEA: 2.0e5,
     brakes: { front: 5200, rear: 3000, handbrake: 1900 },
-    arb: { front: 10400, rear: 6400 },  // E-Active Body Control's effect in part: ≈ 3°/g (4.9 with half)
+    arb: { front: 10400, rear: 6400 },  // AIRMATIC's passive bars (≈ 4.2°/g measured without the active control)
+    // §9 electronic chassis: AIRMATIC self-levelling air springs (−15 mm at high speed, a raised level for rough
+    // ground), ADS+ adaptive dampers and the optional E-ACTIVE BODY CONTROL (per-corner active struts: roll and pitch).
+    chassis: {
+      levelling: true, liftHeight: 0.04, liftMaxKmh: 40, lowHeight: 0.015, lowAboveKmh: 120, heightRate: 0.012,
+      adaptiveDamping: true, dampingMin: 0.5,
+      activeRoll: 0.85, activePitch: 0.5, activeTravel: 0.045, activeRate: 0.15,
+    },
     aero: { dragArea: 1.08, liftFront: 0.08, liftRear: 0.08 },
     fluids: { coolantL: 16, oilL: 9, fuelL: 90, radiatorUA: 7000, heatCapacity: 2.2e5 },
     targets: { zeroTo100: 4.9, topSpeed: 250 / 3.6, braking100: 38.0, skidpadG: 0.8 },
@@ -108,6 +130,8 @@ const CARS = {
       topSpeed: 'Mercedes-Benz press information 2020 (limited, 250 km/h)',
       engine: 'Mercedes-Benz press information 2020 (410 kW / 730 N·m); curve shape estimate',
       springs: 'estimate from 1.25 / 1.35 Hz ride frequencies (air suspension)',
+      chassis: 'Mercedes-Benz press information 2020 (AIRMATIC, lowered 15 mm at high speed; E-ACTIVE BODY CONTROL optional, ' +
+        'fitted here); the raised level\'s height, the speeds and the controllers\' gains are estimates',
     },
     airbags: { driver: [0.42, 1.18, 0.45], passenger: [-0.42, 1.22, 0.6], side: [0.74, 1.2, 0.0] },
     sound: { cylinders: 8, turbo: true },
@@ -237,10 +261,16 @@ function generate(id, car) {
       const zone = zoneForce((pa[2] + pc[2]) / 2);
       // The lowest layer (floor pan, subframe, undertray) in the crumple zones yields at 2.5× the zone's section
       // force: a kerb or a hump scraping the underside springs back; the rails above crumple in a crash as before.
-      const under = zone < crash.cabin && [beam[0], beam[1]].some((id) => /^c\d+_0_\d+$/.test(id)) ? 2.5 : 1;
+      // Its upright beams (the bumper's lower lip pushed up by a kerb taken at an angle) at 5×: they carry little of
+      // a frontal crash, which loads the lattice along its length.
+      const low = [beam[0], beam[1]].some((id) => /^c\d+_0_\d+$/.test(id));
+      const upright = Math.abs(pc[1] - pa[1]) > 0.6 * dist(pa, pc);
+      const under = zone < crash.cabin && low ? (upright ? 5 : 2.5) : 1;
+      // The steep unloading (a crushed zone that does not spring back) arms near the yield force, which a scrape
+      // reaches on these beams too: they unload elastically, so a scrape leaves no set behind.
       Object.assign(beam[3], {
         plasticForce: Math.round((zone * under) / cosCache.get(zc)), hardening: crash.hardening, crushLimit: crash.crushLimit, tearLimit: crash.tearLimit,
-        ...(zone < crash.cabin ? { unloadRatio: UNLOAD_RATIO } : {}),
+        ...(zone < crash.cabin && !low ? { unloadRatio: UNLOAD_RATIO } : {}),
       });
     }
   }
@@ -272,6 +302,8 @@ function generate(id, car) {
 
   // ---- suspension ----
   const hubNodeMass = 5.4, segments = 24, hydroChannel = 0, steeringLock = 0.52;
+  const rearSteerChannel = 1;
+  const rearSteer = car.chassis?.rearSteer ? { ...car.chassis.rearSteer, lock: (car.chassis.rearSteer.lockDeg * Math.PI) / 180 } : null;
   const unsprung = { front: 26 + 24, rear: 27 + 22 };
   const sprungCorner = {
     front: (car.front * car.mass - 2 * unsprung.front) / 2,
@@ -332,7 +364,7 @@ function generate(id, car) {
     b.beam(rack, KS, 'tierod', { hydro: { channel: hydroChannel, factor: +factor.toFixed(6), speed: 0 } });
     const [axleRight, axleLeft] = s > 0 ? [Ai, Ao] : [Ao, Ai];
     pressureWheel(name, W, axleRight, axleLeft, car.tyreFront);
-    return { name, upright, KL, laF, laR, axleRight, axleLeft, rackPoint, spring };
+    return { name, upright, KL, laF, laR, axleRight, axleLeft, rackPoint, spring, springEnds: [topMount, KL], motionRatio: Math.abs(mr) };
   }
 
   // Rear five-link (as the 911's): ball joints ahead of the axle, toe link behind it (stable toe compliance).
@@ -366,10 +398,16 @@ function generate(id, car) {
     };
     const toePoint = b.zeroBumpSteerPoint(knuckle, b.pos(KS), P(0.46, 0.25, -0.20));
     const toe = b.hardpoint(`${name}_toe`, toePoint, 2.2);
-    b.beam(toe, KS, 'toelink');
+    if (rearSteer) {
+      // Rear-axle steering: an actuator sets the toe links' length (input ±1 = ±lock about the ball joints' axis).
+      const factor = steeringFactor(b, { steerPoint: b.pos(KS), rack: toePoint, axisA: b.pos(KL), axisB: b.pos(KU), lock: rearSteer.lock });
+      b.beam(toe, KS, 'toelink', { hydro: { channel: rearSteerChannel, factor: +factor.toFixed(6), speed: 0 } });
+    } else {
+      b.beam(toe, KS, 'toelink');
+    }
     const [axleRight, axleLeft] = s > 0 ? [Ai, Ao] : [Ao, Ai];
     pressureWheel(name, W, axleRight, axleLeft, car.tyreRear);
-    return { name, upright, KL, laF, laR, axleRight, axleLeft, toePoint, spring };
+    return { name, upright, KL, laF, laR, axleRight, axleLeft, toePoint, spring, springEnds: [topMount, KL], motionRatio: Math.abs(mr) };
   }
 
   b.group('springFront', { k: 1, c: 0 });
@@ -454,6 +492,19 @@ function generate(id, car) {
   const wheel = (c, driveShare, brakeTorque, handbrakeTorque, axle) => ({
     name: c.name, pressureWheel: c.name, carrier: c.upright, tyre: tyre(+cornerLoad(axle).toFixed(0), 3.2e5), brakeTorque, handbrakeTorque, driveShare,
   });
+  // §9 electronic chassis (core ChassisDesc). rollGradient / pitchGradient: the car's passive body roll and pitch,
+  // measured without the active control (core test "chassis gradients").
+  const chassisSection = () => {
+    const { rearSteer: rs, ...c } = car.chassis;
+    return {
+      corners: ['FL', 'FR', 'RL', 'RR'].map((k) => ({ chassis: corners[k].springEnds[0], wheel: corners[k].springEnds[1], motionRatio: +corners[k].motionRatio.toFixed(4) })),
+      normalFront: CHASSIS_GRADIENTS[id].stance[0], normalRear: CHASSIS_GRADIENTS[id].stance[1],
+      ...c,
+      ...(c.activeRoll ? { rollGradient: CHASSIS_GRADIENTS[id].roll } : {}),
+      ...(c.activePitch ? { pitchGradient: CHASSIS_GRADIENTS[id].pitch } : {}),
+      ...(rs ? { rearSteer: { channel: rearSteerChannel, lock: +rearSteer.lock.toFixed(5), low: rs.low, high: rs.high, lowKmh: rs.lowKmh, highKmh: rs.highKmh } } : {}),
+    };
+  };
   const refY = ys[1];
   const ref = nearestLattice([0, refY, (zF + zR) / 2]);
   const refFront = nearestLattice(add(b.pos(ref), [0, 0, 0.9]));
@@ -475,6 +526,7 @@ function generate(id, car) {
     transmission: car.transmission,
     brakes: { stiffness: 1.2e5, damping: 50 },
     electronics: { abs: true, absSlip: 0.13, tcs: true, tcsSlip: 0.1 },
+    chassis: chassisSection(),
     aero: {
       dragArea: car.aero.dragArea, liftAreaFront: car.aero.liftFront, liftAreaRear: car.aero.liftRear,
       frontNodes: b.lattice.filter((lid) => b.pos(lid)[2] > zF + 0.2 && b.pos(lid)[1] < ys[3]),
@@ -549,10 +601,12 @@ function generate(id, car) {
   ].map((c) => {
     const fluid = c.id.startsWith('radiator') || c.id === 'coolant_lines' ? 'coolant' : c.id === 'oil_sump' ? 'oil' : c.id === 'fuel_tank' ? 'fuel' : null;
     const centre = [0, 1, 2].map((k) => +(c.samples.reduce((sum, p) => sum + p[k], 0) / c.samples.length).toFixed(3));
-    return { ...c, ...component, ...(fluid ? { visual: { kind: 'component', fluid, at: centre } } : {}) };
+    // The sump and the gearbox are cast housings over a skid plate: a scrape on a kerb or a ramp does not crack them.
+    const housing = c.id === 'oil_sump' || c.id === 'gearbox' ? { impact: +(6.0e4 * heavy).toFixed(0) } : {};
+    return { ...c, ...component, ...housing, ...(fluid ? { visual: { kind: 'component', fluid, at: centre } } : {}) };
   });
-  b.tagDamageGroups([...damageGroups.values()]);
-  b.tagDamageGroups(components);
+  b.tagDamageGroups([...damageGroups.values()], { skipLayers: 1 });
+  b.tagDamageGroups(components, { skipLayers: 1 });
   const damageLinks = [
     { group: 'radiator_centre', effect: 'coolantLeak', rate: 0.4 },
     { group: 'coolant_lines', effect: 'coolantLeak', rate: 0.2 },
@@ -585,7 +639,7 @@ function generate(id, car) {
   };
   const json = b.toJSON({
     header: { id, name: car.name, model: { glb: `vehicles/${id}/${id}.glb` }, generator: 'tools/vehicle-gen/luxury.mjs' },
-    hydroChannels: 1,
+    hydroChannels: rearSteer ? 2 : 1,
     vehicle,
     targets: { mass: car.mass, frontWeightFraction: car.front, ...car.targets },
   });

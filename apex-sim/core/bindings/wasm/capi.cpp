@@ -437,6 +437,9 @@ int sbc_vehicle_set_input(sbc_world* w, int v, float throttle, float brake, floa
   in.abs = (aids & 1) != 0;
   in.tcs = (aids & 2) != 0;
   in.esc = (aids & 4) != 0;
+  const int chassis = (aids >> 3) & 3;
+  in.chassisMode = static_cast<int8_t>(chassis == 0 ? 1 : chassis - 1);
+  in.lift = (aids & 32) != 0;
   w->world.setVehicleInput(v, in);
   return 0;
 }
@@ -500,6 +503,20 @@ int sbc_vehicle_telemetry(sbc_world* w, int v, float* out, int capacity) {
   out[59] = t.aeroDownforceFront;
   out[60] = t.aeroDownforceRear;
   out[61] = t.airspeed;
+  out[62] = t.rideHeight;
+  out[63] = static_cast<float>(t.rideLevel);
+  {
+    const sbc::ChassisDesc& c = d.chassis;
+    const bool corners = !c.corners.empty();
+    out[64] = static_cast<float>((t.levelMoving ? 1 : 0) | (corners && c.adaptiveDamping ? 2 : 0) | (corners && c.levelling ? 4 : 0) |
+                                 (corners && c.liftHeight > 0.0f ? 8 : 0) | (corners && c.activeRoll > 0.0f ? 16 : 0) |
+                                 (c.rearSteerChannel >= 0 ? 32 : 0) | (corners && c.lowHeight > 0.0f ? 64 : 0));
+  }
+  out[65] = t.rollAngle;
+  out[66] = t.pitchAngle;
+  out[67] = t.activeOffset;
+  out[68] = t.damperScale;
+  out[69] = t.rearSteer;
   for (int i = 0; i < wheels; ++i) {
     const sbc::WheelTelemetry& wt = t.wheels[static_cast<size_t>(i)];
     float* o = out + SBC_VT_HEADER + SBC_VT_WHEEL * i;

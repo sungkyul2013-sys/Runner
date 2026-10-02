@@ -160,7 +160,7 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   const ewId = (z: number) => `c_ew${z}`;
   const nsId = (x: number) => `c_ns${x}`;
   // 한빛 분수광장: the two central avenues (한결대로 × 은하대로) meet at a two-lane roundabout around a fountain.
-  const RB = { x: -1000, z: -550, r: 40 };
+  const RB = { x: -1000, z: -550, r: 56 };
   const rbRing: Array<[number, number]> = [];
   for (let k = 0; k < 24; k++) {
     const a = -(k / 24) * Math.PI * 2; // counter-clockwise traffic (keep right)
@@ -206,7 +206,8 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       b.addCylinder({ x: RB.x + Math.cos(a) * (island - 7), z: RB.z + Math.sin(a) * (island - 7), y0: top, y1: top + 0.45, r0: 2.2, material: -1, look: 'white', color: k & 1 ? 0xf2c230 : 0xd9486e });
       b.addTree(RB.x + Math.cos(a + 0.39) * (island - 4), RB.z + Math.sin(a + 0.39) * (island - 4), 0.75, 2);
     }
-    b.addFountain({ x: RB.x, z: RB.z, y: top + 0.5, r: 12, jets: 14, height: 11 });
+    // The great fountain (한빛 대분수): a 23 m basin, 28 ring jets, a 24 m centre jet.
+    b.addFountain({ x: RB.x, z: RB.z, y: top + 0.5, r: 23, jets: 28, height: 24 });
     b.addSign({ x: RB.x + 58, y: cityGround(RB.x + 58, RB.z - 58), z: RB.z - 58, yaw: 0, text: { ko: '한빛 분수광장', en: 'Hanbit Fountain Plaza' }, kind: 'place' });
   }
   // Old-town alleys climbing the hill (steep, narrow).
@@ -368,6 +369,22 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   const keep: Array<[number, number, number]> = [[RT.x, RT.z, RT.r + 8]];
   const ewW = (z: number) => (arterialEW.has(z) ? W('arterial') : W('street')).outer;
   const nsW = (x: number) => (arterialNS.has(x) ? W('arterial') : W('street')).outer;
+  // The N–S street at x by z (한결대로 is split at the circus).
+  const nsAt = (x: number, z: number) => (x === RB.x && z > RB.z ? `${nsId(x)}s` : nsId(x));
+  // A back street (이면도로, named the Korean way after the avenue it runs behind: "누리로6길") through the middle of a
+  // block, E–W from street to street; where a landmark stands in the middle it runs to one side of it.
+  const backStreet = (i: number, j: number): Road | null => {
+    const mid = Math.round((EW[j] + EW[j + 1]) / 2);
+    const clear = (z: number) => keep.every(([kx, kz, kr]) => kx < NS[i] || kx > NS[i + 1] || Math.abs(z - kz) > kr + 16);
+    const z = [mid, mid + 55, mid - 55].find(clear);
+    if (z === undefined) return null;
+    const no = 2 * (i + 1) + (j & 1);
+    return add({
+      id: `c_back_${i}_${j}`, name: { ko: `${ewName[j + 1]}${no}길`, en: `${ewName[j + 1]} ${no}-gil` }, style: 'alley',
+      styleOverride: { sidewalk: 2.6, lights: 24, laneWidth: 3.0 },
+      points: [[NS[i], z], [NS[i + 1], z]], start: { join: nsAt(NS[i], z) }, end: { join: nsAt(NS[i + 1], z) },
+    });
+  };
   for (let i = 0; i + 1 < NS.length; i++) {
     for (let j = 0; j + 1 < EW.length; j++) {
       const x0 = NS[i] + nsW(NS[i]) + 3, x1 = NS[i + 1] - nsW(NS[i + 1]) - 3;
@@ -402,10 +419,15 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
         fillBlock(b, R, UX + 26, z0, x1, z1, kind, cityGround);
       } else if (kind === 'apart') complex(x0, z0, x1, z1, EW[j], EW[j + 1], ewAt(EW[j], cx), ewAt(EW[j + 1], cx), cityGround);
       else if (kind === 'mid') {
-        // A narrow shopping alley (골목) through the middle of each mid-rise block.
+        // A narrow shopping alley (골목) N–S through the middle of each mid-rise block, crossed by a back street.
         const gx = Math.round(cx / 10) * 10 + (j & 1 ? 40 : -40);
         const alley = add({ id: `c_gol_${i}_${j}`, name: { ko: golName[gol % golName.length], en: golName[gol++ % golName.length] }, style: 'alley', styleOverride: { sidewalk: 2.4, lights: 20, laneWidth: 2.8 }, points: [[gx, EW[j]], [gx, EW[j + 1]]], start: { join: ewAt(EW[j], gx) }, end: { join: ewAt(EW[j + 1], gx) } });
-        fillBlock(b, R, x0, z0, x1, z1, kind, cityGround, [alley]);
+        const back = backStreet(i, j);
+        fillBlock(b, R, x0, z0, x1, z1, kind, cityGround, back ? [alley, back] : [alley]);
+      } else if (kind === 'cbd') {
+        // Business blocks: a back street between the towers.
+        const back = backStreet(i, j);
+        fillBlock(b, R, x0, z0, x1, z1, kind, cityGround, back ? [rb, back] : [rb], keep);
       } else fillBlock(b, R, x0, z0, x1, z1, kind, cityGround, kind === 'old' ? oldAlleys : [rb], keep);
     }
   }
@@ -433,12 +455,14 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
     };
     for (const r of b.roads) {
       const id = r.spec.id;
-      const city = /^(c_ns|c_ew|s_ns|s_ew|c_gol_|c_alley)/.test(id);
+      const city = /^(c_ns|c_ew|s_ns|s_ew|c_gol_|c_alley|c_back_)/.test(id);
       if (!city || r.spec.style === 'arterial') continue;
-      for (let s = 50 + RC() * 60; s < r.length - 50; s += 120 + RC() * 100) {
-        const kind = id.startsWith('c_alley') || id.startsWith('c_gol_') ? (RC() < 0.6 ? 'hump' : 'table') : pick();
-        // Where one does not fit (a junction, a bend), the next metres are tried.
-        for (let t = 0; t < 30 && !b.addCalming(r, s + t, kind); t += 6);
+      // Narrow lanes (골목, back streets): a hump every 45–75 m, the odd raised crossing — slow the car to a walk.
+      const narrow = r.spec.style === 'alley' && r.style.laneWidth <= 3.05 && r.style.lanes === 1;
+      for (let s = (narrow ? 25 : 50) + RC() * 30; s < r.length - (narrow ? 20 : 50); s += narrow ? 45 + RC() * 30 : 120 + RC() * 100) {
+        const kind = narrow ? (RC() < 0.75 ? 'hump' : 'table') : pick();
+        // Where one does not fit (a junction, a tight bend), the next metres are tried.
+        for (let t = 0; t < 30 && !b.addCalming(r, s + t, kind); t += 4);
       }
     }
     const nsN = b.byId.get(nsId(RB.x))!, nsS = b.byId.get(`${nsId(RB.x)}s`)!, ewW = b.byId.get(`${ewId(RB.z)}w`)!, ewE = b.byId.get(ewId(RB.z))!;

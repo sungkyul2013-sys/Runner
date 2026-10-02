@@ -123,6 +123,12 @@
                     "upshiftRpm": 7000, "downshiftRpm": 4000, "launchRpm": 4500 },
   "brakes": { "stiffness": 1e5, "damping": 40 },
   "electronics": { "abs": true, "absSlip": 0.13, "tcs": true, "tcsSlip": 0.10 },
+  "chassis": { "corners": [{ "chassis": "FL_top", "wheel": "FL_k5", "motionRatio": 0.93 }, …],   // 바퀴 순서
+               "levelling": false, "normalFront": 0.0175, "normalRear": 0.0005,
+               "liftHeight": 0.04, "liftFrontOnly": true, "liftMaxKmh": 35, "lowHeight": 0, "lowAboveKmh": 120, "heightRate": 0.008,
+               "adaptiveDamping": true, "dampingMin": 0.6,
+               "activeRoll": 0.85, "rollGradient": 0.0022, "activePitch": 0, "pitchGradient": 0, "activeTravel": 0.035, "activeRate": 0.15,
+               "rearSteer": { "channel": 1, "lock": 0.04887, "low": -0.1, "high": 0.05, "lowKmh": 50, "highKmh": 80 } },
   "aero": { "dragArea": 0.65, "liftAreaFront": 0.03, "liftAreaRear": 0.06, "frontNodes": […], "rearNodes": […],
             "surfaceGroups": [0], "baseSuction": 0.25, "skinFriction": 0.004,
             "wings": [{ "name": "rearSpoiler", "nodes": ["c6_3_1", "c2_3_1", "c2_3_0", "c6_3_0"], "area": 0.3,
@@ -140,6 +146,8 @@
 - `tyre`의 M2 손상 키: `pressure` [bar](기준 공기압, 표시·경고용), `pinchForce` [N](타이어를 거쳐 림에 걸린 힘이 이를 넘으면 핀치 펑크), `blowoutForce` [N](블로우아웃), `shredDistance` [m](펑크 난 채로 달린 속도 가중 거리가 이를 넘으면 타이어가 찢겨 떨어진다). 동작은 A§4.7.
 - `aero`: `surfaceGroups`가 있으면 그 충돌 그룹의 삼각형마다 공력을 건다(바람받이 압력, 바람그늘 흡입 `baseSuction`, 표면 마찰 `skinFriction`). `dragArea`·`liftArea*`는 온전한 차의 목표 합계이고, 생성 시 보정해 맞춘다(A§4.9). `wings`: 네 노드(앞 왼쪽, 앞 오른쪽, 뒤 오른쪽, 뒤 왼쪽) 사각형 날개. 받음각은 노드 형상 + `angle` + 실행 중 조절값이다.
 - `fluids`: 냉각수·오일·연료량 [L], 온도 모델(`ambientC`, `thermostatC`, `derateC`, `failC`, `heatCapacity`, `heatShare`, `idleHeatW`, `radiatorUA`, `fanFlow`, `fullFlowSpeed`), 유압(`oilBarPer1000Rpm`, `maxOilBar`, `minOilBar`, `starveRpm`), 엔진 손상 속도(`seizeRate`, `overrevRate`), 연료(`efficiency`, `fuelEnergy`, `idleFuelLph`). 기본값은 `FluidsDesc`(`core/include/sbc/vehicle.h`).
+- `chassis`(선택, §9 전자 섀시 — `ChassisDesc`): `corners`는 바퀴마다 서스펜션 스프링 빔의 양 끝(`chassis` 차체 쪽, `wheel` 바퀴 쪽)과 `motionRatio`(바퀴 이동당 스프링 길이 변화)다. 제어기는 이 빔의 자유 길이(에어 스프링·리프트 피스톤·능동 스트럿)와 감쇠 계수를 바꾸고, 자유 길이 변화가 스프링에 넣거나 뺀 에너지는 외부 일로 장부에 적는다. `levelling`: 셀프 레벨링(축 평균 높이를 `normalFront/Rear`[m, 모델 자세 대비 바퀴 이동] + 레벨 목표로 유지, 강한 선회·제동 중 정지). 레벨: 리프트 `liftHeight`(운전자 요청, `liftMaxKmh` 이하; 넘으면 요청을 다시 할 때까지 내려감, `liftFrontOnly`: 앞축만), 로우 `lowHeight`(`lowAboveKmh` 초과 3초 유지 시, 그 75 % 미만에서 해제; 스포츠 설정에서도). `heightRate` [m/s]. `adaptiveDamping`: 차체 승차 대역(0.3–4 Hz) 속도·휠 홉에 따라 `dampingMin`(컴포트)·중간(노멀)·1(스포츠) 사이로 감쇠를 조절(데이터 감쇠가 상한). `activeRoll`/`activePitch`: 수동 구배(`rollGradient`/`pitchGradient` [rad per m/s²])의 그만큼을 없애는 능동 롤·피치(컴포트 70 %), 바퀴당 `activeTravel` [m], `activeRate` [m/s]. `rearSteer`: hydro `channel`이 뒤 토 링크를 움직여 뒷바퀴를 `lock` [rad]까지 조향; 비 = 뒤/앞 각도, `lowKmh` 이하 `low`(음수: 역위상), `highKmh` 이상 `high`(동위상), 사이는 매끄럽게. 입력은 `VehicleInput::chassisMode`(0 컴포트, 1 노멀, 2 스포츠)와 `lift`.
+- 빔 덮어쓰기에 `hydro`가 있으면 그 빔은 그룹 유형과 관계없이 hydro 빔이 된다(후륜 조향의 토 링크).
 - `damageLinks`: 손상 그룹 → 기능 효과. `effect`는 `coolantLeak`·`oilLeak`·`fuelLeak`(`rate` [L/s]를 손상 비율로 곱함), `steering`, `driveLoss`·`brakeLoss`(`wheel` 필수), `gearbox`, `electrical`이다.
 
 ## 생성기

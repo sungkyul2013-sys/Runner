@@ -103,7 +103,8 @@
 .tc[data-steer='wheel'] { --steer-h: calc(164px * var(--s)); --steer-w: calc(164px * var(--s)); }
 .tc[data-steer='tilt'] { --steer-h: calc(92px * var(--s)); --steer-w: calc(220px * var(--s)); }
 .tc-btn { width: calc(56px * var(--s)); height: calc(48px * var(--s)); border-radius: 999px; }
-.tc-handbrake { right: calc(var(--pad-r) + var(--gas-w) + var(--gap)); bottom: calc(var(--pad-b) + var(--brk-h) + var(--gap)); width: var(--brk-w); }
+.tc { --hb-h: calc(48px * var(--s)); }
+.tc-handbrake { right: calc(var(--pad-r) + var(--gas-w) + var(--gap)); bottom: calc(var(--pad-b) + var(--brk-h) + var(--gap)); width: var(--brk-w); height: var(--hb-h); }
 .tc-shiftUp, .tc-shiftDown { width: calc(var(--gas-w)); height: calc(40px * var(--s)); right: var(--pad-r); }
 .tc-shiftUp { bottom: calc(var(--pad-b) + var(--gas-h) + var(--gap) + calc(40px * var(--s)) + 6px); }
 .tc-shiftDown { bottom: calc(var(--pad-b) + var(--gas-h) + var(--gap)); }
@@ -116,8 +117,10 @@
 .tc[data-steer='wheel'] .tc-reset { bottom: var(--pad-b); }
 .tc-pause { display: none; } /* the top bar has the menu */
 /* D / R selector: the gear in use; amber in reverse, dimmed while moving (it switches only at a standstill) */
-.tc-reverse { right: var(--pad-r); width: var(--gas-w); height: calc(40px * var(--s)); bottom: calc(var(--pad-b) + var(--gas-h) + 2 * var(--gap) + 2 * calc(40px * var(--s)) + 6px); }
-.tc:not(:has(.tc-shiftUp:not([hidden]))) .tc-reverse { bottom: calc(var(--pad-b) + var(--gas-h) + var(--gap)); }
+/* above the handbrake in the brake column (the throttle column carries the shift paddles): the cluster stays low on
+   short landscape screens, clear of the top bar */
+.tc-reverse { right: calc(var(--pad-r) + var(--gas-w) + var(--gap)); width: var(--brk-w); height: calc(40px * var(--s)); bottom: calc(var(--pad-b) + var(--brk-h) + 2 * var(--gap) + var(--hb-h)); }
+
 .tc-gear { font: 800 calc(1rem * var(--s)) / 1 var(--font-num, ui-monospace, monospace); letter-spacing: 0.04em; color: var(--text); }
 .tc-reverse.rev { border-color: #ffb020; background: linear-gradient(180deg, rgba(90, 62, 10, 0.85), rgba(40, 28, 6, 0.9)); }
 .tc-reverse.rev .tc-gear { color: #ffcf6a; }
@@ -142,7 +145,8 @@
     --steer-w: calc(100vw - var(--pad-l) - var(--pad-r) - var(--gas-w) - var(--brk-w) - 3 * var(--gap));
     --steer-h: calc(64px * var(--s)); }
   .tc-label { font-size: calc(0.62rem * var(--s)); letter-spacing: 0.02em; }
-  .tc-handbrake, .tc-shiftUp, .tc-shiftDown { height: calc(40px * var(--s)); }
+  .tc { --hb-h: calc(40px * var(--s)); }
+  .tc-shiftUp, .tc-shiftDown { height: calc(40px * var(--s)); }
   .tc-steer { bottom: var(--steer-b); }
   .tc-slider { width: var(--steer-w); height: var(--steer-h); }
   .tc-thumb { width: calc(52px * var(--s)); height: calc(52px * var(--s)); margin: calc(-26px * var(--s)) 0 0 calc(-26px * var(--s)); }
