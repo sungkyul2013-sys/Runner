@@ -9,7 +9,8 @@
 //   2d. crash lab (M2): a car-to-car run and an offset wall run from the launcher; event log and graphs
 //   2e. tools (§20): mouse grab lifts a cube, the crane reels it up
 //   2f. tyres (§6): the spike strip punctures all four tyres, they deflate, the pressure warning comes on
-//   2g. free roam (§13): proving-ground oval drive, world map; the open-world city at night in the rain
+//   2g. free roam (§13): proving-ground oval drive, world map; the open-world city at night in the rain; teleports onto
+//       a city street and an old-town lane land the car on its wheels
 //   2h. phone UI vs PC UI: a touch phone gets the phone UI (menu, quick menu, bottom sheet, crash launch bar and
 //       result card), a desktop the PC UI, and ?ui= overrides either way
 // Usage: npm run build && node tools/e2e.mjs [--no-bench] [--only <steps>] [--bench-tag M2] [--chromium /path/to/chrome]
@@ -450,6 +451,27 @@ async function main() {
       await city.page.waitForFunction(() => window.__apex?.drive?.state != null, null, { timeout: 300000 });
       await city.page.waitForTimeout(4000);
       await city.page.screenshot({ path: join(dir, 'B1-city-night-rain.png') });
+      // Teleports (§13.1): onto a city street (its deck stands on a slab ≈ 1.2 m over the terrain: placed over the
+      // terrain the car was thrown 120 m up with its tyres burst) and to the old-town lane (draped across a hillside).
+      for (const target of [[-2601, -1250], 'alley']) {
+        const landing = await city.page.evaluate(async (target) => {
+          const d = window.__apex.drive, wait = (ms) => new Promise((r) => setTimeout(r, ms));
+          const old = d.state.body;
+          if (typeof target === 'string') window.__apex.map.teleportPoi(target);
+          else window.__apex.map.teleport(target[0], target[1], null);
+          for (let i = 0; i < 2400 && (!d.state || d.state.body === old); i++) await wait(25);
+          const placed = d.pose.position[1];
+          let top = -Infinity;
+          for (const t0 = performance.now(); performance.now() - t0 < 6000;) {
+            top = Math.max(top, d.state.position[1]);
+            await wait(30);
+          }
+          const v = d.state;
+          return { placed, rise: top - placed, events: v.crashEvents, tyres: v.wheels.map((w) => w.tyreFlags).join(','), contact: v.wheels.filter((w) => w.contact).length };
+        }, target);
+        console.log('teleport:', JSON.stringify(target), JSON.stringify(landing));
+        if (landing.rise > 1 || landing.events > 0 || landing.tyres !== '0,0,0,0' || landing.contact !== 4) failures.push(`teleport ${JSON.stringify(target)}: ${JSON.stringify(landing)}`);
+      }
       const cityErrors = await city.page.evaluate(() => window.__apex.errors);
       if (cityErrors.length || city.consoleErrors.length) failures.push(`errors (city): ${[...cityErrors, ...city.consoleErrors].join(' | ')}`);
       await city.page.close();

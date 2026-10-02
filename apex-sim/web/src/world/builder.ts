@@ -79,6 +79,8 @@ export class Road {
   /** Route graph: node ids at stations. */
   readonly nodes: Array<{ s: number; node: string; extra?: [number, number] }> = [];
   ctrlS: number[] = [];
+  /** A draped street's ground (MapBuilder's drape): its deck stands on it across as well as along. */
+  drape: ((x: number, z: number) => number) | null = null;
 
   constructor(readonly spec: RoadSpec) {
     this.style = { ...STYLES[spec.style], ...(spec.styleOverride ?? {}) };
@@ -119,13 +121,14 @@ export class Road {
     };
   }
 
-  /** Carriageway surface height near (x, z) (the plane of the nearest section, extended). */
+  /** Carriageway surface height near (x, z): the plane of the nearest section, extended; a draped street's ground
+   *  there (its deck follows the hillside across too: the plane put the far side of a sloping lane 25 cm off). */
   surfaceAt(x: number, z: number): number {
     const n = this.nearest(x, z);
     const p = this.at(clamp(n.s, 0, this.length));
     const along = (x - p.x) * p.tx + (z - p.z) * p.tz;
     const u = (x - p.x) * p.tz - (z - p.z) * p.tx;
-    return p.y + p.grade * along + crossfall(this.style, p.e, clamp(u, -this.w.pe, this.w.peLeft));
+    return (this.drape ? this.drape(x, z) : p.y + p.grade * along) + crossfall(this.style, p.e, clamp(u, -this.w.pe, this.w.peLeft));
   }
 
   inGap(s: number, side: -1 | 0 | 1): boolean {
@@ -296,6 +299,10 @@ export interface GraphEdge {
   road: string;
   xs: Float32Array;
   zs: Float32Array;
+  /** Carriageway height on the centre line at each point (bridges, tunnels and slabs included). */
+  ys: Float32Array;
+  /** Offset of the right-hand lane's centre from the centre line [m] (where a car placed on this road stands). */
+  lane: number;
   cls: StyleName;
 }
 
@@ -422,6 +429,7 @@ export class MapBuilder {
 
   addRoad(spec: RoadSpec): Road {
     const road = new Road(spec);
+    if (road.style.drape) road.drape = this.drapeFn;
     const style = road.style;
     const dense = splinePolyline(spec.points, !!spec.closed, 1);
     let st = stationsOf(dense, style.drape ? 4 : 2, style.drape ? 10 : 8);
@@ -1619,25 +1627,31 @@ export class MapBuilder {
       for (let k = 0; k + 1 < nodes.length; k++) {
         const na = nodes[k], nb = nodes[k + 1];
         if (nb.s - na.s < 0.5 && na.node === nb.node) continue;
-        const xs: number[] = [], zs: number[] = [];
+        const xs: number[] = [], zs: number[] = [], ys: number[] = [];
         if (na.extra) {
           xs.push(na.extra[0]);
           zs.push(na.extra[1]);
+          ys.push(r.at(na.s).y);
         }
         const step = Math.max(8, (nb.s - na.s) / 200);
         for (let s = na.s; s < nb.s; s += step) {
           const p = r.at(s);
           xs.push(p.x);
           zs.push(p.z);
+          ys.push(p.y);
         }
         const pe = r.at(nb.s);
         xs.push(pe.x);
         zs.push(pe.z);
+        ys.push(pe.y);
         if (nb.extra) {
           xs.push(nb.extra[0]);
           zs.push(nb.extra[1]);
+          ys.push(pe.y);
         }
-        edges.push({ a: na.node, b: nb.node, oneWay: !!r.spec.oneWayRoute, length: nb.s - na.s, road: r.spec.id, xs: new Float32Array(xs), zs: new Float32Array(zs), cls: r.spec.style });
+        const st = r.style;
+        const lane = st.oneWay ? Math.max(0, r.w.cw - st.laneWidth / 2) : r.w.median / 2 + st.laneWidth / 2;
+        edges.push({ a: na.node, b: nb.node, oneWay: !!r.spec.oneWayRoute, length: nb.s - na.s, road: r.spec.id, xs: new Float32Array(xs), zs: new Float32Array(zs), ys: new Float32Array(ys), lane, cls: r.spec.style });
       }
     }
     return { nodes: this.graphNodes, edges };

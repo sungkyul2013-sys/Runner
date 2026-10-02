@@ -811,8 +811,14 @@ void forEachPair(Bodies& bodies, float motionMargin, Fn&& fn) {
   struct WorldBox { DVec3 lo, hi; float maxRadius; bool any; };
   std::vector<WorldBox> boxes(static_cast<size_t>(nb));
   for (int i = 0; i < nb; ++i) {
-    const Extent e = bodyExtent(bodies[i]);
     WorldBox& wb = boxes[static_cast<size_t>(i)];
+    // A retired body touches nothing (cars replaced by a reset or a teleport are parked under the world where they
+    // stood: two retired at one spot lay inside each other, and their contacts and sweeps cost 100× a step).
+    if (!bodies[i].enabled) {
+      wb.any = false;
+      continue;
+    }
+    const Extent e = bodyExtent(bodies[i]);
     wb.any = e.box.valid();
     wb.maxRadius = e.maxRadius;
     if (!wb.any) continue;

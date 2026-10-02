@@ -196,3 +196,32 @@ TEST_CASE("a retired family is parked below the world and no longer stepped", "[
   INFO("balance " << e.balance() << " J");
   CHECK(std::fabs(e.balance()) < 20.0);
 }
+
+TEST_CASE("retired bodies parked at one spot touch nothing (repeated resets at one place)", "[islands][retire]") {
+  World w;
+  applyDefaultContactPairs(w);
+  w.addGroundPlane(0.0, material::kConcrete);
+  LatticeParams p;
+  p.size = {1.0f, 0.5f, 2.0f};
+  p.nx = 3;
+  p.ny = 2;
+  p.nz = 5;
+  p.totalMass = 300.0f;
+  p.axialStiffness = 2.0e5f;
+  p.center = {0.0, 0.3, 0.0};
+  // Three cars placed at one spot in turn, each retired when the next comes: the retired ones lie inside each other.
+  for (int k = 0; k < 3; ++k) {
+    const int b = w.addBody(makeLattice(p));
+    for (int s = 0; s < 200; ++s) w.step();
+    if (k < 2) CHECK(w.retireFamily(b) == 1);
+  }
+  int contacts = 0, clamps = 0;
+  for (int s = 0; s < 50; ++s) {
+    w.step();
+    contacts += w.lastStepStats().bodyContacts;
+    clamps += w.lastStepStats().ccdClamps;
+  }
+  CHECK(contacts == 0);
+  CHECK(clamps == 0);
+  CHECK(w.body(2).enabled);
+}

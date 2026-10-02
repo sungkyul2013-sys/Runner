@@ -11,6 +11,7 @@ import { LoadingScreen } from '../ui/Loading';
 import { effectiveQuality, settings } from '../ui/settings';
 import type { MapData } from './builder';
 import { Environment, WEATHERS, type Weather } from './Environment';
+import { roadSpawn, spawnPose, type SpawnSpot } from './ground';
 import { generateMap, MAP_STAGES as STAGES } from './loadMap';
 import { MapView } from './MapView';
 import { ParkedCars } from './ParkedCars';
@@ -71,28 +72,7 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
 
   // ---- the car ----
   const spawnPoi = map.pois.find((p) => p.id === params.get('spawn')) ?? map.pois.find((p) => p.kind === 'spawn') ?? map.pois[0];
-  // Spawn height: a point of interest knows its road surface (+12 cm); elsewhere the terrain is at most 15 cm under
-  // any road surface, so 40 cm over it clears both (the car settles onto its wheels). On a slope the car is laid along
-  // it (pitch and roll from the ground 2 m ahead / behind and 1 m to the sides; level, a 21 % lane buried the uphill
-  // bumper half a metre deep and the drop onto its wheels damaged the car), lifted by what the fit leaves over.
-  const poseAt = (p: { x: number; z: number; yaw: number; y?: number; pitch?: number; roll?: number }) => {
-    const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
-    const h = (a: number, l: number) => map.terrain.heightAt(p.x + a * fx + l * fz, p.z + a * fz - l * fx);
-    const h0 = h(0, 0);
-    // A point of interest knows its road's slope (a draped lane follows the hillside); elsewhere the terrain's.
-    const pitch = p.pitch ?? Math.atan2(h(2, 0) - h(-2, 0), 4);
-    const roll = p.roll ?? Math.atan2(h(0, 1) - h(0, -1), 2);
-    const tilted = Math.abs(pitch) > 0.03 || Math.abs(roll) > 0.03;
-    let rest = 0; // off the roads: the ground above the tilted plane under the car's footprint
-    if (p.pitch === undefined) for (const [a, l] of [[2.3, 0.9], [2.3, -0.9], [-2.3, 0.9], [-2.3, -0.9]]) rest = Math.max(rest, h(a, l) - (h0 + a * Math.tan(pitch) + l * Math.tan(roll)));
-    return {
-      // A known road surface: 12 cm over it; elsewhere 40 cm over the terrain (a road may lie 15 cm above it).
-      position: [p.x, (p.y !== undefined ? p.y + 0.12 : h0 + 0.4) + Math.min(rest, 1), p.z] as [number, number, number],
-      yaw: p.yaw,
-      speed: 0,
-      ...(tilted ? { pitch: Math.max(-0.5, Math.min(0.5, pitch)), roll: Math.max(-0.4, Math.min(0.4, roll)) } : {}),
-    };
-  };
+  const poseAt = (p: SpawnSpot, road?: number) => spawnPose(map, p, road);
   const session = new DriveSession(physics, viewer, debug, vehicle, ctx.fail, () => ctx.setPaused(!ctx.isPaused()), poseAt(spawnPoi), 'map');
   window.__apex!.drive = session;
   // The first loadScene('map') came with loadMap; restarts (reset, teleport) rebuild it from the stored map.
@@ -119,24 +99,26 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
     worldMap.update(route, waypoint);
   };
   const teleport = (x: number, z: number, yaw: number | null) => {
-    // Onto the nearest road when the spot is off it (facing along the road).
-    let px = x, pz = z, pyaw = yaw ?? 0;
-    const snap = router.snap(x, z);
-    if (yaw === null && snap) {
-      const e = map.graph.edges[snap.edge];
-      const k = Math.min(snap.seg, e.xs.length - 2);
-      pyaw = Math.atan2(e.xs[k + 1] - e.xs[k], e.zs[k + 1] - e.zs[k]);
-      // Keep right of the centre line.
-      const rx = -Math.cos(pyaw), rz = Math.sin(pyaw);
-      px = snap.x + rx * 2.2;
-      pz = snap.z + rz * 2.2;
-    }
-    session.pose = poseAt({ x: px, z: pz, yaw: pyaw });
+    // A point of interest (the world map's, the 3D overview's, the places sheet's): its spot, its road surface the
+    // reference height (it was dropped, and the car put over the terrain: on the hill over a tunnel, under a slab).
+    const poi = yaw === null ? undefined : map.pois.find((p) => Math.abs(p.x - x) < 0.01 && Math.abs(p.z - z) < 0.01);
+    // Onto the nearest road when the spot is off it: in its right-hand lane, facing along it, on its carriageway
+    // (the graph knows the road's height: a deck over the terrain, a bridge, a tunnel under the hill).
+    const snap = yaw === null ? router.snap(x, z) : null;
+    session.pose = poi ? poseAt(poi) : snap ? roadSpawn(map, snap) : poseAt({ x, z, yaw: yaw ?? 0 });
     closeMap();
     ctx.toast(t('teleported'));
     // Only the car moves: the old one is retired and a fresh one placed (the map is not rebuilt).
     void session.respawn(session.pose).then(() => replan());
   };
+  // Scripted checks (E2E) teleport the way the world map does.
+  Object.assign((window.__apex as unknown as { map: object }).map, {
+    teleport,
+    teleportPoi: (id: string) => {
+      const p = map.pois.find((q) => q.id === id);
+      if (p) teleport(p.x, p.z, p.yaw);
+    },
+  });
   const worldMap = new WorldMap(map, relief, {
     teleport,
     setWaypoint: (x, z) => {
