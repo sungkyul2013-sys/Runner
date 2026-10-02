@@ -264,11 +264,13 @@ async function main() {
             simTime: c.cars[0]?.physics.latestStats()?.simTime ?? 0,
           };
         });
-      // Until every event has closed and 1.5 s more has run (the cars roll on in neutral after a car-to-car hit).
+      // Until every event has closed and 1.5 s more has run (the cars roll on in neutral after a car-to-car hit), and
+      // the graphs have drawn a few frames (one sample per rendered frame: the software rasterizer renders about one a
+      // second, a GPU sixty).
       const settle = async (cars) => {
         const t0 = Date.now();
         let s = await state();
-        const done = (s) => s.cars === cars && s.rows.length > 0 && !s.rows.some((r) => r.active) && s.simTime > Math.max(...s.rows.map((r) => r.t)) + 1.5;
+        const done = (s) => s.cars === cars && s.rows.length > 0 && !s.rows.some((r) => r.active) && s.simTime > Math.max(...s.rows.map((r) => r.t)) + 1.5 && s.energySamples >= 3;
         while (!done(s) && Date.now() - t0 < 120000) {
           await page.waitForTimeout(250);
           s = await state();
