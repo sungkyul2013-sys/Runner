@@ -4,7 +4,7 @@ import type { MapData } from '../builder';
 import type { MapAssets } from '../dem';
 import { buildHanbit } from './hanbit';
 import { buildProving } from './proving';
-import { buildSeorak, SEORAK_DEM, SEORAK_ROADS } from './seorak';
+import { buildSeorak, SEORAK_DEM, SEORAK_OSM, SEORAK_ROADS } from './seorak';
 
 export interface MapInfo {
   id: string;
@@ -16,7 +16,7 @@ export interface MapInfo {
   spawns: Array<{ id: string; label: Localized }>;
   /** Data to load before building (a real-terrain DEM: path relative to the page, without extension; precomputed
    *  road alignments: a JSON file). */
-  assets?: { dem?: string; roads?: string };
+  assets?: { dem?: string; roads?: string; osm?: string };
   /** Attribution of external data the map is made from (shown with the map). */
   credit?: Localized;
   build(onStage?: (stage: string) => void, assets?: MapAssets): MapData;
@@ -45,19 +45,19 @@ export const MAPS: MapInfo[] = [
   },
   {
     id: 'seorak',
-    label: { ko: '운설령 (실제 지형)', en: 'Unseol Pass (real terrain)' },
-    desc: { ko: '설악산 한계령 일대의 실제 지형(공개 DEM) 8 × 8 km. 지형에 맞춰 자동 설계한 헤어핀 고갯길, 정상 휴게소, 임도 전망대, 산간 마을', en: 'Real terrain of the Hangyeryeong area, Seoraksan (public DEM), 8 × 8 km: a hairpin pass road laid out over it, summit rest area, forest-road viewpoint, mountain villages' },
+    label: { ko: '한계령 (실제 지형·도로)', en: 'Hangyeryeong (real terrain & roads)' },
+    desc: { ko: '설악산 한계령 일대 8 × 8 km — 실제 표고(공개 DEM)와 실제 지도(오버추어/오픈스트리트맵): 44번 국도 설악로의 고갯길과 헤어핀, 필례로, 오색, 계곡의 개울', en: 'Hangyeryeong, Seoraksan, 8 × 8 km — real elevation (public DEM) and real map data (Overture / OpenStreetMap): Route 44 Seorak-ro over the pass and its hairpins, Pillye-ro, Osaek, the valley streams' },
     areaKm2: 64,
     kind: 'open',
     spawns: [
-      { id: 'village', label: { ko: '솔골 (서쪽 마을)', en: 'Solgol (west)' } },
+      { id: 'east', label: { ko: '오색 (양양 방향)', en: 'Osaek (east)' } },
       { id: 'hairpins', label: { ko: '헤어핀 구간', en: 'Hairpins' } },
-      { id: 'summit', label: { ko: '운설령 정상', en: 'Pass summit' } },
-      { id: 'viewpoint', label: { ko: '임도 전망대', en: 'Viewpoint' } },
-      { id: 'east', label: { ko: '오색골 (동쪽 계곡)', en: 'Osaekgol (east)' } },
+      { id: 'summit', label: { ko: '한계령 정상', en: 'Pass summit' } },
+      { id: 'pillye', label: { ko: '필례로', en: 'Pillye-ro' } },
+      { id: 'west', label: { ko: '설악로 서쪽 (인제 방향)', en: 'Seorak-ro west' } },
     ],
-    assets: { dem: SEORAK_DEM, roads: SEORAK_ROADS },
-    credit: { ko: '지형: Terrain Tiles (Mapzen, AWS Open Data; SRTM 등) — 지명·도로는 가상', en: 'Terrain: Terrain Tiles (Mapzen, AWS Open Data; SRTM and others) — names and roads fictional' },
+    assets: { dem: SEORAK_DEM, roads: SEORAK_ROADS, osm: SEORAK_OSM },
+    credit: { ko: '지형: Terrain Tiles (Mapzen, AWS Open Data; SRTM 등) · 지도: Overture Maps, © OpenStreetMap 기여자 (ODbL)', en: 'Terrain: Terrain Tiles (Mapzen, AWS Open Data; SRTM and others) · Map: Overture Maps, © OpenStreetMap contributors (ODbL)' },
     build: buildSeorak,
   },
   {

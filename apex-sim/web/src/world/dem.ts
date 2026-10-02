@@ -18,6 +18,8 @@ export interface DemMeta {
 /** Data a map loads before it is built (fetched on the main thread, handed to the map worker). */
 export interface MapAssets {
   dem?: Dem;
+  /** Real map data (roads, buildings, water) in the map's frame: tools/overture/fetch-overture.py. */
+  osm?: import('./osm').OsmMap;
   /** Precomputed road alignments (a map's `<dem>.roads.json`): id → control points. */
   roads?: Record<string, Array<[number, number]>>;
 }

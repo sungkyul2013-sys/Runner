@@ -214,14 +214,17 @@ export function buildDiorama(map: MapData, side: number, pinIds: string[], lowEn
       const shape = new THREE.Shape(wb.points.map(([x, z]) => new THREE.Vector2((x - cx) * s, -(z - cz) * s)));
       geo = new THREE.ShapeGeometry(shape, 4).rotateX(-Math.PI / 2);
     } else {
-      const p = wb.points, hw = ((wb.width ?? 100) / 2) * s;
+      // A stream's points each have their own height (relative to the mesh's, its lowest); and it is drawn at least
+      // half a millimetre wide on the table, or it would vanish.
+      const p = wb.points, hw = Math.max(((wb.width ?? 100) / 2) * s, wb.kind === 'stream' ? 0.0005 : 0);
       const rp: number[] = [], ri: number[] = [];
       for (let i = 0; i < p.length; i++) {
         const a = p[Math.max(i - 1, 0)], b = p[Math.min(i + 1, p.length - 1)];
         const tx = b[0] - a[0], tz = b[1] - a[1], l = Math.hypot(tx, tz) || 1;
         const nx = -tz / l, nz = tx / l;
         const x = (p[i][0] - cx) * s, z = (p[i][1] - cz) * s;
-        rp.push(x + nx * hw, 0, z + nz * hw, x - nx * hw, 0, z - nz * hw);
+        const y = wb.levels ? yOf(wb.levels[i]) - yOf(wb.level) : 0;
+        rp.push(x + nx * hw, y, z + nz * hw, x - nx * hw, y, z - nz * hw);
         if (i) ri.push(i * 2 - 2, i * 2 - 1, i * 2 + 1, i * 2 - 2, i * 2 + 1, i * 2);
       }
       geo = new THREE.BufferGeometry();

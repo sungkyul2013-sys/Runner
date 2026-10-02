@@ -2,7 +2,7 @@
 // network by class, points of interest, the route and the car. The minimap turns with the car (or stays north-up);
 // the world map pans and zooms (drag, wheel, pinch), teleports to a point of interest or any road and sets a
 // waypoint for route guidance.
-import type { MapData } from './builder';
+import { waterSurfaceAt, type MapData } from './builder';
 import type { RoutePlan } from './Route';
 import { MAT, type Poi } from './types';
 import { t, tl } from '../ui/i18n';
@@ -44,22 +44,8 @@ export function reliefImage(map: MapData, res = 8): HTMLCanvasElement {
   const water = map.render.water;
   const levelAt = (x: number, z: number): number | null => {
     for (const wb of water) {
-      if (wb.kind === 'river') {
-        const hw = (wb.width ?? 100) / 2;
-        for (let i = 0; i + 1 < wb.points.length; i++) {
-          const [ax, az] = wb.points[i], [bx, bz] = wb.points[i + 1];
-          const dx = bx - ax, dz = bz - az;
-          const u = Math.min(Math.max(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz), 0), 1);
-          if (Math.hypot(x - ax - dx * u, z - az - dz * u) < hw) return wb.level;
-        }
-      } else {
-        let inside = false;
-        const p = wb.points;
-        for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
-          if (p[i][1] > z !== p[j][1] > z && x < ((p[j][0] - p[i][0]) * (z - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) inside = !inside;
-        }
-        if (inside) return wb.level;
-      }
+      const y = waterSurfaceAt(wb, x, z);
+      if (y !== null) return y;
     }
     return null;
   };

@@ -136,11 +136,44 @@ export class Road {
 }
 
 export interface WaterBody {
-  kind: 'river' | 'lake';
+  kind: 'river' | 'lake' | 'stream';
+  /** River, lake: the surface height; stream: its lowest point. */
   level: number;
-  /** River: centre line and width; lake: outline polygon. */
+  /** River, stream: centre line and width; lake: outline polygon. */
   points: Array<[number, number]>;
   width?: number;
+  /** Stream: the surface height at each point (a mountain stream runs downhill). */
+  levels?: number[];
+}
+
+// Each water body's bounding box (with its half width): most queries are far from most bodies.
+const waterBounds = new WeakMap<WaterBody, [number, number, number, number]>();
+
+/** Surface height of one water body at (x, z), or null where it is not. */
+export function waterSurfaceAt(w: WaterBody, x: number, z: number): number | null {
+  let bb = waterBounds.get(w);
+  if (!bb) {
+    const pad = w.kind === 'lake' ? 0 : (w.width ?? 100) / 2;
+    bb = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const [px, pz] of w.points) {
+      bb[0] = Math.min(bb[0], px - pad);
+      bb[1] = Math.min(bb[1], pz - pad);
+      bb[2] = Math.max(bb[2], px + pad);
+      bb[3] = Math.max(bb[3], pz + pad);
+    }
+    waterBounds.set(w, bb);
+  }
+  if (x < bb[0] || z < bb[1] || x > bb[2] || z > bb[3]) return null;
+  if (w.kind === 'lake') return pointInPolygon(x, z, w.points) ? w.level : null;
+  const hw = (w.width ?? 100) / 2;
+  for (let i = 0; i + 1 < w.points.length; i++) {
+    const [ax, az] = w.points[i], [bx, bz] = w.points[i + 1];
+    const dx = bx - ax, dz = bz - az;
+    const u = Math.min(Math.max(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1), 0), 1);
+    if (Math.hypot(x - ax - dx * u, z - az - dz * u) >= hw) continue;
+    return w.kind === 'stream' && w.levels ? w.levels[i] + (w.levels[i + 1] - w.levels[i]) * u : w.level;
+  }
+  return null;
 }
 
 export interface BoxSpec {
@@ -741,15 +774,8 @@ export class MapBuilder {
 
   waterLevelAt(x: number, z: number): number | null {
     for (const w of this.water) {
-      if (w.kind === 'river') {
-        const hw = (w.width ?? 100) / 2;
-        for (let i = 0; i + 1 < w.points.length; i++) {
-          const d = segDist(x, z, w.points[i], w.points[i + 1]);
-          if (d < hw) return w.level;
-        }
-      } else if (pointInPolygon(x, z, w.points)) {
-        return w.level;
-      }
+      const y = waterSurfaceAt(w, x, z);
+      if (y !== null) return y;
     }
     return null;
   }
@@ -1638,12 +1664,6 @@ export function offsetPoints(r: Road, s0: number, s1: number, u: number, count: 
   return out;
 }
 
-function segDist(x: number, z: number, a: [number, number], b: [number, number]): number {
-  const dx = b[0] - a[0], dz = b[1] - a[1];
-  const l2 = dx * dx + dz * dz;
-  const w = l2 > 0 ? clamp(((x - a[0]) * dx + (z - a[1]) * dz) / l2, 0, 1) : 0;
-  return Math.hypot(x - a[0] - dx * w, z - a[1] - dz * w);
-}
 
 function polygonArea(p: Array<[number, number]>): number {
   let a = 0;

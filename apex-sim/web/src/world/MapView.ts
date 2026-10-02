@@ -1008,7 +1008,23 @@ export class MapView {
     mat.roughnessNode = float(0.05).add(this.uniforms.wet.mul(0.1)).add(abs(ripple).mul(0.05));
     for (const w of this.map.render.water) {
       let g: THREE.BufferGeometry;
-      if (w.kind === 'river') {
+      if (w.kind === 'stream') {
+        // A mountain stream: a ribbon down its bed, each point at its own surface height.
+        const pts = w.points, ys = w.levels ?? pts.map(() => w.level);
+        const hw = (w.width ?? 4) / 2 + 0.6;
+        const pos: number[] = [];
+        const idx: number[] = [];
+        pts.forEach(([x, z], i) => {
+          const a = pts[Math.max(i - 1, 0)], b = pts[Math.min(i + 1, pts.length - 1)];
+          const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+          const nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l;
+          pos.push(x - nx * hw, ys[i], z - nz * hw, x + nx * hw, ys[i], z + nz * hw);
+          if (i > 0) idx.push(i * 2 - 2, i * 2, i * 2 - 1, i * 2 - 1, i * 2, i * 2 + 1);
+        });
+        g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setIndex(idx);
+      } else if (w.kind === 'river') {
         const pts = w.points;
         const hw = (w.width ?? 100) / 2 + 40;
         const pos: number[] = [];

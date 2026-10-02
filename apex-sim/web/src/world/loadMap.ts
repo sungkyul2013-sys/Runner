@@ -25,14 +25,18 @@ export async function generateMap(id: string, onStage: (stage: string) => void):
   const assets: MapAssets = {};
   if (info.assets?.dem) {
     onStage('dem');
-    const roads = info.assets.roads;
-    const [dem, alignments] = await Promise.all([
+    const json = (path: string | undefined) =>
+      path ? fetch(new URL(path, document.baseURI).href).then((r) => (r.ok ? r.json() : undefined)).catch(() => undefined) : Promise.resolve(undefined);
+    const [dem, alignments, osm] = await Promise.all([
       loadDem(info.assets.dem),
-      // Precomputed alignments save the map worker the route search (it lays them itself if they are missing).
-      roads ? fetch(new URL(roads, document.baseURI).href).then((r) => (r.ok ? r.json() : undefined)).catch(() => undefined) : undefined,
+      // Real map data, and precomputed alignments (the fallback without it); the map works without either.
+      json(info.assets.osm ? undefined : info.assets.roads),
+      json(info.assets.osm),
     ]);
     assets.dem = dem;
     if (alignments) assets.roads = alignments as MapAssets['roads'];
+    if (osm) assets.osm = osm as MapAssets['osm'];
+    else if (info.assets.roads && !alignments) assets.roads = (await json(info.assets.roads)) as MapAssets['roads'];
   }
   return new Promise((resolve, reject) => {
     let worker: Worker;

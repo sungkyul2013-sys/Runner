@@ -20,13 +20,13 @@
 | [Inter](https://rsms.me/inter/) (@fontsource/inter 5.3) | SIL OFL 1.1 |
 | [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (@fontsource/jetbrains-mono 5.3) | SIL OFL 1.1 |
 
-## 지형 데이터 (운설령 맵)
+## 지형·지도 데이터 (한계령 맵)
 
 | 데이터 | 출처 | 라이선스·표기 |
 |---|---|---|
-| 표고(DEM) — 설악산 한계령 일대 8 × 8 km (`web/public/data/dem/seorak.*`, `tools/dem/fetch-dem.mjs`) | [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen / Linux Foundation, AWS Open Data; Terrarium 인코딩, z13) | 원자료별 표기 필요: SRTM(NASA, 퍼블릭 도메인) 등 — 등록 페이지의 출처 목록에 따른다. 맵 선택 화면에 표기 |
+| 표고(DEM) — 설악산 한계령 일대 8 × 8 km (`web/public/data/dem/seorak.*`, `tools/dem/fetch-dem.mjs`) | [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen / Linux Foundation, AWS Open Data; Terrarium 인코딩, z13) | 원자료별 표기: SRTM(NASA, 퍼블릭 도메인) 등 — 등록 페이지의 출처 목록에 따른다. 맵 선택 화면에 표기 |
 
-지명과 도로는 가상이다(실제 도로선은 쓰지 않았다, KNOWN_ISSUES M15).
+| 도로·하천·건물 — 같은 범위 (`web/public/data/dem/seorak.osm.json`, `tools/overture/fetch-overture.py`) | [Overture Maps](https://overturemaps.org/) 릴리스 2026-09-23.1 (AWS 공개 GeoParquet) | 오픈스트리트맵 유래 레이어: © OpenStreetMap contributors, [ODbL 1.0](https://opendatacommons.org/licenses/odbl/) · Overture Maps Foundation. 맵 선택 화면에 표기 |
 
 ## 3D 에셋
 
