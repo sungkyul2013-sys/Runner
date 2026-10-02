@@ -137,12 +137,15 @@ async function main() {
     // seconds of sim time and ends at the far wall.
     if (want('drive')) {
       const dir = join(root, 'docs', 'screenshots');
-      const { page, consoleErrors } = await openPage(browser, '?drive=porsche_911_turbo_991');
+      // 800 m back from the usual start, on open asphalt clear of the test lanes, the ramp and the end wall. Input reaches the car once
+      // per rendered frame, and at under one headless frame a second the launch and the turn overrun by a few
+      // seconds of sim time (the turn took up to 260 m) — a slower renderer once carried the car into the wall.
+      const { page, consoleErrors } = await openPage(browser, '?drive=porsche_911_turbo_991&at=0,-800');
       await page.waitForFunction(() => window.__apex?.drive?.latest != null, null, { timeout: 120000 });
       const tel = () =>
         page.evaluate(() => {
           const s = window.__apex.drive.latest;
-          return { kmh: s.speed * 3.6, gear: s.gear, up: s.up[1], heading: Math.atan2(s.forward[0], s.forward[2]) };
+          return { kmh: s.speed * 3.6, gear: s.gear, up: s.up[1], heading: Math.atan2(s.forward[0], s.forward[2]), crashes: s.crashEvents, tyres: s.wheels.reduce((f, w) => f | w.tyreFlags, 0), z: s.position[2] };
         });
       const until = async (test, maxMs) => {
         const t0 = Date.now();
@@ -169,7 +172,9 @@ async function main() {
       const braked = track(await until((s) => s.kmh < 5, 15000)); // release before the stop: held S at rest selects reverse
       await page.keyboard.up('KeyS');
       const turn = Math.abs(turned.heading - launched.heading);
-      console.log('drive:', JSON.stringify({ rest: rest.kmh, launched: launched.kmh, gear: launched.gear, turnRad: turn, braked: braked.kmh, minUp }));
+      console.log('drive:', JSON.stringify({ rest: rest.kmh, launched: launched.kmh, gear: launched.gear, turnRad: turn, braked: braked.kmh, minUp, crashes: braked.crashes, tyres: braked.tyres, z: [launched.z, turned.z, braked.z] }));
+      // The run stays on the pad: no impact, no tyre damage (a slow headless renderer once let it reach the wall).
+      if (braked.crashes > 0 || braked.tyres !== 0) failures.push(`drive: the car was damaged on the way (crash events ${braked.crashes}, tyre flags ${braked.tyres})`);
       if (Math.abs(rest.kmh) > 2) failures.push(`drive: the car creeps at rest (${rest.kmh.toFixed(1)} km/h)`);
       if (launched.kmh < 80) failures.push(`drive: only ${launched.kmh.toFixed(1)} km/h after 20 s of throttle`);
       if (launched.gear < 2) failures.push('drive: the automatic did not upshift');
