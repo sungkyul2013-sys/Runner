@@ -14,6 +14,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { deflateSync } from 'node:zlib';
+import { designRearLamps } from './lamp-design.mjs';
 
 const CARS = [
   {
@@ -104,12 +105,25 @@ const CARS = [
         trim: { maxLum: 0.2, color: [120, 135, 158], gradient: 0.35 } },
       { end: 'front', depth: 0.5, minHeight: 0.79, maxHeight: 1.0, minAbsX: 0.46, glass: { color: [150, 170, 205], gradient: 0.55 },
         trim: { maxLum: 0.2, color: [120, 135, 158], gradient: 0.35 } },
-      // Tail lamps: the dark band across tailgate and quarters is the lamp (≈ sRGB 205,24,32, brighter along its
-      // lower edge). The glass band under it is not a lamp: it is closed with the body colour.
-      { end: 'rear', depth: 0.5, minHeight: 0.94, maxHeight: 1.09, minAbsX: 0.3, trim: { maxLum: 0.2, color: [150, 3, 6], gradient: 0.3 },
-        glass: { color: [150, 3, 6] } },
+      // Tail lamps: the dark band across tailgate and quarters and the cells patched into the recesses, relit,
+      // read as ragged red blotches. They are set aside ('lampwell'), new lamps close the recesses (rearLamps), and
+      // what is left of them takes the body colour. The glass band under them is not a lamp: it is closed with the
+      // body colour too.
+      { end: 'rear', depth: 0.5, minHeight: 0.94, maxHeight: 1.09, minAbsX: 0.3, trim: { maxLum: 0.2, color: [6, 5, 5], role: 'lampwell' },
+        glass: { color: [6, 5, 5], role: 'lampwell' } },
       { end: 'rear', depth: 0.45, minHeight: 0.74, maxHeight: 0.98, minAbsX: 0.28, glass: { role: 'paint' } },
     ],
+    // New tail lamps (lamp-design.mjs): found in the body's recesses and built flush over them — a dark rim, a smoked
+    // red lens, two LED blades (the upper one full length, the lower one on the outer part, as the GLS's two-layer
+    // light signature) — and the Maybach's chrome strip across the tailgate between them. Rows across the lamp run
+    // 0 (bottom) … 1 (top).
+    rearLamps: {
+      scan: { x0: 0.28, cx: 0.55, cz: 0.55, y: [0.98, 1.26] },
+      lift: 0.0025, margin: 0.003, cornerRadius: 0.022,
+      upperBlade: [0.65, 0.81], lowerBlade: [0.21, 0.35], lowerFrom: 0.38,
+      colours: { rim: [4, 3, 3], lens: [34, 1, 3], blade: [255, 6, 10], strip: [235, 238, 242] },
+      strip: { at: 0.28, height: 0.02, lift: 0.004 },
+    },
   },
 ];
 
@@ -328,13 +342,15 @@ const MATERIALS = {
   trim: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0.1, roughnessFactor: 0.6 }, extras: { apexRole: 'trim' } },
   tint: { pbrMetallicRoughness: { baseColorFactor: [0.05, 0.06, 0.08, 0.9], metallicFactor: 0, roughnessFactor: 0.05 }, alphaMode: 'BLEND', doubleSided: true, extras: { apexRole: 'tint' } },
   chrome: { pbrMetallicRoughness: { baseColorFactor: [0.026, 0.031, 0.037, 1], metallicFactor: 0.7, roughnessFactor: 0.2 }, extras: { apexRole: 'chrome' } },
+  brightwork: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 1, roughnessFactor: 0.12 }, extras: { apexRole: 'brightwork' } },
   tire: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.9 }, extras: { apexRole: 'tire' } },
   rim: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0.8, roughnessFactor: 0.3 }, extras: { apexRole: 'rim' } },
   caliper: { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0.3, roughnessFactor: 0.5 }, extras: { apexRole: 'caliper' } },
 };
 const MASK_ROLE = (m) => (m & 8 ? 'tint' : m & 4 ? 'lamp' : m & 2 ? 'glass' : m & 1 ? 'paint' : 'trim');
 const MASK = { paint: 1, glass: 2, lamp: 4, tint: 8, trim: 0 };
-// Roles the importer assigns itself (not from the bake's mask): 'chrome' (dark-chrome headlamp housings).
+// Roles the importer assigns itself (not from the bake's mask): 'chrome' (dark-chrome headlamp housings),
+// 'brightwork' (polished chrome trim, lamp-design.mjs).
 
 function quantFrame(parts) {
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
@@ -993,6 +1009,17 @@ for (const car of CARS) {
       for (let a = 0; a < 3; a++) p.col[i * 3 + a] = Math.round(colour[a] * f);
     }
     p.key = spec.role ?? 'lamp';
+  }
+  if (car.rearLamps) {
+    const design = designRearLamps(parts, car.rearLamps);
+    parts.push(...design.parts);
+    // The old band: under the lenses, or a sliver beside one, where it reads as body (it lies flush with the skin).
+    for (const p of parts) {
+      if (p.key !== 'lampwell') continue;
+      p.key = 'paint';
+      for (let i = 0; i < p.n * 3; i++) p.col[i] = paintColour[i % 3];
+    }
+    console.log(`${car.id}: rear lamps`, JSON.stringify(design.lamps, (k, v) => (typeof v === 'number' ? +v.toFixed(3) : v)));
   }
   for (let i = parts.length - 1; i >= 0; i--) {
     const first = parts.findIndex((q) => q.key === parts[i].key);

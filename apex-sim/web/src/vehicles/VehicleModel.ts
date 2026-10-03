@@ -75,6 +75,9 @@ function baseMaterial(role: string | undefined): THREE.Material {
     case 'chrome':
       // Dark chrome lamp housing (the user's Crash Lab MAT_CHROME_DARK: 0x2d3238, low reflection, sharp highlight).
       return new THREE.MeshStandardNodeMaterial({ color: 0x2d3238, metalness: 0.7, roughness: 0.2, side });
+    case 'brightwork':
+      // Polished chrome trim (the Maybach's strip across the tailgate): mirror-bright, tinted by its vertex colour.
+      return new THREE.MeshStandardNodeMaterial({ vertexColors: true, metalness: 1, roughness: 0.1, side });
     case 'tire':
       return new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, side });
     case 'rim':
