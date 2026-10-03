@@ -543,7 +543,14 @@ async function main() {
       await page.waitForTimeout(1000);
       const card = await rectOf(page, '.crash-result'), bar = await rectOf(page, '.m-launch');
       await page.screenshot({ path: join(dir, 'UI-phone-crash.png') });
-      console.log('phone crash lab:', JSON.stringify({ tiles, sheetOpen, sheetAfter, card, bar }));
+      // The crash lab's x-ray steps through the suspension view first (it showed only the lattice before batch L).
+      await page.tap('.m-top .m-round[aria-label="' + (await page.evaluate(() => document.querySelectorAll('.m-top .m-round')[2].ariaLabel)) + '"]');
+      await page.waitForTimeout(400);
+      await page.locator('.m-quick:not([hidden]) .m-tile', { hasText: /투시|X-ray/ }).first().tap();
+      await page.waitForTimeout(800);
+      const crashXray = await page.evaluate(() => ({ mode: window.__apex.crash.xrayMode, shown: window.__apex.crash.actors.filter((a) => a.view?.suspension?.visible).length }));
+      console.log('phone crash lab:', JSON.stringify({ tiles, sheetOpen, sheetAfter, card, bar, crashXray }));
+      if (crashXray.mode !== 'suspension' || crashXray.shown < 1) failures.push(`phone UI: crash-lab x-ray ${JSON.stringify(crashXray)}`);
       if (!sheetOpen || sheetAfter) failures.push(`phone UI: panel open ${sheetOpen} → after launch ${sheetAfter}`);
       if (!card) failures.push('phone UI: no result card after the launch');
       else if (overlaps(card, bar)) failures.push('phone UI: the result card covers the launch bar');

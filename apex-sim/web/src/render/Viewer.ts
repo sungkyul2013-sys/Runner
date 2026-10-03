@@ -31,9 +31,11 @@ export class Viewer {
   /** `antialias`: multisampling (off for the phone profile on a dense screen: its pixels are small enough, and four
    *  samples of each would cost what the extra resolution is meant to buy). */
   constructor(private readonly canvas: HTMLCanvasElement, forceWebGL = false, largeWorld = false, antialias = true) {
-    // Reversed depth: the open-world maps span 0.1 m … 20 km (falls back to the default buffer where unsupported).
-    // (WebGL2 fallback: a logarithmic buffer instead; reversed depth there depends on EXT_clip_control.)
-    this.renderer = new THREE.WebGPURenderer({ canvas, antialias, forceWebGL, reversedDepthBuffer: largeWorld && !forceWebGL, logarithmicDepthBuffer: largeWorld && forceWebGL });
+    // The open-world maps span 0.1 m … 20 km: a logarithmic depth buffer on either backend. (Reversed depth on WebGPU
+    // left the terrain, roads and sky undrawn — only the cars showed — in a headed Chromium's WebGPU: the world's
+    // materials did not survive it. `?revdepth=1` brings it back for testing.)
+    const reversed = largeWorld && !forceWebGL && new URLSearchParams(location.search).get('revdepth') === '1';
+    this.renderer = new THREE.WebGPURenderer({ canvas, antialias, forceWebGL, reversedDepthBuffer: reversed, logarithmicDepthBuffer: largeWorld && !reversed });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.AgXToneMapping;
     this.renderer.toneMappingExposure = 1.1;

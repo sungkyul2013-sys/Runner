@@ -318,7 +318,7 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   // roofs scattered on the valley's slopes, plastic greenhouses (비닐하우스), an orchard, two concrete farm lanes
   // climbing the hillsides (농로, one lane each way) ----
   const villageLane = { laneWidth: 2.4, shoulder: 0.3, verge: 1.0, lights: 0 };
-  add({ id: 'V1', name: { ko: '북녘마을길', en: 'Bungnyeok-maeul-gil' }, style: 'farm', styleOverride: villageLane, points: [on('N1', -1250, -2372), [-1240, -2310], [-1205, -2250], [-1215, -2190], [-1180, -2130]], start: { join: 'N1' } });
+  add({ id: 'V1', name: { ko: '북녘마을길', en: 'Bungnyeok-maeul-gil' }, style: 'farm', styleOverride: villageLane, points: [on('N1', -1250, -2372), [-1240, -2325], [-1215, -2290], [-1225, -2262]], start: { join: 'N1' } }); // ends below the hill's steep face (a lane up it cut a scar)
   add({ id: 'V2', name: { ko: '북녘윗길', en: 'Bungnyeok-wit-gil' }, style: 'farm', styleOverride: villageLane, points: [on('N1', -1040, -2350), [-1050, -2410], [-1020, -2465], [-1060, -2520]], start: { join: 'N1' } });
   {
     const VR = rng(5150);
