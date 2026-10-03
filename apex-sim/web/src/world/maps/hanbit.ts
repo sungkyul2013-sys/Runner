@@ -11,7 +11,7 @@ import { MapBuilder, offsetPoints, onRoad, pointInPolygon, type CalmKind, type M
 import { CoarseField, fbm, hash2, lerp, noise2, ridged, rng, smoothstep } from '../noise';
 import { widths, STYLES } from '../road';
 import { MAT } from '../types';
-import { estate, houseQuarter, villaQuarter, type EstateKind, type Rect } from './neighbourhood';
+import { estate, houseQuarter, parkingStrip, plaza, pocketPark, undergroundGarage, villaQuarter, type EstateKind, type Rect, type SculptureKind } from './neighbourhood';
 
 const SIZE = 6000;
 const WATER = 3.0; // river level [m]
@@ -129,6 +129,9 @@ function shape(x: number, z: number): number {
   if (d < RIVER_HALF + 60) h = lerp(WATER - 6, Math.min(h, 6.5), smoothstep(RIVER_HALF - 70, RIVER_HALF + 60, d));
   return h;
 }
+
+/** The pocket parks' art, in turn. */
+const POCKET_ART: SculptureKind[] = ['cubes', 'statue', 'beads', 'wave', 'globe', 'obelisk'];
 
 /** What each residential block of the city's east side is (block column i, row j). */
 const CITY_RES: Record<string, EstateKind | 'villa' | 'house'> = {
@@ -451,11 +454,28 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
     const kinds: CalmKind[] = ['table', 'hump', 'big', 'hump', 'hump', 'big'];
     for (let d = 30, k = 0; d < lane.length - 30; d += 58, k++) b.addCalming(lane, d, kinds[k % kinds.length]);
     b.addSign({ x: cx + half + 1.5, y: ground(cx + half + 1.5, zTop + 26), z: zTop + 26, yaw: 0, text: { ko: '과속방지턱', en: 'Speed humps' }, sub: { ko: '단지 내 서행 20', en: 'Estate 20 km/h' }, kind: 'info' });
-    estate(b, R, { x0, z0, x1, z1 }, ground, design, [lane]);
+    // The estate's underground car park (지하주차장): a ramp down from the access lane on its roomier side, the hall
+    // under the blocks there.
+    const outer = W('alley').outer;
+    const roomE = x1 - (cx + outer), roomW = cx - outer - x0;
+    const side: 1 | -1 = roomE >= roomW ? 1 : -1;
+    const room = Math.max(roomE, roomW), depth = z1 - z0;
+    const reserve: Rect[] = [], under: Rect[] = [];
+    if (room > 30 + 40 + 6 && depth > 56) {
+      const hd = Math.min(40, depth - 12), hw = Math.min(60, room - 36);
+      const zc = Math.round(z0 + 4 + hd / 2 + (depth - 8 - hd) * 0.4);
+      const g = undergroundGarage(b, cx + side * outer, zc, side, ground, hw, hd);
+      reserve.push(g.ramp);
+      under.push(g.hall);
+      garages.push({ x: cx + side * (outer + 3), z: zc, yaw: side > 0 ? Math.PI / 2 : -Math.PI / 2 });
+    }
+    estate(b, R, { x0, z0, x1, z1 }, ground, design, [lane], reserve, under);
   };
+  const garages: Array<{ x: number; z: number; yaw: number }> = [];
   // ---- villa and house quarters (빌라촌 · 단독주택가): narrow lanes through the block — N–S every ≈ 150 m from street
   // to street, one E–W across them (named after the street they leave, the Korean way: "언덕마을로12길") ----
   let laneNo = 2;
+  let parkNo = 0;
   const quarter = (kind: 'villa' | 'house', r: Rect, top: string, bottom: string, left: string, right: string, zTop: number, zBot: number, xLeft: number, xRight: number, ground: (x: number, z: number) => number, base: string, through: Road[] = [], keep: Array<[number, number, number]> = []) => {
     const lanes: Road[] = [...through];
     const style = { sidewalk: 1.6, lights: 22, laneWidth: 2.9, shoulder: 0.2 };
@@ -468,11 +488,19 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
     const zm = Math.round((zTop + zBot) / 2 / 5) * 5;
     lanes.push(add({ id: `lane_${xLeft}_${zm}`, name: { ko: `${base}${laneNo}길`, en: `${base} ${laneNo}-gil` }, style: 'alley', styleOverride: style, points: [[xLeft, zm], [xRight, zm]], start: { join: left }, end: { join: right } }));
     laneNo += 2;
-    (kind === 'villa' ? villaQuarter : houseQuarter)(b, R, r, ground, lanes, keep);
+    // A pocket park (어린이공원) with a piece of art, between the block's edge and its first lane.
+    const parks: Array<[number, number, number]> = [];
+    const px = Math.round(r.x0 + Math.min(70, (r.x1 - r.x0) / (n + 1) / 2)), pz = Math.round(r.z0 + (zm - r.z0) / 2);
+    if (R() < 0.75 && lanes.every((l) => Math.abs(l.nearest(px, pz).u) > l.w.outer + 20)) {
+      parks.push([px, pz, 15]);
+      pocketPark(b, R, px, pz, 14, ground, POCKET_ART[parkNo++ % POCKET_ART.length]);
+    }
+    (kind === 'villa' ? villaQuarter : houseQuarter)(b, R, r, ground, lanes, [...keep, ...parks]);
   };
 
   // ---- buildings: city blocks ----
   let carParkAt = { x: 0, z: 0, y: 0 };
+  let plazaAt = { x: 0, z: 0 };
   const oldAlleys = ['c_alley1', 'c_alley2', 'c_alley3', 'c_alley4', 'c_alley5'].map((id) => b.byId.get(id)!);
   const golName = ['먹자골목', '공방길', '책방골목', '꽃담길', '빵집골목', '카페거리', '은행나무길', '공구상가길', '인쇄골목', '한옥길', '사진관길', '국숫집골목'];
   let gol = 0;
@@ -520,8 +548,10 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
         continue;
       }
       if (kind === 'park') {
-        // City hall park, and the public car park at its east end.
-        fillBlock(b, R, x0, z0, x1 - 100, z1, 'park', cityGround);
+        // 한빛광장: a wide open square before city hall (paving a car can drive on, a lawn oval, the fountain,
+        // sculptures, flagpoles), and the public car park at the block's east end.
+        plaza(b, R, { x0, z0, x1: x1 - 104, z1 }, cityGround, { lawn: true, fountain: { r: 11, height: 14, jets: 18 }, art: ['statue', 'cubes', 'globe', 'wave'], flags: true });
+        plazaAt = { x: (x0 + x1 - 104) / 2, z: z1 - 12 };
         // Spawn on the ground floor, by the east entrance, facing in.
         const gy = carPark(b, x1 - 50, (z0 + z1) / 2, cityGround);
         carParkAt = { x: x1 - 50 + 30, z: (z0 + z1) / 2 - 4, y: gy + 0.02 };
@@ -558,6 +588,9 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       const z0 = SEW[j] + ew(SEW[j]) + 3, z1 = SEW[j + 1] - ew(SEW[j + 1]) - 3;
       if (i === 2 && j === 1) {
         stadium(b, R, (x0 + x1) / 2, (z0 + z1) / 2, southGround);
+        // Its forecourt to the west (the torch, a clock tower, a fountain), its car park to the east.
+        plaza(b, R, { x0: x0 + 4, z0: z0 + 6, x1: (x0 + x1) / 2 - 104, z1: z1 - 6 }, southGround, { fountain: { r: 7, height: 9, jets: 12 }, art: ['torch', 'clock', 'beads'] });
+        for (let zp = z0 + 14; zp < z1 - 20; zp += 16) parkingStrip(b, (x0 + x1) / 2 + 106, x1 - 6, zp, southGround);
         continue;
       }
       const res = SOUTH_RES[j][i];
@@ -632,9 +665,9 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       const a = (k / 14) * Math.PI * 2;
       b.addTree(px + Math.cos(a) * 44, pz + Math.sin(a) * 44, 0.9 + (k % 3) * 0.15, k % 4 === 0 ? 1 : 0);
     }
-    for (const [ox, oz] of [[-2.6, -2.6], [2.6, -2.6], [-2.6, 2.6], [2.6, 2.6]]) b.addCylinder({ x: px + ox, z: pz + oz, y0: y, y1: y + 2.8, r0: 0.16, material: MAT.wood, look: 'none', color: 0x7a3b2a, sides: 6 });
-    b.addCylinder({ x: px, z: pz, y0: y + 0.45, y1: y + 0.6, r0: 3.4, material: MAT.wood, look: 'none', color: 0x8a6a4a, sides: 8 });
-    b.addCylinder({ x: px, z: pz, y0: y + 2.8, y1: y + 4.6, r0: 4.6, r1: 0.3, material: -1, look: 'none', color: 0x3f4448, sides: 8 });
+    for (const [ox, oz] of [[-2.6, -2.6], [2.6, -2.6], [-2.6, 2.6], [2.6, 2.6]]) b.addCylinder({ x: px + ox, z: pz + oz, y0: y, y1: y + 2.8, r0: 0.16, material: MAT.wood, look: 'white', color: 0x7a3b2a, sides: 6 });
+    b.addCylinder({ x: px, z: pz, y0: y + 0.45, y1: y + 0.6, r0: 3.4, material: MAT.wood, look: 'white', color: 0x8a6a4a, sides: 8 });
+    b.addCylinder({ x: px, z: pz, y0: y + 2.8, y1: y + 4.6, r0: 4.6, r1: 0.3, material: -1, look: 'white', color: 0x3f4448, sides: 8 });
     for (let k = 0; k < 4; k++) {
       const a = (k / 4) * Math.PI * 2 + 0.4;
       b.addBox({ cx: px + Math.cos(a) * 14, cy: y + 0.25, cz: pz + Math.sin(a) * 14, hx: 1.0, hy: 0.25, hz: 0.25, yaw: a, material: MAT.wood, look: 'wood' });
@@ -699,8 +732,12 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   // ---- riverside park: parking lot, trees ----
   const lot = { x0: -1450, x1: -1250, z0: 70, z1: 150 };
   b.addPad({ outline: [[lot.x0, lot.z0], [lot.x1, lot.z0], [lot.x1, lot.z1], [lot.x0, lot.z1]], y: (x, z) => b.opts.natural(x, z) - 0.1, material: MAT.asphalt, look: 'asphalt', grid: 10 });
+  // 강변 광장: a riverside square between the car park and 한빛대교 — the gateway arch, a wave of fins, a fountain.
+  const RP = { x0: -1150, x1: -960, z0: 98, z1: 176 };
+  plaza(b, R, RP, (x, z) => b.opts.natural(x, z), { fountain: { r: 8, height: 10, jets: 14 }, art: ['arch', 'wave', 'obelisk'] });
   for (let k = 0; k < 900; k++) {
     const x = -2700 + R() * 3400, z = 90 + R() * 200;
+    if (x > RP.x0 - 6 && x < RP.x1 + 6 && z > RP.z0 - 6 && z < RP.z1 + 6) continue;
     const d = riverDist(x, z);
     if (d < RIVER_HALF + 70) continue;
     if (x > lot.x0 - 10 && x < lot.x1 + 10 && z > lot.z0 - 10 && z < lot.z1 + 10) continue;
@@ -758,6 +795,9 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   poi('elevated', 'landmark', '한빛고가로 (고가도로)', 'Hanbit Elevated Road', face('E1', 120));
   poi('offroad', 'scenic', '한빛 오프로드 파크', 'Hanbit Off-road Park', face('OP1', b.byId.get('OP1')!.length - 12));
   poi('village', 'scenic', '북녘 전원마을', 'Bungnyeok farming village', face('V1', 15));
+  poi('plaza', 'landmark', '한빛광장 (분수·조형물)', 'Hanbit Plaza (fountain, sculptures)', { x: plazaAt.x, z: plazaAt.z, yaw: Math.PI });
+  poi('riverplaza', 'scenic', '강변 광장', 'Riverside plaza', { x: (RP.x0 + RP.x1) / 2, z: RP.z1 - 22, yaw: Math.PI });
+  if (garages.length) poi('garage', 'service', '아파트 지하주차장', 'Estate underground parking', garages[0]);
   poi('hillvillage', 'scenic', '남산 언덕마을 (오르막·내리막)', 'Namsan hill quarter (ups and downs)', face('s_hill1', 20));
   poi('villas', 'city', '빌라촌 골목 (요철·방지턱)', 'Villa lanes (bumps, humps)', face(b.roads.find((r) => r.spec.id.startsWith('lane_') && r.spec.id.endsWith('_1550'))!.spec.id, 20));
   poi('eastside', 'city', '동쪽 주택가 언덕', 'East side houses (hill)', face(nsId(250), 160, 1));

@@ -242,6 +242,31 @@ export interface BuildingSpec {
   seed: number;
 }
 
+/** A villa's solid parts in its own frame (ox along w, oz along d, from y0 to y1 above its base): the floors on a slab
+ *  2.7 m up, columns at the corners and along the long sides, the stair core at one end — the ground floor open on
+ *  columns (필로티) where the cars park. The drawing and the physics both take them. */
+export function villaParts(b: BuildingSpec): Array<{ ox: number; oz: number; w: number; d: number; y0: number; y1: number; kind: 'body' | 'column' | 'core' }> {
+  const PIL = 2.7;
+  const side = hashSeed(b.seed, 2) > 0.5 ? 1 : -1;
+  const parts: Array<{ ox: number; oz: number; w: number; d: number; y0: number; y1: number; kind: 'body' | 'column' | 'core' }> = [];
+  parts.push({ ox: 0, oz: 0, w: b.w, d: b.d, y0: PIL, y1: b.h, kind: 'body' });
+  const coreW = Math.min(3.4, b.w * 0.3);
+  parts.push({ ox: side * (b.w / 2 - coreW / 2), oz: b.d * 0.18, w: coreW, d: b.d * 0.5, y0: -1, y1: PIL, kind: 'core' });
+  const n = Math.max(2, Math.round(b.w / 5.5));
+  for (let k = 0; k <= n; k++) {
+    const ox = -b.w / 2 + 0.25 + ((b.w - 0.5) * k) / n;
+    if (Math.abs(ox - side * (b.w / 2 - coreW / 2)) < coreW / 2 + 0.3) continue; // in the core
+    for (const oz of [-b.d / 2 + 0.25, b.d / 2 - 0.25]) parts.push({ ox, oz, w: 0.5, d: 0.5, y0: -1, y1: PIL, kind: 'column' });
+  }
+  return parts;
+}
+
+/** Deterministic 0…1 from a seed (the same in the drawing and the physics). */
+export function hashSeed(seed: number, k: number): number {
+  const x = Math.sin((seed % 100000) * 12.9898 + k * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 export interface PadSpec {
   /** Polygon outline (convex or not), heights from `y(x, z)`. */
   outline: Array<[number, number]>;
@@ -1750,6 +1775,14 @@ export class MapBuilder {
   }
 
   private emitBuildingPhysics(b: BuildingSpec): void {
+    if (b.type === 8) {
+      // Villas stand on columns: a car drives in under them (the drawing has the same parts).
+      const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
+      for (const p of villaParts(b)) {
+        this.emitBox({ cx: b.x + p.ox * c + p.oz * s, cy: b.y + (p.y0 + p.y1) / 2, cz: b.z - p.ox * s + p.oz * c, hx: p.w / 2, hy: (p.y1 - p.y0) / 2, hz: p.d / 2, yaw: b.yaw, material: MAT.concrete, look: 'none' });
+      }
+      return;
+    }
     this.emitBox({ cx: b.x, cy: b.y + b.h / 2 - 1, cz: b.z, hx: b.w / 2, hy: b.h / 2 + 1, hz: b.d / 2, yaw: b.yaw, material: MAT.concrete, look: 'none' });
   }
 

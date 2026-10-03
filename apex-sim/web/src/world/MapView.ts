@@ -9,7 +9,7 @@ import {
   abs, atan, attribute, clamp, color, dot, exp, float, floor, fract, fwidth, max, mix, mod, mx_noise_float, normalize, normalWorld,
   positionGeometry, positionLocal, positionWorld, pow, sin, smoothstep, step, texture, time, uniform, vec2, vec3, cameraPosition, length, select,
 } from 'three/tsl';
-import type { MapData, MeshAccum, Sign } from './builder';
+import { hashSeed, villaParts, type MapData, type MeshAccum, type Sign } from './builder';
 import { MAT } from './types';
 import type { Terrain } from './terrain';
 
@@ -285,10 +285,6 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const brand = mix(mix(color(0x2a7f8f), color(0x1f3f74), step(0.33, h2)), mix(color(0x3d8a4a), color(0xc0663a), step(0.5, h1)), step(0.66, h2));
   const stripe = isType(1).mul(step(top.sub(7.4), fv)).mul(step(fv, top.sub(4.6))).mul(float(1).sub(roof));
   c = mix(c, brand, stripe.mul(0.9));
-  // Villas: the ground floor open on columns (필로티 parking), dark under the slab.
-  const pilotis = isType(8).mul(step(fv, 2.7)).mul(float(1).sub(roof));
-  const column = box(fract(fu.div(5.2)), 0.0, 0.1, fwidth(fu.div(5.2)).max(1e-4));
-  c = mix(c, mix(color(0x1e2023), color(0xb9b4aa), column), pilotis);
   // Plant: louvre stripes.
   c = mix(c, c.mul(0.72), isType(6).mul(step(0.5, fract(fv.mul(2.2)))).mul(float(1).sub(roof)));
   c = mix(c, roofCol, roof);
@@ -617,12 +613,15 @@ export class MapView {
         part(0, 0, (along ? b.w : b.d) + 0.6, (along ? b.d : b.w) + 0.6, b.h, b.h + Math.min(b.w, b.d) * (0.3 + r(1) * 0.12), 7, roofs);
         if (!along) roofs[roofs.length - 1].yaw += Math.PI / 2;
       } else if (b.type === 8) {
-        // Villa (빌라): the block on its pilotis, the stair-and-lift house on the roof at one end, now and then a
-        // top floor set back behind a terrace.
+        // Villa (빌라): the floors on columns over the open ground floor (필로티 parking, the physics' parts too), the
+        // stair core down to the ground, the stair-and-lift house on the roof, now and then a top floor set back.
         const terrace = r(1) > 0.55 && b.h > 10;
-        part(0, 0, b.w, b.d, -1, terrace ? b.h - 2.8 : b.h, 8);
+        for (const p of villaParts(b)) {
+          if (p.kind === 'body') part(p.ox, p.oz, p.w, p.d, p.y0, terrace ? b.h - 2.8 : b.h, 8);
+          else part(p.ox, p.oz, p.w, p.d, p.y0, p.y1, p.kind === 'core' ? 8 : 6);
+        }
         if (terrace) part(-b.w * 0.12, 0, b.w * 0.76, b.d * 0.86, b.h - 2.8, b.h, 8);
-        part((r(2) > 0.5 ? 1 : -1) * (b.w / 2 - 2.4), 0, 3.6, Math.min(4.2, b.d * 0.5), b.h, b.h + 2.6, 6);
+        part((hashSeed(b.seed, 2) > 0.5 ? 1 : -1) * (b.w / 2 - 2.4), 0, 3.6, Math.min(4.2, b.d * 0.5), b.h, b.h + 2.6, 6);
       } else if (b.type === 9) {
         // Flat-roofed house (양옥): parapet, a water tank on the roof, sometimes a smaller upper floor.
         const upper = r(1) > 0.5;
