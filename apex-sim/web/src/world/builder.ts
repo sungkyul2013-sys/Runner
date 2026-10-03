@@ -739,6 +739,9 @@ export class MapBuilder {
     const half = { hump: 1.8, big: 3.0, table: 3.5, cushion: 1.5, rumble: 3.3, school: 15, patch: 1.4, heave: 4.0, manhole: 0.8 }[kind];
     if (s - half < 12 || s + half > r.length - 12) return false;
     if (r.junctionS.some((j) => Math.abs(j - s) < half + 22)) return false;
+    // Crossings with other streets become junctions only in the build: keep off them as well (a hump laid across a
+    // lane crossing stood against the other lane's kerb — the 911's rear wheel left the road for 0.2 s there).
+    if (this.crossingStations(r).some((c) => Math.abs(c - s) < half + 22)) return false;
     let kMax = 0;
     for (let q = s - half - 2; q <= s + half + 2; q += 1) {
       const p = r.at(q);
@@ -843,6 +846,34 @@ export class MapBuilder {
       }
     }
     return true;
+  }
+
+  private readonly crossCache = new Map<Road, { n: number; s: number[] }>();
+  private readonly boxCache = new Map<Road, [number, number, number, number]>();
+
+  /** Stations where draped road `r` crosses other draped roads (as the build's crossings() will find them). */
+  private crossingStations(r: Road): number[] {
+    if (!r.style.drape) return [];
+    const cached = this.crossCache.get(r);
+    if (cached && cached.n === this.roads.length) return cached.s;
+    const box = (q: Road) => {
+      let b = this.boxCache.get(q);
+      if (!b) {
+        b = [Infinity, Infinity, -Infinity, -Infinity];
+        for (const p of q.st) b = [Math.min(b[0], p.x), Math.min(b[1], p.z), Math.max(b[2], p.x), Math.max(b[3], p.z)];
+        this.boxCache.set(q, b);
+      }
+      return b;
+    };
+    const a = box(r), out: number[] = [];
+    for (const q of this.roads) {
+      if (q === r || !q.style.drape) continue;
+      const b = box(q), m = r.w.outer + q.w.outer;
+      if (b[0] > a[2] + m || b[2] < a[0] - m || b[1] > a[3] + m || b[3] < a[1] - m) continue;
+      for (const hit of crossingsOf(r, q)) out.push(hit.sa);
+    }
+    this.crossCache.set(r, { n: this.roads.length, s: out });
+    return out;
   }
 
   addBox(b: BoxSpec): void {
