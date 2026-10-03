@@ -1,0 +1,5 @@
+// Generated from web/public/data/surfaces/surfaces.json by CMake (core/CMakeLists.txt) — do not edit.
+namespace sbc {
+extern const char* const kEmbeddedSurfacesJson;
+const char* const kEmbeddedSurfacesJson = R"apexsurfaces(@SBC_SURFACES_JSON@)apexsurfaces";
+}  // namespace sbc

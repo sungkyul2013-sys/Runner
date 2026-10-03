@@ -1,0 +1,32 @@
+{
+  "note": "Headless Chromium, SwiftShader CPU rendering (no GPU): frame times are not representative; physics timings are.",
+  "milestone": "M2",
+  "date": "2026-10-01T15:07:23.969Z",
+  "scene": "pile",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36",
+  "hardwareConcurrency": 4,
+  "backend": "WebGL2",
+  "gpu": "google swiftshader",
+  "physicsThreads": 2,
+  "bodies": 16,
+  "nodes": 2000,
+  "beams": 16576,
+  "frames": 12,
+  "fps": 0.8139088890041907,
+  "frameMs": {
+    "mean": 1228.638750000003,
+    "p50": 1229.6550000002608,
+    "p95": 1298.964999999851,
+    "p99": 1298.964999999851
+  },
+  "physicsStepMs": {
+    "mean": 3.11792526792448,
+    "budget": 0.5
+  },
+  "rtf": {
+    "mean": 0.183135629132095,
+    "min": 0.10308932172690662
+  },
+  "wasmMemoryMB": 64,
+  "jsHeapMB": 15.064453125
+}

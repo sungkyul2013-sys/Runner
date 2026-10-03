@@ -1,0 +1,1 @@
+{"bench":"pile","platform":"native","threads":1,"bodies":16,"nodes":2000,"beams":16576,"steps":6000,"meanStepMs":0.46438,"worstStepMs":3.18641,"rtf":1.077,"hash":"de5a90c4d9c00946"}

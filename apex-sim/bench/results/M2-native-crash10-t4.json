@@ -1,0 +1,1 @@
+{"bench":"crash10","platform":"native","threads":4,"cars":10,"bodies":10,"nodes":8750,"beams":63890,"steps":4000,"meanStepMs":2.47474,"worstStepMs":27.00759,"rtf":0.202,"maxBodyContacts":1960,"penetration":0,"plasticKJ":1524.6,"hash":"daeb117b3d42d57b"}

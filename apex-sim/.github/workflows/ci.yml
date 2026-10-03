@@ -1,0 +1,49 @@
+# APEX_SIM CI — physics core (native + WASM), web client, browser E2E.
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  core-native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: cmake --preset native-release -S core
+      - run: cmake --build build/native-release
+      - run: ./build/native-release/sbc_tests --durations yes
+      - run: ./build/native-release/sbc-cli bench --bodies 16 --seconds 2 --threads 2
+
+  core-wasm-and-web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - uses: actions/cache@v4
+        with:
+          path: .emsdk
+          key: emsdk-6.0.10
+      - name: WASM build (SIMD128 + pthreads)
+        run: |
+          source tools/setup-emsdk.sh
+          bash tools/build-wasm.sh
+      - name: WASM core tests (golden hashes must equal native)
+        run: node build/wasm-release/sbc_tests.cjs --durations yes
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx vitest run
+      - run: npx vite build
+      - name: Browser E2E (headless Chrome, WebGL2 backend on the GPU-less runner)
+        run: CHROMIUM_PATH=$(which google-chrome) node tools/e2e.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: m0-screenshots-and-bench
+          path: |
+            docs/screenshots/
+            bench/results/

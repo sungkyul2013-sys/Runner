@@ -1,0 +1,417 @@
+{
+  "$comment": "M0 sandbox spawn presets (§1.4 data-driven). Lattice fields follow LatticeParams (core/include/sbc/builder.h). 'place' positions the spawn: 'target' = relative to the camera target, 'world' = absolute.",
+  "scenes": [
+    {
+      "id": "sandbox",
+      "label": {
+        "ko": "샌드박스 (벽·경사로·기둥)",
+        "en": "Sandbox (wall, ramp, pillar)"
+      }
+    },
+    {
+      "id": "cube_drop",
+      "label": {
+        "ko": "큐브 낙하",
+        "en": "Cube drop"
+      }
+    },
+    {
+      "id": "tower",
+      "label": {
+        "ko": "쓰러지는 탑",
+        "en": "Toppling tower"
+      }
+    },
+    {
+      "id": "wall_crash",
+      "label": {
+        "ko": "64 km/h 벽 충돌",
+        "en": "64 km/h wall crash"
+      }
+    },
+    {
+      "id": "pile",
+      "label": {
+        "ko": "큐브 더미 ×16",
+        "en": "Cube pile ×16"
+      },
+      "bodies": 16
+    },
+    {
+      "id": "golden_m0",
+      "label": {
+        "ko": "결정론 골든 씬",
+        "en": "Determinism golden scene"
+      }
+    }
+  ],
+  "vehicles": [
+    {
+      "id": "porsche_911_turbo_991",
+      "label": {
+        "ko": "포르쉐 911 터보 (991)",
+        "en": "Porsche 911 Turbo (991)"
+      },
+      "source": {
+        "kind": "json",
+        "url": "vehicles/porsche_911_turbo_991/vehicle.json"
+      },
+      "model": "vehicles/porsche_911_turbo_991/porsche_911_turbo_991.glb",
+      "redlineRpm": 7200,
+      "crash": {
+        "front": 2.25,
+        "width": 1.88,
+        "rear": 2.26
+      },
+      "specs": {
+        "powerKw": 383,
+        "torqueNm": 660,
+        "massKg": 1595,
+        "drive": "AWD",
+        "zeroTo100": 3.4
+      },
+      "engineSound": {
+        "cylinders": 6,
+        "turbo": true,
+        "idleRpm": 850,
+        "redlineRpm": 7200
+      }
+    },
+    {
+      "id": "rolls_royce_ghost",
+      "label": {
+        "ko": "롤스로이스 고스트",
+        "en": "Rolls-Royce Ghost"
+      },
+      "source": {
+        "kind": "json",
+        "url": "vehicles/rolls_royce_ghost/vehicle.json"
+      },
+      "model": "vehicles/rolls_royce_ghost/rolls_royce_ghost.glb",
+      "redlineRpm": 5800,
+      "crash": {
+        "front": 2.58,
+        "width": 1.98,
+        "rear": 2.8
+      },
+      "specs": {
+        "powerKw": 420,
+        "torqueNm": 850,
+        "massKg": 2490,
+        "drive": "AWD",
+        "zeroTo100": 4.8
+      },
+      "engineSound": {
+        "cylinders": 12,
+        "turbo": true,
+        "idleRpm": 650,
+        "redlineRpm": 5800
+      }
+    },
+    {
+      "id": "maybach_gls",
+      "label": {
+        "ko": "메르세데스-마이바흐 GLS 600",
+        "en": "Mercedes-Maybach GLS 600"
+      },
+      "source": {
+        "kind": "json",
+        "url": "vehicles/maybach_gls/vehicle.json"
+      },
+      "model": "vehicles/maybach_gls/maybach_gls.glb",
+      "redlineRpm": 6500,
+      "crash": {
+        "front": 2.45,
+        "width": 2.03,
+        "rear": 2.73
+      },
+      "specs": {
+        "powerKw": 410,
+        "torqueNm": 730,
+        "massKg": 2785,
+        "drive": "AWD",
+        "zeroTo100": 4.9
+      },
+      "engineSound": {
+        "cylinders": 8,
+        "turbo": true,
+        "idleRpm": 650,
+        "redlineRpm": 6500
+      }
+    },
+    {
+      "id": "apex_proto",
+      "label": {
+        "ko": "APEX Proto (절차 생성 기준차)",
+        "en": "APEX Proto (procedural reference car)"
+      },
+      "source": {
+        "kind": "proto"
+      },
+      "model": null,
+      "redlineRpm": 7400,
+      "crash": {
+        "front": 2.0,
+        "width": 1.9,
+        "rear": 2.0
+      },
+      "engineSound": {
+        "cylinders": 4,
+        "turbo": false,
+        "idleRpm": 900,
+        "redlineRpm": 7400
+      }
+    }
+  ],
+  "presets": [
+    {
+      "id": "cube",
+      "key": "1",
+      "label": {
+        "ko": "강철 큐브 낙하 (100 kg)",
+        "en": "Steel cube drop (100 kg)"
+      },
+      "place": {
+        "mode": "target",
+        "offset": [
+          0,
+          4,
+          0
+        ]
+      },
+      "lattice": {
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "nodes": [
+          5,
+          5,
+          5
+        ],
+        "totalMass": 100,
+        "nodeRadius": 0.1,
+        "axialStiffness": 50000,
+        "dampingRatio": 0.25,
+        "yieldStrain": 0.015,
+        "hardening": 0.05,
+        "breakStrain": 0,
+        "deformLimit": 0.35,
+        "material": 0,
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "yawPitchRoll": [
+          0.4,
+          0.3,
+          0.2
+        ]
+      }
+    },
+    {
+      "id": "tower",
+      "key": "2",
+      "label": {
+        "ko": "탑 (1 × 4 m, 17° 기울임)",
+        "en": "Tower (1 × 4 m, 17° lean)"
+      },
+      "place": {
+        "mode": "target",
+        "offset": [
+          0,
+          2.17,
+          0
+        ]
+      },
+      "lattice": {
+        "size": [
+          1,
+          4,
+          1
+        ],
+        "nodes": [
+          4,
+          13,
+          4
+        ],
+        "totalMass": 250,
+        "nodeRadius": 0.1,
+        "axialStiffness": 50000,
+        "dampingRatio": 0.25,
+        "yieldStrain": 0.015,
+        "hardening": 0.05,
+        "breakStrain": 0,
+        "deformLimit": 0.35,
+        "material": 0,
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "yawPitchRoll": [
+          0,
+          0,
+          0.3
+        ]
+      }
+    },
+    {
+      "id": "crash",
+      "key": "3",
+      "label": {
+        "ko": "크래시 블록 1.5 t · 64 km/h → 벽",
+        "en": "Crash block 1.5 t · 64 km/h → wall"
+      },
+      "place": {
+        "mode": "world",
+        "offset": [
+          8,
+          0.76,
+          0
+        ]
+      },
+      "lattice": {
+        "size": [
+          4.2,
+          1.4,
+          1.8
+        ],
+        "nodes": [
+          9,
+          4,
+          5
+        ],
+        "totalMass": 1500,
+        "nodeRadius": 0.06,
+        "axialStiffness": 800000,
+        "dampingRatio": 0.25,
+        "yieldStrain": 0.006,
+        "hardening": 0.1,
+        "breakStrain": 0,
+        "deformLimit": 0.5,
+        "material": 0,
+        "velocity": [
+          17.78,
+          0,
+          0
+        ],
+        "yawPitchRoll": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": "thrown",
+      "key": "4",
+      "label": {
+        "ko": "측면 투척 큐브 (12 m/s)",
+        "en": "Side-thrown cube (12 m/s)"
+      },
+      "place": {
+        "mode": "target",
+        "offset": [
+          -7,
+          2.5,
+          0
+        ]
+      },
+      "lattice": {
+        "size": [
+          0.8,
+          0.8,
+          0.8
+        ],
+        "nodes": [
+          4,
+          4,
+          4
+        ],
+        "totalMass": 60,
+        "nodeRadius": 0.12,
+        "axialStiffness": 40000,
+        "dampingRatio": 0.25,
+        "yieldStrain": 0.012,
+        "hardening": 0.05,
+        "breakStrain": 0.08,
+        "deformLimit": 0.3,
+        "material": 0,
+        "velocity": [
+          12,
+          2,
+          0
+        ],
+        "yawPitchRoll": [
+          0.2,
+          0.5,
+          0.1
+        ]
+      }
+    },
+    {
+      "id": "brittle",
+      "key": "5",
+      "label": {
+        "ko": "취성 판 (파단)",
+        "en": "Brittle slab (fracture)"
+      },
+      "place": {
+        "mode": "target",
+        "offset": [
+          0,
+          6,
+          0
+        ]
+      },
+      "lattice": {
+        "size": [
+          3,
+          0.3,
+          1.2
+        ],
+        "nodes": [
+          11,
+          2,
+          5
+        ],
+        "totalMass": 80,
+        "nodeRadius": 0.1,
+        "axialStiffness": 30000,
+        "dampingRatio": 0.2,
+        "yieldStrain": 0,
+        "hardening": 0,
+        "breakStrain": 0.02,
+        "deformLimit": 0,
+        "material": 0,
+        "velocity": [
+          0,
+          -6,
+          0
+        ],
+        "yawPitchRoll": [
+          0.3,
+          0.05,
+          0.25
+        ]
+      }
+    }
+  ],
+  "showroom": [
+    {
+      "id": "porsche_911_turbo_991",
+      "drive": "porsche_911_turbo_991"
+    },
+    {
+      "id": "rolls_royce_ghost",
+      "drive": "rolls_royce_ghost"
+    },
+    {
+      "id": "maybach_gls",
+      "drive": "maybach_gls"
+    }
+  ]
+}
