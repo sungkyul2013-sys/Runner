@@ -288,6 +288,24 @@ function floatNormals(root: THREE.Object3D): void {
   });
 }
 
+/** Anisotropic filtering on every texture of the model (8 taps; the backend clamps to what the GPU has): badges,
+ *  grilles, tyre sidewalls and lamp lenses are seen at a slant and blurred to their smallest mip without it. */
+function sharpTextures(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      for (const v of Object.values(m)) {
+        const tex = v as THREE.Texture | null;
+        if (tex && tex.isTexture && tex.anisotropy < 8) {
+          tex.anisotropy = 8;
+          tex.needsUpdate = true;
+        }
+      }
+    }
+  });
+}
+
 // Builds for hosts that serve no .glb (Claude Artifacts): every model ships as `<name>.glb.txt`, base64.
 const GLB_AS_BASE64 = import.meta.env.VITE_APEX_GLB_BASE64 === '1';
 
@@ -306,6 +324,7 @@ export async function loadVehicleModel(source: string | ArrayBuffer): Promise<Ve
   if (typeof source === 'string' && GLB_AS_BASE64) source = await fetchBase64(`${source}.txt`);
   const gltf = typeof source === 'string' ? await loader.loadAsync(source) : await loader.parseAsync(source, '');
   floatNormals(gltf.scene);
+  sharpTextures(gltf.scene);
   const meta = gltf.scene.userData.apex as VehicleMeta;
   const root = new THREE.Group();
   root.name = meta.id;

@@ -28,10 +28,12 @@ export class Viewer {
   /** `forceWebGL`: use three's WebGL2 backend (A§5 fallback; also the only backend headless SwiftShader can
    *  present with — see KNOWN_ISSUES). */
   /** `largeWorld`: open-world maps (0.1 m … 32 km views) need a high-precision depth buffer. */
-  constructor(private readonly canvas: HTMLCanvasElement, forceWebGL = false, largeWorld = false) {
+  /** `antialias`: multisampling (off for the phone profile on a dense screen: its pixels are small enough, and four
+   *  samples of each would cost what the extra resolution is meant to buy). */
+  constructor(private readonly canvas: HTMLCanvasElement, forceWebGL = false, largeWorld = false, antialias = true) {
     // Reversed depth: the open-world maps span 0.1 m … 20 km (falls back to the default buffer where unsupported).
     // (WebGL2 fallback: a logarithmic buffer instead; reversed depth there depends on EXT_clip_control.)
-    this.renderer = new THREE.WebGPURenderer({ canvas, antialias: true, forceWebGL, reversedDepthBuffer: largeWorld && !forceWebGL, logarithmicDepthBuffer: largeWorld && forceWebGL });
+    this.renderer = new THREE.WebGPURenderer({ canvas, antialias, forceWebGL, reversedDepthBuffer: largeWorld && !forceWebGL, logarithmicDepthBuffer: largeWorld && forceWebGL });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.AgXToneMapping;
     this.renderer.toneMappingExposure = 1.1;
@@ -80,16 +82,20 @@ export class Viewer {
     this.renderer.onDeviceLost = (info: { message?: string }) => onDeviceLost(info?.message ?? 'device lost');
   }
 
-  /** Rendering quality (settings → 그래픽): pixel ratio cap and shadows. Low (phones): ratio 1.25, no shadow map;
-   *  medium: 1.75, 2048² shadows; high: 2, soft 4096² shadows (the car's own shadows sharp). The adaptive resolution
-   *  lowers the ratio while frames run long. The physics does not change with it. */
-  setQuality(q: 'low' | 'medium' | 'high'): void {
-    const ratio = q === 'low' ? 1.25 : q === 'medium' ? 1.75 : 2;
+  /** Rendering quality (settings → 그래픽): pixel ratio cap and shadows. Low: ratio 1.25, no shadow map; medium: 1.75,
+   *  2048² shadows; high: 2, soft 4096² shadows (the car's own shadows sharp) and bloom. Phone (모바일 선명, phones on
+   *  auto): the screen's own ratio (up to 3) — the adaptive resolution then keeps at least 75 % of it — paid for with
+   *  a 1024² shadow map over the car's surroundings only (≤ 28 m) and no bloom. The physics does not change with it. */
+  setQuality(q: 'low' | 'medium' | 'high' | 'mobile'): void {
+    this.quality = q;
+    const ratio = q === 'mobile' ? 3 : q === 'low' ? 1.25 : q === 'medium' ? 1.75 : 2;
+    this.minScale = q === 'mobile' ? 0.75 : 0.6;
+    this.dynScale = Math.max(this.dynScale, this.minScale);
     this.setBloom(q === 'high');
     this.ratioCap = ratio;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, ratio) * this.dynScale);
     const shadows = q !== 'low';
-    const size = q === 'high' ? 4096 : 2048;
+    const size = q === 'high' ? 4096 : q === 'mobile' ? 1024 : 2048;
     if (this.renderer.shadowMap.enabled !== shadows || this.sun.shadow.mapSize.x !== size) {
       this.renderer.shadowMap.enabled = shadows;
       this.renderer.shadowMap.type = q === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
@@ -107,6 +113,8 @@ export class Viewer {
   }
 
   private ratioCap = 2;
+  private quality: 'low' | 'medium' | 'high' | 'mobile' = 'high';
+  private minScale = 0.6; // the adaptive resolution's floor
   /** Adaptive resolution: a factor on the pixel ratio, lowered while frames run long and raised again once they are
    *  short (only on sustained trends, so it does not pump). `?autores=0` turns it off. */
   private dynScale = 1;
@@ -120,7 +128,7 @@ export class Viewer {
     this.slowFor = frameMs > 22 ? this.slowFor + dt : 0;
     this.fastFor = frameMs < 14 ? this.fastFor + dt : 0;
     let next = this.dynScale;
-    if (this.slowFor > 1.2) next = Math.max(0.6, this.dynScale - 0.1);
+    if (this.slowFor > 1.2) next = Math.max(this.minScale, this.dynScale - 0.1);
     else if (this.fastFor > 4 && this.dynScale < 1) next = Math.min(1, this.dynScale + 0.05);
     if (next === this.dynScale) return;
     this.dynScale = next;
@@ -163,10 +171,12 @@ export class Viewer {
     this.sun.target.position.set(t.x, t.y, t.z);
     this.sun.position.set(t.x, t.y, t.z).addScaledVector(this.sunDirection, 80);
     const sc = this.sun.shadow.camera;
-    if (sc.right !== this.shadowHalf) {
-      sc.left = sc.bottom = -this.shadowHalf;
-      sc.right = sc.top = this.shadowHalf;
-      sc.far = 80 + this.shadowHalf * 2;
+    // The phone profile's small map covers the car's surroundings only (an overview's wide frustum stays as asked).
+    const half = this.quality === 'mobile' && this.shadowHalf <= 80 ? Math.min(this.shadowHalf, 28) : this.shadowHalf;
+    if (sc.right !== half) {
+      sc.left = sc.bottom = -half;
+      sc.right = sc.top = half;
+      sc.far = 80 + half * 2;
       sc.updateProjectionMatrix();
     }
   }

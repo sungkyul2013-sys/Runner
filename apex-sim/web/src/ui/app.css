@@ -433,9 +433,11 @@ body.touch-on .sheet:not(.open) { display: none; }
 .susp-cell b { font-size: 0.8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .susp-hud small { font-size: 0.66rem; color: var(--text-3); }
 @media (max-width: 520px) { .susp-hud { width: 150px; top: calc(76px + var(--safe-t)); transform: none; } }
-/* phone: one compact row under the top bar (FL FR RL RR), clear of the round buttons and the steering in either
-   orientation — centred down the left edge it covered camera and reset in landscape */
-html[data-ui='mobile'] .susp-hud { top: calc(60px + var(--safe-t)); transform: none; width: auto; gap: 4px; padding: 6px 10px 8px; }
+/* phone: one compact row (FL FR RL RR) at the right, under the top bar: clear of the round buttons and the steering
+   in either orientation (centred down the left edge it covered camera and reset in landscape), of the free-roam
+   minimap (top left) and, in portrait, of the route guidance (centred under the top bar) */
+html[data-ui='mobile'] .susp-hud { left: auto; right: calc(12px + var(--safe-r)); top: calc(60px + var(--safe-t)); transform: none; width: auto; gap: 4px; padding: 6px 10px 8px; }
+@media (orientation: portrait) { html[data-ui='mobile'] .susp-hud { top: calc(128px + var(--safe-t)); } }
 html[data-ui='mobile'] .susp-title { font-size: 0.62rem; }
 html[data-ui='mobile'] .susp-grid { grid-template-columns: repeat(4, auto); gap: 4px 10px; }
 html[data-ui='mobile'] .susp-cell { column-gap: 5px; }

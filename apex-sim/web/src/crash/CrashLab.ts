@@ -16,7 +16,7 @@ import { EventLog, type CollisionRow } from './events';
 import { crashLaunch, type CrashSpec } from './scenario';
 import { sound } from '../audio/Sound';
 import { DumpTrucks, cameraPreset, type CameraPreset } from './CrashExtras';
-import { spawnPoseOf } from '../drive/VehicleView';
+import { spawnPoseOf, type XrayMode } from '../drive/VehicleView';
 
 export const CRASH_SCENE = 'crash';
 
@@ -230,14 +230,28 @@ export class CrashLab {
     await this.launching;
   }
 
-  private xray = false;
+  private xray: XrayMode = 'off';
 
-  setXray(on: boolean): void {
-    this.xray = on;
+  /** X-ray (투시), as the drive's: 'suspension' — glass bodies over their moving suspension; 'lattice' — every node and
+   *  beam (`true`); 'off' (`false`). */
+  setXray(mode: XrayMode | boolean): void {
+    const m: XrayMode = mode === true ? 'lattice' : mode === false ? 'off' : mode;
+    this.xray = m;
     const hasModels = this.actors.length > 0 && this.actors.every((a) => a.hasModel);
-    this.debug.showBeams = on || !hasModels;
-    this.debug.showNodes = on || !hasModels;
-    for (const a of this.actors) a.setXray(on);
+    this.debug.showBeams = m === 'lattice' || !hasModels;
+    this.debug.showNodes = m === 'lattice' || !hasModels;
+    for (const a of this.actors) a.setXray(m);
+  }
+
+  get xrayMode(): XrayMode {
+    return this.xray;
+  }
+
+  /** One step on: off → suspension → lattice → off. */
+  cycleXray(): XrayMode {
+    const order: XrayMode[] = ['off', 'suspension', 'lattice'];
+    this.setXray(order[(order.indexOf(this.xray) + 1) % order.length]);
+    return this.xray;
   }
 
   private followCars(dt: number): void {

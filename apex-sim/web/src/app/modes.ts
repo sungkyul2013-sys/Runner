@@ -8,6 +8,7 @@ import { CrashPanel } from '../crash/CrashPanel';
 import { CRASH_PRESETS, type CrashKind, type CrashSpec } from '../crash/scenario';
 import { CrashBackdrop, type Backdrop, type CameraPreset } from '../crash/CrashExtras';
 import { DriveSession } from '../drive/DriveSession';
+import type { XrayMode } from '../drive/VehicleView';
 import type { PhysicsClient, RenderFrame } from '../physics/PhysicsClient';
 import type { VehiclePose } from '../physics/messages';
 import type { DebugBodies } from '../render/DebugBodies';
@@ -94,6 +95,27 @@ function carPicker(session: DriveSession, onSwap: (v: VehiclePreset) => void): H
   return list;
 }
 
+/**
+ * The x-ray action every car mode shares (V on a keyboard): off → suspension (glass body over its moving suspension)
+ * → lattice (every node and beam) → off. The dock button is lit while one is on; the phone's quick-menu tile names the
+ * state and closes the menu — the view behind it is what changed. Returns `show(mode)`, for a mode changed elsewhere
+ * (the V key, a touch button).
+ */
+function xrayAction(shell: ModeShell, cycle: () => void): (mode: XrayMode) => void {
+  const btn = shell.addAction('xray', t('actXray'), () => {}, false, t('actXrayTip'), 'V');
+  btn.onclick = () => {
+    cycle();
+    shell.closeQuick();
+  };
+  return (mode) => {
+    const name = t(mode === 'suspension' ? 'xraySuspension' : mode === 'lattice' ? 'xrayLattice' : 'stateOff');
+    btn.ariaPressed = String(mode !== 'off');
+    const state = btn.querySelector('.m-tile-state');
+    if (state) state.textContent = name;
+    notify(`${t('actXray')} · ${name}`, '', { icon: 'xray', key: 'act-xray' });
+  };
+}
+
 /** Touch controls for the driving modes (§15.4): with the phone UI by default, or as set. */
 function touchControls(session: DriveSession, shell: ModeShell): TouchControls | null {
   const pref = settings.get().touchControls;
@@ -111,6 +133,13 @@ function touchControls(session: DriveSession, shell: ModeShell): TouchControls |
     else if (a === 'xray') session.cycleXray();
     else session.input.trigger(a);
   };
+  // The x-ray button is lit while a view is on, however it was switched (button, quick-menu tile, V).
+  const shown = session.onXray;
+  session.onXray = (mode) => {
+    shown?.(mode);
+    tc.setLit('xray', mode !== 'off');
+  };
+  tc.setLit('xray', session.xrayMode !== 'off');
   tc.onLayoutChange = (l) => settings.set({ touchLayout: l });
   settings.onChange((s) => tc.setLayout(normalizeLayout({ ...DEFAULT_TOUCH_LAYOUT, ...((s.touchLayout as object | null) ?? {}) })));
   // Layout editor: the controls become draggable; a floating "done" button ends it.
@@ -154,20 +183,7 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
   // X-ray: off → suspension → lattice → off (the button lit while one is on; V does the same).
   // On a phone it is also a round button beside camera and reset (one tap while driving), and the quick menu's tile
   // closes the menu: the view behind it is what changed.
-  let touch: TouchControls | null = null;
-  const xrayBtn = shell.addAction('xray', t('actXray'), () => {}, false, t('actXrayTip'), 'V');
-  xrayBtn.onclick = () => {
-    session.cycleXray();
-    shell.closeQuick();
-  };
-  session.onXray = (mode) => {
-    const name = t(mode === 'suspension' ? 'xraySuspension' : mode === 'lattice' ? 'xrayLattice' : 'stateOff');
-    xrayBtn.ariaPressed = String(mode !== 'off');
-    touch?.setLit('xray', mode !== 'off');
-    const state = xrayBtn.querySelector('.m-tile-state'); // the phone's quick-menu tile names its state
-    if (state) state.textContent = name;
-    notify(`${t('actXray')} · ${name}`, '', { icon: 'xray', key: 'act-xray' });
-  };
+  session.onXray = xrayAction(shell, () => session.cycleXray()); // the touch button joins in (touchControls)
   shell.addAction('gauge', t('actHud'), () => {
     const i = HUD_CYCLE.indexOf(settings.get().hud);
     const next = HUD_CYCLE[(i + 1) % HUD_CYCLE.length];
@@ -245,7 +261,7 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
   };
   shell.sheet.section(t('carSwap'), carPicker(session, (v) => void swap(v)));
   shell.sheet.section(t('sheetKeys'), el('p', 'muted', t('keysHelp')));
-  touch = touchControls(session, shell);
+  touchControls(session, shell);
   return shell;
 }
 
@@ -310,7 +326,8 @@ export function startCrashLab(ctx: AppContext, vehicle: VehiclePreset): ModeRunt
     tabs.select(0);
     shell.sheet.setOpen(true);
   }) : panel.fab, panel.result);
-  shell.addAction('xray', t('actXray'), (b) => crash.setXray(b.ariaPressed === 'true'), false, t('actXrayTip'));
+  // X-ray: the same three steps as the drive (the suspension of both cars through their bodies, then the lattice).
+  const showXray = xrayAction(shell, () => showXray(crash.cycleXray()));
   const follow = shell.addAction('eye', t('crashFollow'), (b) => (crash.follow = b.ariaPressed === 'true'), true, t('crashFollowTip'));
   shell.addAction('lock', t('camLock'), (b) => {
     const on = b.ariaPressed === 'true';
@@ -409,11 +426,17 @@ export function startSandbox(ctx: AppContext, vehicle: VehiclePreset): ModeRunti
     if (session) void session.restart(); // the old car went with the old world
   };
   // ---- dock: nodes/beams, engineer stats (time: the shell's capsule)
-  shell.addAction('xray', t('actXray'), (b) => {
-    const on = b.ariaPressed === 'true';
-    debug.xray = on;
-    session?.setXray(on);
-  }, false, t('actXrayTip'));
+  // X-ray: every body's lattice; with a car in the scene, its suspension view first (the drive's three steps, V too).
+  let xray: XrayMode = 'off';
+  const showXray = xrayAction(shell, () => {
+    if (session) return session.cycleXray(); // → applyXray
+    applyXray(xray === 'off' ? 'lattice' : 'off');
+  });
+  const applyXray = (m: XrayMode) => {
+    xray = m;
+    debug.xray = m === 'lattice';
+    showXray(m);
+  };
   shell.addAction('info', t('actStats'), (b) => ctx.setStatsVisible(b.ariaPressed === 'true'), false, t('actStatsTip'));
 
   // ---- sheet: scene, spawn, car, time, tools
@@ -443,6 +466,8 @@ export function startSandbox(ctx: AppContext, vehicle: VehiclePreset): ModeRunti
       };
       settings.onChange(apply);
       apply();
+      session.setXray(xray);
+      session.onXray = applyXray;
       touchControls(session, shell);
       await session.start();
       driveBtn.textContent = t('sandboxExit');

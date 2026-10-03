@@ -13,7 +13,7 @@ import type { MapData, MeshAccum, Sign } from './builder';
 import { MAT } from './types';
 import type { Terrain } from './terrain';
 
-type Quality = 'low' | 'medium' | 'high';
+type Quality = 'low' | 'medium' | 'high' | 'mobile';
 
 const CHUNK = 128; // cells per terrain chunk
 const LOD_STEPS = [1, 2, 4, 8, 16];
@@ -429,9 +429,10 @@ export class MapView {
   }
 
   setQuality(q: Quality): void {
-    this.lodScale = q === 'low' ? 0.55 : q === 'medium' ? 0.8 : 1.15;
-    this.drawDistance = q === 'low' ? 1600 : q === 'medium' ? 2400 : 3400;
-    this.propDistance = q === 'low' ? 600 : q === 'medium' ? 900 : 1400;
+    // The phone profile spends the GPU on pixels: terrain detail and distances a little under medium.
+    this.lodScale = q === 'low' ? 0.55 : q === 'mobile' ? 0.7 : q === 'medium' ? 0.8 : 1.15;
+    this.drawDistance = q === 'low' ? 1600 : q === 'mobile' ? 2000 : q === 'medium' ? 2400 : 3400;
+    this.propDistance = q === 'low' ? 600 : q === 'mobile' ? 750 : q === 'medium' ? 900 : 1400;
   }
 
   // ---- terrain ----

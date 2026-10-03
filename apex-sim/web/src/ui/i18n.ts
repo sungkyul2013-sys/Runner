@@ -155,9 +155,11 @@ const STRINGS = {
   qLow: { ko: '낮음', en: 'Low' },
   qMedium: { ko: '중간', en: 'Medium' },
   qHigh: { ko: '높음', en: 'High' },
+  qMobile: { ko: '모바일 선명', en: 'Phone sharp' },
+  qualityNow: { ko: '지금 적용', en: 'In use' },
   qualityNote: {
-    ko: '낮음: 해상도 배율 1, 그림자 끔(휴대폰) · 중간: 1.5, 그림자 1024 · 높음: 2, 부드러운 그림자 2048. 물리는 품질과 무관하게 같다.',
-    en: 'Low: pixel ratio 1, no shadows (phones) · Medium: 1.5, 1024 shadows · High: 2, soft 2048 shadows. The physics is the same at every level.',
+    ko: '모바일 선명(휴대폰의 자동): 화면 원래 해상도(최대 3배)로 그리고, 대신 그림자는 차 주변만 간단히, 빛 번짐 끔, 먼 지형은 덜 세밀하게. 느려지면 해상도를 원래의 75 %까지만 잠시 낮춘다. · 낮음: 배율 1.25, 그림자 끔 · 중간: 1.75, 그림자 2048 · 높음: 2, 부드러운 그림자 4096 + 빛 번짐. 물리는 품질과 무관하게 같다.',
+    en: 'Phone sharp (auto on phones): the screen\'s own resolution (up to 3×), paid for with simple shadows near the car only, no bloom and less distant terrain detail; when frames run long it drops to no less than 75 % of it. · Low: ratio 1.25, no shadows · Medium: 1.75, 2048 shadows · High: 2, soft 4096 shadows + bloom. The physics is the same at every level.',
   },
   setLang: { ko: '언어', en: 'Language' },
   langKo: { ko: '한국어', en: '한국어' },

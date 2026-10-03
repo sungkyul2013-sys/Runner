@@ -2,12 +2,14 @@
 // preset), accessibility and language (§18.6). Every change applies at once (§18.5 즉각적인 피드백); each tab has a
 // restore-defaults button.
 import { setLang, t, type StringKey } from './i18n';
-import { defaultSettings, settings, type Settings } from './settings';
+import { defaultSettings, effectiveQuality, settings, type Quality, type Settings } from './settings';
 import { icon } from './icons';
 import { notify } from './feedback';
 import { DEFAULT_TOUCH_LAYOUT } from './TouchControls';
 import type { IconName } from './icons';
 import { platform } from './platform';
+
+const qualityLabel = (q: Quality): StringKey => (q === 'mobile' ? 'qMobile' : q === 'low' ? 'qLow' : q === 'medium' ? 'qMedium' : 'qHigh');
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -84,7 +86,7 @@ export class SettingsView {
       case 'controls':
         return [t(p.steer === 'slider' ? 'steerSlider' : p.steer === 'buttons' ? 'steerButtons' : p.steer === 'wheel' ? 'steerWheel' : 'steerTilt'), `${t('setTouchSize')} ${pct(p.size)}`].join(' · ');
       case 'graphics':
-        return t(s.quality === 'auto' ? 'qAuto' : s.quality === 'low' ? 'qLow' : s.quality === 'medium' ? 'qMedium' : 'qHigh');
+        return t(s.quality === 'auto' ? 'qAuto' : s.quality === 'low' ? 'qLow' : s.quality === 'medium' ? 'qMedium' : s.quality === 'mobile' ? 'qMobile' : 'qHigh');
       case 'audio':
         return s.muted ? t('setMute') : `${t('setVolume')} ${pct(s.volume)}`;
       default:
@@ -158,8 +160,8 @@ export class SettingsView {
       rows.push(slider('setVolUi', s.volUi, 0, 1, 0.05, pct, (v) => settings.set({ volUi: v })));
       rows.push(el('p', 'settings-note', t('audioNote')));
     } else if (this.tab === 'graphics') {
-      rows.push(choice('setQuality', s.quality, [['auto', 'qAuto'], ['low', 'qLow'], ['medium', 'qMedium'], ['high', 'qHigh']], (v) => settings.set({ quality: v })));
-      rows.push(el('p', 'settings-note', t('qualityNote')));
+      rows.push(choice('setQuality', s.quality, [['auto', 'qAuto'], ['mobile', 'qMobile'], ['low', 'qLow'], ['medium', 'qMedium'], ['high', 'qHigh']], (v) => settings.set({ quality: v })));
+      rows.push(el('p', 'settings-note', el('b', 'ui-now', `${t('qualityNow')}: ${t(qualityLabel(effectiveQuality(s)))}`), el('br'), t('qualityNote')));
     } else {
       rows.push(choice('setUiLayout', s.uiLayout, [['auto', 'uiAuto'], ['mobile', 'uiMobile'], ['desktop', 'uiDesktop']], (v) => settings.set({ uiLayout: v })));
       rows.push(el('p', 'settings-note', el('b', 'ui-now', `${t('uiNow')}: ${t(platform() === 'mobile' ? 'uiMobile' : 'uiDesktop')}`), el('br'), t('uiLayoutNote')));

@@ -3,7 +3,8 @@
 import type { Lang } from './i18n';
 
 export type HudPreset = 'none' | 'minimal' | 'racing' | 'engineer';
-export type Quality = 'low' | 'medium' | 'high';
+/** 'mobile' (모바일 선명, phones on auto): the screen's own resolution, paid for with cheap shadows and effects. */
+export type Quality = 'low' | 'medium' | 'high' | 'mobile';
 export type SpeedUnit = 'kmh' | 'mph';
 export type Accent = 'orange' | 'blue' | 'mint';
 /** Which UI to wear: by the device, the phone UI or the PC UI (ui/platform). */
@@ -143,11 +144,12 @@ class Store {
 
 export const settings = new Store();
 
-/** Rendering quality the device gets when set to auto: phones and small tablets low, others high. */
+/** Rendering quality the device gets when set to auto: phones and tablets the phone profile (sharp: their own
+ *  resolution, cheap shadows and effects), others high or medium by core count. */
 export function autoQuality(): Quality {
   const coarse = globalThis.matchMedia?.('(pointer: coarse)').matches ?? false;
   const cores = globalThis.navigator?.hardwareConcurrency ?? 4;
-  if (coarse) return cores >= 8 ? 'medium' : 'low';
+  if (coarse) return 'mobile';
   return cores >= 6 ? 'high' : 'medium';
 }
 

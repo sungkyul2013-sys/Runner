@@ -213,6 +213,33 @@ function floatAttribute(a: THREE.BufferAttribute | THREE.InterleavedBufferAttrib
   return new THREE.BufferAttribute(out, a.itemSize);
 }
 
+/** WebGPU's default device limit: vertex buffers per pipeline (three binds each plain attribute as its own buffer). */
+export const MAX_VERTEX_BUFFERS = 8;
+
+/**
+ * Packs the named float attributes of `g` into one interleaved buffer (one vertex buffer instead of one each). The
+ * flexbody's binding (nodes, weights, four gradients, panel, rim) plus a model's own position / normal / uv took up to
+ * 11 buffers; WebGPU allows 8 unless the device asks for more, and a pipeline over the limit fails to build — the car
+ * body was not drawn, and its invalid pipeline voided the whole frame's command buffer (seen under WebGPU in a headed
+ * Chromium; a phone on WebGPU showed nothing of the x-ray).
+ */
+export function interleaveAttributes(g: THREE.BufferGeometry, names: string[]): void {
+  const parts = names.map((name) => ({ name, a: g.getAttribute(name) })).filter((p) => !!p.a);
+  if (parts.length < 2) return;
+  const n = parts[0].a.count;
+  const stride = parts.reduce((s, p) => s + p.a.itemSize, 0);
+  const data = new Float32Array(n * stride);
+  let offset = 0;
+  const placed: Array<{ name: string; size: number; offset: number }> = [];
+  for (const { name, a } of parts) {
+    for (let i = 0; i < n; i++) for (let c = 0; c < a.itemSize; c++) data[i * stride + offset + c] = a.getComponent(i, c);
+    placed.push({ name, size: a.itemSize, offset });
+    offset += a.itemSize;
+  }
+  const buffer = new THREE.InterleavedBuffer(data, stride);
+  for (const { name, size, offset: o } of placed) g.setAttribute(name, new THREE.InterleavedBufferAttribute(buffer, size, o));
+}
+
 export class Flexbody {
   /** Deformed meshes, in render space: add `group` to the scene. */
   readonly group = new THREE.Group();
@@ -369,6 +396,7 @@ export class Flexbody {
     g.setAttribute('fbNodes', new THREE.BufferAttribute(ids, K));
     g.setAttribute('fbWeights', new THREE.BufferAttribute(weights, K));
     gradients.forEach((a, s) => g.setAttribute(`fbGrad${s}`, new THREE.BufferAttribute(a, 3)));
+    interleaveAttributes(g, ['fbNodes', 'fbWeights', 'fbGrad0', 'fbGrad1', 'fbGrad2', 'fbGrad3', 'fbPanel', 'fbRim']);
     // Deformed positions leave the rest bounds: never cull the car away.
     mesh.frustumCulled = false;
 
