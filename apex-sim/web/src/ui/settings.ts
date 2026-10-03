@@ -27,6 +27,7 @@ export interface Settings {
   worldHour: number;        // free roam: time of day [h]
   worldWeather: string;     // free roam: weather
   worldTimeScale: number;   // game seconds per real second
+  worldVersion: number;     // free-roam defaults' version (2: the golden hour)
   lastMap: string;          // free roam: map id
   car: string;              // the chosen car (showroom id): the menu shows it, every mode drives it
   volume: number;           // §17 mixer: master 0 … 1
@@ -63,9 +64,10 @@ export function defaultSettings(): Settings {
     touchLayout: null,
     lastMode: null,
     minimapRotate: true,
-    worldHour: 13,
+    worldHour: 18.6, // the golden hour (day 200, 37.5° N: the sun 6° up; sunset ≈ 19:10)
     worldWeather: 'clear',
-    worldTimeScale: 30,
+    worldTimeScale: 1, // real time: the evening light lasts
+    worldVersion: 2,
     lastMap: 'hanbit',
     car: 'porsche_911_turbo_991',
     volume: 0.8,
@@ -96,6 +98,15 @@ export function parseSettings(raw: string | null): Settings {
     out.uiScale = Math.min(1.5, Math.max(0.75, out.uiScale));
     if (!['auto', 'mobile', 'desktop'].includes(out.uiLayout)) out.uiLayout = 'auto';
     if (!['beginner', 'standard', 'sim'].includes(out.assists)) out.assists = 'standard';
+    // Free roam's old defaults (13:00, 30× — an afternoon that turned to night in minutes) give way to the golden
+    // hour in real time, once; a time the player chose is kept.
+    if (!(typeof v.worldVersion === 'number' && v.worldVersion >= 2)) {
+      if (out.worldHour === 13 && out.worldTimeScale === 30) {
+        out.worldHour = base.worldHour;
+        out.worldTimeScale = base.worldTimeScale;
+      }
+      out.worldVersion = 2;
+    }
     // Settings from before the redesign: its identity (accent) and the slider steering the player asked for.
     if (!(typeof v.uiVersion === 'number' && v.uiVersion >= UI_VERSION)) {
       if (out.accent === 'orange') out.accent = 'blue';

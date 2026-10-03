@@ -360,6 +360,8 @@ export interface MapRender {
   signs: Sign[];
   water: WaterBody[];
   cables: Float32Array; // line segments x0 y0 z0 x1 y1 z1 (bridge stays)
+  wires: Float32Array; // overhead power and telecom lines between utility poles: segments x0 y0 z0 x1 y1 z1
+  fences: Float32Array; // pedestrian guard fences: x, y, z, yaw, colour, kind (0 a 2 m panel with its post at local −x, 1 a post)
   ropes: Float32Array; // thick cable segments x0 y0 z0 x1 y1 z1 radius (suspension main cables)
   cylinders: CylinderSpec[];
   fountains: FountainSpec[];
@@ -434,6 +436,8 @@ export class MapBuilder {
   private readonly posts: number[] = [];
   private readonly signals: Signal[] = [];
   private readonly cables: number[] = [];
+  private readonly wires: number[] = [];
+  private readonly fences: number[] = [];
   private readonly ropes: number[] = [];
   private readonly tunnelLights: number[] = [];
   private readonly rand: () => number;
@@ -1018,6 +1022,8 @@ export class MapBuilder {
         signs: this.signs,
         water: this.water,
         cables: new Float32Array(this.cables),
+        wires: new Float32Array(this.wires),
+        fences: new Float32Array(this.fences),
         ropes: new Float32Array(this.ropes),
         cylinders: this.cylinders,
         fountains: this.fountains,
@@ -1455,6 +1461,8 @@ export class MapBuilder {
     this.emitBridgeExtras(r);
     this.emitTunnelPortals(r);
     this.emitRoadProps(r, lampSpacing, lampOff);
+    this.emitUtilityPoles(r);
+    this.emitCornerFences(r);
   }
 
   private emitBridgeSegment(r: Road, a: Station, _b: Station, A: Float64Array, B: Float64Array): void {
@@ -1704,6 +1712,83 @@ export class MapBuilder {
           const u = side * ((side < 0 ? r.w.pe : r.w.peLeft) + 0.5);
           const x = p.x + u * p.tz, z = p.z - u * p.tx;
           this.posts.push(x, p.y + crossfall(r.style, p.e, side < 0 ? -r.w.pe : r.w.peLeft), z, Math.atan2(p.tx, p.tz));
+        }
+      }
+    }
+  }
+
+  /**
+   * Utility poles (전봇대) along streets, lanes and country roads — on one side, every 32 m in town (45 m out of it): a
+   * 10.5 m concrete pole, two crossarms, a transformer on every fourth; three power lines and a telecom cable strung
+   * from pole to pole, sagging. Visual only, as the lamp posts (KNOWN_ISSUES M6).
+   */
+  private emitUtilityPoles(r: Road): void {
+    const town = r.style.drape === true;
+    if (!(town && (r.spec.style === 'street' || r.spec.style === 'alley')) && r.spec.style !== 'farm' && r.spec.style !== 'rural') return;
+    if (r.spec.closed || r.length < 60) return;
+    const spacing = town ? 32 : 45;
+    const side = hash2(Math.round(r.st[0].x), Math.round(r.st[0].z), 31) < 0.5 ? -1 : 1;
+    let prev: { x: number; y: number; z: number; ux: number; uz: number } | null = null;
+    let k = 0;
+    for (let s = 8; s < r.length - 8; s += spacing) {
+      const p = r.at(s);
+      if (p.flags & (STATION.bridge | STATION.tunnel) || r.inGap(s, side) || r.inGap(s, 0) || this.nearJunction(r, s, 10)) {
+        prev = null;
+        continue;
+      }
+      const u = side * ((side < 0 ? r.w.pe : r.w.peLeft) + (town ? (r.style.sidewalk ?? 0) - 0.45 : r.style.shoulder + 1.2));
+      const x = p.x + u * p.tz, z = p.z - u * p.tx;
+      const y = town ? this.drapeFn(x, z) + 0.15 : Math.max(p.y - 0.3, this.terrain.heightAt(x, z) - 0.2);
+      const ux = p.tz, uz = -p.tx; // across the road
+      this.cylinders.push({ x, z, y0: y - 0.5, y1: y + 10.5, r0: 0.19, r1: 0.13, material: -1, look: 'concrete', sides: 8 });
+      for (const [h, half] of [[9.7, 0.95], [8.9, 0.7]] as const) {
+        this.boxes.push({ cx: x, cy: y + h, cz: z, hx: half, hy: 0.06, hz: 0.06, yaw: Math.atan2(ux, uz) - Math.PI / 2, material: -1, look: 'none', color: 0x5a5d61 });
+      }
+      if (k++ % 4 === 2) this.cylinders.push({ x: x + ux * 0.35 * -side, z: z + uz * 0.35 * -side, y0: y + 7.2, y1: y + 8.3, r0: 0.3, material: -1, look: 'dark', sides: 8 });
+      if (prev) {
+        // Three power lines on the crossarms' ends and the middle, a telecom cable lower down; each sags 0.4 m.
+        for (const [h, off] of [[9.75, -0.85], [9.75, 0.85], [8.95, 0], [6.6, 0.15]] as const) {
+          const ax = prev.x + prev.ux * off, ay = prev.y + h, az = prev.z + prev.uz * off;
+          const bx = x + ux * off, by = y + h, bz = z + uz * off;
+          const n = 6;
+          for (let i = 0; i < n; i++) {
+            const t0 = i / n, t1 = (i + 1) / n;
+            const sag = (t: number) => -0.4 * 4 * t * (1 - t);
+            this.wires.push(ax + (bx - ax) * t0, ay + (by - ay) * t0 + sag(t0), az + (bz - az) * t0, ax + (bx - ax) * t1, ay + (by - ay) * t1 + sag(t1), az + (bz - az) * t1);
+          }
+        }
+      }
+      prev = { x, y, z, ux, uz };
+    }
+  }
+
+  /**
+   * Pedestrian guard fences (보행자 방호울타리) along the kerb on the approaches to the city junctions, from the stop
+   * line back 16 m on both sides, in 2 m panels (MapView draws them with the props, by distance). Visual only
+   * (KNOWN_ISSUES M6).
+   */
+  private emitCornerFences(r: Road): void {
+    if (!r.style.drape || !r.style.sidewalk || (r.spec.style !== 'arterial' && r.spec.style !== 'street')) return;
+    const color = hash2(Math.round(r.st[0].x), Math.round(r.st[0].z), 37) < 0.5 ? 0xe4e7e2 : 0x3f5a52;
+    const clear = (s: number, side: -1 | 1) =>
+      s > 0 && s < r.length && !r.inGap(s, side) && !r.inGap(s, 0) && r.junctionS.every((j) => Math.abs(j - s) >= 7.5);
+    for (const j of r.junctionS) {
+      for (const dir of [-1, 1] as const) {
+        for (const side of [-1, 1] as const) {
+          // Panels from the stop line back, each with its post at the end nearer the junction; a post closes the run.
+          let last: number[] | null = null;
+          for (let d = 8; d < 24; d += 2) {
+            const s0 = j + dir * d, sc = j + dir * (d + 1), s1 = j + dir * (d + 2);
+            if (!clear(s0, side) || !clear(sc, side) || !clear(s1, side)) break;
+            const p = r.at(sc);
+            if (p.flags & (STATION.bridge | STATION.tunnel)) break;
+            const u = side * ((side < 0 ? r.w.pe : r.w.peLeft) + 0.3);
+            const x = p.x + u * p.tz, z = p.z - u * p.tx;
+            const y = this.drapeFn(x, z) + 0.15;
+            this.fences.push(x, y, z, Math.atan2(p.tx, p.tz) - Math.PI / 2 + (dir < 0 ? Math.PI : 0), color, 0);
+            last = [x + p.tx * dir, y, z + p.tz * dir];
+          }
+          if (last) this.fences.push(last[0], last[1], last[2], 0, color, 1);
         }
       }
     }

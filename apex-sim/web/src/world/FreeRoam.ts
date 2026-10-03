@@ -118,6 +118,11 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
       const p = map.pois.find((q) => q.id === id);
       if (p) teleport(p.x, p.z, p.yaw);
     },
+    setWaypoint: (x: number, z: number) => {
+      waypoint = { x, z };
+      replan();
+      return route ? route.length : 0;
+    },
   });
   const worldMap = new WorldMap(map, relief, {
     teleport,
@@ -213,6 +218,17 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
     env.hour = Number(hour.value) % 24;
     settings.set({ worldHour: env.hour });
   };
+  // Times of day at a tap: morning, noon, the golden hour, night.
+  const presets: Array<[number, string]> = [[7.5, t('timeMorning')], [13, t('timeNoon')], [18.6, t('timeGolden')], [21.5, t('timeNight')]];
+  const presetChips = el('div', 'chips', ...presets.map(([h, label]) => {
+    const b = el('button', 'chip', label);
+    b.onclick = () => {
+      env.hour = h;
+      hour.value = String(h);
+      hour.dispatchEvent(new Event('input'));
+    };
+    return b;
+  }));
   const speeds: Array<[number, string]> = [[0, t('timeStop')], [1, '1×'], [30, '30×'], [120, '120×']];
   const speedChips = el('div', 'chips', ...speeds.map(([v, label]) => {
     const b = el('button', env.timeScale === v ? 'chip active' : 'chip', label);
@@ -234,7 +250,7 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
     };
     return b;
   }));
-  shell.sheet.section(t('sheetWorld'), el('label', 'field', el('span', '', t('timeOfDay')), hourLabel), hour, speedChips, el('label', 'field', el('span', '', t('weather'))), weatherChips);
+  shell.sheet.section(t('sheetWorld'), el('label', 'field', el('span', '', t('timeOfDay')), hourLabel), hour, presetChips, speedChips, el('label', 'field', el('span', '', t('weather'))), weatherChips);
   const places = el('div', 'grid2', ...map.pois.map((p: Poi) => {
     const b = el('button', 'tile', el('b', '', tl(p.label)), el('small', '', t(`poi_${p.kind}` as StringKey)));
     b.onclick = () => teleport(p.x, p.z, p.yaw);
@@ -261,6 +277,35 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
   await session.start();
   loading.progress(1, '');
   loading.done();
+
+  // The destination in the world: a pin standing over it with the distance left, as a satnav draws it.
+  const pinDist = el('b', 'mono');
+  const pin = el('div', 'wp-pin', el('div', 'wp-in', pinDist, el('i')));
+  pin.hidden = true;
+  document.body.append(pin);
+  const pinAt = new THREE.Vector3();
+  const placePin = (cx: number, cz: number) => {
+    if (!waypoint || mapOpen || overview.isOpen) {
+      pin.hidden = true;
+      return;
+    }
+    pinAt.set(waypoint.x, map.terrain.heightAt(waypoint.x, waypoint.z) + 5, waypoint.z).project(viewer.camera);
+    const on = pinAt.z < 1 && Math.abs(pinAt.x) < 1.05 && Math.abs(pinAt.y) < 1.05;
+    pin.hidden = !on;
+    if (!on) return;
+    const rect = viewer.renderer.domElement.getBoundingClientRect();
+    const px = rect.left + (pinAt.x * 0.5 + 0.5) * rect.width;
+    let py = rect.top + (0.5 - pinAt.y * 0.5) * rect.height;
+    // A far destination sits on the horizon, under the turn guide: the pin stays just below it there.
+    const pinH = (pin.firstElementChild as HTMLElement).offsetHeight;
+    if (!guide.hidden) {
+      const g = guide.getBoundingClientRect();
+      if (px > g.left - 40 && px < g.right + 40) py = Math.max(py, g.bottom + 6 + pinH);
+    }
+    pin.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
+    const d = Math.hypot(waypoint.x - cx, waypoint.z - cz);
+    pinDist.textContent = d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`;
+  };
 
   const fwd = new THREE.Vector3(), pos = new THREE.Vector3();
   let clock = 0;
@@ -303,6 +348,7 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
         } else {
           guide.hidden = true;
         }
+        placePin(c.x, c.z);
       }
     },
   };

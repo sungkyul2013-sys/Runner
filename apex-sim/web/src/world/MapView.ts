@@ -11,6 +11,8 @@ import {
 } from 'three/tsl';
 import { hashSeed, villaParts, type MapData, type MeshAccum, type Sign } from './builder';
 import { MAT } from './types';
+import { buildFacades } from './Facades';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Terrain } from './terrain';
 
 type Quality = 'low' | 'medium' | 'high' | 'mobile';
@@ -431,6 +433,11 @@ export class MapView {
     this.buildTiles();
     this.buildBuildings();
     this.buildProps();
+    // Shop signs, awnings, balconies and AC units: shown by distance with the other props.
+    for (const t of buildFacades(map.render.buildings, this.uniforms)) {
+      this.group.add(t.group);
+      this.propTiles.push(t);
+    }
     this.buildWater();
     this.buildDistant();
   }
@@ -665,12 +672,12 @@ export class MapView {
   private buildProps(): void {
     const r = this.map.render;
     const TILE = 512;
-    const tileOf = new Map<string, { trees: number[][]; lamps: number[]; posts: number[] }>();
+    const tileOf = new Map<string, { trees: number[][]; lamps: number[]; posts: number[]; fences: number[] }>();
     const get = (x: number, z: number) => {
       const key = `${Math.floor(x / TILE)},${Math.floor(z / TILE)}`;
       let t = tileOf.get(key);
       if (!t) {
-        t = { trees: [[], [], []], lamps: [], posts: [] };
+        t = { trees: [[], [], []], lamps: [], posts: [], fences: [] };
         tileOf.set(key, t);
       }
       return t;
@@ -678,6 +685,8 @@ export class MapView {
     for (let i = 0; i < r.trees.length; i += 5) get(r.trees[i], r.trees[i + 2]).trees[r.trees[i + 4] | 0].push(r.trees[i], r.trees[i + 1], r.trees[i + 2], r.trees[i + 3]);
     for (let i = 0; i < r.lamps.length; i += 6) get(r.lamps[i], r.lamps[i + 2]).lamps.push(...Array.from(r.lamps.subarray(i, i + 6)));
     for (let i = 0; i < r.posts.length; i += 4) get(r.posts[i], r.posts[i + 2]).posts.push(...Array.from(r.posts.subarray(i, i + 4)));
+    const fences = r.fences ?? new Float32Array(0);
+    for (let i = 0; i < fences.length; i += 6) get(fences[i], fences[i + 2]).fences.push(...Array.from(fences.subarray(i, i + 6)));
     const treeGeos = [treeGeometry(0), treeGeometry(1), treeGeometry(2)];
     const treeMat = treeMaterial(this.uniforms);
     const pole = new THREE.CylinderGeometry(0.08, 0.11, 1, 6).translate(0, 0.5, 0);
@@ -687,6 +696,15 @@ export class MapView {
     const headMat = new THREE.MeshStandardNodeMaterial({ color: 0x222222, roughness: 0.4 });
     headMat.emissiveNode = color(0xffd8a0).mul(this.uniforms.night.mul(3.0));
     const postGeo = new THREE.BoxGeometry(0.12, 0.9, 0.12).translate(0, 0.45, 0);
+    // Guard fence: a 2 m panel (its post at −x, two rails, four bars) as one mesh; a lone post closes a run.
+    const fencePost = new THREE.BoxGeometry(0.08, 1.0, 0.08).translate(0, 0.5, 0);
+    const fencePanel = mergeGeometries([
+      fencePost.clone().translate(-1, 0, 0),
+      new THREE.BoxGeometry(2, 0.06, 0.05).translate(0, 0.95, 0),
+      new THREE.BoxGeometry(2, 0.05, 0.05).translate(0, 0.28, 0),
+      ...[-0.6, -0.2, 0.2, 0.6].map((x) => new THREE.BoxGeometry(0.024, 0.62, 0.024).translate(x, 0.6, 0)),
+    ])!;
+    const fenceMat = plainMaterial(0xffffff, 0.45, 0.35);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0);
     for (const [key, t] of tileOf) {
@@ -749,6 +767,24 @@ export class MapView {
         posts.computeBoundingSphere();
         group.add(posts);
       }
+      for (const kind of [0, 1]) {
+        const list: number[] = [];
+        for (let i = 0; i < t.fences.length; i += 6) if (t.fences[i + 5] === kind) list.push(i);
+        if (!list.length) continue;
+        const inst = new THREE.InstancedMesh(kind === 0 ? fencePanel : fencePost, fenceMat, list.length);
+        const col = new THREE.Color();
+        list.forEach((i, k) => {
+          q.setFromAxisAngle(up, t.fences[i + 3]);
+          p.set(t.fences[i], t.fences[i + 1], t.fences[i + 2]);
+          s.set(1, 1, 1);
+          m.compose(p, q, s);
+          inst.setMatrixAt(k, m);
+          inst.setColorAt(k, col.setHex(t.fences[i + 4]));
+        });
+        inst.receiveShadow = true;
+        inst.computeBoundingSphere();
+        group.add(inst);
+      }
       this.group.add(group);
       this.propTiles.push({ cx: (tx + 0.5) * TILE, cz: (tz + 0.5) * TILE, group });
     }
@@ -759,6 +795,13 @@ export class MapView {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(r.cables, 3));
       this.group.add(new THREE.LineSegments(g, new THREE.LineBasicNodeMaterial({ color: 0xe6e9ee })));
+    }
+    if (r.wires?.length) {
+      // Overhead lines between the utility poles: dark against the evening sky.
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(r.wires, 3));
+      g.computeBoundingSphere();
+      this.group.add(new THREE.LineSegments(g, new THREE.LineBasicNodeMaterial({ color: 0x24272b })));
     }
     this.buildRopes();
     this.buildCylinders();

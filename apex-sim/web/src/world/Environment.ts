@@ -10,6 +10,10 @@ import type { Viewer } from '../render/Viewer';
 import type { MapUniforms } from './MapView';
 import { MAT } from './types';
 
+const GOLDEN_SUN = new THREE.Color().setRGB(1.0, 0.52, 0.26);
+const GOLDEN_SKY = new THREE.Color().setRGB(0.56, 0.5, 0.78);
+const GOLDEN_HAZE = new THREE.Color().setRGB(0.96, 0.72, 0.52);
+
 export type Weather = 'clear' | 'cloudy' | 'rain' | 'storm' | 'fog' | 'snow' | 'blizzard';
 export const WEATHERS: Weather[] = ['clear', 'cloudy', 'rain', 'storm', 'fog', 'snow', 'blizzard'];
 
@@ -44,6 +48,8 @@ const DEG = Math.PI / 180;
 export class Environment {
   /** Time of day [h] and the date (day of the year: 172 ≈ 21 June). */
   hour = 14;
+  /** 0 … 1: how golden the hour is (the low sun's warm light and haze). */
+  golden = 0;
   day = 200;
   /** Floor on the fog's visibility [m] (the overview map looks across the whole map). */
   minVisibility = 0;
@@ -264,7 +270,12 @@ export class Environment {
     sky.sunPosition.value.copy(elev > -0.05 ? sun : moonDir.clone().multiplyScalar(0.3).setY(Math.max(moonDir.y, -0.2)));
     sky.turbidity.value = 2 + this.cur.cloud * 8;
     sky.rayleigh.value = 1.2 + (1 - day) * 1.5 - this.cur.cloud * 0.6;
-    sky.mieCoefficient.value = 0.004 + this.cur.cloud * 0.01;
+    // Golden hour (the sun under ≈ 18° and above the horizon): warm low light through more air — a warmer, hazier
+    // distance, lilac sky light, the sky's glow round the sun stronger.
+    const golden = (1 - THREE.MathUtils.smoothstep(elev, 0.1, 0.32)) * THREE.MathUtils.smoothstep(elev, -0.04, 0.06) * (1 - this.cur.cloud * 0.7);
+    this.golden = golden;
+    sky.turbidity.value += 2.5 * golden;
+    sky.mieCoefficient.value = 0.004 + this.cur.cloud * 0.01 + 0.005 * golden;
     sky.cloudCoverage.value = this.cur.cloud;
     sky.cloudDensity.value = 0.3 + this.cur.cloud * 0.6;
     sky.showSunDisc.value = elev > -0.02 && this.cur.cloud < 0.85 ? 1 : 0;
@@ -277,13 +288,16 @@ export class Environment {
     const moonLight = 0.18 * Math.max(moonDir.y, 0) * (1 - this.cur.cloud);
     v.sun.intensity = elev > -0.05 ? 3.2 * day * this.cur.light : moonLight;
     if (elev <= -0.05) v.sun.color.setRGB(0.62, 0.72, 1.0);
-    v.hemi.intensity = 0.12 + 0.9 * day * (0.6 + 0.4 * this.cur.light);
-    v.hemi.color.setRGB(0.62 + 0.2 * day, 0.7 + 0.18 * day, 0.9);
-    v.hemi.groundColor.setRGB(0.12 * day + 0.02, 0.12 * day + 0.02, 0.11 * day + 0.03);
-    v.renderer.toneMappingExposure = 1.0 + this.night * 0.9;
-    // Fog: visibility → density (e^(−density·d) = 2 % at the visibility distance), colour from the sky.
-    this.fog.density = 3.9 / Math.max(this.cur.fog, 50, this.minVisibility);
-    const fogDay = new THREE.Color().setRGB(0.72 - 0.2 * this.cur.cloud, 0.78 - 0.18 * this.cur.cloud, 0.85 - 0.15 * this.cur.cloud);
+    else v.sun.color.lerp(GOLDEN_SUN, golden);
+    v.hemi.intensity = (0.12 + 0.9 * day * (0.6 + 0.4 * this.cur.light)) * (1 - 0.18 * golden); // more contrast in the low sun
+    v.hemi.color.setRGB(0.62 + 0.2 * day, 0.7 + 0.18 * day, 0.9).lerp(GOLDEN_SKY, golden * 0.7);
+    v.hemi.groundColor.setRGB(0.12 * day + 0.02 + 0.16 * golden, 0.12 * day + 0.02 + 0.08 * golden, 0.11 * day + 0.03 + 0.03 * golden);
+    v.renderer.toneMappingExposure = 1.0 + this.night * 0.9 + 0.22 * golden;
+    // Fog: visibility → density (e^(−density·d) = 2 % at the visibility distance), colour from the sky; at the golden
+    // hour a warm haze closes in to ≈ 2.4 km.
+    const visibility = Math.max(this.cur.fog, 50, this.minVisibility);
+    this.fog.density = 3.9 / Math.max(Math.min(visibility, visibility + (2400 - visibility) * golden), 50, this.minVisibility);
+    const fogDay = new THREE.Color().setRGB(0.72 - 0.2 * this.cur.cloud, 0.78 - 0.18 * this.cur.cloud, 0.85 - 0.15 * this.cur.cloud).lerp(GOLDEN_HAZE, golden * 0.8);
     const fogNight = new THREE.Color(0x0b1018);
     this.fog.color.copy(fogNight).lerp(fogDay, day);
     if (this.cur.snow > 0.3) this.fog.color.lerp(new THREE.Color(0xdfe5ec), this.cur.snow * 0.5 * day);
