@@ -247,6 +247,7 @@ class Vehicle {
   struct CornerState {
     int32_t beam = -1;
     double design = 0.0, rest0 = 0.0, damping0 = 0.0, ratio = 1.0, halfTrack = 0.8, x = 0.0;
+    double k0 = 0.0, load = 0.0, airHeight = 0.0;  // the spring's data rate and design load; air column height (0: steel)
     int axle = 0, side = 1;
     double offset = 0.0, lenBody = 0.0, lenSlow = 0.0, bodyVelFast = 0.0, bodyVelLow = 0.0, damp = 1.0;
     double stretchLow = 0.0, hopEnvelope = 0.0;

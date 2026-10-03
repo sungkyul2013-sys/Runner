@@ -268,7 +268,10 @@ export class DriveSession {
     this.lampDebris.update(dt);
     this.sparks.update(dt);
     const suspension = this.actor.view?.suspension;
-    if (suspension) this.suspensionHud.update(suspension.travel);
+    if (suspension) {
+      this.suspensionHud.springs = suspension.air ? 'air' : 'coil';
+      this.suspensionHud.update(suspension.travel);
+    }
     const stats = this.physics.latestStats();
     sound?.update(this.active ? v : null, stats?.timeScale ?? 1, stats?.paused ?? false);
     if (!this.active) {

@@ -9,12 +9,13 @@ const RANGE = 0.06; // [m] full bar
 export class SuspensionHud {
   readonly root = document.createElement('div');
   private readonly cells = new Map<string, { bar: HTMLElement; value: HTMLElement }>();
+  private readonly title = document.createElement('div');
   private last = 0;
 
   constructor() {
     this.root.className = 'susp-hud';
     this.root.hidden = true;
-    const title = document.createElement('div');
+    const title = this.title;
     title.className = 'susp-title';
     title.textContent = t('suspHud');
     const grid = document.createElement('div');
@@ -44,6 +45,14 @@ export class SuspensionHud {
   set visible(on: boolean) {
     this.root.hidden = !on;
   }
+
+  /** The car's springs, named in the title: air springs or coils. */
+  set springs(kind: 'air' | 'coil') {
+    if (kind === this.kind) return;
+    this.kind = kind;
+    this.title.textContent = `${t('suspHud')} · ${t(kind === 'air' ? 'springAir' : 'springCoil')}`;
+  }
+  private kind: 'air' | 'coil' | null = null;
 
   update(travel: CornerTravel[]): void {
     const now = performance.now();

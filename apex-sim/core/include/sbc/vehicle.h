@@ -159,6 +159,13 @@ struct ChassisDesc {
   // the sport setting). Self-levelling air springs hold the level under any load (each axle's mean, frozen in hard
   // cornering and braking); a lift piston on steel springs (levelling false) just extends by the level's height.
   bool levelling = false;
+  // Air springs (gas law): each corner spring's force follows its trapped air, p·Vⁿ constant, about the length where
+  // the spring carries its design load at the present level — there it has the data's load and rate; compressed it
+  // stiffens, extended it softens (an air spring's progressive rate: a full bump is met harder, the ride over small
+  // bumps is as soft as the rate). The air column's height (volume over effective area) follows from the load and
+  // rate: h = n·(1 + a)·F / k, a the atmosphere's share of the absolute force p·A. 0: a steel spring's linear rate.
+  float airPolytropic = 0.0f;    // n [-] (≈ 1.3 for the quick strokes of driving; 1 would be isothermal)
+  float airAtmosphere = 0.1f;    // a [-] (p₀·A over the static load; ≈ 0.1 at 10 bar)
   float normalFront = 0.0f, normalRear = 0.0f;  // [m] wheel travel the normal level holds, per axle (the car's stance)
   float liftHeight = 0.0f;       // [m] body raised at the lift level (0: no lift)
   bool liftFrontOnly = false;    // a lift system on the front axle only

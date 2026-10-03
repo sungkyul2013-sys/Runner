@@ -1,8 +1,10 @@
 // Suspension x-ray (투시): the car's suspension drawn from its physics nodes while the body is a glass shell —
 // wishbones and links, the knuckles that carry the hubs, tie rods and toe links, the anti-roll bars, the subframes,
 // and each corner's coil-over: a coil that shortens and lengthens with its spring beam (its colour from extended,
-// cyan, through static, white, to compressed, orange) around a damper whose rod slides in its body. Everything follows
-// the same interpolated node positions the rest of the car is drawn with, so what moves is what the physics moves.
+// cyan, through static, white, to compressed, orange) around a damper whose rod slides in its body — or, on air
+// suspension (the Ghost, the Maybach), a rubber air spring: a convoluted bellows rolling over its piston, coloured the
+// same way. Everything follows the same interpolated node positions the rest of the car is drawn with, so what moves
+// is what the physics moves.
 import * as THREE from 'three/webgpu';
 import type { RenderFrame } from '../physics/PhysicsClient';
 import type { NodeLocator } from './Flexbody';
@@ -13,6 +15,8 @@ export interface SuspensionDef {
   springs: Array<{ top: number; bottom: number; corner: string; ratio: number }>;
   /** Each wheel carrier's nodes (hub bearings, ball joints, steering arm): drawn as one solid casting. */
   knuckles: number[][];
+  /** Air springs (the chassis data's gas law) instead of coils. */
+  air: boolean;
 }
 
 export type SuspensionPart = 'arm' | 'steer' | 'bar' | 'subframe';
@@ -40,7 +44,7 @@ type BeamRow = [string, string, string, ...unknown[]];
 export function suspensionOf(doc: {
   beams?: BeamRow[];
   torsionBars?: Array<{ arm1: string; pivot1: string; pivot2: string; arm2: string }>;
-  vehicle?: { chassis?: { corners?: Array<{ chassis: string; wheel: string; motionRatio?: number }> }; wheels?: Array<{ carrier?: string[] }> };
+  vehicle?: { chassis?: { corners?: Array<{ chassis: string; wheel: string; motionRatio?: number }>; airPolytropic?: number }; wheels?: Array<{ carrier?: string[] }> };
 }, index: (id: string) => number): SuspensionDef | null {
   const kinds: Record<string, SuspensionPart> = { link: 'arm', tierod: 'steer', toelink: 'steer', subframe: 'subframe' };
   const links: SuspensionDef['links'] = [];
@@ -61,7 +65,8 @@ export function suspensionOf(doc: {
     for (let k = 0; k + 1 < chain.length; k++) links.push({ a: chain[k], b: chain[k + 1], kind: 'bar' });
   }
   const knuckles = (doc.vehicle?.wheels ?? []).map((w) => (w.carrier ?? []).map(index).filter((i) => i >= 0)).filter((k) => k.length >= 4);
-  return links.length || springs.length ? { links, springs, knuckles } : null;
+  const air = (doc.vehicle?.chassis?.airPolytropic ?? 0) > 0;
+  return links.length || springs.length ? { links, springs, knuckles, air } : null;
 }
 
 /** Faces of the convex hull of `pts` (brute force over the triples: a carrier has 6–7 nodes), wound outward. */
@@ -96,7 +101,21 @@ const STYLE: Record<SuspensionPart, { radius: number; color: number; emissive: n
   subframe: { radius: 0.016, color: 0x4b525c, emissive: 0.05 },
 };
 const COIL_RADIUS = 0.052; // [m] coil centre-line radius
-const COIL_LENGTH = 0.3; // [m] the coil geometry's own length
+const COIL_LENGTH = 0.3; // [m] the coil geometry's own length (the air spring's bellows too)
+const AIR_SEAT = 0.42; // the air spring's piston top, along the strut from its lower mount
+const PISTON = { radius: 0.05, length: 0.11 }; // [m] the air spring's piston below the bellows
+
+/** A rolling-lobe air spring's bellows, COIL_LENGTH long along +Y: the top plate, two convolutions, and the rubber
+ *  rolling in over the piston at the bottom. */
+function bellowsGeometry(): THREE.BufferGeometry {
+  const L = COIL_LENGTH;
+  const profile: Array<[number, number]> = [
+    [0.0, 0], [0.05, 0], [0.068, 0.04], [0.078, 0.09], [0.079, 0.13], [0.07, 0.155], [0.079, 0.18], [0.08, 0.215],
+    [0.071, 0.24], [0.078, 0.262], [0.072, 0.29], [0.062, 0.3], [0.0, 0.3],
+  ];
+  const pts = profile.map(([r, y]) => new THREE.Vector2(r, (y / 0.3) * L));
+  return new THREE.LatheGeometry(pts, 28);
+}
 const COLD = new THREE.Color(0x4cc9f0), NEUTRAL = new THREE.Color(0xf4f4f0), HOT = new THREE.Color(0xff6a2b);
 
 /** Per-corner suspension state for the x-ray HUD: wheel travel from the static ride height [m] (+ compressed). */
@@ -108,7 +127,8 @@ export interface CornerTravel {
 export class SuspensionView {
   readonly group = new THREE.Group();
   private readonly members: THREE.InstancedMesh;
-  private readonly coils: THREE.InstancedMesh;
+  private readonly coils: THREE.InstancedMesh; // coils, or the air springs' bellows
+  private readonly pistons: THREE.InstancedMesh | null = null;
   private readonly bodies: THREE.InstancedMesh;
   private readonly rods: THREE.InstancedMesh;
   private readonly rest: number[] = []; // spring lengths at the static ride height [m]
@@ -124,6 +144,7 @@ export class SuspensionView {
   private readonly p = new THREE.Vector3();
   private readonly a = new THREE.Vector3();
   private readonly b = new THREE.Vector3();
+  private readonly e = new THREE.Vector3();
   private readonly c = new THREE.Color();
   private static readonly UP = new THREE.Vector3(0, 1, 0);
 
@@ -147,12 +168,17 @@ export class SuspensionView {
       points.push(new THREE.Vector3(COIL_RADIUS * Math.cos(a), t * COIL_LENGTH, COIL_RADIUS * Math.sin(a)));
     }
     const path = new THREE.CatmullRomCurve3(points);
-    const coil = new THREE.TubeGeometry(path, turns * 24, 0.0065, 6, false);
-    const coilMat = metal(0xffffff, 0.25, 0.3, 0.55);
+    const coil = def.air ? bellowsGeometry() : new THREE.TubeGeometry(path, turns * 24, 0.0065, 6, false);
+    // Air: rubber (matte; the load colour darkened to read as rubber), on a polished piston.
+    const coilMat = def.air ? metal(0xffffff, 0.12, 0.75, 0.05) : metal(0xffffff, 0.25, 0.3, 0.55);
     this.coils = new THREE.InstancedMesh(coil, coilMat, Math.max(1, def.springs.length));
+    if (def.air) {
+      const piston = new THREE.CylinderGeometry(PISTON.radius, PISTON.radius * 0.92, 1, 20, 1, false).translate(0, 0.5, 0);
+      this.pistons = new THREE.InstancedMesh(piston, metal(0xc9d0d8, 0.1, 0.2, 0.9), Math.max(1, def.springs.length));
+    }
     this.bodies = new THREE.InstancedMesh(cyl, metal(0x23272d, 0.06, 0.45, 0.6), Math.max(1, def.springs.length));
     this.rods = new THREE.InstancedMesh(cyl, metal(0xeef2f6, 0.15, 0.12, 1.0), Math.max(1, def.springs.length));
-    for (const mesh of [this.members, this.coils, this.bodies, this.rods]) {
+    for (const mesh of [this.members, this.coils, this.bodies, this.rods, ...(this.pistons ? [this.pistons] : [])]) {
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.frustumCulled = false;
       mesh.castShadow = false;
@@ -184,6 +210,11 @@ export class SuspensionView {
 
   set visible(on: boolean) {
     this.group.visible = on;
+  }
+
+  /** Air springs (bellows) rather than coils. */
+  get air(): boolean {
+    return this.def.air;
   }
 
   get visible(): boolean {
@@ -224,17 +255,23 @@ export class SuspensionView {
       // Wheel travel: the spring's shortening over its motion ratio (compression positive).
       const travel = (rest - len) / Math.max(s.ratio, 0.3);
       this.travel[i].travel = travel;
-      // Coil: from the lower seat (a fifth up the damper) to the top mount.
-      const seat = this.p.copy(this.b).lerp(this.a, 0.22);
+      // Coil: from the lower seat (a fifth up the damper) to the top mount. Air spring: the bellows from its piston's
+      // top (which moves with the damper body) to the top mount, the piston below it.
+      const seat = this.p.copy(this.b).lerp(this.a, this.def.air ? AIR_SEAT : 0.22);
       this.coil(i, seat, this.a, ok);
+      if (this.pistons) {
+        const down = this.e.copy(this.b).sub(this.a).normalize().multiplyScalar(PISTON.length).add(seat);
+        this.segment(this.pistons, i, down, seat, ok ? 1 : 0, PISTON.length);
+      }
       const k = Math.max(-1, Math.min(1, travel / 0.06));
       this.c.copy(NEUTRAL).lerp(k > 0 ? HOT : COLD, Math.abs(k));
+      if (this.def.air) this.c.multiplyScalar(0.36);
       this.coils.setColorAt(i, this.c);
       // Damper: its body from the lower mount, its rod from the top mount (they overlap more as it compresses).
       this.segment(this.bodies, i, this.b, this.s.copy(this.b).lerp(this.a, Math.min(0.95, (0.58 * rest) / Math.max(len, 1e-3))), ok ? 0.024 : 0);
       this.segment(this.rods, i, this.a, this.s.copy(this.a).lerp(this.b, Math.min(0.95, (0.6 * rest) / Math.max(len, 1e-3))), ok ? 0.0095 : 0);
     });
-    for (const mesh of [this.coils, this.bodies, this.rods]) mesh.instanceMatrix.needsUpdate = true;
+    for (const mesh of [this.coils, this.bodies, this.rods, ...(this.pistons ? [this.pistons] : [])]) mesh.instanceMatrix.needsUpdate = true;
     if (this.coils.instanceColor) this.coils.instanceColor.needsUpdate = true;
     // Wheel carriers: the hull of their nodes (its faces fixed at the first frame: the carrier is stiff).
     this.def.knuckles.forEach((nodes, c) => {
@@ -253,15 +290,16 @@ export class SuspensionView {
     });
   }
 
-  /** Instance `i` of `mesh`: the unit cylinder from `from` to `to` with radius `r` (0: hidden). */
-  private segment(mesh: THREE.InstancedMesh, i: number, from: THREE.Vector3, to: THREE.Vector3, r: number): void {
+  /** Instance `i` of `mesh`: the unit cylinder from `from` to `to` with radius `r` (0: hidden) — or, given `fixed`,
+   *  a mesh of its own size (r = 1) from `from` along the direction to `to`. */
+  private segment(mesh: THREE.InstancedMesh, i: number, from: THREE.Vector3, to: THREE.Vector3, r: number, fixed = 0): void {
     const dir = this.s.copy(to).sub(from);
     const len = dir.length();
     if (len < 1e-5 || r <= 0) {
       this.m.makeScale(0, 0, 0);
     } else {
       this.q.setFromUnitVectors(SuspensionView.UP, dir.divideScalar(len));
-      this.m.compose(from, this.q, this.s.set(r, len, r));
+      this.m.compose(from, this.q, fixed ? this.s.set(1, len, 1) : this.s.set(r, len, r));
     }
     mesh.setMatrixAt(i, this.m);
   }
@@ -280,7 +318,7 @@ export class SuspensionView {
 
   dispose(): void {
     this.group.removeFromParent();
-    for (const mesh of [this.members, this.coils, this.bodies, this.rods, ...this.knuckles.map((k) => k.mesh)]) {
+    for (const mesh of [this.members, this.coils, this.bodies, this.rods, ...(this.pistons ? [this.pistons] : []), ...this.knuckles.map((k) => k.mesh)]) {
       mesh.geometry.dispose();
       (mesh.material as THREE.Material).dispose();
     }

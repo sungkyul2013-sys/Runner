@@ -30,9 +30,12 @@ const UNLOAD_RATIO = 5;
 // Passive body roll and pitch of the generated cars [rad per m/s² of lateral / longitudinal acceleration], measured
 // without the active control, and their stance at rest (wheel travel over the model pose per axle [m]: the normal
 // level the self-levelling holds, so the clearances tuned below stay as they were) — core test "chassis gradients".
+// (With the air springs' gas law, batch O: softer in roll and pitch than the linear springs were — the cars weigh
+// 7–10 % less per corner than the springs' design load and an air spring's rate follows the load it carries, and
+// the convex spring lifts the body in a corner, onto its softer side.)
 const CHASSIS_GRADIENTS = {
-  rolls_royce_ghost: { roll: 0.0044, pitch: 0.0030, stance: [0.0115, 0.0150] },
-  maybach_gls: { roll: 0.0050, pitch: 0.0033, stance: [0.0116, 0.0146] },
+  rolls_royce_ghost: { roll: 0.0048, pitch: 0.0038, stance: [0.0115, 0.0150] },
+  maybach_gls: { roll: 0.0055, pitch: 0.0041, stance: [0.0116, 0.0146] },
 };
 
 /** Per-car data. Heights are in the model frame (y = 0 on the ground, +Z forward, +X left). */
@@ -67,8 +70,10 @@ const CARS = {
     arb: { front: 8400, rear: 5200 },  // stiff bars for the flat cornering of the Planar suspension (≈ 3.7°/g measured)
     // §9 electronic chassis: self-levelling air springs, adaptive dampers (the Flagbearer camera preview is not
     // modelled), all-wheel steering. No lift or low level and no active roll control are claimed for this car.
+    // The air springs follow the gas law (core ChassisDesc::airPolytropic): soft about the level, stiffening into a
+    // bump (air columns ≈ 22 cm front, 17 cm rear from the rates and loads: high-volume springs).
     chassis: {
-      levelling: true, heightRate: 0.012, adaptiveDamping: true, dampingMin: 0.5,
+      levelling: true, airPolytropic: 1.3, airAtmosphere: 0.1, heightRate: 0.012, adaptiveDamping: true, dampingMin: 0.5,
       rearSteer: { lockDeg: 3, low: -0.1, high: 0.05, lowKmh: 50, highKmh: 80 },
     },
     aero: { dragArea: 0.75, liftFront: 0.05, liftRear: 0.06 },
@@ -116,7 +121,8 @@ const CARS = {
     // §9 electronic chassis: AIRMATIC self-levelling air springs (−15 mm at high speed, a raised level for rough
     // ground), ADS+ adaptive dampers and the optional E-ACTIVE BODY CONTROL (per-corner active struts: roll and pitch).
     chassis: {
-      levelling: true, liftHeight: 0.04, liftMaxKmh: 40, lowHeight: 0.015, lowAboveKmh: 120, heightRate: 0.012,
+      levelling: true, airPolytropic: 1.3, airAtmosphere: 0.1,
+      liftHeight: 0.04, liftMaxKmh: 40, lowHeight: 0.015, lowAboveKmh: 120, heightRate: 0.012,
       adaptiveDamping: true, dampingMin: 0.5,
       activeRoll: 0.85, activePitch: 0.5, activeTravel: 0.045, activeRate: 0.15,
     },

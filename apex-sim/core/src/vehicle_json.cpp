@@ -599,6 +599,8 @@ struct Loader {
         }
       }
       x.levelling = boolOr(c, "levelling", x.levelling, path);
+      x.airPolytropic = floatOr(c, "airPolytropic", x.airPolytropic, path);
+      x.airAtmosphere = floatOr(c, "airAtmosphere", x.airAtmosphere, path);
       x.normalFront = floatOr(c, "normalFront", x.normalFront, path);
       x.normalRear = floatOr(c, "normalRear", x.normalRear, path);
       x.liftHeight = floatOr(c, "liftHeight", x.liftHeight, path);

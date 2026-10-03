@@ -1,10 +1,13 @@
-// §9 electronic chassis control: self-levelling air springs and ride-height levels (lift, normal, low), a lift
-// system on steel springs, adaptive (skyhook) damping, active roll and pitch control, rear-axle steering.
+// §9 electronic chassis control: self-levelling air springs (with the gas law's progressive rate) and ride-height
+// levels (lift, normal, low), a lift system on steel springs, adaptive (skyhook) damping, active roll and pitch
+// control, rear-axle steering.
 //
 // Every system acts through the corner springs the data names (ChassisDesc::corners): the controller moves a
 // spring's rest length — the energy that puts into or takes out of the spring is booked as external work, as the
 // hydro actuators book theirs (§5.3) — and scales its damping coefficient within the explicit integration's ceiling
-// (the data's coefficient; KNOWN_ISSUES P31). Rear-axle steering drives the rear toe links as a hydro channel.
+// (the data's coefficient; KNOWN_ISSUES P31). An air spring's force is the gas law's: each step its beam takes the
+// tangent of p·Vⁿ = const at the present length (rate and rest length), the change in the beam's stored energy booked
+// as external work like the level's moves. Rear-axle steering drives the rear toe links as a hydro channel.
 // Measurements are what the real systems' sensors give: ride-height sensors (spring length, as a lever on the arm
 // reads it), the chassis frame's acceleration and the body's vertical speed at each corner.
 #include <algorithm>
@@ -13,6 +16,7 @@
 #include <string>
 
 #include "internal.h"
+#include "sbc/det_math.h"
 #include "sbc/world.h"
 #include "vehicle_impl.h"
 
@@ -75,6 +79,9 @@ void Vehicle::initChassis(const Body& b) {
     c.design = std::sqrt(dot(d, d));
     c.rest0 = b.restLength[static_cast<size_t>(c.beam)];
     c.damping0 = b.damping[static_cast<size_t>(c.beam)];
+    c.k0 = b.stiffness[static_cast<size_t>(c.beam)];
+    c.load = c.k0 * (c.rest0 - c.design);  // the data's rest offset is the design load over the rate
+    if (C.airPolytropic > 0.0f && c.load > 0.0 && c.k0 > 0.0) c.airHeight = C.airPolytropic * (1.0 + C.airAtmosphere) * c.load / c.k0;
     c.ratio = cd.motionRatio;
     c.lenBody = c.lenSlow = c.design;
     const WheelDesc& wd = desc_.wheels[w];
@@ -227,12 +234,29 @@ void Vehicle::updateChassis(Body& b, double dt, double speed, DVec3 up) {
     const size_t i = static_cast<size_t>(c.beam);
     c.offset = levelSym_[c.axle] + c.side * rollU_[c.axle] + (c.axle == 0 ? pitchU_ : -pitchU_);
     if (!b.broken[i]) {
-      const double next = c.rest0 + c.ratio * c.offset;
+      double next = c.rest0 + c.ratio * c.offset, k = c.k0;
       const DVec3 d = at(b, cd.wheelNode) - at(b, cd.chassisNode);
       const double L = std::sqrt(dot(d, d));
+      if (c.airHeight > 0.0) {
+        // Air spring: compressed by x from the normal level, its air the amount the level holds — the leveller adds
+        // and lets out air, so at its height the spring carries what the corner weighs and its rate follows that load
+        // (an air spring's ride frequency barely changes with load). At x = 0 it pushes what the linear spring would
+        // (P − a·F₀); F = P·rⁿ − a·F₀, r = h / (h − x). The active struts push alongside it (a hydraulic force on the
+        // strut, E-ACTIVE BODY CONTROL), as their stroke did on the linear spring: k·(motion ratio)·offset.
+        const double h = c.airHeight, n = C.airPolytropic, a = C.airAtmosphere;
+        const double normal = c.axle == 0 ? C.normalFront : C.normalRear;
+        const double active = c.side * rollU_[c.axle] + (c.axle == 0 ? pitchU_ : -pitchU_);
+        const double P = (1.0 + a) * c.load + c.k0 * c.ratio * (levelSym_[c.axle] - normal);
+        const double x = clampd(c.design + c.ratio * normal - L, -2.0 * h, 0.8 * h);
+        const double r = h / (h - x), rn = det::exp(n * det::log(r));
+        const double F = P * rn - a * c.load + c.k0 * c.ratio * active;
+        k = n * P * rn * r / h;
+        next = L + F / k;
+      }
       const double before = L - b.restLength[i], after = L - next;
-      b.losses.external += 0.5 * b.stiffness[i] * (after * after - before * before);
+      b.losses.external += 0.5 * (k * after * after - b.stiffness[i] * before * before);
       b.restLength[i] = static_cast<float>(next);
+      b.stiffness[i] = static_cast<float>(k);
       // Skyhook on the body's own motion (CDC-style): soft by default, firmed in proportion to the body's vertical
       // speed in its ride band (0.3–4 Hz: bounce, pitch, roll) while the damper force works against it (the body
       // moving the way the spring stretches). Road texture above the band leaves the dampers soft; a grade's

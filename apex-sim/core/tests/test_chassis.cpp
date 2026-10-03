@@ -288,6 +288,40 @@ TEST_CASE("Maybach GLS air suspension: self-levelling under a load, the lift and
   CHECK(fast.t().rideHeight < 0.01);
 }
 
+TEST_CASE("air springs follow the gas law: a load sinks the Ghost less than a linear spring, the ride height unchanged",
+          "[chassis][ghost][9]") {
+  // Rolls-Royce Ghost: self-levelling air springs (p·Vⁿ constant, n 1.3). With the levelling off, 300 kg over the
+  // rear axle compresses them into their stiffer range: the rear sinks less than on linear springs of the same rate
+  // at the level. Unloaded, the level is the same either way (the gas law is anchored at the normal level).
+  const auto load = [](LoadedVehicle& c) {
+    double zRear = 1e9;
+    for (const WheelDesc& wd : c.build.vehicle.wheels) zRear = std::min(zRear, static_cast<double>(c.build.body.nodes[static_cast<size_t>(wd.axleLeft)].position.z));
+    std::vector<size_t> rear;
+    for (size_t i = 0; i < c.build.body.nodes.size(); ++i) {
+      const std::string& id = c.nodeIds[i];
+      if (id.size() > 1 && id[0] == 'c' && id[1] >= '0' && id[1] <= '9' && std::fabs(c.build.body.nodes[i].position.z - zRear) < 0.6) rear.push_back(i);
+    }
+    for (size_t i : rear) c.build.body.nodes[i].mass += static_cast<float>(300.0 / static_cast<double>(rear.size()));
+  };
+  const auto linear = [](LoadedVehicle& c) { c.build.vehicle.chassis.airPolytropic = 0.0f; };
+  const auto settle = [](const std::function<void(LoadedVehicle&)>& edit) {
+    Rig r = rig("rolls_royce_ghost", 0.0f, edit);
+    r.input(VehicleInput{});
+    r.run(8.0);
+    return static_cast<double>(r.t().rideHeight);
+  };
+  REQUIRE(rig("rolls_royce_ghost", 0.0f).car.build.vehicle.chassis.airPolytropic > 1.0f);
+  const double levelAir = settle({}), levelLinear = settle(linear);
+  const double sagAir = settle([&](LoadedVehicle& c) { load(c); c.build.vehicle.chassis.levelling = false; });
+  const double sagLinear = settle([&](LoadedVehicle& c) { load(c); linear(c); c.build.vehicle.chassis.levelling = false; });
+  INFO("level: air " << levelAir * 1e3 << " mm, linear " << levelLinear * 1e3 << " mm; 300 kg, levelling off: air "
+                     << sagAir * 1e3 << " mm, linear " << sagLinear * 1e3 << " mm");
+  CHECK(std::fabs(levelAir - levelLinear) < 0.002);
+  CHECK(sagLinear < -0.01);
+  CHECK(sagAir > sagLinear);              // sinks less
+  CHECK(sagAir < 0.5 * sagLinear);       // but by more than half as much (soft at the level)
+}
+
 TEST_CASE("Porsche 911 Turbo front-axle lift: the nose rises 40 mm for a kerb or a ramp and drops back above 35 km/h",
           "[chassis][porsche][9]") {
   Rig r = rig("porsche_911_turbo_991", 0.0f);
