@@ -9,8 +9,8 @@ import { tl, type Localized } from './i18n';
 export type SteerMode = 'buttons' | 'wheel' | 'tilt' | 'slider';
 export type GearButtons = 'manual' | 'always' | 'off';
 const GEAR_BUTTONS: readonly GearButtons[] = ['manual', 'always', 'off'];
-export type TouchAction = 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause' | 'reverse';
-export type ControlId = 'steer' | 'throttle' | 'brake' | 'handbrake' | 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause' | 'reverse';
+export type TouchAction = 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause' | 'reverse' | 'xray';
+export type ControlId = 'steer' | 'throttle' | 'brake' | 'handbrake' | 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause' | 'reverse' | 'xray';
 export interface TouchLayout {
   steer: SteerMode;
   size: number; // 0.75 … 1.5, scales every control
@@ -38,7 +38,7 @@ export interface TouchFeedback {
   speed: number; // [m/s]
 }
 
-export const CONTROL_IDS: readonly ControlId[] = ['steer', 'throttle', 'brake', 'handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause', 'reverse'];
+export const CONTROL_IDS: readonly ControlId[] = ['steer', 'throttle', 'brake', 'handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause', 'reverse', 'xray'];
 const STEER_MODES: readonly SteerMode[] = ['buttons', 'wheel', 'tilt', 'slider'];
 export const DEFAULT_TOUCH_LAYOUT: TouchLayout = { steer: 'slider', size: 1, pedalSize: 1, opacity: 0.9, autoAccelerate: false, haptics: true, gearButtons: 'manual', positions: {} };
 
@@ -141,6 +141,7 @@ const L = {
   camera: { ko: '카메라', en: 'Camera' },
   reset: { ko: '리셋', en: 'Reset' },
   pause: { ko: '일시정지', en: 'Pause' },
+  xray: { ko: '투시', en: 'X-ray' },
   reverse: { ko: '전진/후진 (정지 중)', en: 'Drive / reverse (when stopped)' },
 } satisfies Record<string, Localized>;
 
@@ -155,6 +156,7 @@ const ICON = {
   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   reset: '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v4h4"/>',
   pause: '<path d="M9 5v14M15 5v14"/>',
+  xray: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
   handbrake: '<circle cx="12" cy="12" r="5.5"/><path d="M5 6.5a8.5 8.5 0 0 0 0 11M19 6.5a8.5 8.5 0 0 1 0 11M12 9.5v3M12 15v.01"/>',
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/>',
   // Wheel face in a 100 × 100 box: rim, hub, three spokes and an accent tick at 12 o'clock to show the rotation.
@@ -223,7 +225,7 @@ export class TouchControls {
   constructor(layout: TouchLayout = DEFAULT_TOUCH_LAYOUT) {
     const labels: Record<ControlId, Localized> = {
       steer: L.steer, throttle: L.throttle, brake: L.brake, handbrake: L.handbrake, shiftUp: L.shiftUp,
-      shiftDown: L.shiftDown, camera: L.camera, reset: L.reset, pause: L.pause, reverse: L.reverse,
+      shiftDown: L.shiftDown, camera: L.camera, reset: L.reset, pause: L.pause, reverse: L.reverse, xray: L.xray,
     };
     for (const id of CONTROL_IDS) {
       const n = el('div', `tc-c tc-${id}`);
@@ -246,11 +248,12 @@ export class TouchControls {
     this.nodes.camera.append(icon(ICON.camera));
     this.nodes.reset.append(icon(ICON.reset));
     this.nodes.pause.append(icon(ICON.pause));
+    this.nodes.xray.append(icon(ICON.xray));
     // Drive / reverse selector (D ⇄ R at a standstill) with the gear in use.
     this.gearText = el('b', 'tc-gear', 'D');
     this.nodes.reverse.append(this.gearText);
-    for (const id of ['handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause', 'reverse'] as const) this.nodes[id].classList.add('tc-btn');
-    for (const id of ['camera', 'reset', 'pause'] as const) this.nodes[id].classList.add('tc-small');
+    for (const id of ['handbrake', 'shiftUp', 'shiftDown', 'camera', 'reset', 'pause', 'reverse', 'xray'] as const) this.nodes[id].classList.add('tc-btn');
+    for (const id of ['camera', 'reset', 'pause', 'xray'] as const) this.nodes[id].classList.add('tc-small');
     for (const id of CONTROL_IDS) if (id !== 'steer') this.nodes[id].append(icon(ICON.grip, 'tc-grip')); // edit-mode handle
     this.root.append(...CONTROL_IDS.map((id) => this.nodes[id]));
     this.root.hidden = true;
@@ -350,6 +353,12 @@ export class TouchControls {
     }
   }
 
+  /** A small button's lit state (the x-ray while one of its views is on). */
+  setLit(id: 'xray', on: boolean): void {
+    this.nodes[id].classList.toggle('lit', on);
+    this.nodes[id].setAttribute('aria-pressed', String(on));
+  }
+
   /**
    * The width the controls take at the bottom corners in portrait (pedals right, camera and reset left), published on
    * the document as --tc-right / --tc-left so the centred gauge sizes itself between them (gauge.css).
@@ -447,7 +456,7 @@ export class TouchControls {
     }
     const tap = e.type === 'pointerup' && inside(p.node.getBoundingClientRect(), e);
     if (p.id === 'throttle' || p.id === 'brake') this.showPedal(p.id);
-    else if ((p.id === 'camera' || p.id === 'pause' || p.id === 'reset') && tap) {
+    else if ((p.id === 'camera' || p.id === 'pause' || p.id === 'reset' || p.id === 'xray') && tap) {
       if (p.id === 'reset') this.haptic(30);
       this.onAction(p.id);
     } else if (p.id === 'steer') this.steerReleased(p, e);

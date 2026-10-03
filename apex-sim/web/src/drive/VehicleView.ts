@@ -219,6 +219,12 @@ export class VehicleView {
     this.model.root.matrixWorldNeedsUpdate = true;
 
     if (!this.map) this.map = this.bindWheels(v);
+    // The rings are read from the newest physics frame as it is, around that frame's own hubs: the blended frame
+    // carries a spinning node along the chord between its two positions, and the tyre and rim came out smaller
+    // between frames — more the faster the car went (user report: the wheels grow and shrink with speed). The ring
+    // profiles are in the hub frame (the road's flat spot stays at the bottom), so the newest one fits the blend.
+    const latest = frame?.latest.vehicles.find((u) => u.body === v.body && u.wheels.length === v.wheels.length) ?? v;
+    const hubUp = chassisFrame(latest).y;
     v.wheels.forEach((w, i) => {
       const j = this.map![i];
       if (j < 0 || j >= this.mounts.length) return;
@@ -235,7 +241,11 @@ export class VehicleView {
       if (deform && ring && frame && locate) {
         deform.spin.value = w.angle;
         deform.mirror.value = Math.sign(this.mountScale[j].x) || 1;
-        deform.setRings(this.ringSamples(ring, frame, locate, w.center, axis, up, fwd), ring.rest);
+        const hub = latest.wheels[i];
+        const hubAxis = new THREE.Vector3(...hub.axis).normalize();
+        const hubUpI = hubUp.clone().addScaledVector(hubAxis, -hubUp.dot(hubAxis)).normalize();
+        const hubFwd = new THREE.Vector3().crossVectors(hubAxis, hubUpI);
+        deform.setRings(this.ringSamples(ring, frame, frame.latest.positions, locate, hub.center, hubAxis, hubUpI, hubFwd), ring.rest);
       }
       // §6: the tyre flattens where it meets the road by the physics deflection; a shredded one is gone (rim only).
       const tyre = this.model.tyres[j];
@@ -248,8 +258,8 @@ export class VehicleView {
   }
 
   /** The four rings of a physics wheel seen from its hub (nodes no longer with the rim — a shredded tyre — skipped). */
-  private ringSamples(ring: WheelRings, frame: RenderFrame, locate: NodeLocator, c: V3, axis: THREE.Vector3, up: THREE.Vector3,
-                      fwd: THREE.Vector3): [RingSample[], RingSample[], RingSample[], RingSample[]] {
+  private ringSamples(ring: WheelRings, frame: RenderFrame, positions: Float32Array, locate: NodeLocator, c: V3, axis: THREE.Vector3,
+                      up: THREE.Vector3, fwd: THREE.Vector3): [RingSample[], RingSample[], RingSample[], RingSample[]] {
     const n = ring.rest.segments;
     const [rimBody] = locate(this.body, ring.base + 2);
     const out: [V3[], V3[], V3[], V3[]] = [[], [], [], []];
@@ -258,7 +268,7 @@ export class VehicleView {
         const [b, node] = locate(this.body, ring.base + 4 * s + k);
         if (b !== rimBody || b >= frame.bodyCount || node >= frame.nodeCount[b]) continue;
         const o = (frame.nodeOffset[b] + node) * 3;
-        out[k].push([frame.positions[o], frame.positions[o + 1], frame.positions[o + 2]]);
+        out[k].push([positions[o], positions[o + 1], positions[o + 2]]);
       }
     }
     const a: V3 = [axis.x, axis.y, axis.z], u: V3 = [up.x, up.y, up.z], f: V3 = [fwd.x, fwd.y, fwd.z];

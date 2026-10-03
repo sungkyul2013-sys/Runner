@@ -57,6 +57,8 @@ export interface ModeShell {
   closePause(): void;
   openSettings(): void;
   closeSettings(): void;
+  /** Closes the phone's quick-action menu (nothing on the desktop UI, whose actions sit in the top bar). */
+  closeQuick(): void;
 }
 
 const RECTS_KEY = 'apex.panels.v1';
@@ -315,6 +317,10 @@ export class Shell implements ModeShell {
     this.settingsView ??= new SettingsView(() => this.closeSettings());
     this.settingsLayer.replaceChildren(this.settingsView.root);
     this.settingsLayer.hidden = false;
+  }
+
+  closeQuick(): void {
+    // the desktop's actions sit in the top bar: no menu to close
   }
 
   closeSettings(): void {

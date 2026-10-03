@@ -433,3 +433,12 @@ body.touch-on .sheet:not(.open) { display: none; }
 .susp-cell b { font-size: 0.8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .susp-hud small { font-size: 0.66rem; color: var(--text-3); }
 @media (max-width: 520px) { .susp-hud { width: 150px; top: calc(76px + var(--safe-t)); transform: none; } }
+/* phone: one compact row under the top bar (FL FR RL RR), clear of the round buttons and the steering in either
+   orientation — centred down the left edge it covered camera and reset in landscape */
+html[data-ui='mobile'] .susp-hud { top: calc(60px + var(--safe-t)); transform: none; width: auto; gap: 4px; padding: 6px 10px 8px; }
+html[data-ui='mobile'] .susp-title { font-size: 0.62rem; }
+html[data-ui='mobile'] .susp-grid { grid-template-columns: repeat(4, auto); gap: 4px 10px; }
+html[data-ui='mobile'] .susp-cell { column-gap: 5px; }
+html[data-ui='mobile'] .susp-track { height: 34px; width: 7px; }
+html[data-ui='mobile'] .susp-cell b { font-size: 0.7rem; }
+html[data-ui='mobile'] .susp-hud small { display: none; }

@@ -305,6 +305,10 @@ export class MobileShell implements ModeShell {
     this.settingsLayer.hidden = false;
   }
 
+  closeQuick(): void {
+    this.quick.close();
+  }
+
   closeSettings(): void {
     this.settingsLayer.hidden = true;
   }

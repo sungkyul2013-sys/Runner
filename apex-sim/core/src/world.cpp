@@ -566,6 +566,7 @@ void World::finishBody(int bi) {
   const int n = b.nodeCount();
   for (int i = 0; i < n; ++i) { cx += b.px[i]; cy += b.py[i]; cz += b.pz[i]; }
   cx /= n; cy /= n; cz /= n;
+  Vec3 shift{0.0f, 0.0f, 0.0f};
   if (std::fabs(cx) > kRebaseDistance || std::fabs(cy) > kRebaseDistance || std::fabs(cz) > kRebaseDistance) {
     const float sx = static_cast<float>(std::floor(cx)), sy = static_cast<float>(std::floor(cy)),
                 sz = static_cast<float>(std::floor(cz));
@@ -574,9 +575,9 @@ void World::finishBody(int bi) {
       b.sx[i] -= sx; b.sy[i] -= sy; b.sz[i] -= sz;
     }
     b.origin += DVec3{sx, sy, sz};
-    for (const std::unique_ptr<Vehicle>& v : vehicles_)
-      if (v->bodyIndex() == bi) v->rebaseTelemetry(Vec3{sx, sy, sz});
+    shift = Vec3{sx, sy, sz};
   }
+  for (const int v : bodyVehicles_[static_cast<size_t>(bi)]) vehicles_[static_cast<size_t>(v)]->endStep(b, shift);
 }
 
 double World::potentialEnergy(bool extendedBand) const {

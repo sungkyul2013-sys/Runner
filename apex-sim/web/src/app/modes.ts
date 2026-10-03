@@ -108,6 +108,7 @@ function touchControls(session: DriveSession, shell: ModeShell): TouchControls |
     else if (a === 'camera') session.input.trigger('camera');
     else if (a === 'reset') session.input.trigger('reset');
     else if (a === 'reverse') session.input.trigger('reverse');
+    else if (a === 'xray') session.cycleXray();
     else session.input.trigger(a);
   };
   tc.onLayoutChange = (l) => settings.set({ touchLayout: l });
@@ -151,11 +152,18 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
   session.onCamera = (label) => notify(`${t('actCamera')} · ${label}`, '', { icon: 'camera', key: 'cam' });
   shell.addAction('camera', t('actCamera'), () => session.toggleCamera(), undefined, t('camOrbitHint'), 'C');
   // X-ray: off → suspension → lattice → off (the button lit while one is on; V does the same).
+  // On a phone it is also a round button beside camera and reset (one tap while driving), and the quick menu's tile
+  // closes the menu: the view behind it is what changed.
+  let touch: TouchControls | null = null;
   const xrayBtn = shell.addAction('xray', t('actXray'), () => {}, false, t('actXrayTip'), 'V');
-  xrayBtn.onclick = () => session.cycleXray();
+  xrayBtn.onclick = () => {
+    session.cycleXray();
+    shell.closeQuick();
+  };
   session.onXray = (mode) => {
     const name = t(mode === 'suspension' ? 'xraySuspension' : mode === 'lattice' ? 'xrayLattice' : 'stateOff');
     xrayBtn.ariaPressed = String(mode !== 'off');
+    touch?.setLit('xray', mode !== 'off');
     const state = xrayBtn.querySelector('.m-tile-state'); // the phone's quick-menu tile names its state
     if (state) state.textContent = name;
     notify(`${t('actXray')} · ${name}`, '', { icon: 'xray', key: 'act-xray' });
@@ -237,7 +245,7 @@ export function drivingShell(ctx: AppContext, session: DriveSession, title: stri
   };
   shell.sheet.section(t('carSwap'), carPicker(session, (v) => void swap(v)));
   shell.sheet.section(t('sheetKeys'), el('p', 'muted', t('keysHelp')));
-  touchControls(session, shell);
+  touch = touchControls(session, shell);
   return shell;
 }
 

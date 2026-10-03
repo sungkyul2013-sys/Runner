@@ -451,3 +451,43 @@ TEST_CASE("the car's reported pose stays continuous across the body's re-basing 
   CHECK(worstCar < 60.0);    // the car moves at ≈ 28 m/s; a re-basing step read ≈ 8,000 m/s
   CHECK(worstWheel < 60.0);
 }
+
+TEST_CASE("the tread ring stays round about the reported hub at speed (drawn tyres keep their size)", "[chassis][tyre]") {
+  // The tyres are drawn from their tread and rim nodes about the telemetry's wheel centre. User report: the wheels
+  // grow and shrink with speed. The ring itself does not grow (the radial sidewall is stiff in tension), but the hub
+  // was measured before the step integrated: the nodes stood v·dt ahead of it, and the tyre came out of round by
+  // that much (±2.8 cm at 200 km/h, ±9 % of its radius). Now the pose is the end of the step's.
+  for (const char* id : {"porsche_911_turbo_991", "rolls_royce_ghost", "maybach_gls"}) {
+    double stillMean = 0.0, stillSpread = 0.0;
+    for (const float kmh : {0.0f, 100.0f, 200.0f}) {
+      Rig r = rig(id, kmh);
+      r.run(1.0);  // settled (at speed: coasting)
+      const Body& b = r.w().body(r.body);
+      const VehicleDesc& d = r.w().vehicleDesc(r.vehicle);
+      double sum = 0.0, spread = 0.0;
+      size_t count = 0;
+      for (size_t i = 0; i < d.wheels.size(); ++i) {
+        const Vec3 c = r.t().wheels[i].center, ax = r.t().wheels[i].axis;
+        double lo = 1e9, hi = 0.0;
+        for (const int32_t n : d.wheels[i].treadNodes) {
+          const Vec3 p = b.nodePosition(n) - c;
+          const double radius = length(p - ax * dot(p, ax));
+          sum += radius;
+          lo = std::min(lo, radius);
+          hi = std::max(hi, radius);
+          ++count;
+        }
+        spread = std::max(spread, hi - lo);
+      }
+      const double mean = sum / static_cast<double>(count);
+      if (kmh == 0.0f) {
+        stillMean = mean;
+        stillSpread = spread;
+      }
+      INFO(id << " at " << kmh << " km/h: mean tread ring radius " << mean << " m (standing " << stillMean << "), spread "
+              << spread << " m (standing " << stillSpread << ")");
+      CHECK(std::fabs(mean / stillMean - 1.0) < 0.01);
+      CHECK(spread < stillSpread + 0.006);  // was 5.5 cm at 200 km/h
+    }
+  }
+}

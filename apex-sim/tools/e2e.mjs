@@ -12,7 +12,7 @@
 //   2g. free roam (§13): proving-ground oval drive, world map; the open-world city at night in the rain; teleports onto
 //       a city street and an old-town lane land the car on its wheels
 //   2h. phone UI vs PC UI: a touch phone gets the phone UI (menu, quick menu, bottom sheet, crash launch bar and
-//       result card), a desktop the PC UI, and ?ui= overrides either way
+//       result card; the x-ray button and tile while driving), a desktop the PC UI, and ?ui= overrides either way
 // Usage: npm run build && node tools/e2e.mjs [--no-bench] [--only <steps>] [--bench-tag M2] [--chromium /path/to/chrome]
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -549,6 +549,35 @@ async function main() {
       else if (overlaps(card, bar)) failures.push('phone UI: the result card covers the launch bar');
       if (consoleErrors.length) failures.push(`errors (phone UI): ${consoleErrors.join(' | ')}`);
       await context.close();
+
+      // Phone x-ray: the round button beside camera/reset cycles suspension → lattice → off and lights while on; the
+      // quick-menu tile does the same and closes the menu; the stroke HUD is one row clear of the controls.
+      const drive = await openPhone(browser, '?drive=rolls_royce_ghost&at=0,-800');
+      await drive.page.waitForFunction(() => window.__apex?.drive?.latest != null, null, { timeout: 120000 });
+      const xr = () => drive.page.evaluate(() => ({ mode: window.__apex.drive.xrayMode, lit: document.querySelector('.tc-xray')?.classList.contains('lit') ?? null }));
+      const steps = [];
+      for (let i = 0; i < 3; i++) {
+        await drive.page.tap('.tc-xray');
+        await drive.page.waitForTimeout(800);
+        steps.push(await xr());
+        if (i === 0) await drive.page.screenshot({ path: join(dir, 'K-phone-xray.png') });
+      }
+      await drive.page.tap('.m-top .m-round[aria-label="' + (await drive.page.evaluate(() => document.querySelectorAll('.m-top .m-round')[2].ariaLabel)) + '"]');
+      await drive.page.waitForTimeout(400);
+      await drive.page.locator('.m-quick:not([hidden]) .m-tile', { hasText: /투시|X-ray/ }).first().tap();
+      await drive.page.waitForTimeout(800);
+      const viaTile = await xr();
+      const quickOpen = await drive.page.evaluate(() => !!document.querySelector('.m-quick:not([hidden])'));
+      const hud = await rectOf(drive.page, '.susp-hud'), btn = await rectOf(drive.page, '.tc-xray');
+      const others = await drive.page.evaluate(() => [...document.querySelectorAll('.tc-c:not(.tc-xray), .m-top')].filter((e) => !e.hidden && e.getBoundingClientRect().width > 0).map((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, c: e.className }; }));
+      console.log('phone x-ray:', JSON.stringify({ steps, viaTile, quickOpen, hud, btn }));
+      if (steps.map((s) => s.mode).join() !== 'suspension,lattice,off') failures.push(`phone x-ray: button cycle ${JSON.stringify(steps)}`);
+      if (steps.map((s) => s.lit).join() !== 'true,true,false') failures.push(`phone x-ray: button light ${JSON.stringify(steps)}`);
+      if (viaTile.mode !== 'suspension' || !viaTile.lit || quickOpen) failures.push(`phone x-ray: quick-menu tile ${JSON.stringify({ viaTile, quickOpen })}`);
+      if (!hud) failures.push('phone x-ray: no stroke HUD');
+      for (const o of others) if (overlaps(hud, o) || overlaps(btn, o)) failures.push(`phone x-ray: overlaps ${o.c}`);
+      if (drive.consoleErrors.length) failures.push(`errors (phone x-ray): ${drive.consoleErrors.join(' | ')}`);
+      await drive.context.close();
 
       // Overrides: the PC UI on a phone, the phone UI on a desktop.
       const pcOnPhone = await openPhone(browser, '?scene=sandbox&ui=desktop');

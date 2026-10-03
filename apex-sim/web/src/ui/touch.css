@@ -115,6 +115,10 @@
 .tc[data-steer='wheel'] .tc-camera, .tc[data-steer='wheel'] .tc-reset { left: calc(var(--pad-l) + var(--steer-w) + var(--gap)); }
 .tc[data-steer='wheel'] .tc-camera { bottom: calc(var(--pad-b) + var(--small) + var(--gap)); }
 .tc[data-steer='wheel'] .tc-reset { bottom: var(--pad-b); }
+/* x-ray (투시): one tap through suspension → lattice → off, beside camera and reset; lit while a view is on */
+.tc-xray { left: calc(var(--pad-l) + 2 * (var(--small) + var(--gap))); bottom: calc(var(--pad-b) + var(--steer-h) + var(--gap)); }
+.tc[data-steer='wheel'] .tc-xray { left: calc(var(--pad-l) + var(--steer-w) + var(--gap)); bottom: calc(var(--pad-b) + 2 * (var(--small) + var(--gap))); }
+.tc-small.lit { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 70%, transparent); background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
 .tc-pause { display: none; } /* the top bar has the menu */
 /* D / R selector: the gear in use; amber in reverse, dimmed while moving (it switches only at a standstill) */
 /* above the handbrake in the brake column (the throttle column carries the shift paddles): the cluster stays low on
@@ -158,6 +162,8 @@
   /* camera and reset: the bottom-left corner, beside the gauge */
   .tc-camera, .tc[data-steer='wheel'] .tc-camera { left: var(--pad-l); bottom: var(--pad-b); }
   .tc-reset, .tc[data-steer='wheel'] .tc-reset { left: calc(var(--pad-l) + var(--small) + var(--gap)); bottom: var(--pad-b); }
+  /* x-ray above the camera: the corner beside the gauge holds two across */
+  .tc-xray, .tc[data-steer='wheel'] .tc-xray { left: var(--pad-l); bottom: calc(var(--pad-b) + var(--small) + var(--gap)); }
 }
 
 /* layout editing: every control shows its outline and grip and can be dragged */

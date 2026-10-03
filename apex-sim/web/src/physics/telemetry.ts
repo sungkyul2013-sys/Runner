@@ -334,6 +334,17 @@ export function lerpAngle(a: number, b: number, t: number): number {
   return a + d * t;
 }
 
+/** A wheel's spin angle between two published states: the turn it made is the one its spin rate says, to the nearest
+ *  whole turn (the angles are wrapped to ±π). Blending by the shortest way round turned a wheel backwards once it
+ *  made more than half a turn between frames (≈ 250 km/h at 60 frames a second, far slower on a phone that publishes
+ *  less often): the rims and spokes jerked to and fro. */
+export function blendSpin(a: number, b: number, spinA: number, spinB: number, dt: number, t: number): number {
+  const expected = 0.5 * (spinA + spinB) * Math.max(dt, 0);
+  let d = b - a - expected;
+  d -= 2 * Math.PI * Math.round(d / (2 * Math.PI));
+  return a + (expected + d) * t;
+}
+
 /** Pose blend between two published states (render interpolation, A§2); scalars come from `b`. */
 export function blendVehicle(a: VehicleState, b: VehicleState, t: number): VehicleState {
   if (a.wheels.length !== b.wheels.length || t >= 1) return b;
@@ -347,7 +358,7 @@ export function blendVehicle(a: VehicleState, b: VehicleState, t: number): Vehic
       ...w,
       center: lerp3(a.wheels[i].center, w.center, t),
       axis: unit(lerp3(a.wheels[i].axis, w.axis, t)),
-      angle: lerpAngle(a.wheels[i].angle, w.angle, t),
+      angle: blendSpin(a.wheels[i].angle, w.angle, a.wheels[i].spin, w.spin, b.time - a.time, t),
     })),
   };
 }

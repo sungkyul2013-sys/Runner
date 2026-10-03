@@ -66,6 +66,10 @@ export interface RenderFrame {
   positions: Float32Array; // interpolated
   strain: Float32Array;
   vehicles: VehicleState[]; // interpolated poses
+  /** The newest published frame of the two blended (same layout): positions as the physics had them. A node turning
+   *  about a hub moves on a circle, and the straight blend between two frames cuts the chord — at 100 km/h a wheel
+   *  turns ≈ 75° per published frame, so its tread nodes came out 20 % inside the tyre between frames. */
+  latest: { positions: Float32Array; vehicles: VehicleState[] };
 }
 
 type Listener<T> = (value: T) => void;
@@ -281,7 +285,7 @@ export class PhysicsClient {
     const b = hist[i];
     const a = i > 0 ? hist[i - 1] : null;
     if (!this.render || this.render.positions.length < b.positions.length) {
-      this.render = { ...b, positions: new Float32Array(b.positions.length) };
+      this.render = { ...b, positions: new Float32Array(b.positions.length), latest: b };
     }
     const r = this.render;
     r.bodyCount = b.bodyCount;
@@ -291,6 +295,7 @@ export class PhysicsClient {
     r.beamCount = b.beamCount;
     r.strain = b.strain;
     r.vehicles = b.vehicles;
+    r.latest = b;
     const n = b.positions.length;
     const alpha = a && b.simTime > a.simTime ? Math.min(Math.max((this.playTime - a.simTime) / (b.simTime - a.simTime), 0), 1) : 1;
     if (!a || alpha >= 1 || a.positions.length !== n) {

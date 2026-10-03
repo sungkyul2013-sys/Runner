@@ -415,6 +415,26 @@ void Vehicle::updateGearbox(double dt, double speed, double driveOmega) {
   }
 }
 
+void Vehicle::endStep(const Body& b, Vec3 rebase) {
+  const VehicleDesc& D = desc_;
+  if (telemetry_.wheels.size() != D.wheels.size()) return;  // before the first step
+  const DVec3 pc = pos(b, D.refCenter);
+  const DVec3 fwd = normalized(pos(b, D.refFront) - pc);
+  DVec3 left = pos(b, D.refLeft) - pc;
+  left = normalized(left - fwd * dot(left, fwd));
+  telemetry_.position = toFloat(pc);
+  telemetry_.forward = toFloat(fwd);
+  telemetry_.up = toFloat(cross(fwd, left));
+  telemetry_.left = toFloat(left);
+  for (size_t w = 0; w < D.wheels.size(); ++w) {
+    const WheelDesc& wd = D.wheels[w];
+    WheelTelemetry& tel = telemetry_.wheels[w];
+    tel.center = toFloat((pos(b, wd.axleLeft) + pos(b, wd.axleRight)) * 0.5);
+    tel.axis = toFloat(normalized(pos(b, wd.axleLeft) - pos(b, wd.axleRight)));
+    tel.sparkPoint = tel.sparkPoint - rebase;
+  }
+}
+
 void Vehicle::step(const World& world, Body& b, bool track) {
   const double dt = world.params().dt;
   const VehicleDesc& D = desc_;

@@ -1,5 +1,6 @@
-// Suspension x-ray readout (서스펜션 스트로크): each corner's wheel travel from where it stood when the x-ray came on —
-// a bar either side of the zero line (compression up, orange; rebound down, cyan) and millimetres.
+// Suspension x-ray readout (서스펜션 스트로크): each corner's wheel travel from the static ride height (where the car
+// last stood on its wheels) — a bar either side of the zero line (compression up, orange; rebound down, cyan) and
+// millimetres. On a phone it is one compact row under the top bar (app.css).
 import type { CornerTravel } from '../vehicles/SuspensionView';
 import { t } from './i18n';
 

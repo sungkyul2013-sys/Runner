@@ -33,16 +33,13 @@ class Vehicle {
 
   const VehicleDesc& desc() const { return desc_; }
   int bodyIndex() const { return body_; }
-  // The body's local frame moved by `shift` (re-basing, A§4.4): the telemetry's body-local points follow it. They were
-  // measured before the move in the same step, and a reader adding the moved origin put the car and its wheels a
-  // re-basing step (≈ 4 m) off for a frame — the car and its wheels jumped while driving.
-  void rebaseTelemetry(Vec3 shift) {
-    telemetry_.position = telemetry_.position - shift;
-    for (WheelTelemetry& w : telemetry_.wheels) {
-      w.center = w.center - shift;
-      w.sparkPoint = w.sparkPoint - shift;
-    }
-  }
+  // End of the step, after its integration and any re-basing of the body (A§4.4): the telemetry's pose — chassis
+  // frame, wheel centres and axes — from the nodes as they now stand, and its other body-local points moved with the
+  // frame by `rebase`. The step measures them before it integrates, so they lagged the nodes by a step: v·dt, 1.4 cm
+  // at 100 km/h. A reader drawing the tyres from their nodes about those hubs drew them out of round by that much,
+  // more the faster the car went (user report: the wheels grow and shrink with speed); after a re-basing they were
+  // off by the whole shift (≈ 4 m) and the car and its wheels jumped for a frame.
+  void endStep(const Body& b, Vec3 rebase);
   VehicleInput& input() { return input_; }
   const VehicleInput& input() const { return input_; }
   const VehicleTelemetry& telemetry() const { return telemetry_; }
