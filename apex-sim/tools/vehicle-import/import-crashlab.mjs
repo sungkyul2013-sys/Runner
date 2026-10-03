@@ -14,7 +14,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { deflateSync } from 'node:zlib';
-import { designRearLamps } from './lamp-design.mjs';
+import { designRearLamps, designRearWindow } from './lamp-design.mjs';
 
 const CARS = [
   {
@@ -124,6 +124,9 @@ const CARS = [
       colours: { rim: [4, 3, 3], lens: [34, 1, 3], blade: [255, 6, 10], strip: [235, 238, 242] },
       strip: { at: 0.28, height: 0.02, lift: 0.004 },
     },
+    // A new rear window over the opening (lamp-design.mjs): the patched cells and the bake's fragments shaded as a
+    // blocky mosaic of dark glass.
+    rearWindow: { x: [-0.68, 0.68], y: [1.25, 1.66], deepZ: 0.6, cornerRadius: 0.05 },
   },
 ];
 
@@ -1020,6 +1023,11 @@ for (const car of CARS) {
       for (let i = 0; i < p.n * 3; i++) p.col[i] = paintColour[i % 3];
     }
     console.log(`${car.id}: rear lamps`, JSON.stringify(design.lamps, (k, v) => (typeof v === 'number' ? +v.toFixed(3) : v)));
+  }
+  if (car.rearWindow) {
+    const design = designRearWindow(parts, car.rearWindow);
+    parts.push(...design.parts);
+    console.log(`${car.id}: rear window`, JSON.stringify(design.window, (k, v) => (typeof v === 'number' ? +v.toFixed(3) : v)));
   }
   for (let i = parts.length - 1; i >= 0; i--) {
     const first = parts.findIndex((q) => q.key === parts[i].key);

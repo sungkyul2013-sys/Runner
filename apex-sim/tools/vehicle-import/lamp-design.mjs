@@ -246,3 +246,90 @@ export function designRearLamps(parts, spec) {
   }
   return { parts: out, lamps };
 }
+
+/**
+ * Rear window (the Maybach's: the bake lost it, and the cells patched into the opening and the bake's own fragments
+ * shade as a blocky mosaic). Rays straight from behind against the skin (paint, trim, lamps, chrome; the old panes
+ * left out) find the opening — rows that hit nothing or only the cabin deep inside (more than `deepZ` forward of the
+ * tail) — and each column's exterior just below and above it (tailgate top, spoiler). One pane spans them, straight
+ * between the two in each column, a few millimetres proud (and in front of any old fragment), its corners rounded.
+ */
+export function designRearWindow(parts, spec) {
+  let zmin = Infinity;
+  for (const p of parts) for (let i = 2; i < p.pos.length; i += 3) zmin = Math.min(zmin, p.pos[i]);
+  const { x: [x0, x1], y: [y0, y1], step = 0.004, deepZ = 0.6, lift = 0.003, margin = 0.004, cornerRadius = 0.05 } = spec;
+  const near = (x, y, z) => z < zmin + 1.4 && y > y0 - 0.1 && y < y1 + 0.1 && x > x0 - 0.1 && x < x1 + 0.1;
+  const skin = triangles(parts, ['paint', 'trim', 'lamp', 'brightwork'], near);
+  const old = triangles(parts, ['tint', 'glass'], near);
+  const oz = zmin - 0.4, d = [0, 0, 1];
+  const ys = [];
+  for (let y = y0; y <= y1 + 1e-9; y += step) ys.push(y);
+  const cols = [];
+  for (let x = x0; x <= x1 + 1e-9; x += 0.01) {
+    const t = ys.map((y) => cast(skin, [x, y, oz], d));
+    const open = t.map((v) => !Number.isFinite(v) || oz + v > zmin + deepZ);
+    // The longest run of open rows; its edges and the exterior just below and above it. A run reaching the scan's
+    // edge (the spoiler has a gap over the middle) takes that edge from its neighbours.
+    let best = null;
+    for (let i = 0; i < ys.length; ) {
+      if (!open[i]) { i++; continue; }
+      let j = i;
+      while (j + 1 < ys.length && open[j + 1]) j++;
+      if (!best || j - i > best.i1 - best.i0) best = { i0: i, i1: j };
+      i = j + 1;
+    }
+    // (Below the window there is always the tailgate: a run open at the bottom is beside the car, not a window.)
+    if (!best || best.i1 - best.i0 < 10 || best.i0 === 0) { cols.push({ x, open: false }); continue; }
+    const lowOk = true, highOk = best.i1 < ys.length - 1;
+    cols.push({
+      x, open: true,
+      bot: lowOk ? ys[best.i0] - step / 2 : NaN, top: highOk ? ys[best.i1] + step / 2 : NaN,
+      tb: lowOk ? t[best.i0 - 1] : NaN, tt: highOk ? t[best.i1 + 1] : NaN,
+    });
+  }
+  // Fill the gaps (NaN) of a column series by linear interpolation between its neighbours.
+  const fill = (arr) => arr.map((v, j) => {
+    if (Number.isFinite(v)) return v;
+    let a = j - 1, b = j + 1;
+    while (a >= 0 && !Number.isFinite(arr[a])) a--;
+    while (b < arr.length && !Number.isFinite(arr[b])) b++;
+    if (a < 0) return arr[b];
+    if (b >= arr.length) return arr[a];
+    return arr[a] + ((arr[b] - arr[a]) * (j - a)) / (b - a);
+  });
+  // The window: the longest stretch of columns with an opening.
+  let J0 = -1, J1 = -1;
+  for (let j = 0, s = -1; j <= cols.length; j++) {
+    if (j < cols.length && cols[j].open) { if (s < 0) s = j; continue; }
+    if (s >= 0 && j - 1 - s > J1 - J0) { J0 = s; J1 = j - 1; }
+    s = -1;
+  }
+  if (J0 < 0) throw new Error('designRearWindow: no opening found');
+  const cs = cols.slice(J0, J1 + 1);
+  const bot = smooth(fill(cs.map((c) => c.bot)), 3, 4), top = smooth(fill(cs.map((c) => c.top)), 3, 4);
+  const tb = smooth(fill(cs.map((c) => c.tb)), 2, 3), tt = smooth(fill(cs.map((c) => c.tt)), 2, 3);
+  const depth = (j, y) => tb[j] + ((tt[j] - tb[j]) * (y - bot[j])) / Math.max(1e-6, top[j] - bot[j]);
+  // Old fragments standing proud of the pane push it out (smoothly, along the window).
+  const push = cs.map((c, j) => {
+    let p = 0;
+    for (let y = bot[j]; y <= top[j]; y += 0.01) {
+      const w = cast(old, [c.x, y, oz], d);
+      if (Number.isFinite(w)) p = Math.max(p, depth(j, y) - lift - (w - 0.0015));
+    }
+    return Math.min(p, 0.012);
+  });
+  const wide = push.map((_, j) => Math.max(...push.slice(Math.max(0, j - 3), j + 4)));
+  const shift = wide.map((_, j) => mean(wide, j, 3));
+  const L = cs[cs.length - 1].x - cs[0].x, rc = cornerRadius;
+  const pull = (j) => {
+    const e = Math.min(cs[j].x - cs[0].x, cs[cs.length - 1].x - cs[j].x) + 0.005;
+    return e >= rc ? 0 : rc - Math.sqrt(Math.max(0, rc * rc - (rc - e) ** 2));
+  };
+  const V = 14;
+  const part = gridPart('tint', V + 1, cs.length, (i, j) => {
+    const pin = pull(j), b = bot[j] - margin + pin, t = top[j] + margin - pin;
+    const y = b + ((t - b) * i) / V;
+    return { p: [cs[j].x, y, oz + depth(j, y) - lift - shift[j]], c: [0, 0, 0] };
+  }, () => [0, 0, -1]);
+  return { parts: [part], window: { x: [cs[0].x, cs[cs.length - 1].x], width: L, height: [Math.min(...top.map((t, j) => t - bot[j])), Math.max(...top.map((t, j) => t - bot[j]))], pushed: Math.max(...shift) } };
+}
