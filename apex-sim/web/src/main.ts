@@ -114,7 +114,7 @@ async function main(): Promise<void> {
   // could not switch backends there (no query string to carry the choice).
   // The phone profile on a dense screen renders without multisampling (set once: the renderer is made with it).
   const sharpPhone = effectiveQuality() === 'mobile' && (window.devicePixelRatio || 1) >= 2;
-  const viewer = new Viewer(canvas, HASH_ROUTES || params.get('backend') === 'webgl2', route === 'freeroam', !sharpPhone);
+  const viewer = new Viewer(canvas, HASH_ROUTES || params.get('backend') === 'webgl2', route === 'freeroam', !sharpPhone && effectiveQuality() !== 'verylow');
   window.__apex!.viewer = viewer; // scripted checks place the camera
   await viewer.init((message) => {
     // A lost WebGPU device cannot be recovered on the same canvas: reload once on the WebGL2 backend.

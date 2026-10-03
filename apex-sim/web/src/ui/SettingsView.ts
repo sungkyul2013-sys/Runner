@@ -9,7 +9,7 @@ import { DEFAULT_TOUCH_LAYOUT } from './TouchControls';
 import type { IconName } from './icons';
 import { platform } from './platform';
 
-const qualityLabel = (q: Quality): StringKey => (q === 'mobile' ? 'qMobile' : q === 'low' ? 'qLow' : q === 'medium' ? 'qMedium' : 'qHigh');
+const qualityLabel = (q: Quality): StringKey => (q === 'mobile' ? 'qMobile' : q === 'verylow' ? 'qVeryLow' : q === 'low' ? 'qLow' : q === 'medium' ? 'qMedium' : 'qHigh');
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -86,7 +86,7 @@ export class SettingsView {
       case 'controls':
         return [t(p.steer === 'slider' ? 'steerSlider' : p.steer === 'buttons' ? 'steerButtons' : p.steer === 'wheel' ? 'steerWheel' : 'steerTilt'), `${t('setTouchSize')} ${pct(p.size)}`].join(' · ');
       case 'graphics':
-        return t(s.quality === 'auto' ? 'qAuto' : s.quality === 'low' ? 'qLow' : s.quality === 'medium' ? 'qMedium' : s.quality === 'mobile' ? 'qMobile' : 'qHigh');
+        return t(s.quality === 'auto' ? 'qAuto' : qualityLabel(s.quality));
       case 'audio':
         return s.muted ? t('setMute') : `${t('setVolume')} ${pct(s.volume)}`;
       default:
@@ -160,7 +160,7 @@ export class SettingsView {
       rows.push(slider('setVolUi', s.volUi, 0, 1, 0.05, pct, (v) => settings.set({ volUi: v })));
       rows.push(el('p', 'settings-note', t('audioNote')));
     } else if (this.tab === 'graphics') {
-      rows.push(choice('setQuality', s.quality, [['auto', 'qAuto'], ['mobile', 'qMobile'], ['low', 'qLow'], ['medium', 'qMedium'], ['high', 'qHigh']], (v) => settings.set({ quality: v })));
+      rows.push(choice('setQuality', s.quality, [['auto', 'qAuto'], ['mobile', 'qMobile'], ['verylow', 'qVeryLow'], ['low', 'qLow'], ['medium', 'qMedium'], ['high', 'qHigh']], (v) => settings.set({ quality: v })));
       rows.push(el('p', 'settings-note', el('b', 'ui-now', `${t('qualityNow')}: ${t(qualityLabel(effectiveQuality(s)))}`), el('br'), t('qualityNote')));
     } else {
       rows.push(choice('setUiLayout', s.uiLayout, [['auto', 'uiAuto'], ['mobile', 'uiMobile'], ['desktop', 'uiDesktop']], (v) => settings.set({ uiLayout: v })));

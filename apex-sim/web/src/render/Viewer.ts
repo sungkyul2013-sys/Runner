@@ -84,19 +84,20 @@ export class Viewer {
     this.renderer.onDeviceLost = (info: { message?: string }) => onDeviceLost(info?.message ?? 'device lost');
   }
 
-  /** Rendering quality (settings → 그래픽): pixel ratio cap and shadows. Low: ratio 1.25, no shadow map; medium: 1.75,
+  /** Rendering quality (settings → 그래픽): pixel ratio cap and shadows. Very low (매우 낮음, the weakest devices): 75 % of
+   *  the page's pixels (upscaled), no shadow map, the adaptive resolution down to 45 %. Low: ratio 1.25, no shadow map; medium: 1.75,
    *  2048² shadows; high: 2, soft 4096² shadows (the car's own shadows sharp) and bloom. Phone (모바일 선명, phones on
    *  auto): the screen's own ratio (up to 3) — the adaptive resolution then keeps at least 75 % of it — paid for with
    *  a 1024² shadow map over the car's surroundings only (≤ 28 m) and no bloom. The physics does not change with it. */
-  setQuality(q: 'low' | 'medium' | 'high' | 'mobile'): void {
+  setQuality(q: 'verylow' | 'low' | 'medium' | 'high' | 'mobile'): void {
     this.quality = q;
-    const ratio = q === 'mobile' ? 3 : q === 'low' ? 1.25 : q === 'medium' ? 1.75 : 2;
+    const ratio = q === 'mobile' ? 3 : q === 'verylow' ? 0.75 : q === 'low' ? 1.25 : q === 'medium' ? 1.75 : 2;
     this.minScale = q === 'mobile' ? 0.75 : 0.6;
     this.dynScale = Math.max(this.dynScale, this.minScale);
     this.setBloom(q === 'high');
     this.ratioCap = ratio;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, ratio) * this.dynScale);
-    const shadows = q !== 'low';
+    const shadows = q !== 'low' && q !== 'verylow';
     const size = q === 'high' ? 4096 : q === 'mobile' ? 1024 : 2048;
     if (this.renderer.shadowMap.enabled !== shadows || this.sun.shadow.mapSize.x !== size) {
       this.renderer.shadowMap.enabled = shadows;
@@ -115,7 +116,7 @@ export class Viewer {
   }
 
   private ratioCap = 2;
-  private quality: 'low' | 'medium' | 'high' | 'mobile' = 'high';
+  private quality: 'verylow' | 'low' | 'medium' | 'high' | 'mobile' = 'high';
   private minScale = 0.6; // the adaptive resolution's floor
   /** Adaptive resolution: a factor on the pixel ratio, lowered while frames run long and raised again once they are
    *  short (only on sustained trends, so it does not pump). `?autores=0` turns it off. */

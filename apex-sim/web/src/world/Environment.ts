@@ -53,6 +53,8 @@ export class Environment {
   day = 200;
   /** Floor on the fog's visibility [m] (the overview map looks across the whole map). */
   minVisibility = 0;
+  /** Fog at least this thick [m visibility]: the very-low quality draws the map only so far (Infinity: none). */
+  maxVisibility = Infinity;
   /** Game seconds per real second (0: time stands still). */
   timeScale = 30;
   weather: Weather = 'clear';
@@ -295,7 +297,7 @@ export class Environment {
     v.renderer.toneMappingExposure = 1.0 + this.night * 0.9 + 0.22 * golden;
     // Fog: visibility → density (e^(−density·d) = 2 % at the visibility distance), colour from the sky; at the golden
     // hour a warm haze closes in to ≈ 2.4 km.
-    const visibility = Math.max(this.cur.fog, 50, this.minVisibility);
+    const visibility = Math.min(Math.max(this.cur.fog, 50, this.minVisibility), this.maxVisibility);
     this.fog.density = 3.9 / Math.max(Math.min(visibility, visibility + (2400 - visibility) * golden), 50, this.minVisibility);
     const fogDay = new THREE.Color().setRGB(0.72 - 0.2 * this.cur.cloud, 0.78 - 0.18 * this.cur.cloud, 0.85 - 0.15 * this.cur.cloud).lerp(GOLDEN_HAZE, golden * 0.8);
     const fogNight = new THREE.Color(0x0b1018);

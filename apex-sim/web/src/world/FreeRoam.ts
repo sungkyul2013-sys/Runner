@@ -62,7 +62,13 @@ export async function startFreeRoam(ctx: AppContext, vehicle: VehiclePreset): Pr
   env.weather = w && WEATHERS.includes(w) ? w : (WEATHERS.includes(s0.worldWeather as Weather) ? (s0.worldWeather as Weather) : 'clear');
   env.timeScale = s0.worldTimeScale;
   env.settle();
-  settings.onChange((s) => view.setQuality(effectiveQuality(s)));
+  // Very low draws the map out to 1.2 km only: the fog closes in before its edge.
+  const fogFor = (q: string) => (env.maxVisibility = q === 'verylow' ? 1100 : Infinity);
+  fogFor(effectiveQuality());
+  settings.onChange((s) => {
+    view.setQuality(effectiveQuality(s));
+    fogFor(effectiveQuality(s));
+  });
 
   // ---- physics: the map world, parked cars ----
   loading.progress(0.8, t('loadPhysics'));

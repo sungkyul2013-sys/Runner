@@ -4,7 +4,7 @@ import type { Lang } from './i18n';
 
 export type HudPreset = 'none' | 'minimal' | 'racing' | 'engineer';
 /** 'mobile' (모바일 선명, phones on auto): the screen's own resolution, paid for with cheap shadows and effects. */
-export type Quality = 'low' | 'medium' | 'high' | 'mobile';
+export type Quality = 'verylow' | 'low' | 'medium' | 'high' | 'mobile';
 export type SpeedUnit = 'kmh' | 'mph';
 export type Accent = 'orange' | 'blue' | 'mint';
 /** Which UI to wear: by the device, the phone UI or the PC UI (ui/platform). */
