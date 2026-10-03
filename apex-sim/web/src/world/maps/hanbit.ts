@@ -11,6 +11,7 @@ import { MapBuilder, offsetPoints, onRoad, pointInPolygon, type CalmKind, type M
 import { CoarseField, fbm, hash2, lerp, noise2, ridged, rng, smoothstep } from '../noise';
 import { widths, STYLES } from '../road';
 import { MAT } from '../types';
+import { estate, houseQuarter, villaQuarter, type EstateKind, type Rect } from './neighbourhood';
 
 const SIZE = 6000;
 const WATER = 3.0; // river level [m]
@@ -23,7 +24,7 @@ const LAKE_C: [number, number] = [2250, -2560];
 
 // Districts.
 const CITY = { x0: -2720, x1: 720, z0: -1420, z1: 60 }; // north bank city
-const SOUTH = { x0: -2460, x1: 140, z0: 960, z1: 1640 }; // south bank district
+const SOUTH = { x0: -2460, x1: 140, z0: 960, z1: 2150 }; // south bank district: riverside estates, the hillside quarters behind
 const TOWN: [number, number] = [1650, 2150]; // farming town (roundabout)
 // 한빛 오프로드 파크: moguls, a whoops lane, a mud bowl, a hill climb and a rock garden on dirt south-west of the town.
 const PARK = { x: 1300, z: 2420, hx: 130, hz: 95 };
@@ -63,14 +64,31 @@ function rectMask(r: { x0: number; x1: number; z0: number; z1: number }, x: numb
   return smoothstep(r.x0 - soft, r.x0, x) * smoothstep(r.x1 + soft, r.x1, x) * smoothstep(r.z0 - soft, r.z0, z) * smoothstep(r.z1 + soft, r.z1, z);
 }
 
-/** City ground (the draped streets): gently rising to the north, the old-town hill in the north-west. */
+const bell = (x: number, z: number, cx: number, cz: number, a: number, sigma: number) => a * Math.exp(-((x - cx) ** 2 + (z - cz) ** 2) / (2 * sigma * sigma));
+
+/** City ground (the draped streets): gently rising to the north, the old-town hill in the north-west, a lower hill
+ *  under the east side's houses and villas (the streets there climb and dip, grades up to ≈ 5 %). */
 function cityGround(x: number, z: number): number {
-  const hill = 42 * Math.exp(-((x + 2250) ** 2 + (z + 1120) ** 2) / (2 * 190 * 190));
+  const hill = bell(x, z, -2250, -1120, 42, 190) + bell(x, z, 430, -1000, 13, 170);
   return 11 + 0.0035 * (-z) + 2.5 * fbm(x / 1400, z / 1400, 2) + hill;
 }
 
+const STADIUM: [number, number] = [-900, 1425];
+const HILL_PARK: [number, number] = [-1500, 1910]; // 남산 언덕공원, the top of the south hill
+
+/** The south district's relief behind the riverside: two hills (남산 26 m, the east hill 16 m) and a low knoll, and a
+ *  rolling ground (±3 m) the streets climb and dip over — grades to ≈ 11 %, crests no sharper than ≈ 1 km radius (a
+ *  car at 60 km/h feels under 0.3 m/s² off them). The riverside strip (the bridges' ends) and the stadium stay flat. */
+function southRelief(x: number, z: number): number {
+  const rise = smoothstep(1150, 1450, z);
+  if (rise <= 0) return 0;
+  let h = bell(x, z, HILL_PARK[0], HILL_PARK[1], 26, 180) + bell(x, z, -420, 1880, 16, 170) + bell(x, z, -2150, 1640, 9, 150);
+  h += 3.2 * Math.sin(x / 95 + 0.7) * Math.sin(z / 110 + 1.3);
+  return h * rise * smoothstep(110, 190, Math.hypot(x - STADIUM[0], (z - STADIUM[1]) * 1.3));
+}
+
 function southGround(x: number, z: number): number {
-  return 10 + 0.002 * (z - 960) + 1.5 * fbm(x / 1100 + 7, z / 1100, 2);
+  return 10 + 0.002 * (z - 960) + 1.5 * fbm(x / 1100 + 7, z / 1100, 2) + southRelief(x, z);
 }
 
 /** Large-scale natural terrain (evaluated on a coarse grid). */
@@ -112,6 +130,21 @@ function shape(x: number, z: number): number {
   return h;
 }
 
+/** What each residential block of the city's east side is (block column i, row j). */
+const CITY_RES: Record<string, EstateKind | 'villa' | 'house'> = {
+  '6,0': 'house', '7,0': 'villa',
+  '6,1': 'slab', '7,1': 'house',
+  '6,2': 'villa', '7,2': 'tower',
+  '6,3': 'low', '7,3': 'mixed',
+};
+/** The south district by row (river → hills) and column (west → east); the stadium has [1][2]. */
+const SOUTH_RES: Array<Array<EstateKind | 'villa' | 'house'>> = [
+  ['tower', 'slab', 'tower', 'mixed'],
+  ['low', 'mixed', 'slab', 'slab'],
+  ['villa', 'house', 'villa', 'terrace'],
+  ['house', 'house', 'villa', 'house'],
+];
+
 export const timings: { last: Record<string, number> } = { last: {} };
 
 export function buildHanbit(onStage?: (stage: string) => void): MapData {
@@ -128,6 +161,10 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   const drape = (x: number, z: number) => (z > 600 ? southGround(x, z) : cityGround(x, z));
   const inRect = (r: typeof CITY, x: number, z: number, m: number) => x > r.x0 - m && x < r.x1 + m && z > r.z0 - m && z < r.z1 + m;
   const material = (x: number, z: number, y: number, slope: number): number => {
+    if (inRect(SOUTH, x, z, 10) && z > 1560 && southRelief(x, z) > 19) return MAT.grass; // the hilltops: parks and gardens
+    // The strips between the district's outer streets and its edge: lawns (they were bare concrete), not the riverside.
+    if (inRect(SOUTH, x, z, 10) && (x < -2316 || x > -34 || z > 2076)) return MAT.grass;
+    if (inRect(CITY, x, z, 10) && z < -20 && (x < -2616 || x > 616 || z < -1316)) return MAT.grass;
     if (inRect(CITY, x, z, 10) || inRect(SOUTH, x, z, 10)) return MAT.concrete; // paved plazas and lots
     if (inPark(x, z)) return inMud(x, z) ? MAT.mud : MAT.dirt; // off-road park (rough dirt, §11.4)
     if (y < WATER + 1.5 && riverDist(x, z) < RIVER_HALF + 40) return MAT.sand;
@@ -220,14 +257,23 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   add({ id: 'c_alley4', name: { ko: '우물길', en: 'Umul-gil' }, style: 'alley', styleOverride: lane, points: [[-2350, -1050], [-2335, -995], [-2385, -945], [-2362, -885], [-2305, -850], [-2300, -800]], start: { join: ewId(-1050) }, end: { join: ewId(-800) } });
   add({ id: 'c_alley5', name: { ko: '계단길', en: 'Gyedan-gil' }, style: 'alley', styleOverride: lane, points: [[-2200, -935], [-2140, -920], [-2080, -950], [-2000, -940], [-1930, -905], [-1800, -900]], start: { join: nsId(-2200) }, end: { join: nsId(-1800) } });
 
-  // ---- south district ----
-  const SEW = [1050, 1300, 1550];
+  // ---- south district: the riverside estates, then the hillside quarters (villas, houses, a terraced estate) over
+  // 남산 and the east hill; edge streets E–W, N–S streets T into them, the inner E–W streets crossing ----
+  const SEW = [1050, 1300, 1550, 1800, 2060];
   const SNS = [-2300, -1800, -1200, -600, -50];
+  const sewName: Record<number, [string, string]> = { 1050: ['남강변로', 'Namgangbyeon-ro'], 1300: ['아람로', 'Aram-ro'], 1550: ['남한빛로', 'Namhanbit-ro'], 1800: ['언덕마을로', 'Eondeokmaeul-ro'], 2060: ['남산자락길', 'Namsanjarak-gil'] };
+  const snsName: Record<number, [string, string]> = { [-2300]: ['서남로', 'Seonam-ro'], [-1800]: ['나래남로', 'Naraenam-ro'], [-1200]: ['솔빛로', 'Solbit-ro'], [-600]: ['한빛남로', 'Hanbitnam-ro'], [-50]: ['동남로', 'Dongnam-ro'] };
   const sewId = (z: number) => `s_ew${z}`;
   const snsId = (x: number) => `s_ns${x}`;
-  for (const z of [SEW[0], SEW[2]]) add({ id: sewId(z), name: { ko: z === 1050 ? '남강변로' : '남한빛로', en: z === 1050 ? 'Namgangbyeon-ro' : 'Namhanbit-ro' }, style: z === 1050 ? 'arterial' : 'street', points: [[SNS[0] - 16, z], [SNS[SNS.length - 1] + 16, z]] });
-  for (const x of SNS) add({ id: snsId(x), style: x === -1800 || x === -600 ? 'arterial' : 'street', points: [[x, SEW[0] - 30], [x, SEW[2] + 30]], start: { join: sewId(SEW[0]) }, end: { join: sewId(SEW[2]) } });
-  add({ id: sewId(1300), name: { ko: '아람로', en: 'Aram-ro' }, style: 'street', points: [[SNS[0] - 30, 1300], [SNS[SNS.length - 1] + 30, 1300]], start: { join: snsId(SNS[0]) }, end: { join: snsId(SNS[SNS.length - 1]) } });
+  const sEdge = [SEW[0], SEW[SEW.length - 1]];
+  for (const z of sEdge) add({ id: sewId(z), name: { ko: sewName[z][0], en: sewName[z][1] }, style: z === 1050 ? 'arterial' : 'street', points: [[SNS[0] - 16, z], [SNS[SNS.length - 1] + 16, z]] });
+  for (const x of SNS) add({ id: snsId(x), name: { ko: snsName[x][0], en: snsName[x][1] }, style: x === -1800 || x === -600 ? 'arterial' : 'street', points: [[x, sEdge[0] - 30], [x, sEdge[1] + 30]], start: { join: sewId(sEdge[0]) }, end: { join: sewId(sEdge[1]) } });
+  for (const z of SEW.slice(1, -1)) add({ id: sewId(z), name: { ko: sewName[z][0], en: sewName[z][1] }, style: 'street', points: [[SNS[0] - 30, z], [SNS[SNS.length - 1] + 30, z]], start: { join: snsId(SNS[0]) }, end: { join: snsId(SNS[SNS.length - 1]) } });
+  // Winding lanes over the two hills (골목길, one lane each way, the grades the hill's): past 남산 언덕공원 on its top,
+  // and over the east hill.
+  const hillLane = { sidewalk: 1.8, lights: 24, laneWidth: 2.9, shoulder: 0.2 };
+  add({ id: 's_hill1', name: { ko: '남산언덕길', en: 'Namsan-eondeok-gil' }, style: 'alley', styleOverride: hillLane, points: [[-1650, 1800], [-1640, 1840], [-1600, 1875], [-1560, 1880], [-1520, 1850], [-1460, 1845], [-1420, 1880], [-1420, 1940], [-1400, 2000], [-1360, 2030], [-1350, 2060]], start: { join: sewId(1800) }, end: { join: sewId(2060) } });
+  add({ id: 's_hill2', name: { ko: '동산길', en: 'Dongsan-gil' }, style: 'alley', styleOverride: hillLane, points: [[-480, 1800], [-470, 1840], [-430, 1870], [-380, 1880], [-340, 1920], [-330, 1975], [-290, 2020], [-280, 2060]], start: { join: sewId(1800) }, end: { join: sewId(2060) } });
 
   // ---- bridge roads (connectors): city → river → south district ----
   add({ id: 'C1', name: { ko: '나래교', en: 'Narae Bridge' }, style: 'connector', points: [[-1800, -60], [-1800, 250], [-1800, 600], [-1800, 1060]], start: { join: ewId(-50) }, end: { join: sewId(1050) } });
@@ -267,6 +313,58 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       [1720, -1300], [1560, -1200], [1560, -1120], [1780, -1040], [1790, -960], [1600, -880], [1610, -800], [1820, -720], [1830, -620], [1700, -540], [1720, -450], [1850, -360], on('R2', 1935, -230)],
     start: { join: 'N1' }, end: { join: 'R2' },
   });
+
+  // ---- 북녘 전원마을: a farming village in the northern valley along 북부순환로 — houses with blue, red and green
+  // roofs scattered on the valley's slopes, plastic greenhouses (비닐하우스), an orchard, two concrete farm lanes
+  // climbing the hillsides (농로, one lane each way) ----
+  const villageLane = { laneWidth: 2.4, shoulder: 0.3, verge: 1.0, lights: 0 };
+  add({ id: 'V1', name: { ko: '북녘마을길', en: 'Bungnyeok-maeul-gil' }, style: 'farm', styleOverride: villageLane, points: [on('N1', -1250, -2372), [-1240, -2310], [-1205, -2250], [-1215, -2190], [-1180, -2130]], start: { join: 'N1' } });
+  add({ id: 'V2', name: { ko: '북녘윗길', en: 'Bungnyeok-wit-gil' }, style: 'farm', styleOverride: villageLane, points: [on('N1', -1040, -2350), [-1050, -2410], [-1020, -2465], [-1060, -2520]], start: { join: 'N1' } });
+  {
+    const VR = rng(5150);
+    const house = (x: number, z: number, yaw: number) => {
+      if (b.footprintOnRoad(x, z, 14, 12, yaw, 3)) return;
+      const w = 9 + VR() * 4, d = 7 + VR() * 3;
+      let y = Infinity;
+      for (const [a, c] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) y = Math.min(y, b.terrain.heightAt(x + a * w * Math.cos(yaw) + c * d * Math.sin(yaw), z - a * w * Math.sin(yaw) + c * d * Math.cos(yaw)));
+      b.addBuilding({ x, z, y, w, d, h: VR() < 0.75 ? 3.1 : 5.6, yaw, type: VR() < 0.8 ? 4 : 9, seed: Math.floor(VR() * 1e9) });
+      if (VR() < 0.6) b.addTree(x + (VR() - 0.5) * 16, z + (VR() - 0.5) * 16, 0.8 + VR() * 0.3, 0);
+    };
+    // Houses along the loop road, and up the two lanes.
+    const n1 = b.byId.get('N1')!;
+    const [sa, sb] = [n1.nearest(-1520, -2410).s, n1.nearest(-760, -2335).s].sort((a, c) => a - c); // N1 runs east → west
+    for (let s = sa; s < sb; s += 20 + VR() * 26) {
+      const p = n1.at(s);
+      for (const side of [-1, 1]) {
+        if (VR() < 0.35) continue;
+        const u = side * (n1.w.full + 17 + VR() * 24);
+        house(p.x + u * p.tz, p.z - u * p.tx, Math.atan2(p.tx, p.tz) + (VR() - 0.5) * 0.3);
+      }
+    }
+    for (const id of ['V1', 'V2']) {
+      const r = b.byId.get(id)!;
+      for (let s = 30; s < r.length - 10; s += 22 + VR() * 14) {
+        const p = r.at(s);
+        const side = VR() < 0.5 ? -1 : 1;
+        const u = side * (r.w.full + 15 + VR() * 8);
+        house(p.x + u * p.tz, p.z - u * p.tx, Math.atan2(p.tx, p.tz));
+      }
+    }
+    // Greenhouses: rows of long white tunnels south of the road, an orchard of small trees north of it.
+    for (let k = 0; k < 7; k++) {
+      const x = -1440 + k * 9, z = -2335;
+      if (b.footprintOnRoad(x, z, 6, 40, 0, 3)) continue;
+      b.addBox({ cx: x, cy: b.terrain.heightAt(x, z) + 1.2, cz: z, hx: 3, hy: 1.2, hz: 20, yaw: 0.08, material: MAT.concrete, look: 'none', color: 0xdfe6e9 });
+    }
+    for (let i = 0; i < 9; i++) {
+      for (let j = 0; j < 6; j++) {
+        const x = -900 + i * 7 + (j & 1) * 3.5, z = -2445 - j * 7;
+        if (!b.footprintOnRoad(x, z, 3, 3, 0, 2)) b.addTree(x, z, 0.55, 2);
+      }
+    }
+    const p = n1.at(n1.nearest(-1300, -2380).s);
+    b.addSign({ x: p.x + 9 * p.tz, y: p.y, z: p.z - 9 * p.tx, yaw: Math.atan2(-p.tx, -p.tz), text: { ko: '북녘 전원마을', en: 'Bungnyeok village' }, kind: 'place' });
+  }
 
   // ---- expressway: along the north bank, over the bridge roads and R2, through the massif, to the toll plaza ----
   add({
@@ -342,19 +440,35 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
     points: elevPts, fixed: elevFixed, start: { join: nsId(NS[0]) }, end: { join: nsId(NS[NS.length - 1]) },
   });
 
-  // ---- apartment complexes (대단지 아파트): an access lane through each, with humps (단지 내 방지턱) ----
-  const complex = (x0: number, z0: number, x1: number, z1: number, zTop: number, zBot: number, top: string, bottom: string, ground: (x: number, z: number) => number) => {
+  // ---- apartment estates (대단지 아파트): an access lane through each, with humps (단지 내 방지턱); each estate its
+  // own design (slabs, cross-plan towers, the old five-storey blocks, a mix, terraces up a hill) and palette ----
+  const complex = (x0: number, z0: number, x1: number, z1: number, zTop: number, zBot: number, top: string, bottom: string, ground: (x: number, z: number) => number, design: EstateKind = 'slab') => {
     const cx = Math.round((x0 + x1) / 2);
     const id = `apt_${cx}_${zTop}`;
-    add({ id, style: 'alley', points: [[cx, zTop], [cx, zBot]], start: { join: top }, end: { join: bottom } });
+    const lane = add({ id, style: 'alley', points: [[cx, zTop], [cx, zBot]], start: { join: top }, end: { join: bottom } });
     const half = Math.max(W('alley').pe, W('alley').peLeft);
     // Estate humps (단지 내 방지턱): round ones, a long high one mid-lane, a raised crosswalk by the entrance.
-    const lane = b.byId.get(id)!;
     const kinds: CalmKind[] = ['table', 'hump', 'big', 'hump', 'hump', 'big'];
     for (let d = 30, k = 0; d < lane.length - 30; d += 58, k++) b.addCalming(lane, d, kinds[k % kinds.length]);
     b.addSign({ x: cx + half + 1.5, y: ground(cx + half + 1.5, zTop + 26), z: zTop + 26, yaw: 0, text: { ko: '과속방지턱', en: 'Speed humps' }, sub: { ko: '단지 내 서행 20', en: 'Estate 20 km/h' }, kind: 'info' });
-    fillBlock(b, R, x0, z0, cx - 9, z1, 'apart', ground);
-    fillBlock(b, R, cx + 9, z0, x1, z1, 'apart', ground);
+    estate(b, R, { x0, z0, x1, z1 }, ground, design, [lane]);
+  };
+  // ---- villa and house quarters (빌라촌 · 단독주택가): narrow lanes through the block — N–S every ≈ 150 m from street
+  // to street, one E–W across them (named after the street they leave, the Korean way: "언덕마을로12길") ----
+  let laneNo = 2;
+  const quarter = (kind: 'villa' | 'house', r: Rect, top: string, bottom: string, left: string, right: string, zTop: number, zBot: number, xLeft: number, xRight: number, ground: (x: number, z: number) => number, base: string, through: Road[] = [], keep: Array<[number, number, number]> = []) => {
+    const lanes: Road[] = [...through];
+    const style = { sidewalk: 1.6, lights: 22, laneWidth: 2.9, shoulder: 0.2 };
+    const n = through.length ? 0 : Math.max(1, Math.round((r.x1 - r.x0) / 150));
+    for (let k = 1; k <= n; k++) {
+      const x = Math.round(r.x0 + ((r.x1 - r.x0) * k) / (n + 1));
+      lanes.push(add({ id: `lane_${x}_${zTop}`, name: { ko: `${base}${laneNo}길`, en: `${base} ${laneNo}-gil` }, style: 'alley', styleOverride: style, points: [[x, zTop], [x, zBot]], start: { join: top }, end: { join: bottom } }));
+      laneNo += 2;
+    }
+    const zm = Math.round((zTop + zBot) / 2 / 5) * 5;
+    lanes.push(add({ id: `lane_${xLeft}_${zm}`, name: { ko: `${base}${laneNo}길`, en: `${base} ${laneNo}-gil` }, style: 'alley', styleOverride: style, points: [[xLeft, zm], [xRight, zm]], start: { join: left }, end: { join: right } }));
+    laneNo += 2;
+    (kind === 'villa' ? villaQuarter : houseQuarter)(b, R, r, ground, lanes, keep);
   };
 
   // ---- buildings: city blocks ----
@@ -396,9 +510,9 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       else if (cx > 0 || cz > -300) kind = 'apart';
       if (i === 5 && j === 2) kind = 'park'; // city hall plaza
       if (j === EW.length - 2) {
-        // Under the elevated road: apartment rows north and south of it, a strip of trees and parking beneath.
-        fillBlock(b, R, x0, z0, x1, EZ - 24, 'apart', cityGround);
-        fillBlock(b, R, x0, EZ + 24, x1, z1, 'apart', cityGround);
+        // Under the elevated road: rows of villas and shops north and south of it, a strip of trees beneath.
+        villaQuarter(b, R, { x0, z0, x1, z1: EZ - 24 }, cityGround);
+        villaQuarter(b, R, { x0, z0: EZ + 24, x1, z1 }, cityGround);
         for (let x = x0 + 10; x < x1 - 10; x += 19) {
           if (!b.nearPaved(x, EZ - 14, 3)) b.addTree(x, EZ - 14, 0.8, 0);
           if (!b.nearPaved(x + 9, EZ + 14, 3)) b.addTree(x + 9, EZ + 14, 0.8, 0);
@@ -417,8 +531,13 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
         // The underpass runs through these blocks: buildings keep clear of its cuts.
         fillBlock(b, R, x0, z0, UX - 26, z1, kind, cityGround);
         fillBlock(b, R, UX + 26, z0, x1, z1, kind, cityGround);
-      } else if (kind === 'apart') complex(x0, z0, x1, z1, EW[j], EW[j + 1], ewAt(EW[j], cx), ewAt(EW[j + 1], cx), cityGround);
-      else if (kind === 'mid') {
+      } else if (kind === 'apart') {
+        // The east side over its hill: houses on the hill's top, villas and estates of four designs around it.
+        const res = CITY_RES[`${i},${j}`] ?? 'slab';
+        if (res === 'villa' || res === 'house') {
+          quarter(res, { x0, z0, x1, z1 }, ewAt(EW[j], cx), ewAt(EW[j + 1], cx), nsAt(NS[i], cz), nsAt(NS[i + 1], cz), EW[j], EW[j + 1], NS[i], NS[i + 1], cityGround, ewName[j + 1]);
+        } else complex(x0, z0, x1, z1, EW[j], EW[j + 1], ewAt(EW[j], cx), ewAt(EW[j + 1], cx), cityGround, res);
+      } else if (kind === 'mid') {
         // A narrow shopping alley (골목) N–S through the middle of each mid-rise block, crossed by a back street.
         const gx = Math.round(cx / 10) * 10 + (j & 1 ? 40 : -40);
         const alley = add({ id: `c_gol_${i}_${j}`, name: { ko: golName[gol % golName.length], en: golName[gol++ % golName.length] }, style: 'alley', styleOverride: { sidewalk: 2.4, lights: 20, laneWidth: 2.8 }, points: [[gx, EW[j]], [gx, EW[j + 1]]], start: { join: ewAt(EW[j], gx) }, end: { join: ewAt(EW[j + 1], gx) } });
@@ -441,7 +560,12 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
         stadium(b, R, (x0 + x1) / 2, (z0 + z1) / 2, southGround);
         continue;
       }
-      complex(x0, z0, x1, z1, SEW[j], SEW[j + 1], sewId(SEW[j]), sewId(SEW[j + 1]), southGround);
+      const res = SOUTH_RES[j][i];
+      if (res === 'villa' || res === 'house') {
+        const through = j === 3 && i === 1 ? [b.byId.get('s_hill1')!] : j === 3 && i === 3 ? [b.byId.get('s_hill2')!] : [];
+        const keep: Array<[number, number, number]> = j === 3 && i === 1 ? [[HILL_PARK[0], HILL_PARK[1], 62]] : [];
+        quarter(res, { x0, z0, x1, z1 }, sewId(SEW[j]), sewId(SEW[j + 1]), snsId(SNS[i]), snsId(SNS[i + 1]), SEW[j], SEW[j + 1], SNS[i], SNS[i + 1], southGround, sewName[SEW[j + 1]][0], through, keep);
+      } else complex(x0, z0, x1, z1, SEW[j], SEW[j + 1], sewId(SEW[j]), sewId(SEW[j + 1]), southGround, res);
     }
   }
   // ---- traffic calming on the streets (§11.3): humps, raised crosswalks, cushions and rumble strips, every 120–220 m on
@@ -453,14 +577,28 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       const x = RC();
       return x < 0.42 ? 'hump' : x < 0.66 ? 'table' : x < 0.84 ? 'cushion' : x < 0.93 ? 'rumble' : 'big';
     };
+    // The road's own unevenness (요철) between them: repair patches, manhole covers, heaved asphalt — the older the
+    // street, the more (the hillside lanes most); the arterials get patches and covers only, no humps.
+    const rough = (): CalmKind => {
+      const x = RC();
+      return x < 0.45 ? 'patch' : x < 0.75 ? 'manhole' : 'heave';
+    };
     for (const r of b.roads) {
       const id = r.spec.id;
-      const city = /^(c_ns|c_ew|s_ns|s_ew|c_gol_|c_alley|c_back_)/.test(id);
-      if (!city || r.spec.style === 'arterial') continue;
+      const city = /^(c_ns|c_ew|s_ns|s_ew|c_gol_|c_alley|c_back_|lane_|s_hill)/.test(id);
+      if (!city) continue;
+      if (r.spec.style === 'arterial') {
+        for (let s = 60 + RC() * 80; s < r.length - 40; s += 140 + RC() * 160) {
+          const kind = RC() < 0.6 ? 'patch' : 'manhole';
+          for (let t = 0; t < 30 && !b.addCalming(r, s + t, kind); t += 4);
+        }
+        continue;
+      }
       // Narrow lanes (골목, back streets): a hump every 45–75 m, the odd raised crossing — slow the car to a walk.
       const narrow = r.spec.style === 'alley' && r.style.laneWidth <= 3.05 && r.style.lanes === 1;
+      const hillside = /^(lane_|s_hill)/.test(id);
       for (let s = (narrow ? 25 : 50) + RC() * 30; s < r.length - (narrow ? 20 : 50); s += narrow ? 45 + RC() * 30 : 120 + RC() * 100) {
-        const kind = narrow ? (RC() < 0.75 ? 'hump' : 'table') : pick();
+        const kind = narrow ? (RC() < (hillside ? 0.38 : 0.2) ? rough() : RC() < 0.78 ? 'hump' : 'table') : RC() < 0.3 ? rough() : pick();
         // Where one does not fit (a junction, a tight bend), the next metres are tried.
         for (let t = 0; t < 30 && !b.addCalming(r, s + t, kind); t += 4);
       }
@@ -485,6 +623,33 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
       b.addSign({ x: p.x + u * p.tz, y: southGround(p.x + u * p.tz, p.z - u * p.tx), z: p.z - u * p.tx, yaw: Math.atan2(-p.tx, -p.tz), text: { ko: '어린이보호구역', en: 'School zone' }, sub: { ko: '30 · 방지턱', en: '30 km/h · humps' }, kind: 'info' });
     }
   }
+  // 남산 언덕공원: the top of the south hill — a lawn, a ring of trees, a pavilion (정자) with a tiled roof, benches,
+  // and a sign; the hill lane passes below it.
+  {
+    const [px, pz] = HILL_PARK;
+    const y = southGround(px, pz) + 0.15;
+    for (let k = 0; k < 14; k++) {
+      const a = (k / 14) * Math.PI * 2;
+      b.addTree(px + Math.cos(a) * 44, pz + Math.sin(a) * 44, 0.9 + (k % 3) * 0.15, k % 4 === 0 ? 1 : 0);
+    }
+    for (const [ox, oz] of [[-2.6, -2.6], [2.6, -2.6], [-2.6, 2.6], [2.6, 2.6]]) b.addCylinder({ x: px + ox, z: pz + oz, y0: y, y1: y + 2.8, r0: 0.16, material: MAT.wood, look: 'none', color: 0x7a3b2a, sides: 6 });
+    b.addCylinder({ x: px, z: pz, y0: y + 0.45, y1: y + 0.6, r0: 3.4, material: MAT.wood, look: 'none', color: 0x8a6a4a, sides: 8 });
+    b.addCylinder({ x: px, z: pz, y0: y + 2.8, y1: y + 4.6, r0: 4.6, r1: 0.3, material: -1, look: 'none', color: 0x3f4448, sides: 8 });
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + 0.4;
+      b.addBox({ cx: px + Math.cos(a) * 14, cy: y + 0.25, cz: pz + Math.sin(a) * 14, hx: 1.0, hy: 0.25, hz: 0.25, yaw: a, material: MAT.wood, look: 'wood' });
+    }
+    b.addSign({ x: px + 8, y, z: pz - 30, yaw: 0, text: { ko: '남산 언덕공원', en: 'Namsan Hill Park' }, kind: 'place' });
+  }
+
+  // Trees along the district's outer lawns (clear of the roads that cross them).
+  for (const [x0, x1, z0, z1] of [[-2450, -2325, 1000, 2140], [-25, 130, 1000, 2140], [-2450, 130, 2085, 2140]] as const) {
+    for (let k = 0; k < ((x1 - x0) * (z1 - z0)) / 900; k++) {
+      const x = x0 + R() * (x1 - x0), z = z0 + R() * (z1 - z0);
+      if (!b.footprintOnRoad(x, z, 3, 3, 0, 2)) b.addTree(x, z, 0.8 + R() * 0.5, R() < 0.35 ? 1 : 0);
+    }
+  }
+
   // Landmark tower (한빛타워) in the CBD.
   b.addBuilding({ x: -800, z: -680, y: cityGround(-800, -680), w: 44, d: 44, h: 310, yaw: 0.2, type: 0, seed: 999 });
   {
@@ -592,6 +757,10 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
   poi('trail', 'scenic', '숲길 (비포장)', 'Forest trail (unpaved)', face('T2', 60));
   poi('elevated', 'landmark', '한빛고가로 (고가도로)', 'Hanbit Elevated Road', face('E1', 120));
   poi('offroad', 'scenic', '한빛 오프로드 파크', 'Hanbit Off-road Park', face('OP1', b.byId.get('OP1')!.length - 12));
+  poi('village', 'scenic', '북녘 전원마을', 'Bungnyeok farming village', face('V1', 15));
+  poi('hillvillage', 'scenic', '남산 언덕마을 (오르막·내리막)', 'Namsan hill quarter (ups and downs)', face('s_hill1', 20));
+  poi('villas', 'city', '빌라촌 골목 (요철·방지턱)', 'Villa lanes (bumps, humps)', face(b.roads.find((r) => r.spec.id.startsWith('lane_') && r.spec.id.endsWith('_1550'))!.spec.id, 20));
+  poi('eastside', 'city', '동쪽 주택가 언덕', 'East side houses (hill)', face(nsId(250), 160, 1));
   poi('carpark', 'service', '시청 공영주차장 (지하·옥상)', 'City Hall car park', { x: carParkAt.x, z: carParkAt.z, yaw: -Math.PI / 2, y: carParkAt.y });
   b.areas.push(
     { label: { ko: '한빛시', en: 'Hanbit City' }, x: -1100, z: -700, size: 2 },
@@ -605,6 +774,9 @@ export function buildHanbit(onStage?: (stage: string) => void): MapData {
     { label: { ko: '북악산', en: 'Mt. Bugak' }, x: -600, z: -1850, size: 1 },
     { label: { ko: '분수광장', en: 'Fountain Circus' }, x: -1000, z: -500, size: 0 },
     { label: { ko: '종합운동장', en: 'Stadium' }, x: -900, z: 1425, size: 0 },
+    { label: { ko: '남산 언덕마을', en: 'Namsan hill quarter' }, x: -1500, z: 1960, size: 1 },
+    { label: { ko: '북녘 전원마을', en: 'Bungnyeok village' }, x: -1150, z: -2300, size: 1 },
+    { label: { ko: '빌라촌', en: 'Villa quarter' }, x: -2050, z: 1680, size: 0 },
   );
   const data = b.build();
   data.parked = parkedCars(lot);

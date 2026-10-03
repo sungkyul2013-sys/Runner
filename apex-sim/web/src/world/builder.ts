@@ -16,6 +16,12 @@ import type { Localized } from '../ui/i18n';
 /** [m] paint drawn over the surface it is painted on (the physics takes it flush: emitPad). */
 const PAINT_LIFT = 0.006;
 
+/** Deterministic 0…1 per (integer) cell: blotches on patched asphalt. */
+function hashCell(x: number, y: number): number {
+  const v = Math.sin(Math.floor(x) * 127.1 + Math.floor(y) * 311.7) * 43758.5453;
+  return v - Math.floor(v);
+}
+
 export function surfaceLook(material: number): number {
   switch (material) {
     case MAT.asphaltOld: return 1;
@@ -196,7 +202,9 @@ export interface BoxSpec {
 }
 
 /** Traffic calming kinds (MapBuilder.addCalming). */
-export type CalmKind = 'hump' | 'big' | 'table' | 'cushion' | 'rumble' | 'school';
+/** Traffic calming, and the road's own unevenness (요철): a repair patch over one lane, a stretch of heaved asphalt,
+ *  a manhole cover standing proud. */
+export type CalmKind = 'hump' | 'big' | 'table' | 'cushion' | 'rumble' | 'school' | 'patch' | 'heave' | 'manhole';
 
 /** Upright cylinder (towers, columns, fountain basins, tanks): physics as a prism, drawn round. */
 export interface CylinderSpec {
@@ -230,7 +238,7 @@ export interface BuildingSpec {
   d: number;
   h: number;
   yaw: number;
-  type: number; // 0 glass tower, 1 apartment slab, 2 low-rise, 3 industrial/warehouse, 4 house, 5 shop
+  type: number; // 0 glass tower, 1 apartment slab, 2 low-rise, 3 industrial/warehouse, 4 house, 5 shop, 8 villa, 9 flat-roofed house
   seed: number;
 }
 
@@ -723,10 +731,12 @@ export class MapBuilder {
    * in yellow and white diagonal bands; the raised crosswalk (고원식 횡단보도) a 10 cm table with 1.5 m ramps and a
    * zebra on its top; speed cushions (lane pads a truck straddles); rumble strips (1.2 cm ridges every 0.6 m); a
    * school zone (어린이보호구역) painted red with a hump at each end; and a long, high hump (6 m, 14 cm) for the
-   * estates. Returns false where it does not fit: near a junction, on a structure or a curve.
+   * estates. And the unevenness of an old street (요철): a utility-cut repair patch over one lane (2.2 cm proud, the
+   * fresh asphalt darker), heaved asphalt (three 2.8 cm ridges over 8 m, kerb to kerb: roots, frost) and a manhole
+   * cover 1.2 cm proud. Returns false where it does not fit: near a junction, on a structure or a curve.
    */
   addCalming(r: Road, s: number, kind: CalmKind): boolean {
-    const half = { hump: 1.8, big: 3.0, table: 3.5, cushion: 1.5, rumble: 3.3, school: 15 }[kind];
+    const half = { hump: 1.8, big: 3.0, table: 3.5, cushion: 1.5, rumble: 3.3, school: 15, patch: 1.4, heave: 4.0, manhole: 0.8 }[kind];
     if (s - half < 12 || s + half > r.length - 12) return false;
     if (r.junctionS.some((j) => Math.abs(j - s) < half + 22)) return false;
     let kMax = 0;
@@ -752,14 +762,14 @@ export class MapBuilder {
       const n = r.nearest(x, z);
       return [n.u, n.s - s];
     };
-    const pad = (u0: number, u1: number, v0: number, v1: number, lift: (u: number, v: number) => number, colorAt: (u: number, v: number) => number, gridV: number, gridU = 0.8) => {
+    const pad = (u0: number, u1: number, v0: number, v1: number, lift: (u: number, v: number) => number, colorAt: (u: number, v: number) => number, gridV: number, gridU = 0.8, material: number = MAT.paint, outline?: Array<[number, number]>) => {
       this.addPad({
-        outline: [corner(u0, v0), corner(u0, v1), corner(u1, v1), corner(u1, v0)],
+        outline: outline ?? [corner(u0, v0), corner(u0, v1), corner(u1, v1), corner(u1, v0)],
         y: (x, z) => {
           const [u, v] = local(x, z);
           return r.surfaceAt(x, z) + PAINT_LIFT + lift(u, v);
         },
-        material: MAT.paint, look: 'paint', grid: gridU, gridU: gridV, paintLift: PAINT_LIFT,
+        material, look: 'paint', grid: gridU, gridU: gridV, paintLift: PAINT_LIFT,
         colorAt: (x, z) => {
           const [u, v] = local(x, z);
           return colorAt(u, v);
@@ -808,6 +818,29 @@ export class MapBuilder {
         this.addCalming(r, s - 16.5, 'hump');
         this.addCalming(r, s + 16.5, 'hump');
         break;
+      case 'patch': {
+        // Over one lane (which one: by the station), 2.6 m long, 2.2 cm proud with 0.2 m worn edges; the fresh asphalt
+        // a little darker and blotchy.
+        const lw = r.style.laneWidth;
+        const c = r.style.oneWay ? 0 : (Math.floor(s * 7.31) & 1 ? 1 : -1) * lw * 0.5;
+        const lift = table(2.2, 0.2, 0.022);
+        pad(c - lw * 0.46, c + lw * 0.46, -1.3, 1.3, lift, (u, v) => (hashCell(u * 3.1, v * 2.7) > 0.55 ? 0x2a2c2f : 0x323437), 0.25, 0.4, MAT.asphaltOld);
+        break;
+      }
+      case 'heave':
+        // Three ridges kerb to kerb, 2.8 cm, each 2.67 m long (sin²): the car pitches and rolls over them at speed.
+        pad(uR, uL, -4.0, 4.0, (_u, v) => 0.028 * Math.sin((Math.PI * (v + 4)) / (8 / 3)) ** 2, (u, v) => (hashCell(u * 1.7, v * 1.3) > 0.6 ? 0x34363a : 0x3b3d41), 0.33, 0.8, MAT.asphaltOld);
+        break;
+      case 'manhole': {
+        // A round iron cover in the middle of a lane, 1.2 cm proud (its outline a 16-gon).
+        const lw = r.style.laneWidth;
+        const c = r.style.oneWay ? 0 : (Math.floor(s * 3.7) & 1 ? 1 : -1) * lw * 0.5;
+        const ring: Array<[number, number]> = [];
+        for (let k = 0; k < 16; k++) ring.push(corner(c + Math.cos((k / 16) * Math.PI * 2) * 0.62, Math.sin((k / 16) * Math.PI * 2) * 0.62));
+        pad(0, 0, 0, 0, (u, v) => 0.012 * Math.min(1, Math.max(0, (0.62 - Math.hypot(u - c, v)) / 0.06)),
+          (u, v) => (Math.floor(Math.hypot(u - c, v) / 0.09) & 1 ? 0x2b2c2e : 0x3a3b3d), 0.15, 0.15, MAT.steel, ring);
+        break;
+      }
     }
     return true;
   }

@@ -220,8 +220,8 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const onX = step(0.5, abs(n.x));
   const fu = mix(positionWorld.x, positionWorld.z, onX);
   const fv = positionWorld.y.sub(baseY);
-  const floorH = mix(float(3.1), float(4.0), isType(0));
-  const bay = mix(mix(float(3.0), float(1.6), isType(0)), float(4.5), isType(3));
+  const floorH = mix(mix(float(3.1), float(4.0), isType(0)), float(2.8), isType(8).max(isType(9)));
+  const bay = mix(mix(mix(float(3.0), float(1.6), isType(0)), float(4.5), isType(3)), float(2.4), isType(8));
   const fx = fract(fu.div(bay)), fy = fract(fv.div(floorH));
   // Antialiased facade lines: each edge is smoothed over the pixel's footprint (fwidth of the unwrapped bay and floor
   // coordinates), and a feature narrower than about two pixels fades to its average shade instead of flickering
@@ -237,14 +237,19 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const h1 = fract(sin(seed.mul(12.9898)).mul(43758.5453));
   const h2 = fract(sin(seed.mul(78.233)).mul(12345.678));
   const glassWall = mix(color(0x2c4a63), color(0x6d8aa3), h1);
-  const apartWall = mix(color(0xe8e2d6), color(0xd5d9de), h1);
+  // Apartments: off-whites, greige and warm beige by estate (the seed carries the estate's palette).
+  const apartWall = mix(mix(color(0xeeebe4), color(0xd3d8dd), h1), mix(color(0xe7dbc4), color(0xd9cfc3), h1), step(0.55, h2));
   const lowWall = mix(mix(color(0xa0785a), color(0xcfc4b0), h1), color(0x8c8f96), h2.mul(0.5));
   const indWall = mix(color(0x8d949b), color(0x6f7f8f), h1);
-  const houseWall = mix(color(0xe6d7bf), color(0xc9b8a0), h1);
+  const houseWall = mix(mix(color(0xe6d7bf), color(0xc9b8a0), h1), mix(color(0xf2efe8), color(0xe3d9a8), h1), step(0.5, h2));
+  // Villas (빌라, 다세대): red, brown or beige brick, or grey render. Flat-roofed houses (양옥): white, cream, grey.
+  const villaWall = mix(mix(color(0x9a4e3b), color(0xc8a77f), h1), mix(color(0x84593f), color(0xa9a7a1), h1), step(0.5, h2));
+  const flatWall = mix(mix(color(0xf1efe9), color(0xdcd5c6), h1), color(0xb8bbbe), step(0.72, h2));
   const shopWall = mix(color(0xf0ede6), color(0xd8c9b3), h1);
   const plantWall = mix(color(0x8f959b), color(0xa9adb1), h1); // rooftop plant, lift cores, masts
   let wall = glassWall.mul(isType(0));
   wall = wall.add(apartWall.mul(isType(1))).add(lowWall.mul(isType(2))).add(indWall.mul(isType(3))).add(houseWall.mul(isType(4))).add(shopWall.mul(isType(5))).add(plantWall.mul(isType(6)));
+  wall = wall.add(villaWall.mul(isType(8))).add(flatWall.mul(isType(9)));
   // Glass: the room behind (dark, a curtain or blind drawn part-way in some), and the sky it reflects — stronger at
   // grazing angles (Fresnel) and towards the top of tall buildings; curtain-wall panels vary a little in tint.
   const cell = floor(fu.div(bay)).mul(17.3).add(floor(fv.div(floorH)).mul(91.7)).add(seed);
@@ -262,7 +267,9 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   // Far away the window grid would shimmer: its contrast fades with the distance.
   const far = smoothstep(180, 700, length(positionWorld.sub(cameraPosition)));
   const winMask = win.mul(float(1).sub(roof)).mul(float(1).sub(industrialNoWin)).mul(float(1).sub(isType(6)));
-  const roofCol = mix(color(0x5b5e63), mix(color(0x6b3b2e), color(0x3a4750), h1), isType(4).max(isType(7)));
+  // Pitched roofs in the Korean palette: red clay, blue and green steel, slate grey, brown.
+  const tile = mix(mix(color(0x9e3b2c), color(0x3d5f8c), step(0.22, h1)), mix(color(0x4f7a52), mix(color(0x45484d), color(0x6b4a36), step(0.84, h1)), step(0.62, h1)), step(0.44, h1));
+  const roofCol = mix(mix(color(0x5b5e63), color(0x6f8f7e), isType(9).mul(step(0.6, h2))), tile, isType(4).max(isType(7)));
   let c = mix(wall, glass, winMask.mul(float(1).sub(isType(0).mul(0.3))).mul(far.mul(-0.65).add(1)));
   // Window frames: a mullion splitting each window, a darker spandrel line at each floor (towers: thin vertical fins).
   const mullion = mix(float(0.036), box(fx, 0.482, 0.518, ax), resolved(0.036, ax)).mul(winMask).mul(float(1).sub(far));
@@ -278,6 +285,10 @@ function buildingMaterial(u: MapUniforms): THREE.MeshStandardNodeMaterial {
   const brand = mix(mix(color(0x2a7f8f), color(0x1f3f74), step(0.33, h2)), mix(color(0x3d8a4a), color(0xc0663a), step(0.5, h1)), step(0.66, h2));
   const stripe = isType(1).mul(step(top.sub(7.4), fv)).mul(step(fv, top.sub(4.6))).mul(float(1).sub(roof));
   c = mix(c, brand, stripe.mul(0.9));
+  // Villas: the ground floor open on columns (필로티 parking), dark under the slab.
+  const pilotis = isType(8).mul(step(fv, 2.7)).mul(float(1).sub(roof));
+  const column = box(fract(fu.div(5.2)), 0.0, 0.1, fwidth(fu.div(5.2)).max(1e-4));
+  c = mix(c, mix(color(0x1e2023), color(0xb9b4aa), column), pilotis);
   // Plant: louvre stripes.
   c = mix(c, c.mul(0.72), isType(6).mul(step(0.5, fract(fv.mul(2.2)))).mul(float(1).sub(roof)));
   c = mix(c, roofCol, roof);
@@ -605,6 +616,21 @@ export class MapView {
         const along = b.w >= b.d;
         part(0, 0, (along ? b.w : b.d) + 0.6, (along ? b.d : b.w) + 0.6, b.h, b.h + Math.min(b.w, b.d) * (0.3 + r(1) * 0.12), 7, roofs);
         if (!along) roofs[roofs.length - 1].yaw += Math.PI / 2;
+      } else if (b.type === 8) {
+        // Villa (빌라): the block on its pilotis, the stair-and-lift house on the roof at one end, now and then a
+        // top floor set back behind a terrace.
+        const terrace = r(1) > 0.55 && b.h > 10;
+        part(0, 0, b.w, b.d, -1, terrace ? b.h - 2.8 : b.h, 8);
+        if (terrace) part(-b.w * 0.12, 0, b.w * 0.76, b.d * 0.86, b.h - 2.8, b.h, 8);
+        part((r(2) > 0.5 ? 1 : -1) * (b.w / 2 - 2.4), 0, 3.6, Math.min(4.2, b.d * 0.5), b.h, b.h + 2.6, 6);
+      } else if (b.type === 9) {
+        // Flat-roofed house (양옥): parapet, a water tank on the roof, sometimes a smaller upper floor.
+        const upper = r(1) > 0.5;
+        part(0, 0, b.w, b.d, -1, b.h, 9);
+        if (upper) part(b.w * 0.12, -b.d * 0.1, b.w * 0.66, b.d * 0.62, b.h, b.h + 2.8, 9);
+        const top = upper ? b.h + 2.8 : b.h;
+        for (const [ox, oz, w, d] of [[0, -b.d / 2 + 0.08, b.w, 0.16], [0, b.d / 2 - 0.08, b.w, 0.16], [-b.w / 2 + 0.08, 0, 0.16, b.d], [b.w / 2 - 0.08, 0, 0.16, b.d]] as const) part(ox, oz, w, d, b.h, b.h + 0.8, 9);
+        part(-b.w * 0.3, b.d * 0.25, 1.5, 1.5, top, top + 1.4, 6);
       } else {
         part(0, 0, b.w, b.d, -1, b.h, b.type);
       }
