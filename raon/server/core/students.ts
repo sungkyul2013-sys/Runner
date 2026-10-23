@@ -1,10 +1,10 @@
 import type { Ctx, Route } from './http';
-import { bad, idParam, input, notFound, validLoginId, validPassword } from './http';
-import { loginIdTaken } from './auth';
+import { bad, idParam, input, normalizeLoginId, notFound, validPassword } from './http';
+import { chooseLoginId } from './auth';
 import { placeholders } from './db';
 import type { GroupRef, StudentDetail, StudentRow, StudentStatus } from '../../shared/types';
 
-export const PALETTE = ['#2F6FDE', '#1F9E6E', '#8A56E2', '#F2A91E', '#E5483B', '#0A84A8', '#D9622B', '#5E5CE6', '#7A8A2C', '#C2457A'];
+export const PALETTE = ['#3A6EA5', '#2F7D63', '#7A5BA6', '#B8762E', '#B54A4A', '#2E8A99', '#5B6270', '#9A7B4F'];
 
 const STATUSES: readonly StudentStatus[] = ['active', 'paused', 'left'];
 
@@ -90,10 +90,9 @@ function setGroups(ctx: Ctx, studentId: number, groupIds: number[]) {
 
 function upsertStudentAccount(ctx: Ctx, studentId: number, name: string, raw: unknown) {
   const b = input(raw);
-  const loginId = b.str('loginId', '학생 아이디', { required: true, max: 30 });
-  validLoginId(loginId);
-  const existing = ctx.db.get<{ id: number }>('SELECT id FROM users WHERE student_id = ?', studentId);
-  if (loginIdTaken(ctx.db, loginId, existing?.id)) throw bad(`'${loginId}'는 이미 쓰고 있는 아이디입니다.`);
+  const existing = ctx.db.get<{ id: number; login_id: string }>('SELECT id, login_id FROM users WHERE student_id = ?', studentId);
+  // 아이디를 비워 두면 학생 이름이 아이디가 된다 (이미 있는 계정은 그대로 둔다)
+  const loginId = chooseLoginId(ctx.db, name, b.src.loginId || existing?.login_id, existing?.id);
   if (existing) {
     ctx.db.run('UPDATE users SET login_id = ?, name = ? WHERE id = ?', loginId, name, existing.id);
     if (b.src.password) {
@@ -116,17 +115,15 @@ function upsertStudentAccount(ctx: Ctx, studentId: number, name: string, raw: un
 function addParent(ctx: Ctx, studentId: number, raw: unknown) {
   const b = input(raw);
   const relation = b.str('relation', '관계', { max: 10 });
-  const existingLogin = b.str('existingLoginId', '아이디', { max: 30 });
+  const existingLogin = normalizeLoginId(b.str('existingLoginId', '아이디', { max: 40 }));
   let userId: number;
   if (existingLogin) {
     const u = ctx.db.get<{ id: number; role: string }>('SELECT id, role FROM users WHERE login_id = ?', existingLogin);
-    if (!u || u.role !== 'parent') throw bad('해당 아이디의 학부모 계정이 없습니다.');
+    if (!u || u.role !== 'parent') throw bad('그 이름으로 된 학부모 계정이 없습니다.');
     userId = u.id;
   } else {
     const name = b.str('name', '학부모 이름', { required: true, max: 30 });
-    const loginId = b.str('loginId', '학부모 아이디', { required: true, max: 30 });
-    validLoginId(loginId);
-    if (loginIdTaken(ctx.db, loginId)) throw bad(`'${loginId}'는 이미 쓰고 있는 아이디입니다. 형제·자매라면 '기존 계정 연결'을 써 주세요.`);
+    const loginId = chooseLoginId(ctx.db, name, b.src.loginId);
     const pw = validPassword(b.src.password);
     userId = ctx.db.run(
       "INSERT INTO users (role, name, login_id, password_hash, phone, created_at) VALUES ('parent', ?, ?, ?, ?, ?)",
@@ -205,14 +202,23 @@ export const studentRoutes: Route[] = [
     access: 'teacher',
     handler: (ctx) => {
       const id = idParam(ctx);
-      if (!ctx.db.get('SELECT 1 FROM students WHERE id = ?', id)) throw notFound();
+      const before = ctx.db.get<{ name: string }>('SELECT name FROM students WHERE id = ?', id);
+      if (!before) throw notFound();
       const { out, b } = readStudentFields(ctx.body, true);
       ctx.db.tx(() => {
         const keys = Object.keys(out);
         if (keys.length) {
           ctx.db.run(`UPDATE students SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, ...keys.map((k) => out[k]), id);
         }
-        if (out.name) ctx.db.run('UPDATE users SET name = ? WHERE student_id = ?', out.name, id);
+        if (out.name) {
+          // 이름이 바뀌면, 이름 그대로 쓰던 아이디도 새 이름으로 따라간다
+          const acc = ctx.db.get<{ id: number; login_id: string }>('SELECT id, login_id FROM users WHERE student_id = ?', id);
+          if (acc) {
+            const followsName = acc.login_id.replace(/\d+$/, '') === normalizeLoginId(before!.name);
+            const loginId = followsName && before!.name !== out.name ? chooseLoginId(ctx.db, out.name, '', acc.id) : acc.login_id;
+            ctx.db.run('UPDATE users SET name = ?, login_id = ? WHERE id = ?', out.name, loginId, acc.id);
+          }
+        }
         if (b.has('groupIds')) setGroups(ctx, id, b.ids('groupIds'));
       });
       return studentDetail(ctx, id);

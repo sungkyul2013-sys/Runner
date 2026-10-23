@@ -97,7 +97,6 @@ export interface Group {
   id: number;
   name: string;
   color: string;
-  room: string;
   memo: string;
   slots: GroupSlot[];
   members: StudentBrief[];
@@ -122,7 +121,6 @@ export interface CalSession {
   groupId: number | null;
   groupName: string | null;
   color: string;
-  room: string;
   memo: string;
   cancelled: boolean;
   cancelReason: string;
@@ -141,7 +139,6 @@ export interface EventInput {
   end?: string | null;
   groupId?: number | null;
   studentIds?: number[];
-  room?: string;
   memo?: string;
   noMakeup?: boolean;
   originDate?: string | null;
@@ -228,6 +225,7 @@ export interface TeacherDashboard {
   pendingMakeups: MakeupNeed[];
   upcomingMakeups: CalSession[];
   recentFeedback: Feedback[];
+  newConsults: ConsultRequest[];
   counts: { students: number; groups: number; feedbackThisWeek: number };
 }
 
@@ -250,4 +248,27 @@ export interface TeacherAccount {
   phone: string;
   isAdmin: boolean;
   lastLoginAt: string | null;
+}
+
+export const CONSULT_GRADES = ['초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3', '기타'] as const;
+
+export interface ConsultInput {
+  studentName: string;
+  grade: string;
+  phone: string;
+  preferredTime?: string;
+  message?: string;
+  agree: boolean;
+}
+
+export interface ConsultRequest {
+  id: number;
+  studentName: string;
+  grade: string;
+  phone: string;
+  preferredTime: string;
+  message: string;
+  status: 'new' | 'done';
+  createdAt: string;
+  handledAt: string | null;
 }

@@ -42,27 +42,28 @@ function setup(seed = true) {
 test('첫 설정: 원장 계정을 만들고 바로 로그인된다', () => {
   const { call } = setup(false);
   assert.equal(call('GET', '/setup').needsSetup, true);
-  const me = call<Me>('POST', '/setup', { academyName: '라온국어', name: '정다은', loginId: 'boss', password: 'secret12' });
+  const me = call<Me>('POST', '/setup', { academyName: '라온국어', name: '정다은', password: 'secret12' });
   assert.equal(me.role, 'teacher');
   assert.equal(me.isAdmin, true);
   assert.equal(call<Me>('GET', '/auth/me').name, '정다은');
+  assert.equal(me.loginId, '정다은');
   assert.equal(call('GET', '/setup').needsSetup, false);
 });
 
 test('로그인 실패와 권한', () => {
   const { call, login, fails, logout } = setup();
-  fails(() => call('POST', '/auth/login', { loginId: 'director', password: 'wrong' }), 401);
+  fails(() => call('POST', '/auth/login', { loginId: '정다은', password: 'wrong' }), 401);
   fails(() => call('GET', '/students'), 401);
-  login('taeyun');
+  login('김태윤');
   fails(() => call('GET', '/students'), 403);
   logout();
-  login('director');
+  login('정다은');
   assert.ok(call<any[]>('GET', '/students').length >= 10);
 });
 
 test('정규 수업은 요일마다 펼쳐지고 휴강은 취소로 표시된다', () => {
   const { call, login } = setup();
-  login('director');
+  login('정다은');
   const from = addDays(TODAY, -14);
   const sessions = call<CalSession[]>('GET', `/calendar?from=${from}&to=${TODAY}`);
   const m3 = sessions.filter((s) => s.title === '중3 내신반' && s.kind === 'class');
@@ -72,7 +73,7 @@ test('정규 수업은 요일마다 펼쳐지고 휴강은 취소로 표시된�
 
 test('학생은 자기 일정만, 다른 학생 이름 없이 본다', () => {
   const { call, login, fails } = setup();
-  const me = login('taeyun');
+  const me = login('김태윤');
   const sid = me.students[0].id;
   const sessions = call<CalSession[]>('GET', `/calendar?from=${TODAY}&to=${addDays(TODAY, 14)}&studentId=${sid}`);
   assert.ok(sessions.length > 0);
@@ -85,12 +86,12 @@ test('학생은 자기 일정만, 다른 학생 이름 없이 본다', () => {
 
 test('피드백은 학생용과 학부모용이 따로 보인다', () => {
   const { call, login, logout } = setup();
-  const st = login('taeyun');
+  const st = login('김태윤');
   const sid = st.students[0].id;
   const forStudent = call<Feedback[]>('GET', `/feedback?studentId=${sid}`);
   assert.ok(forStudent.length > 0 && forStudent.every((f) => f.audience === 'student'));
   logout();
-  const pa = login('taeyun.mom');
+  const pa = login('박미영');
   assert.equal(pa.students.length, 2);
   const forParent = call<Feedback[]>('GET', `/feedback?studentId=${sid}`);
   assert.ok(forParent.length > 0 && forParent.every((f) => f.audience === 'parent'));
@@ -102,7 +103,7 @@ test('피드백은 학생용과 학부모용이 따로 보인다', () => {
 
 test('선생님이 학생·학부모 피드백을 한 번에 따로 쓴다', () => {
   const { call, login } = setup();
-  login('director');
+  login('정다은');
   const sid = call<any[]>('GET', '/students').find((s) => s.name === '이도윤').id;
   const r = call('POST', '/feedback', { studentId: sid, toStudent: '도윤아 잘했어', toParent: '도윤이가 잘하고 있습니다', classDate: TODAY });
   assert.equal(r.ids.length, 2);
@@ -112,7 +113,7 @@ test('선생님이 학생·학부모 피드백을 한 번에 따로 쓴다', () 
 
 test('결석 → 보강 대기 → 보강 등록 → 대기에서 빠짐 → 보강 삭제 시 다시 대기', () => {
   const { call, login } = setup();
-  login('director');
+  login('정다은');
   const before = call<MakeupOverview>('GET', '/makeups');
   const need = before.pending.find((p) => p.type === 'absence')!;
   assert.ok(need);
@@ -135,7 +136,7 @@ test('결석 → 보강 대기 → 보강 등록 → 대기에서 빠짐 → 보
 
 test('출결 기록과 결석 처리', () => {
   const { call, login } = setup();
-  login('director');
+  login('정다은');
   // 오늘(금) 고1 수업
   const today = call<CalSession[]>('GET', `/calendar?from=${TODAY}&to=${TODAY}`).find((s) => s.title === '고1 국어 기본')!;
   const st = today.students[0];
@@ -149,7 +150,7 @@ test('출결 기록과 결석 처리', () => {
 
 test('교재 배정과 진도 기록', () => {
   const { call, login, logout } = setup();
-  login('director');
+  login('정다은');
   const book = call('POST', '/textbooks', { title: '테스트 교재', totalUnits: 10, unitLabel: '강', category: '문학' });
   const groups = call<any[]>('GET', '/groups');
   const h2 = groups.find((g) => g.name.startsWith('고2'));
@@ -163,14 +164,14 @@ test('교재 배정과 진도 기록', () => {
   assert.equal(done.progress, 10);
   assert.equal(done.finishedOn, TODAY);
   logout();
-  const me = login('taeyun');
+  const me = login('김태윤');
   const mine = call<StudentBook[]>('GET', `/student-books?studentId=${me.students[0].id}`);
   assert.ok(mine.some((b) => b.status === 'current'));
 });
 
 test('반 시간표를 바꿔도 같은 시간의 출결 기록은 유지된다', () => {
   const { call, login, db } = setup();
-  login('director');
+  login('정다은');
   const g = call<any[]>('GET', '/groups').find((x) => x.name.startsWith('고2'));
   const before = db.get<any>('SELECT COUNT(*) c FROM attendance WHERE session_key LIKE ?', `g${g.id}s%`).c;
   call('PATCH', `/groups/${g.id}`, { slots: [...g.slots, { weekday: 6, start: '13:00', end: '15:00' }] });
@@ -181,7 +182,7 @@ test('반 시간표를 바꿔도 같은 시간의 출결 기록은 유지된다'
 
 test('학부모 계정 추가와 형제 연결', () => {
   const { call, login, fails } = setup();
-  login('director');
+  login('정다은');
   const students = call<any[]>('GET', '/students');
   const a = students.find((s) => s.name === '박서윤');
   const b = students.find((s) => s.name === '정민서');
@@ -192,4 +193,36 @@ test('학부모 계정 추가와 형제 연결', () => {
   call('DELETE', `/students/${a.id}`);
   // 다른 자녀가 남아 있으므로 학부모 계정은 유지
   assert.equal(call('GET', `/students/${b.id}`).parents.length, 1);
+});
+
+test('이름으로 로그인한다: 띄어쓰기는 무시하고, 같은 이름은 숫자를 붙인다', () => {
+  const { call, login, logout, fails } = setup();
+  assert.equal(call<Me>('POST', '/auth/login', { loginId: ' 김 태윤 ', password: 'raon1234' }).name, '김태윤');
+  logout();
+  login('정다은');
+  const twin = call<any>('POST', '/students', { name: '김태윤', grade: '중1', account: { password: 'twin1234' } });
+  assert.equal(twin.account.loginId, '김태윤2');
+  const p = call<any>('POST', `/students/${twin.id}/parents`, { name: '박미영', password: 'mom12345', relation: '어머니' });
+  assert.equal(p.parents[0].loginId, '박미영2');
+  // 직접 적은 아이디가 겹치면 알려 준다
+  fails(() => call('POST', `/students/${twin.id}/parents`, { name: '아무개', loginId: '정다은', password: 'pass1234' }), 400);
+  // 이름이 바뀌면 이름으로 된 아이디도 따라간다
+  assert.equal(call<any>('PATCH', `/students/${twin.id}`, { name: '김태오' }).account.loginId, '김태오');
+  logout();
+  assert.equal(call<Me>('POST', '/auth/login', { loginId: '김태오', password: 'twin1234' }).role, 'student');
+});
+
+test('상담 신청: 누구나 남기고 선생님만 본다', () => {
+  const { call, fails } = setup(false);
+  fails(() => call('POST', '/consults', { studentName: '한유나', grade: '중3', phone: '010-1234-5678' }), 400); // 동의 없음
+  fails(() => call('POST', '/consults', { studentName: '한유나', grade: '중3', phone: '12', agree: true }), 400);
+  call('POST', '/consults', { studentName: '한유나', grade: '중3', phone: '010-1234-5678', preferredTime: '평일 저녁', agree: true });
+  call('POST', '/consults', { studentName: '봇', grade: '중3', phone: '010-0000-0000', agree: true, website: 'x' }); // 걸러짐
+  fails(() => call('GET', '/consults'), 401);
+  call<Me>('POST', '/setup', { academyName: '라온국어', name: '정다은', password: 'secret12' });
+  const list = call<any[]>('GET', '/consults');
+  assert.equal(list.length, 1);
+  assert.equal(call<any>('GET', '/dashboard').newConsults.length, 1);
+  assert.equal(call<any>('PATCH', `/consults/${list[0].id}`, { status: 'done' }).status, 'done');
+  assert.equal(call<any>('GET', '/dashboard').newConsults.length, 0);
 });

@@ -192,8 +192,13 @@ export function idParam(ctx: Ctx, key = 'id'): number {
   return n;
 }
 
+/** 로그인 아이디는 사람 이름이다. 띄어쓰기는 없애고 비교한다 ("김 태윤" = "김태윤"). */
+export function normalizeLoginId(raw: unknown): string {
+  return typeof raw === 'string' ? raw.normalize('NFC').replace(/\s+/g, '') : '';
+}
+
 export function validLoginId(id: string) {
-  if (!/^[a-zA-Z0-9._-]{3,30}$/.test(id)) throw bad('아이디는 영문, 숫자, . _ - 로 3~30자입니다.');
+  if (!/^[\p{L}\p{N}._()-]{2,30}$/u.test(id)) throw bad('아이디(이름)는 2~30자의 글자·숫자로 써 주세요.');
 }
 
 export function validPassword(pw: unknown): string {

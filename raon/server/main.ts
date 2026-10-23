@@ -26,7 +26,7 @@ migrate(db);
 
 if (process.env.SEED_DEMO === '1' && !db.get('SELECT 1 FROM users LIMIT 1')) {
   seedDemo(db, nodeCrypto, todayIn());
-  console.log('[raon] 데모 데이터를 넣었습니다. (원장 아이디: director / 비밀번호: raon1234)');
+  console.log('[raon] 데모 데이터를 넣었습니다. (원장 정다은 · 학생 김태윤 · 학부모 박미영, 비밀번호 raon1234)');
 }
 
 function readCookie(req: Request, name: string): string | undefined {

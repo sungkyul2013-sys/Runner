@@ -7,14 +7,15 @@ import type { AttendanceStatus, CalSession, EventKind, MakeupNeed, MakeupOvervie
 import { EVENT_LABEL } from '../../shared/types';
 import { autoTitle } from '../../shared/titles';
 
+// 반에 딸린 일정은 반 색을 쓰고, 그 밖에는 차분한 회색. 보강만 파란색으로 눈에 띄게.
 const EVENT_COLOR: Record<EventKind, string> = {
-  makeup: '#B23A26',
-  extra: '#2F6466',
-  cancel: '#8A857A',
-  exam: '#A87B2C',
-  holiday: '#8A857A',
-  consult: '#6E4A5E',
-  etc: '#59606B',
+  makeup: '#0071E3',
+  extra: '#86868B',
+  cancel: '#C7C7CC',
+  exam: '#1D1D1F',
+  holiday: '#E30000',
+  consult: '#86868B',
+  etc: '#86868B',
 };
 
 const KINDS: readonly EventKind[] = ['makeup', 'extra', 'cancel', 'exam', 'holiday', 'consult', 'etc'];
@@ -35,7 +36,7 @@ type Person = { id: number; name: string };
  */
 export function buildSessions(ctx: Ctx, q: SessionQuery): CalSession[] {
   const { db } = ctx;
-  const groups = new Map(db.all<any>('SELECT id, name, color, room FROM class_groups').map((g) => [g.id as number, g]));
+  const groups = new Map(db.all<any>('SELECT id, name, color FROM class_groups').map((g) => [g.id as number, g]));
   const slots = db.all<any>('SELECT id, group_id, weekday, start_time, end_time FROM group_slots');
   const memberRows = db.all<any>(
     `SELECT m.group_id, s.id, s.name FROM group_members m JOIN students s ON s.id = m.student_id
@@ -109,7 +110,6 @@ export function buildSessions(ctx: Ctx, q: SessionQuery): CalSession[] {
         groupId: g.id,
         groupName: g.name,
         color: g.color,
-        room: g.room,
         memo: '',
         cancelled: !!stop,
         cancelReason: stop ? stop.title || EVENT_LABEL[stop.kind as EventKind] : '',
@@ -137,8 +137,7 @@ export function buildSessions(ctx: Ctx, q: SessionQuery): CalSession[] {
       title: e.title || autoTitle(e.kind, g?.name ?? (e.kind === 'makeup' ? e.origin_label : null)),
       groupId: g?.id ?? null,
       groupName: g?.name ?? null,
-      color: EVENT_COLOR[e.kind as EventKind],
-      room: e.room || g?.room || '',
+      color: g && e.kind !== 'makeup' && e.kind !== 'holiday' ? g.color : EVENT_COLOR[e.kind as EventKind],
       memo: e.memo,
       cancelled: false,
       cancelReason: '',
@@ -254,7 +253,6 @@ function readEvent(ctx: Ctx, raw: unknown) {
     groupId,
     studentIds,
     title: b.str('title', '제목', { max: 60 }),
-    room: b.str('room', '강의실', { max: 30 }),
     memo: b.text('memo', '메모', 1000),
     noMakeup: b.bool('noMakeup'),
     originDate: b.date('originDate', '원래 수업 날짜', false),
@@ -299,15 +297,14 @@ export const calendarRoutes: Route[] = [
           throw bad('이미 휴강으로 등록된 수업입니다.');
         }
         const eid = ctx.db.run(
-          `INSERT INTO events (kind, title, date, start_time, end_time, group_id, room, memo, no_makeup, origin_date, origin_label, created_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO events (kind, title, date, start_time, end_time, group_id, memo, no_makeup, origin_date, origin_label, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           e.kind,
           e.title,
           e.date,
           e.start,
           e.end,
           e.groupId,
-          e.room,
           e.memo,
           e.noMakeup ? 1 : 0,
           e.originDate,
@@ -333,7 +330,7 @@ export const calendarRoutes: Route[] = [
       const e = readEvent(ctx, { kind: old.kind, ...ctx.body });
       ctx.db.tx(() => {
         ctx.db.run(
-          `UPDATE events SET kind = ?, title = ?, date = ?, start_time = ?, end_time = ?, group_id = ?, room = ?, memo = ?, no_makeup = ?,
+          `UPDATE events SET kind = ?, title = ?, date = ?, start_time = ?, end_time = ?, group_id = ?, memo = ?, no_makeup = ?,
                   origin_date = COALESCE(?, origin_date), origin_label = COALESCE(?, origin_label) WHERE id = ?`,
           e.kind,
           e.title,
@@ -341,7 +338,6 @@ export const calendarRoutes: Route[] = [
           e.start,
           e.end,
           e.groupId,
-          e.room,
           e.memo,
           e.noMakeup ? 1 : 0,
           e.originDate,

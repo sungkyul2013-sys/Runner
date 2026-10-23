@@ -4,6 +4,7 @@ import { assertStudentAccess } from './auth';
 import { buildSessions, makeupOverview, onlyStudent } from './calendar';
 import { audienceFor, listFeedback, unreadCount } from './feedback';
 import { listStudentBooks } from './books';
+import { listConsults } from './consults';
 import { addDays, nowTimeIn, startOfMonth } from '../../shared/date';
 import type { AttendanceSummary, FamilyHome, StudentBrief, TeacherDashboard } from '../../shared/types';
 
@@ -19,6 +20,7 @@ function teacherDashboard(ctx: Ctx): TeacherDashboard {
     pendingMakeups: makeups.pending,
     upcomingMakeups: makeups.upcoming.slice(0, 8),
     recentFeedback: listFeedback(ctx, { limit: 6 }),
+    newConsults: listConsults(ctx, 'new'),
     counts: {
       students: db.get<{ c: number }>("SELECT COUNT(*) c FROM students WHERE status = 'active'")!.c,
       groups: db.get<{ c: number }>('SELECT COUNT(*) c FROM class_groups')!.c,

@@ -58,7 +58,7 @@ export function Roster({
         {s.students.map((st) => (
           <li key={st.id} className={st.status ? `is-${st.status}` : ''}>
             <span className="roster-name">{st.name}</span>
-            <span className="att-buttons" role="group" aria-label={`${st.name} 출결`}>
+            <span className="att-seg" role="group" aria-label={`${st.name} 출결`}>
               {ORDER.map((o) => (
                 <button
                   key={o}
@@ -77,7 +77,7 @@ export function Roster({
                 {st.makeupEventId ? (
                   <span className="fine">보강 잡힘</span>
                 ) : (
-                  <button type="button" className="link red" onClick={() => onMakeup(st)}>
+                  <button type="button" className="link" onClick={() => onMakeup(st)}>
                     보강 잡기
                   </button>
                 )}

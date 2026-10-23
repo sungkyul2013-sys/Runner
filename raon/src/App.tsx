@@ -1,7 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 import { createBrowserRouter, createMemoryRouter, Navigate, Outlet, RouterProvider, type RouteObject } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
-import { installPointerEffects } from './lib/motion';
 import { UiProvider, Loading } from './components/ui';
 import { FamilyShell, TeacherShell } from './components/Shell';
 import { LoginPage, SetupPage } from './pages/Login';
@@ -12,9 +11,8 @@ import { MakeupsPage } from './pages/teacher/MakeupsPage';
 import { StudentDetailPage, StudentsPage } from './pages/teacher/StudentPages';
 import { TeacherFeedbackPage } from './pages/teacher/FeedbackPages';
 import { AccountPage, BooksPage, GroupsPage, SettingsPage } from './pages/teacher/MorePages';
+import { ConsultsPage } from './pages/teacher/ConsultsPage';
 import { todayIn } from '../shared/date';
-
-installPointerEffects();
 
 /** 같은 주소라도 선생님과 학생·학부모에게 다른 화면을 보여 준다 */
 function ByRole({ teacher, family }: { teacher?: ReactNode; family?: ReactNode }) {
@@ -23,7 +21,7 @@ function ByRole({ teacher, family }: { teacher?: ReactNode; family?: ReactNode }
   return <>{el ?? <Navigate to="/" replace />}</>;
 }
 
-function Gate({ banner }: { banner?: ReactNode }) {
+function Gate() {
   const { me, ready, needsSetup } = useAuth();
   let body: ReactNode;
   if (!ready) body = <Loading />;
@@ -40,21 +38,16 @@ function Gate({ banner }: { banner?: ReactNode }) {
         <Outlet />
       </FamilyShell>
     );
-  return (
-    <>
-      {banner}
-      {body}
-    </>
-  );
+  return <>{body}</>;
 }
 
-function routes(banner?: ReactNode): RouteObject[] {
+function routes(): RouteObject[] {
   return [
     {
       element: (
         <AuthProvider>
           <UiProvider>
-            <Gate banner={banner} />
+            <Gate />
           </UiProvider>
         </AuthProvider>
       ),
@@ -67,6 +60,7 @@ function routes(banner?: ReactNode): RouteObject[] {
         { path: '/students/:id', element: <ByRole teacher={<StudentDetailPage />} /> },
         { path: '/makeups', element: <ByRole teacher={<MakeupsPage />} /> },
         { path: '/groups', element: <ByRole teacher={<GroupsPage />} /> },
+        { path: '/consults', element: <ByRole teacher={<ConsultsPage />} /> },
         { path: '/settings', element: <ByRole teacher={<SettingsPage />} /> },
         { path: '/account', element: <ByRole family={<AccountPage />} /> },
         { path: '*', element: <Navigate to="/" replace /> },
@@ -75,8 +69,8 @@ function routes(banner?: ReactNode): RouteObject[] {
   ];
 }
 
-export function App({ banner }: { banner?: ReactNode }) {
+export function App() {
   // 미리보기 빌드는 한 장짜리 페이지 안에서 돌기 때문에 주소창을 건드리지 않는다
-  const router = useMemo(() => (import.meta.env.MODE === 'demo' ? createMemoryRouter(routes(banner)) : createBrowserRouter(routes(banner))), [banner]);
+  const router = useMemo(() => (import.meta.env.MODE === 'demo' ? createMemoryRouter(routes()) : createBrowserRouter(routes())), []);
   return <RouterProvider router={router} />;
 }

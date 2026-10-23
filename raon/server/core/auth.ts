@@ -1,6 +1,6 @@
 import type { Db } from './db';
 import type { AuthUser, Crypto, Ctx, Route } from './http';
-import { bad, HttpError, input, validLoginId, validPassword, notFound, idParam } from './http';
+import { bad, HttpError, input, normalizeLoginId, validLoginId, validPassword, notFound, idParam } from './http';
 import type { AcademyInfo, Me, StudentBrief, TeacherAccount } from '../../shared/types';
 
 const SESSION_DAYS = 30;
@@ -75,6 +75,24 @@ export function loginIdTaken(db: Db, loginId: string, exceptUserId?: number) {
   return !!db.get('SELECT 1 FROM users WHERE login_id = ? AND id != ?', loginId, exceptUserId ?? -1);
 }
 
+/**
+ * 아이디를 정한다. 따로 적지 않으면 이름이 아이디가 되고,
+ * 같은 이름이 이미 있으면 김민준2, 김민준3 … 처럼 숫자를 붙인다.
+ * 직접 적은 아이디가 겹치면 알려 준다.
+ */
+export function chooseLoginId(db: Db, name: string, given: unknown, exceptUserId?: number): string {
+  const typed = normalizeLoginId(given);
+  if (typed) {
+    validLoginId(typed);
+    if (loginIdTaken(db, typed, exceptUserId)) throw bad(`'${typed}'는 이미 쓰고 있는 아이디입니다. 뒤에 숫자를 붙여 주세요.`);
+    return typed;
+  }
+  const base = normalizeLoginId(name);
+  validLoginId(base);
+  if (!loginIdTaken(db, base, exceptUserId)) return base;
+  for (let n = 2; ; n++) if (!loginIdTaken(db, base + n, exceptUserId)) return base + n;
+}
+
 // 같은 아이디로 연속 실패하면 잠시 막는다 (프로세스 메모리 기준)
 const failures = new Map<string, { count: number; until: number }>();
 
@@ -126,8 +144,7 @@ export const authRoutes: Route[] = [
       const b = input(ctx.body);
       const academy = b.str('academyName', '학원 이름', { max: 40 }) || '라온국어';
       const name = b.str('name', '이름', { required: true, max: 30 });
-      const loginId = b.str('loginId', '아이디', { required: true, max: 30 });
-      validLoginId(loginId);
+      const loginId = chooseLoginId(ctx.db, name, b.src.loginId);
       const pw = validPassword(b.src.password);
       const id = ctx.db.tx(() => {
         setSetting(ctx.db, 'academy_name', academy);
@@ -151,14 +168,14 @@ export const authRoutes: Route[] = [
     access: 'public',
     handler: (ctx) => {
       const b = input(ctx.body);
-      const loginId = b.str('loginId', '아이디', { required: true, max: 30 });
+      const loginId = normalizeLoginId(b.str('loginId', '이름', { required: true, max: 40 }));
       const pw = typeof b.src.password === 'string' ? b.src.password : '';
       const key = `${ctx.ip}|${loginId.toLowerCase()}`;
       checkThrottle(key);
       const row = ctx.db.get<any>('SELECT id, password_hash FROM users WHERE login_id = ?', loginId);
       if (!row || !ctx.crypto.verifyPassword(pw, row.password_hash)) {
         noteFailure(key);
-        throw new HttpError(401, '아이디 또는 비밀번호가 맞지 않습니다.');
+        throw new HttpError(401, '이름 또는 비밀번호가 맞지 않습니다.');
       }
       failures.delete(key);
       const token = createSession(ctx.db, ctx.crypto, row.id, ctx.now);
@@ -221,9 +238,7 @@ export const authRoutes: Route[] = [
     handler: (ctx) => {
       const b = input(ctx.body);
       const name = b.str('name', '이름', { required: true, max: 30 });
-      const loginId = b.str('loginId', '아이디', { required: true, max: 30 });
-      validLoginId(loginId);
-      if (loginIdTaken(ctx.db, loginId)) throw bad('이미 쓰고 있는 아이디입니다.');
+      const loginId = chooseLoginId(ctx.db, name, b.src.loginId);
       const pw = validPassword(b.src.password);
       const id = ctx.db.run(
         "INSERT INTO users (role, name, login_id, password_hash, phone, is_admin, created_at) VALUES ('teacher', ?, ?, ?, ?, ?, ?)",
@@ -234,7 +249,7 @@ export const authRoutes: Route[] = [
         b.bool('isAdmin') ? 1 : 0,
         ctx.now,
       ).lastId;
-      return { id };
+      return { id, loginId };
     },
   },
   {

@@ -13,9 +13,9 @@ import { wrapSqlJs, type SqlJsDatabase } from './sqljs';
 
 export { ApiError };
 
-const DB_KEY = 'raon.preview.db';
-const DAY_KEY = 'raon.preview.day';
-const TOKEN_KEY = 'raon.preview.token';
+const DB_KEY = 'raon.preview.db.v2';
+const DAY_KEY = 'raon.preview.day.v2';
+const TOKEN_KEY = 'raon.preview.token.v2';
 
 const demoCrypto: Crypto = {
   // 미리보기에서는 예시 계정만 쓰므로 단순하게 처리한다

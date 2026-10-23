@@ -4,15 +4,14 @@ import { useAuth } from '../../lib/auth';
 import { useApi } from '../../lib/hooks';
 import { api, qs } from '../../lib/api';
 import { useChild } from '../../components/Shell';
-import { Chevron, Empty, ErrorNote, ExpandIcon, Loading, SectionHead, Segmented, Sheet, Tag } from '../../components/ui';
-import { CalendarLegend, ExpandedCalendar, MonthCalendar, MonthNav, SessionDetail, SessionLine, WeekStrip } from '../../components/schedule';
-import { AttendancePillars, FlipText } from '../../components/depth';
-import { rise, vt } from '../../lib/motion';
+import { Button, Chevron, Empty, ErrorNote, ExpandIcon, Loading, PageHead, SectionHead, Segmented, Sheet, Tag } from '../../components/ui';
+import { displayTitle, ExpandedCalendar, KindMark, MonthCalendar, MonthNav, SessionDetail, SessionLine, WeekStrip } from '../../components/schedule';
+import { vt } from '../../lib/motion';
 import { BookCard, BookLogList } from '../../components/books';
 import { Letter } from '../../components/letters';
 import { addDays, dotDate, endOfMonth, fullDate, koTime, mdw, monthGrid, relativeDay, timeRange, todayIn } from '../../../shared/date';
 import { givenName, nickname } from '../../../shared/josa';
-import type { CalSession, Feedback, FamilyHome, StudentBook } from '../../../shared/types';
+import type { AttendanceSummary, CalSession, Feedback, FamilyHome, StudentBook } from '../../../shared/types';
 
 export function FamilyHomePage() {
   const { me } = useAuth();
@@ -24,123 +23,134 @@ export function FamilyHomePage() {
   const today = data.today;
   const next = data.next;
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(today, i));
-  const [ap, hm] = next?.start ? koTime(next.start).split(' ') : ['', ''];
+  const name = isParent ? nickname(data.student.name) : givenName(data.student.name);
 
   return (
-    <div className="fam-home" key={data.student.id}>
-      <header className="hero rise" style={rise(0)}>
-        <p className="eyebrow">{fullDate(today)}</p>
-        <h1 className="hero-title page-title">{isParent ? `${nickname(data.student.name)}의 이번 주` : `${givenName(data.student.name)}의 이번 주`}</h1>
-      </header>
+    <div className="page fam-home" key={data.student.id}>
+      <PageHead eyebrow={fullDate(today)} title={`${name}의 이번 주`} />
 
-      <div className="bento">
-        <section className="card card-next rise" style={rise(1)} data-tilt="3">
-          <span className="next-glow" aria-hidden="true" />
-          <div className="next-main">
-            <span className="next-label">다음 수업</span>
+      <div className="home-grid">
+        <div className="home-col">
+          <section className="card next">
+            <p className="next-label">다음 수업</p>
             {next ? (
               <>
-                <span className="next-when">
+                <p className="next-when">
                   <span className="rel">{relativeDay(next.date, today)}</span>
-                  <span className="ap">{ap}</span>
-                  <FlipText text={hm} className="time" />
-                </span>
-                <span className="next-what">
-                  {next.kind === 'makeup' && <Tag tone="red">보강</Tag>}
-                  {next.kind === 'exam' && <Tag tone="ochre">시험</Tag>}
-                  {next.title}
-                </span>
-                <span className="next-meta">{[mdw(next.date), timeRange(next.start, next.end), next.room].filter(Boolean).join(' · ')}</span>
+                  <span className="time">{koTime(next.start)}</span>
+                </p>
+                <p className="next-what">
+                  <KindMark s={next} />
+                  {displayTitle(next)}
+                </p>
+                <p className="next-meta">{[mdw(next.date), timeRange(next.start, next.end)].filter(Boolean).join(' · ')}</p>
               </>
             ) : (
-              <span className="next-what">앞으로 3주 안에 잡힌 수업이 없어요.</span>
+              <p className="next-what">앞으로 3주 안에 잡힌 수업이 없어요.</p>
             )}
-          </div>
-          <Link to="/calendar" viewTransition className="next-week" aria-label="일정 달력으로">
-            <WeekStrip days={weekDays} sessions={data.week} today={today} />
-          </Link>
-        </section>
+            <Link to="/calendar" viewTransition className="next-week" aria-label="일정 달력으로">
+              <WeekStrip days={weekDays} sessions={data.week} today={today} />
+            </Link>
+          </section>
 
-        <section className={'card card-side rise' + (data.makeups.length ? ' card-makeup' : '')} style={rise(2)}>
           {data.makeups.length > 0 && (
-            <>
-              <div className="card-head">
-                <h2>
-                  잡혀 있는 보강 <span className="count">{data.makeups.length}</span>
-                </h2>
-              </div>
-              <div className="slist">
+            <section className="block">
+              <SectionHead title="잡혀 있는 보강" count={data.makeups.length} />
+              <div className="list">
                 {data.makeups.map((s) => (
                   <SessionLine key={s.key} s={s} showDate />
                 ))}
               </div>
-            </>
+            </section>
           )}
-          <div className={data.makeups.length ? 'card-side-att' : ''}>
-            <div className="card-head">
-              <h2>이번 달 출결</h2>
-            </div>
-            <AttendancePillars a={data.attendance} />
-          </div>
-        </section>
 
-        <section className="card card-books rise" style={rise(3)}>
-          <div className="card-head">
-            <h2>지금 공부하는 교재</h2>
-            <Link to="/books" viewTransition className="more">
-              전체 <Chevron />
-            </Link>
-          </div>
-          {data.books.length ? (
-            <div className="book-list">
-              {data.books.map((b) => (
-                <BookCard key={b.id} sb={b} />
-              ))}
-            </div>
-          ) : (
-            <Empty title="아직 정해진 교재가 없어요." />
-          )}
-        </section>
+          <section className="block">
+            <SectionHead
+              title="앞으로 일주일"
+              action={
+                <Link to="/calendar" viewTransition className="more">
+                  달력 <Chevron size={12} />
+                </Link>
+              }
+            />
+            {data.week.length ? (
+              <div className="list">
+                {data.week.map((s) => (
+                  <SessionLine key={s.key} s={s} showDate />
+                ))}
+              </div>
+            ) : (
+              <Empty title="일주일 안에 잡힌 일정이 없어요." />
+            )}
+          </section>
+        </div>
 
-        <section className="card card-letters rise" style={rise(4)}>
-          <div className="card-head">
-            <h2>
-              {isParent ? '학부모님께 온 피드백' : '선생님 피드백'}
-              {data.unread > 0 && <span className="count">{data.unread}</span>}
-            </h2>
-            <Link to="/feedback" viewTransition className="more">
-              모두 <Chevron />
-            </Link>
-          </div>
-          {data.feedback.length ? (
-            <div className="letters">
-              {data.feedback.map((f) => (
-                <LetterWithRead key={f.id} f={f} salutation={isParent ? '학부모님께' : `${nickname(data.student.name)}에게`} />
-              ))}
-            </div>
-          ) : (
-            <Empty title="아직 받은 피드백이 없어요." />
-          )}
-        </section>
+        <div className="home-col">
+          <section className="block">
+            <SectionHead
+              title={isParent ? '학부모님께 온 피드백' : '선생님 피드백'}
+              count={data.unread}
+              action={
+                <Link to="/feedback" viewTransition className="more">
+                  모두 보기 <Chevron size={12} />
+                </Link>
+              }
+            />
+            {data.feedback.length ? (
+              <div className="list letters">
+                {data.feedback.map((f) => (
+                  <LetterWithRead key={f.id} f={f} salutation={isParent ? '학부모님께' : `${nickname(data.student.name)}에게`} />
+                ))}
+              </div>
+            ) : (
+              <Empty title="아직 받은 피드백이 없어요." />
+            )}
+          </section>
 
-        <section className="card card-week rise" style={rise(5)}>
-          <div className="card-head">
-            <h2>앞으로 일주일</h2>
-            <Link to="/calendar" viewTransition className="more">
-              달력 <Chevron />
-            </Link>
-          </div>
-          {data.week.length ? (
-            <div className="slist">
-              {data.week.map((s) => (
-                <SessionLine key={s.key} s={s} showDate />
-              ))}
-            </div>
-          ) : (
-            <Empty title="일주일 안에 잡힌 일정이 없어요." />
-          )}
-        </section>
+          <section className="block">
+            <SectionHead
+              title="지금 공부하는 교재"
+              action={
+                <Link to="/books" viewTransition className="more">
+                  전체 <Chevron size={12} />
+                </Link>
+              }
+            />
+            {data.books.length ? (
+              <div className="list books">
+                {data.books.map((b) => (
+                  <BookCard key={b.id} sb={b} />
+                ))}
+              </div>
+            ) : (
+              <Empty title="아직 정해진 교재가 없어요." />
+            )}
+          </section>
 
+          <section className="block">
+            <SectionHead title="이번 달 출결" />
+            <AttendanceNumbers a={data.attendance} />
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function AttendanceNumbers({ a }: { a: AttendanceSummary }) {
+  return (
+    <div className="numbers">
+      <div>
+        <span className="n">{a.present}</span>
+        <span className="k">출석</span>
+      </div>
+      <div>
+        <span className="n">{a.late}</span>
+        <span className="k">지각</span>
+      </div>
+      <div className={a.absent ? 'is-warn' : ''}>
+        <span className="n">{a.absent}</span>
+        <span className="k">결석</span>
       </div>
     </div>
   );
@@ -174,48 +184,42 @@ export function FamilyCalendarPage() {
   const day = (data ?? []).filter((s) => s.date === selected);
   const count = (data ?? []).filter((s) => s.date.slice(0, 7) === month.slice(0, 7) && (s.kind === 'class' || s.kind === 'makeup') && !s.cancelled).length;
   const expand = (on: boolean) => vt(() => setExpanded(on), on ? 'expand' : 'collapse');
+  const rel = relativeDay(selected, today);
 
   return (
     <div className="page page-wide">
-      <header className="page-head rise" style={rise(0)}>
-        <div>
-          <p className="eyebrow">{child?.name}</p>
-          <h1 className="page-title">일정</h1>
-          <p className="page-sub">
-            {endOfMonth(month).slice(5, 7).replace(/^0/, '')}월 수업 {count}회
-          </p>
-        </div>
-        <div className="page-actions">
-          <button type="button" className="btn btn-line" onClick={() => expand(true)}>
+      <PageHead
+        eyebrow={child?.name}
+        title="일정"
+        sub={`${Number(endOfMonth(month).slice(5, 7))}월 수업 ${count}회`}
+        actions={
+          <Button onClick={() => expand(true)}>
             <ExpandIcon /> 펼쳐 보기
-          </button>
-        </div>
-      </header>
-      <div className="cal-toolbar">
-        <MonthNav
-          month={month}
-          today={today}
-          onChange={(m) => {
-            setMonth(m);
-            setSelected(m.slice(0, 7) === today.slice(0, 7) ? today : m);
-          }}
-        />
-        <CalendarLegend />
-      </div>
+          </Button>
+        }
+      />
       {error && <ErrorNote message={error} onRetry={reload} />}
       <div className="cal-layout">
-        <div className={'cal-wrap' + (data ? '' : ' is-loading')} style={{ viewTransitionName: expanded ? undefined : 'calendar' }}>
+        <div className={'card cal-card' + (data ? '' : ' is-loading')} style={{ viewTransitionName: expanded ? undefined : 'calendar' }}>
+          <MonthNav
+            month={month}
+            today={today}
+            onChange={(m) => {
+              setMonth(m);
+              setSelected(m.slice(0, 7) === today.slice(0, 7) ? today : m);
+            }}
+          />
           <MonthCalendar month={month} sessions={data ?? []} today={today} selected={selected} onSelect={setSelected} onMore={() => expand(true)} />
         </div>
         <aside className="day-panel">
-          <p className="eyebrow">{relativeDay(selected, today) !== dotDate(selected) ? relativeDay(selected, today) : ' '}</p>
-          <h2 className="day-title">{mdw(selected)}</h2>
+          <h2 className="day-title">
+            {mdw(selected)}
+            {rel !== dotDate(selected) && <span>{rel}</span>}
+          </h2>
           {day.length ? (
-            <div className="slist" key={selected}>
+            <div className="list" key={selected}>
               {day.map((s) => (
-                <SessionLine key={s.key} s={s} onClick={() => setDetail(s)}>
-                  {s.students[0]?.status && <AttendanceNote status={s.students[0].status} />}
-                </SessionLine>
+                <SessionLine key={s.key} s={s} onClick={() => setDetail(s)} aside={s.students[0]?.status && <AttendanceNote status={s.students[0].status} />} />
               ))}
             </div>
           ) : (
@@ -232,9 +236,15 @@ export function FamilyCalendarPage() {
         title={child?.name}
         onOpenSession={setDetail}
       />
-      <Sheet open={!!detail} onClose={() => setDetail(null)} title={detail?.title ?? ''} width={480}>
+      <Sheet open={!!detail} onClose={() => setDetail(null)} title="일정" width={460}>
         {detail && (
-          <SessionDetail s={detail}>{detail.students[0]?.status && <AttendanceNote status={detail.students[0].status} />}</SessionDetail>
+          <SessionDetail s={detail}>
+            {detail.students[0]?.status && (
+              <p className="sdetail-att">
+                출결 <AttendanceNote status={detail.students[0].status} />
+              </p>
+            )}
+          </SessionDetail>
         )}
       </Sheet>
     </div>
@@ -242,13 +252,9 @@ export function FamilyCalendarPage() {
 }
 
 function AttendanceNote({ status }: { status: 'present' | 'late' | 'absent' }) {
-  const map = { present: ['출석', 'moss'], late: ['지각', 'ochre'], absent: ['결석', 'red'] } as const;
+  const map = { present: ['출석', 'gray'], late: ['지각', 'orange'], absent: ['결석', 'red'] } as const;
   const [label, tone] = map[status];
-  return (
-    <span className="att-note">
-      <Tag tone={tone}>{label}</Tag>
-    </span>
-  );
+  return <Tag tone={tone}>{label}</Tag>;
 }
 
 export function FamilyFeedbackPage() {
@@ -263,20 +269,18 @@ export function FamilyFeedbackPage() {
   const list = cat === '전체' ? data : data.filter((f) => f.category === cat);
   return (
     <div className="page page-narrow">
-      <header className="page-head">
-        <div>
-          <p className="eyebrow">{child.name}</p>
-          <h1 className="page-title">{isParent ? "학부모님께 온 피드백" : "선생님 피드백"}</h1>
-          <p className="page-sub">
-            {isParent
-              ? '학부모님께만 보이는 글입니다. 학생에게 보낸 피드백은 따로 전달됩니다.'
-              : '선생님이 나에게 남긴 글이에요. 학부모님께 가는 글과는 따로 보관됩니다.'}
-          </p>
+      <PageHead
+        eyebrow={child.name}
+        title={isParent ? '학부모님께 온 피드백' : '선생님 피드백'}
+        sub={isParent ? '학부모님께만 보이는 글입니다. 학생에게 보낸 글은 따로 전달돼요.' : '선생님이 나에게 쓴 글이에요. 학부모님께 가는 글과는 따로 보관돼요.'}
+      />
+      {cats.length > 2 && (
+        <div className="toolbar">
+          <Segmented size="sm" value={cat} onChange={(c) => vt(() => setCat(c), 'swap')} options={cats.map((c) => ({ value: c, label: c }))} />
         </div>
-      </header>
-      {cats.length > 2 && <Segmented size="sm" value={cat} onChange={setCat} options={cats.map((c) => ({ value: c, label: c }))} />}
+      )}
       {list.length ? (
-        <div className="letters letters-page">
+        <div className="list letters swap-area">
           {list.map((f, i) => (
             <LetterWithRead key={f.id} f={f} salutation={isParent ? '학부모님께' : `${nickname(child.name)}에게`} defaultOpen={i === 0 && !f.readAt} />
           ))}
@@ -300,13 +304,7 @@ export function FamilyBooksPage() {
   ] as const;
   return (
     <div className="page page-narrow">
-      <header className="page-head">
-        <div>
-          <p className="eyebrow">{child.name}</p>
-          <h1 className="page-title">교재와 진도</h1>
-          <p className="page-sub">선생님이 수업마다 진도를 기록합니다.</p>
-        </div>
-      </header>
+      <PageHead eyebrow={child.name} title="교재와 진도" sub="선생님이 수업마다 진도를 기록합니다." />
       {!data.length && <Empty title="아직 정해진 교재가 없어요." />}
       {groups.map((g) => {
         const list = data.filter((b) => b.status === g.key);
@@ -314,7 +312,7 @@ export function FamilyBooksPage() {
         return (
           <section className="block" key={g.key}>
             <SectionHead title={g.title} count={list.length} />
-            <div className="book-list">
+            <div className="list books">
               {list.map((b) => (
                 <BookCard key={b.id} sb={b} compact={g.key !== 'current'}>
                   {g.key === 'current' && <BookLogList sb={b} />}

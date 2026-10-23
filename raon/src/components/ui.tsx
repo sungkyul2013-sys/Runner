@@ -13,34 +13,26 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { invalidate } from '../lib/hooks';
-import { lastPointer, reducedMotion } from '../lib/motion';
+import { reducedMotion } from '../lib/motion';
 
-// ── 브랜드: 라온의 다섯 자모(ㄹ·ㅏ·ㅇ·ㅗ·ㄴ)를 다섯 색 막대로 ─────────
-
-export const AREAS = [
-  { key: 'vocab', name: '어휘', jamo: 'ㄹ', color: '#e5483b' },
-  { key: 'read', name: '독서', jamo: 'ㅏ', color: '#f2a91e' },
-  { key: 'lit', name: '문학', jamo: 'ㅇ', color: '#2f6fde' },
-  { key: 'gram', name: '문법', jamo: 'ㅗ', color: '#1f9e6e' },
-  { key: 'write', name: '작문', jamo: 'ㄴ', color: '#8a56e2' },
-] as const;
+// ── 브랜드: 높이가 다른 다섯 막대 (라온의 다섯 자모) ─────────
 
 const BAR_H = [16, 11, 14, 8, 12];
 
-export function Mark({ scale = 1, live }: { scale?: number; live?: boolean }) {
+export function Mark({ scale = 1 }: { scale?: number }) {
   return (
-    <span className={'mark' + (live ? ' is-live' : '')} style={{ ['--s' as string]: scale }} aria-hidden="true">
-      {AREAS.map((a, i) => (
-        <i key={a.key} style={{ height: BAR_H[i] * scale, background: a.color, ['--i' as string]: i }} />
+    <span className="mark" aria-hidden="true">
+      {BAR_H.map((h, i) => (
+        <i key={i} style={{ height: h * scale, width: 3 * scale }} />
       ))}
     </span>
   );
 }
 
-export function Brand({ name, compact }: { name: string; compact?: boolean }) {
+export function Brand({ name, scale = 1 }: { name: string; scale?: number }) {
   return (
-    <span className={'brand' + (compact ? ' brand-compact' : '')}>
-      <Mark scale={compact ? 1 : 1.15} live />
+    <span className="brand" style={{ ['--s' as string]: scale }}>
+      <Mark scale={scale} />
       <span className="brand-name">{name}</span>
     </span>
   );
@@ -49,15 +41,15 @@ export function Brand({ name, compact }: { name: string; compact?: boolean }) {
 // ── 버튼 ───────────────────────────────────────────────
 
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'line' | 'ghost' | 'danger' | 'red';
-  size?: 'sm' | 'md';
+  variant?: 'primary' | 'secondary' | 'plain' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
   busy?: boolean;
 };
 
-export function Button({ variant = 'line', size = 'md', busy, className = '', children, disabled, ...rest }: BtnProps) {
+export function Button({ variant = 'secondary', size = 'md', busy, className = '', children, disabled, ...rest }: BtnProps) {
   return (
     <button type="button" {...rest} disabled={disabled || busy} className={`btn btn-${variant} btn-${size}${busy ? ' is-busy' : ''} ${className}`}>
-      {children}
+      <span className="btn-in">{children}</span>
     </button>
   );
 }
@@ -74,7 +66,7 @@ export function Field({ label, hint, children, wide }: { label: string; hint?: R
   );
 }
 
-/** 고른 칸 뒤로 둥근 표시가 미끄러져 따라가는 선택 버튼 묶음 */
+/** 고른 칸 뒤로 흰 표시가 미끄러져 따라가는 선택 버튼 묶음 (iOS 의 세그먼트) */
 function useSlider(activeIndex: number, deps: unknown[]) {
   const box = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties>({ opacity: 0 });
@@ -106,16 +98,18 @@ export function Segmented<T extends string | number>({
   options,
   onChange,
   size = 'md',
+  label,
 }: {
   value: T;
   options: { value: NoInfer<T>; label: ReactNode }[];
   onChange(v: NoInfer<T>): void;
   size?: 'sm' | 'md';
+  label?: string;
 }) {
   const idx = options.findIndex((o) => o.value === value);
   const { box, style } = useSlider(idx, [options.length]);
   return (
-    <div className={`seg seg-${size}`} role="radiogroup" ref={box}>
+    <div className={`seg seg-${size}`} role="radiogroup" aria-label={label} ref={box}>
       <span className="seg-thumb" style={style} aria-hidden="true" />
       {options.map((o) => (
         <button key={String(o.value)} data-slot type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? 'is-on' : ''} onClick={() => onChange(o.value)}>
@@ -130,8 +124,8 @@ export function Tabs<T extends string>({ value, tabs, onChange }: { value: T; ta
   const idx = tabs.findIndex((t) => t.key === value);
   const { box, style } = useSlider(idx, [tabs.length]);
   return (
-    <nav className="tabs" role="tablist" ref={box}>
-      <span className="tabs-ink" style={style} aria-hidden="true" />
+    <nav className="seg seg-tabs" role="tablist" ref={box}>
+      <span className="seg-thumb" style={style} aria-hidden="true" />
       {tabs.map((t) => (
         <button key={t.key} data-slot type="button" role="tab" aria-selected={value === t.key} className={value === t.key ? 'is-on' : ''} onClick={() => onChange(t.key)}>
           {t.label}
@@ -143,14 +137,13 @@ export function Tabs<T extends string>({ value, tabs, onChange }: { value: T; ta
 
 // ── 레이아웃 조각 ──────────────────────────────────────
 
-export function SectionHead({ title, action, count }: { title: string; action?: ReactNode; count?: number }) {
+export function SectionHead({ title, action, count }: { title: ReactNode; action?: ReactNode; count?: number }) {
   return (
     <div className="section-head">
       <h2>
         {title}
-        {count !== undefined && <span className="count">{count}</span>}
+        {count !== undefined && count > 0 && <span className="count">{count}</span>}
       </h2>
-      <span className="section-rule" />
       {action}
     </div>
   );
@@ -159,7 +152,7 @@ export function SectionHead({ title, action, count }: { title: string; action?: 
 export function PageHead({ title, sub, actions, eyebrow }: { title: ReactNode; sub?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode }) {
   return (
     <header className="page-head">
-      <div>
+      <div className="page-head-text">
         {eyebrow && <p className="eyebrow">{eyebrow}</p>}
         <h1 className="page-title">{title}</h1>
         {sub && <p className="page-sub">{sub}</p>}
@@ -172,18 +165,27 @@ export function PageHead({ title, sub, actions, eyebrow }: { title: ReactNode; s
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="empty">
-      <Mark scale={0.8} />
       <p className="empty-title">{title}</p>
       {children && <div className="empty-body">{children}</div>}
     </div>
   );
 }
 
+/** 애플식 돌아가는 살 (잠깐이면 아예 보이지 않도록 조금 늦게 나타난다) */
+export function Spinner({ size = 20 }: { size?: number }) {
+  return (
+    <span className="spinner" style={{ width: size, height: size }} aria-hidden="true">
+      {Array.from({ length: 8 }, (_, i) => (
+        <i key={i} style={{ ['--i' as string]: i }} />
+      ))}
+    </span>
+  );
+}
+
 export function Loading({ label = '불러오는 중' }: { label?: string }) {
   return (
-    <div className="loading" role="status">
-      <Mark scale={1.3} live />
-      <span>{label}</span>
+    <div className="loading" role="status" aria-label={label}>
+      <Spinner />
     </div>
   );
 }
@@ -205,11 +207,71 @@ export function Dot({ color, size = 8 }: { color: string; size?: number }) {
   return <span className="dot" style={{ background: color, width: size, height: size }} />;
 }
 
-export function Tag({ children, tone = 'plain' }: { children: ReactNode; tone?: 'plain' | 'red' | 'green' | 'ink' | 'ochre' | 'moss' | 'mute' | 'blue' | 'purple' }) {
+export type Tone = 'gray' | 'blue' | 'red' | 'orange' | 'green';
+
+export function Tag({ children, tone = 'gray' }: { children: ReactNode; tone?: Tone }) {
   return <span className={`tag tag-${tone}`}>{children}</span>;
 }
 
-// ── 시트(모달): 누른 자리에서 펼쳐지고, 닫을 때 그 자리로 접힌다 ──────
+/** 이름 첫 글자를 담은 동그라미 (연락처 앱처럼 회색) */
+export function Avatar({ name, size = 'md', vtName }: { name: string; size?: 'sm' | 'md' | 'lg'; vtName?: string }) {
+  return (
+    <span className={`avatar avatar-${size}`} style={vtName ? ({ viewTransitionName: vtName } as CSSProperties) : undefined} aria-hidden="true">
+      {name.slice(0, 1)}
+    </span>
+  );
+}
+
+// ── 시트: 넓은 화면에선 가운데 창, 좁은 화면에선 아래에서 올라오는 판 ──────
+
+function useModalLife(open: boolean, ms: number) {
+  const [shown, setShown] = useState(open);
+  const [closing, setClosing] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setShown(true);
+      setClosing(false);
+      return;
+    }
+    if (!shown) return;
+    if (reducedMotion()) {
+      setShown(false);
+      return;
+    }
+    setClosing(true);
+    const t = setTimeout(() => {
+      setShown(false);
+      setClosing(false);
+    }, ms);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  return { shown, closing };
+}
+
+function useModalFocus(open: boolean, panel: React.RefObject<HTMLDivElement | null>, onClose: () => void, focusFirstInput = true) {
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // 가장 위에 열린 창만 닫는다
+      const all = document.querySelectorAll('.sheet-backdrop:not(.is-closing)');
+      if (all[all.length - 1]?.contains(panel.current)) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    document.body.classList.add('no-scroll');
+    requestAnimationFrame(() => {
+      const first = focusFirstInput && window.matchMedia('(hover: hover)').matches ? panel.current?.querySelector<HTMLElement>('input:not([type=checkbox]):not([type=hidden]), textarea, select') : null;
+      (first ?? panel.current)?.focus({ preventScroll: true });
+    });
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (!document.querySelector('.sheet-backdrop:not(.is-closing)')) document.body.classList.remove('no-scroll');
+      prev?.focus?.({ preventScroll: true });
+    };
+  }, [open, onClose, panel, focusFirstInput]);
+}
 
 export function Sheet({
   open,
@@ -230,70 +292,19 @@ export function Sheet({
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
-  const [shown, setShown] = useState(open);
-  const [closing, setClosing] = useState(false);
-  const origin = useRef({ x: lastPointer.x, y: lastPointer.y });
-
-  useEffect(() => {
-    if (open) {
-      origin.current = { x: lastPointer.x, y: lastPointer.y };
-      setShown(true);
-      setClosing(false);
-    } else if (shown) {
-      if (reducedMotion()) {
-        setShown(false);
-        return;
-      }
-      setClosing(true);
-      const t = setTimeout(() => {
-        setShown(false);
-        setClosing(false);
-      }, 240);
-      return () => clearTimeout(t);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  useLayoutEffect(() => {
-    if (!shown || !panel.current) return;
-    const r = panel.current.getBoundingClientRect();
-    panel.current.style.transformOrigin = `${origin.current.x - r.left}px ${origin.current.y - r.top}px`;
-  }, [shown]);
-
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKey);
-    document.body.classList.add('no-scroll');
-    requestAnimationFrame(() => {
-      const first = panel.current?.querySelector<HTMLElement>('input:not([type=checkbox]), textarea, select');
-      (first ?? panel.current)?.focus({ preventScroll: true });
-    });
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.classList.remove('no-scroll');
-      prev?.focus?.({ preventScroll: true });
-    };
-  }, [open, onClose]);
+  const { shown, closing } = useModalLife(open, 260);
+  useModalFocus(open, panel, onClose);
 
   if (!shown) return null;
   return createPortal(
     <div className={'sheet-backdrop' + (closing ? ' is-closing' : '')} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div
-        className="sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        ref={panel}
-        tabIndex={-1}
-        style={{ maxWidth: width, viewTransitionName: vtName } as CSSProperties}
-      >
+      <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panel} tabIndex={-1} style={{ ['--w' as string]: `${width}px`, viewTransitionName: vtName } as CSSProperties}>
+        <span className="sheet-grabber" aria-hidden="true" />
         <div className="sheet-head">
           <h2 id={titleId}>{title}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="닫기">
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-              <path d="M4 4l10 10M14 4L4 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          <button type="button" className="close-btn" onClick={onClose} aria-label="닫기">
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </button>
         </div>
@@ -305,7 +316,7 @@ export function Sheet({
   );
 }
 
-// ── 알림·확인 ──────────────────────────────────────────
+// ── 확인 창 (애플식 알림) ──────────────────────────────
 
 interface ConfirmOpts {
   title: string;
@@ -313,6 +324,40 @@ interface ConfirmOpts {
   ok?: string;
   danger?: boolean;
 }
+
+function Alert({ opts, onDone }: { opts: ConfirmOpts | null; onDone(v: boolean): void }) {
+  const panel = useRef<HTMLDivElement>(null);
+  const [last, setLast] = useState<ConfirmOpts | null>(opts);
+  useEffect(() => {
+    if (opts) setLast(opts);
+  }, [opts]);
+  const cancel = useCallback(() => onDone(false), [onDone]);
+  const { shown, closing } = useModalLife(!!opts, 180);
+  useModalFocus(!!opts, panel, cancel, false);
+  const o = opts ?? last;
+  if (!shown || !o) return null;
+  return createPortal(
+    <div className={'sheet-backdrop alert-backdrop' + (closing ? ' is-closing' : '')}>
+      <div className="alert" role="alertdialog" aria-modal="true" aria-label={o.title} ref={panel} tabIndex={-1}>
+        <div className="alert-text">
+          <p className="alert-title">{o.title}</p>
+          {o.body && <div className="alert-body">{o.body}</div>}
+        </div>
+        <div className="alert-actions">
+          <button type="button" onClick={() => onDone(false)}>
+            취소
+          </button>
+          <button type="button" className={o.danger ? 'is-danger' : 'is-default'} onClick={() => onDone(true)}>
+            {o.ok ?? '확인'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── 알림·확인 ──────────────────────────────────────────
 
 interface Feedback {
   toast(msg: string, tone?: 'ok' | 'err'): void;
@@ -325,13 +370,15 @@ const FeedbackCtx = createContext<Feedback>(null!);
 export const useUi = () => useContext(FeedbackCtx);
 
 export function UiProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<{ id: number; msg: string; tone: 'ok' | 'err' }[]>([]);
+  const [toasts, setToasts] = useState<{ id: number; msg: string; tone: 'ok' | 'err'; out?: boolean }[]>([]);
   const [pending, setPending] = useState<(ConfirmOpts & { resolve(v: boolean): void }) | null>(null);
 
   const toast = useCallback((msg: string, tone: 'ok' | 'err' = 'ok') => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t.slice(-2), { id, msg, tone }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), tone === 'err' ? 4200 : 2600);
+    const life = tone === 'err' ? 4200 : 2400;
+    setTimeout(() => setToasts((t) => t.map((x) => (x.id === id ? { ...x, out: true } : x))), life);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), life + 260);
   }, []);
 
   const confirm = useCallback((o: ConfirmOpts) => new Promise<boolean>((resolve) => setPending({ ...o, resolve })), []);
@@ -351,40 +398,36 @@ export function UiProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
-  const close = (v: boolean) => {
-    pending?.resolve(v);
-    setPending(null);
-  };
+  const done = useCallback(
+    (v: boolean) => {
+      setPending((p) => {
+        p?.resolve(v);
+        return null;
+      });
+    },
+    [],
+  );
 
   return (
     <FeedbackCtx.Provider value={{ toast, confirm, run }}>
       {children}
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.tone}`}>
-            <span className="toast-dot" />
+          <div key={t.id} className={`toast toast-${t.tone}${t.out ? ' is-out' : ''}`}>
+            {t.tone === 'ok' ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 4.5v4.5M8 11.4v.1" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            )}
             {t.msg}
           </div>
         ))}
       </div>
-      <Sheet
-        open={!!pending}
-        onClose={() => close(false)}
-        title={pending?.title}
-        width={420}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => close(false)}>
-              취소
-            </Button>
-            <Button variant={pending?.danger ? 'danger' : 'primary'} onClick={() => close(true)}>
-              {pending?.ok ?? '확인'}
-            </Button>
-          </>
-        }
-      >
-        {pending?.body && <div className="confirm-body">{pending.body}</div>}
-      </Sheet>
+      <Alert opts={pending} onDone={done} />
     </FeedbackCtx.Provider>
   );
 }
@@ -392,10 +435,10 @@ export function UiProvider({ children }: { children: ReactNode }) {
 // ── 작은 아이콘 (선 하나로 그린 것만) ────────────────────
 
 export function Chevron({ dir = 'right', size = 14 }: { dir?: 'left' | 'right' | 'down' | 'up'; size?: number }) {
-  const d = dir === 'left' ? 'M9 3L5 7l4 4' : dir === 'right' ? 'M5 3l4 4-4 4' : dir === 'down' ? 'M3 5l4 4 4-4' : 'M3 9l4-4 4 4';
+  const d = dir === 'left' ? 'M9 2.5L4.5 7 9 11.5' : dir === 'right' ? 'M5 2.5L9.5 7 5 11.5' : dir === 'down' ? 'M2.5 5L7 9.5 11.5 5' : 'M2.5 9L7 4.5 11.5 9';
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true" className="chev">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -403,17 +446,26 @@ export function Chevron({ dir = 'right', size = 14 }: { dir?: 'left' | 'right' |
 export function Plus({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true">
-      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M6 1.5v9M1.5 6h9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function SearchIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+      <circle cx="6" cy="6" r="4.3" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M9.3 9.3L12.5 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }
 
 /** 네 모서리가 바깥으로 벌어지는 '펼치기' 아이콘 */
-export function ExpandIcon({ size = 14, collapse }: { size?: number; collapse?: boolean }) {
+export function ExpandIcon({ size = 13, collapse }: { size?: number; collapse?: boolean }) {
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
       <path
-        d={collapse ? 'M5 1v4H1M9 1v4h4M5 13V9H1M9 13V9h4' : 'M1 5V1h4M13 5V1H9M1 9v4h4M13 9v4H9'}
+        d={collapse ? 'M5 1.5V5H1.5M9 1.5V5h3.5M5 12.5V9H1.5M9 12.5V9h3.5' : 'M1.5 5V1.5H5M12.5 5V1.5H9M1.5 9v3.5H5M12.5 9v3.5H9'}
         fill="none"
         stroke="currentColor"
         strokeWidth="1.6"
@@ -421,5 +473,22 @@ export function ExpandIcon({ size = 14, collapse }: { size?: number; collapse?: 
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+/** 위아래로 펼쳐지는 칸. 높이를 재지 않고 grid 로 부드럽게 연다. */
+export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  const [mounted, setMounted] = useState(open);
+  useEffect(() => {
+    if (open) setMounted(true);
+    else {
+      const t = setTimeout(() => setMounted(false), 320);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
+  return (
+    <div className={'collapse' + (open ? ' is-open' : '')} aria-hidden={!open}>
+      <div className="collapse-in">{mounted && children}</div>
+    </div>
   );
 }

@@ -16,7 +16,6 @@ export function listGroups(ctx: Ctx, id?: number): Group[] {
     id: g.id,
     name: g.name,
     color: g.color,
-    room: g.room,
     memo: g.memo,
     slots: slots
       .filter((s) => s.group_id === g.id)
@@ -74,10 +73,9 @@ export const groupRoutes: Route[] = [
       const slots = readSlots(b.src.slots);
       const id = ctx.db.tx(() => {
         const gid = ctx.db.run(
-          'INSERT INTO class_groups (name, color, room, memo, created_at) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO class_groups (name, color, memo, created_at) VALUES (?, ?, ?, ?)',
           name,
           pickColor(ctx, 'class_groups', b.src.color),
-          b.str('room', '강의실', { max: 30 }),
           b.text('memo', '메모', 1000),
           ctx.now,
         ).lastId;
@@ -98,7 +96,6 @@ export const groupRoutes: Route[] = [
       ctx.db.tx(() => {
         if (b.has('name')) ctx.db.run('UPDATE class_groups SET name = ? WHERE id = ?', b.str('name', '반 이름', { required: true, max: 30 }), id);
         if (b.has('color')) ctx.db.run('UPDATE class_groups SET color = ? WHERE id = ?', b.color('color', '#2B3F5C'), id);
-        if (b.has('room')) ctx.db.run('UPDATE class_groups SET room = ? WHERE id = ?', b.str('room', '강의실', { max: 30 }), id);
         if (b.has('memo')) ctx.db.run('UPDATE class_groups SET memo = ? WHERE id = ?', b.text('memo', '메모', 1000), id);
         writeSlotsAndMembers(ctx, id, b.has('slots') ? readSlots(b.src.slots) : null, b.has('memberIds') ? b.ids('memberIds') : null);
       });

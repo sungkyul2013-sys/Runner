@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, qs } from '../../lib/api';
 import { invalidate, useApi } from '../../lib/hooks';
-import { Button, Empty, ErrorNote, ExpandIcon, Plus, Sheet, useUi } from '../../components/ui';
-import { CalendarLegend, ExpandedCalendar, KindMark, MonthCalendar, MonthNav, originText, SessionDetail } from '../../components/schedule';
+import { Button, Chevron, Collapse, Empty, ErrorNote, ExpandIcon, PageHead, Plus, Sheet, useUi } from '../../components/ui';
+import { displayTitle, ExpandedCalendar, KindMark, MonthCalendar, MonthNav, originText, SessionDetail } from '../../components/schedule';
 import { vt } from '../../lib/motion';
 import { Roster } from '../../components/attendance';
 import { EventSheet, type EventDraft } from './forms';
@@ -79,20 +79,13 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
     if (yes) await ui.run(() => api.del(`/events/${s.cancelEventId}`), '휴강을 취소했습니다.');
   };
 
+  const rel = relativeDay(selected, today);
+
   return (
     <div className={'board' + (compact ? ' is-compact' : '')}>
-      <div className="cal-toolbar">
-        <MonthNav
-          month={month}
-          today={today}
-          onChange={(m) => {
-            setMonth(m);
-            setSelected(m.slice(0, 7) === today.slice(0, 7) ? today : m);
-          }}
-        />
+      <div className="toolbar">
         {viewSelect}
-        <CalendarLegend />
-        <div className="cal-toolbar-end">
+        <div className="toolbar-end">
           <Button size="sm" onClick={() => expand(true)}>
             <ExpandIcon /> 펼치기
           </Button>
@@ -111,29 +104,42 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
       )}
       {error && <ErrorNote message={error} onRetry={reload} />}
       <div className="cal-layout">
-        <div className={'cal-wrap' + (data ? '' : ' is-loading')} style={{ viewTransitionName: expanded ? undefined : 'calendar' }}>
+        <div className={'card cal-card' + (data ? '' : ' is-loading')} style={{ viewTransitionName: expanded ? undefined : 'calendar' }}>
+          <MonthNav
+            month={month}
+            today={today}
+            onChange={(m) => {
+              setMonth(m);
+              setSelected(m.slice(0, 7) === today.slice(0, 7) ? today : m);
+            }}
+          />
           <MonthCalendar month={month} sessions={sessions} today={today} selected={selected} onSelect={setSelected} onMore={() => expand(true)} />
         </div>
         <aside className="day-panel">
-          <p className="eyebrow">{relativeDay(selected, today) !== dotDate(selected) ? relativeDay(selected, today) : ' '}</p>
-          <h2 className="day-title">{mdw(selected)}</h2>
+          <h2 className="day-title">
+            {mdw(selected)}
+            {rel !== dotDate(selected) && <span>{rel}</span>}
+          </h2>
           {day.length ? (
-            <div className="day-list">
+            <div className="list day-list" key={selected}>
               {day.map((s) => {
                 const isOpen = openKey === s.date + s.key;
                 return (
-                  <div key={s.key} className={'day-item' + (s.cancelled ? ' is-cancelled' : '')} style={{ ['--c' as string]: s.cancelled ? 'var(--ink-4)' : s.color }}>
+                  <div key={s.key} className={'day-item' + (s.cancelled ? ' is-cancelled' : '') + (isOpen ? ' is-open' : '')}>
                     <button type="button" className="day-item-head" onClick={() => setOpenKey(isOpen ? null : s.date + s.key)} aria-expanded={isOpen}>
-                      <span className="time">{timeRange(s.start, s.end)}</span>
-                      <span className="title">
-                        <KindMark s={s} />
-                        {s.title}
+                      <span className="sline-bar" style={{ ['--c' as string]: s.cancelled ? 'var(--ink-4)' : s.color }} />
+                      <span className="day-item-main">
+                        <span className="title">
+                          <KindMark s={s} />
+                          {displayTitle(s)}
+                        </span>
+                        <span className="meta">
+                          {[timeRange(s.start, s.end), originText(s), s.students.length ? `${s.students.length}명` : s.allStudents ? '전체' : ''].filter(Boolean).join(' · ')}
+                        </span>
                       </span>
-                      <span className="meta">
-                        {[s.room, originText(s), s.students.length ? `${s.students.length}명` : s.allStudents ? '전체' : ''].filter(Boolean).join(' · ')}
-                      </span>
+                      <Chevron dir={isOpen ? 'up' : 'down'} size={12} />
                     </button>
-                    {isOpen && (
+                    <Collapse open={isOpen}>
                       <div className="day-item-body">
                         {s.memo && <p className="memo">{s.memo}</p>}
                         {s.kind !== 'holiday' && <Roster s={s} onChange={replace} onMakeup={(st) => setDraft(draftFromAbsence(s, st, today))} />}
@@ -151,7 +157,7 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
                           {s.kind === 'class' && s.cancelled && s.cancelEventId && (
                             <button
                               type="button"
-                              className="link red"
+                              className="link"
                               onClick={() =>
                                 setDraft({
                                   kind: 'makeup',
@@ -176,7 +182,7 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
                           )}
                         </div>
                       </div>
-                    )}
+                    </Collapse>
                   </div>
                 );
               })}
@@ -184,9 +190,9 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
           ) : (
             <Empty title="이날은 일정이 없습니다." />
           )}
-          <Button variant="ghost" size="sm" onClick={() => setDraft({ kind: 'makeup', date: selected, studentIds: studentId ? [studentId] : [], groupId })}>
+          <button type="button" className="link add-link" onClick={() => setDraft({ kind: 'makeup', date: selected, studentIds: studentId ? [studentId] : [], groupId })}>
             <Plus /> 이날 일정 추가
-          </Button>
+          </button>
         </aside>
       </div>
       <ExpandedCalendar
@@ -199,7 +205,7 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
         toolbar={viewSelect || undefined}
         onOpenSession={setDetail}
       />
-      <Sheet open={!!detail} onClose={() => setDetail(null)} title={detail?.title ?? ''} width={520}>
+      <Sheet open={!!detail} onClose={() => setDetail(null)} title="일정" width={520}>
         {detail && (
           <SessionDetail s={detail}>
             {detail.kind !== 'holiday' && (
@@ -241,6 +247,7 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
 export function TeacherCalendarPage() {
   return (
     <div className="page page-wide">
+      <PageHead title="달력" />
       <ScheduleBoard />
     </div>
   );

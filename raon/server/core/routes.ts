@@ -6,6 +6,7 @@ import { calendarRoutes } from './calendar';
 import { feedbackRoutes } from './feedback';
 import { bookRoutes } from './books';
 import { homeRoutes } from './home';
+import { consultRoutes } from './consults';
 
 export const dispatch = createRouter([
   ...authRoutes,
@@ -15,4 +16,5 @@ export const dispatch = createRouter([
   ...feedbackRoutes,
   ...bookRoutes,
   ...homeRoutes,
+  ...consultRoutes,
 ]);

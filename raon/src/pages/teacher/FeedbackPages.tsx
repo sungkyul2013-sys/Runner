@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, qs } from '../../lib/api';
 import { useApi } from '../../lib/hooks';
-import { Button, Empty, ErrorNote, Field, Loading, PageHead, Segmented, Sheet, Tag, useUi } from '../../components/ui';
+import { Button, Chevron, Collapse, Empty, ErrorNote, Field, Loading, PageHead, Segmented, Sheet, useUi } from '../../components/ui';
 import { readStamp } from '../../components/letters';
 import { FeedbackSheet } from './forms';
 import { dotDate } from '../../../shared/date';
@@ -36,10 +36,10 @@ function FeedbackEditSheet({ f, onClose }: { f: Feedback | null; onClose(): void
       width={640}
       footer={
         <>
-          <Button variant="ghost" className="danger mr-auto" onClick={remove}>
+          <Button variant="danger" className="mr-auto" onClick={remove}>
             지우기
           </Button>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="plain" onClick={onClose}>
             취소
           </Button>
           <Button variant="primary" type="submit" form="fb-edit" busy={busy}>
@@ -79,39 +79,39 @@ export function FeedbackTable({ list, showStudent = true }: { list: Feedback[]; 
   if (!list.length) return <Empty title="아직 쓴 피드백이 없습니다." />;
   return (
     <>
-      <ul className="fb-table">
+      <div className="list fb-list">
         {list.map((f) => (
-          <li key={f.id} className={open === f.id ? 'is-open' : ''}>
+          <div key={f.id} className={'fb' + (open === f.id ? ' is-open' : '')}>
             <button type="button" className="fb-row" onClick={() => setOpen(open === f.id ? null : f.id)} aria-expanded={open === f.id}>
-              <span className="fb-date">{dotDate(f.classDate ?? f.createdAt.slice(0, 10))}</span>
-              {showStudent && <span className="fb-student">{f.studentName}</span>}
-              <span className="fb-aud">
-                <Tag tone={f.audience === 'parent' ? 'ink' : 'plain'}>{f.audience === 'parent' ? '학부모님께' : '학생에게'}</Tag>
-              </span>
-              <span className="fb-title">
-                <span className="cat">{f.category}</span>
-                {f.title || f.body.split('\n')[0]}
+              <span className="fb-main">
+                <span className="fb-top">
+                  {showStudent && <b>{f.studentName}</b>}
+                  <span className="fb-aud">{f.audience === 'parent' ? '학부모님께' : '학생에게'}</span>
+                  <span className="fb-date">{dotDate(f.classDate ?? f.createdAt.slice(0, 10))}</span>
+                </span>
+                <span className="fb-title">{f.title || f.body.split('\n')[0]}</span>
               </span>
               <span className={'fb-read' + (f.readers?.length ? ' is-read' : '')}>
-                {f.readers?.length ? `${f.readers.map((r) => r.name).join(', ')} ${readStamp(f.readers[0].readAt)} 읽음` : '안 읽음'}
+                {f.readers?.length ? `${f.readers.map((r) => r.name).join(', ')} · ${readStamp(f.readers[0].readAt)} 읽음` : '안 읽음'}
               </span>
+              <Chevron dir={open === f.id ? 'up' : 'down'} size={12} />
             </button>
-            {open === f.id && (
+            <Collapse open={open === f.id}>
               <div className="fb-detail">
                 <div className="letter-text">{f.body}</div>
                 <div className="fb-detail-foot">
                   <span className="fine">
-                    {f.authorName} 선생님 · {readStamp(f.createdAt)} 작성
+                    {f.category} · {f.authorName} 선생님 · {readStamp(f.createdAt)} 작성
                   </span>
                   <button type="button" className="link" onClick={() => setEditing(f)}>
                     고치기
                   </button>
                 </div>
               </div>
-            )}
-          </li>
+            </Collapse>
+          </div>
         ))}
-      </ul>
+      </div>
       <FeedbackEditSheet f={editing} onClose={() => setEditing(null)} />
     </>
   );
@@ -130,8 +130,8 @@ export function TeacherFeedbackPage() {
         title="피드백"
         sub={
           <>
-            학생과 학부모님께 따로 전달됩니다. 각자 자기에게 온 글만 볼 수 있어요.
-            {data && unread > 0 && <> · 아직 안 읽은 글 {unread}개</>}
+            학생과 학부모님께 따로 전달되고, 각자 자기에게 온 글만 봅니다.
+            {data && unread > 0 && <> 아직 안 읽은 글 {unread}개.</>}
           </>
         }
         actions={
@@ -140,7 +140,7 @@ export function TeacherFeedbackPage() {
           </Button>
         }
       />
-      <div className="filters">
+      <div className="toolbar">
         <Segmented
           size="sm"
           value={aud}

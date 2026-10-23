@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import type { GroupSlot, StudentBrief } from '../../shared/types';
 import { WEEKDAYS } from '../../shared/date';
-import { Button, Plus } from './ui';
+import { Button, Plus, SearchIcon } from './ui';
 
-export const COLORS = ['#2F6FDE', '#1F9E6E', '#8A56E2', '#F2A91E', '#E5483B', '#0A84A8', '#D9622B', '#5E5CE6', '#7A8A2C', '#C2457A'];
+export const COLORS = ['#3A6EA5', '#2F7D63', '#7A5BA6', '#B8762E', '#B54A4A', '#2E8A99', '#5B6270', '#9A7B4F'];
 
 export function ColorPicker({ value, onChange }: { value: string; onChange(c: string): void }) {
   return (
@@ -45,7 +45,10 @@ export function StudentPicker({
   return (
     <div className="picker">
       <div className="picker-top">
-        <input placeholder="이름·학교·반으로 찾기" value={q} onChange={(e) => setQ(e.target.value)} />
+        <label className="search">
+          <SearchIcon />
+          <input placeholder="이름·학교·반으로 찾기" value={q} onChange={(e) => setQ(e.target.value)} />
+        </label>
         <span className="picker-count">{value.length}명 선택</span>
       </div>
       <div className="picker-list" style={{ maxHeight: max }}>
@@ -87,7 +90,7 @@ export function SlotEditor({ slots, onChange }: { slots: GroupSlot[]; onChange(s
           </div>
         </div>
       ))}
-      <Button size="sm" variant="ghost" onClick={() => onChange([...slots, { weekday: slots.at(-1)?.weekday === 1 ? 3 : 1, start: slots.at(-1)?.start ?? '19:00', end: slots.at(-1)?.end ?? '21:00' }])}>
+      <Button size="sm" variant="plain" onClick={() => onChange([...slots, { weekday: slots.at(-1)?.weekday === 1 ? 3 : 1, start: slots.at(-1)?.start ?? '19:00', end: slots.at(-1)?.end ?? '21:00' }])}>
         <Plus /> 요일 추가
       </Button>
     </div>

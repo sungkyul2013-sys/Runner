@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import { useApi } from '../../lib/hooks';
-import { Button, Empty, ErrorNote, Loading, PageHead, Plus, SectionHead, Tag, useUi } from '../../components/ui';
+import { Button, Collapse, Empty, ErrorNote, Loading, PageHead, Plus, SectionHead, Tag, useUi } from '../../components/ui';
 import { SessionLine } from '../../components/schedule';
 import { EventSheet, type EventDraft } from './forms';
 import { draftFromNeed, draftOf, NeedRow } from './TodayPage';
@@ -31,9 +31,9 @@ export function MakeupsPage() {
     <div className="page">
       <PageHead
         title="보강"
-        sub="결석하거나 휴강한 수업을 모아 두었습니다. 보강을 잡으면 학생·학부모 달력에 바로 보입니다."
+        sub="결석하거나 휴강한 수업이 모입니다. 보강을 잡으면 학생·학부모 달력에 바로 보여요."
         actions={
-          <Button variant="red" onClick={() => setDraft({ kind: 'makeup', date: today })}>
+          <Button variant="primary" onClick={() => setDraft({ kind: 'makeup', date: today })}>
             <Plus /> 보강 잡기
           </Button>
         }
@@ -42,7 +42,7 @@ export function MakeupsPage() {
         <section className="block">
           <SectionHead title="보강 대기" count={data.pending.length} />
           {data.pending.length ? (
-            <div className="needs">
+            <div className="list">
               {data.pending.map((n) => (
                 <NeedRow key={n.type + n.id} n={n} onPlan={() => setDraft(draftFromNeed(n, today))} onSkip={() => skip(n)} />
               ))}
@@ -54,7 +54,7 @@ export function MakeupsPage() {
         <section className="block">
           <SectionHead title="예정된 보강" count={data.upcoming.length} />
           {data.upcoming.length ? (
-            <div className="slist">
+            <div className="list">
               {data.upcoming.map((s) => (
                 <SessionLine key={s.key} s={s} showDate onClick={() => setDraft(draftOf(s))} aside={<StudentsAside names={s.students.map((x) => x.name)} />} />
               ))}
@@ -67,13 +67,13 @@ export function MakeupsPage() {
             title="지난 보강"
             count={data.past.length}
             action={
-              <button type="button" className="link" onClick={() => setShowPast(!showPast)}>
-                {showPast ? '접기' : '펼치기'}
+              <button type="button" className="more" onClick={() => setShowPast(!showPast)}>
+                {showPast ? '접기' : '보기'}
               </button>
             }
           />
-          {showPast && (
-            <div className="slist">
+          <Collapse open={showPast}>
+            <div className="list">
               {data.past.map((s) => {
                 const done = s.students.filter((x) => x.status === 'present' || x.status === 'late').length;
                 return (
@@ -82,12 +82,12 @@ export function MakeupsPage() {
                     s={s}
                     showDate
                     onClick={() => setDraft(draftOf(s))}
-                    aside={done === s.students.length && s.students.length ? <Tag tone="moss">완료</Tag> : <Tag tone="mute">출결 미입력</Tag>}
+                    aside={done === s.students.length && s.students.length ? <Tag>완료</Tag> : <Tag tone="orange">출결 미입력</Tag>}
                   />
                 );
               })}
             </div>
-          )}
+          </Collapse>
         </section>
       </div>
       <EventSheet draft={draft} onClose={() => setDraft(null)} />

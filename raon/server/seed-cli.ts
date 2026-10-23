@@ -15,5 +15,5 @@ if (db.get('SELECT 1 FROM users LIMIT 1')) {
   console.log('이미 데이터가 있어 예시 데이터를 넣지 않았습니다.');
 } else {
   seedDemo(db, nodeCrypto, todayIn());
-  console.log(`예시 데이터를 넣었습니다. 원장: director / 학생: taeyun / 학부모: taeyun.mom (비밀번호 모두 ${DEMO_PASSWORD})`);
+  console.log(`예시 데이터를 넣었습니다. 원장 정다은 · 학생 김태윤 · 학부모 박미영 (비밀번호 모두 ${DEMO_PASSWORD})`);
 }

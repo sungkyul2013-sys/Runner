@@ -29,22 +29,22 @@ export function seedDemo(db: Db, crypto: Crypto, today: string) {
         now,
       ).lastId;
 
-    const director = user('teacher', '정다은', 'director', { admin: true, phone: '010-4821-0093' });
-    const teacher2 = user('teacher', '한서준', 'seojun', { phone: '010-7730-2164' });
+    const director = user('teacher', '정다은', '정다은', { admin: true, phone: '010-4821-0093' });
+    const teacher2 = user('teacher', '한서준', '한서준', { phone: '010-7730-2164' });
 
     // ── 반과 시간표 ──
-    const group = (name: string, color: string, room: string, slots: [number, string, string][], memo = '') => {
-      const id = db.run('INSERT INTO class_groups (name, color, room, memo, created_at) VALUES (?, ?, ?, ?, ?)', name, color, room, memo, now).lastId;
+    const group = (name: string, color: string, slots: [number, string, string][], memo = '') => {
+      const id = db.run('INSERT INTO class_groups (name, color, memo, created_at) VALUES (?, ?, ?, ?)', name, color, memo, now).lastId;
       for (const [w, s, e] of slots) db.run('INSERT INTO group_slots (group_id, weekday, start_time, end_time) VALUES (?, ?, ?, ?)', id, w, s, e);
       return id;
     };
     const g = {
-      m2: group('중2 문학반', '#1F9E6E', '1강의실', [[1, '17:00', '18:30'], [3, '17:00', '18:30']]),
-      m3: group('중3 내신반', '#8A56E2', '2강의실', [[2, '17:30', '19:30'], [4, '17:30', '19:30']], '2학기 기말 대비. 교과서 출판사별 프린트 별도.'),
-      h1: group('고1 국어 기본', '#F2A91E', '1강의실', [[1, '19:00', '21:00'], [3, '19:00', '21:00'], [5, '19:00', '21:00']]),
-      h2: group('고2 문학·독서', '#2F6FDE', '2강의실', [[2, '19:40', '22:00'], [4, '19:40', '22:00']], '수능특강 병행. 매주 목요일 주간 테스트.'),
-      h3: group('고3 수능 파이널', '#C2457A', '세미나실', [[6, '10:00', '13:00'], [3, '21:10', '22:40']]),
-      one: group('1:1 논술 클리닉', '#0A84A8', '상담실', [[5, '17:00', '18:30']]),
+      m2: group('중2 문학반', '#2F7D63', [[1, '17:00', '18:30'], [3, '17:00', '18:30']]),
+      m3: group('중3 내신반', '#7A5BA6', [[2, '17:30', '19:30'], [4, '17:30', '19:30']], '2학기 기말 대비. 교과서 출판사별 프린트 별도.'),
+      h1: group('고1 국어 기본', '#B8762E', [[1, '19:00', '21:00'], [3, '19:00', '21:00'], [5, '19:00', '21:00']]),
+      h2: group('고2 문학·독서', '#3A6EA5', [[2, '19:40', '22:00'], [4, '19:40', '22:00']], '수능특강 병행. 매주 목요일 주간 테스트.'),
+      h3: group('고3 수능 파이널', '#B54A4A', [[6, '10:00', '13:00'], [3, '21:10', '22:40']]),
+      one: group('1:1 논술 클리닉', '#2E8A99', [[5, '17:00', '18:30']]),
     };
 
     // ── 학생 ──
@@ -64,52 +64,51 @@ export function seedDemo(db: Db, crypto: Crypto, today: string) {
       return id;
     };
     const s = {
-      haneul: student('김하늘', '성미중', '중2', '#2F6FDE', [g.m2], '010-2234-1180'),
-      seoyun: student('박서윤', '성미중', '중2', '#1F9E6E', [g.m2]),
-      doyun: student('이도윤', '망원중', '중2', '#8A56E2', [g.m2]),
-      jiwoo: student('최지우', '성미중', '중3', '#F2A91E', [g.m3], '', '서술형에서 감점 잦음. 문장 끝맺음 연습.'),
-      minseo: student('정민서', '망원중', '중3', '#E5483B', [g.m3]),
-      yejun: student('강예준', '성미중', '중3', '#0A84A8', [g.m3]),
-      seoa: student('윤서아', '상암중', '중3', '#D9622B', [g.m3, g.one]),
-      hajun: student('오하준', '홍익사대부고', '고1', '#5E5CE6', [g.h1]),
-      jian: student('서지안', '성서고', '고1', '#7A8A2C', [g.h1]),
-      sua: student('임수아', '홍익사대부고', '고1', '#C2457A', [g.h1]),
-      taeyun: student('김태윤', '성서고', '고2', '#2F6FDE', [g.h2], '010-5512-7781', '문학 감상 탄탄. <보기> 문항 시간 관리가 과제.'),
-      chaewon: student('이채원', '상암고', '고2', '#1F9E6E', [g.h2]),
-      yujin: student('신유진', '성서고', '고2', '#8A56E2', [g.h2]),
-      dohyun: student('장도현', '홍익사대부고', '고3', '#F2A91E', [g.h3]),
-      gaeun: student('문가은', '상암고', '고3', '#E5483B', [g.h3]),
+      haneul: student('김하늘', '성미중', '중2', '#3A6EA5', [g.m2], '010-2234-1180'),
+      seoyun: student('박서윤', '성미중', '중2', '#2F7D63', [g.m2]),
+      doyun: student('이도윤', '망원중', '중2', '#7A5BA6', [g.m2]),
+      jiwoo: student('최지우', '성미중', '중3', '#B8762E', [g.m3], '', '서술형에서 감점 잦음. 문장 끝맺음 연습.'),
+      minseo: student('정민서', '망원중', '중3', '#B54A4A', [g.m3]),
+      yejun: student('강예준', '성미중', '중3', '#2E8A99', [g.m3]),
+      seoa: student('윤서아', '상암중', '중3', '#5B6270', [g.m3, g.one]),
+      hajun: student('오하준', '홍익사대부고', '고1', '#9A7B4F', [g.h1]),
+      jian: student('서지안', '성서고', '고1', '#3A6EA5', [g.h1]),
+      sua: student('임수아', '홍익사대부고', '고1', '#2F7D63', [g.h1]),
+      taeyun: student('김태윤', '성서고', '고2', '#7A5BA6', [g.h2], '010-5512-7781', '문학 감상 탄탄. <보기> 문항 시간 관리가 과제.'),
+      chaewon: student('이채원', '상암고', '고2', '#B8762E', [g.h2]),
+      yujin: student('신유진', '성서고', '고2', '#B54A4A', [g.h2]),
+      dohyun: student('장도현', '홍익사대부고', '고3', '#2E8A99', [g.h3]),
+      gaeun: student('문가은', '상암고', '고3', '#5B6270', [g.h3]),
     };
 
     // ── 계정 ──
-    user('student', '김태윤', 'taeyun', { studentId: s.taeyun });
-    user('student', '김하늘', 'haneul', { studentId: s.haneul });
-    user('student', '이채원', 'chaewon', { studentId: s.chaewon });
-    user('student', '최지우', 'jiwoo', { studentId: s.jiwoo });
-    const mom = user('parent', '박미영', 'taeyun.mom', { phone: '010-9917-2045' });
+    user('student', '김태윤', '김태윤', { studentId: s.taeyun });
+    user('student', '김하늘', '김하늘', { studentId: s.haneul });
+    user('student', '이채원', '이채원', { studentId: s.chaewon });
+    user('student', '최지우', '최지우', { studentId: s.jiwoo });
+    const mom = user('parent', '박미영', '박미영', { phone: '010-9917-2045' });
     db.run('INSERT INTO family_links (user_id, student_id, relation) VALUES (?, ?, ?)', mom, s.taeyun, '어머니');
     db.run('INSERT INTO family_links (user_id, student_id, relation) VALUES (?, ?, ?)', mom, s.haneul, '어머니');
-    const cwDad = user('parent', '이정훈', 'chaewon.dad', { phone: '010-3381-6620' });
+    const cwDad = user('parent', '이정훈', '이정훈', { phone: '010-3381-6620' });
     db.run('INSERT INTO family_links (user_id, student_id, relation) VALUES (?, ?, ?)', cwDad, s.chaewon, '아버지');
-    const jwMom = user('parent', '김수정', 'jiwoo.mom', { phone: '010-4402-9183' });
+    const jwMom = user('parent', '김수정', '김수정', { phone: '010-4402-9183' });
     db.run('INSERT INTO family_links (user_id, student_id, relation) VALUES (?, ?, ?)', jwMom, s.jiwoo, '어머니');
 
     // ── 일정 ──
     const event = (
       kind: string,
       date: string,
-      opt: { title?: string; start?: string; end?: string; group?: number; students?: number[]; memo?: string; room?: string; originDate?: string; originLabel?: string; noMakeup?: boolean } = {},
+      opt: { title?: string; start?: string; end?: string; group?: number; students?: number[]; memo?: string; originDate?: string; originLabel?: string; noMakeup?: boolean } = {},
     ) => {
       const id = db.run(
-        `INSERT INTO events (kind, title, date, start_time, end_time, group_id, room, memo, no_makeup, origin_date, origin_label, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO events (kind, title, date, start_time, end_time, group_id, memo, no_makeup, origin_date, origin_label, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         kind,
         opt.title ?? '',
         date,
         opt.start ?? null,
         opt.end ?? null,
         opt.group ?? null,
-        opt.room ?? '',
         opt.memo ?? '',
         opt.noMakeup ? 1 : 0,
         opt.originDate ?? null,
@@ -139,7 +138,6 @@ export function seedDemo(db: Db, crypto: Crypto, today: string) {
       group: g.m3,
       start: '14:00',
       end: '16:00',
-      room: '2강의실',
       originDate: m3Cancel,
       originLabel: '중3 내신반',
     });
@@ -149,8 +147,8 @@ export function seedDemo(db: Db, crypto: Crypto, today: string) {
     event('exam', nextWd(d(18), 3), { title: '11월 전국연합학력평가', group: g.h2, memo: '고1·고2 학평. 전날 수업은 실전 모의로 진행.' });
     event('exam', nextWd(d(18), 3), { title: '11월 전국연합학력평가', group: g.h1 });
     event('etc', nextWd(d(24), 4), { title: '대학수학능력시험', group: g.h3, memo: '수험표·신분증 꼭 챙기기' });
-    event('extra', nextWd(d(1), 6), { title: '고3 파이널 특강 · 화법과 작문', group: g.h3, start: '14:00', end: '17:00', room: '세미나실' });
-    event('consult', nextWd(d(3), 4), { title: '태윤 학부모 상담', students: [s.taeyun], start: '18:30', end: '19:10', room: '상담실', memo: '11월 학평 대비 계획 공유' });
+    event('extra', nextWd(d(1), 6), { title: '고3 파이널 특강 · 화법과 작문', group: g.h3, start: '14:00', end: '17:00' });
+    event('consult', nextWd(d(3), 4), { title: '태윤 학부모 상담', students: [s.taeyun], start: '18:30', end: '19:10', memo: '11월 학평 대비 계획 공유' });
     event('exam', nextWd(d(2), 4), { title: '주간 테스트 · 현대소설', group: g.h2, start: '19:40', end: '20:20' });
 
     // ── 지난 3주 출결 ──
@@ -195,7 +193,6 @@ export function seedDemo(db: Db, crypto: Crypto, today: string) {
       students: [s.taeyun],
       start: '15:00',
       end: '17:00',
-      room: '상담실',
       originDate: tyAbsentDate,
       originLabel: '고2 문학·독서',
       memo: '현대소설 「삼대」 부분 진도 + 주간 테스트 재응시',
@@ -218,7 +215,6 @@ export function seedDemo(db: Db, crypto: Crypto, today: string) {
         students: [a.student],
         start: '16:00',
         end: '17:30',
-        room: '상담실',
         originDate: a.date,
         originLabel: db.get<any>('SELECT name FROM class_groups WHERE id = ?', a.group)!.name,
       });
@@ -242,15 +238,15 @@ export function seedDemo(db: Db, crypto: Crypto, today: string) {
         now,
       ).lastId;
     const b = {
-      litSp: book('수능특강 문학', 'EBS', '문학', 30, '강', '#2F5FC4', '2027 수능 연계'),
-      readSp: book('수능특강 독서', 'EBS', '독서', 28, '강', '#0A84A8'),
-      m3b: book('매3비', '키출판사', '비문학', 36, '일', '#C98A10', '매일 3지문'),
-      m3m: book('매3문', '키출판사', '문학', 36, '일', '#3F6FD8'),
-      gram: book('떠먹는 국어문법', '쏠티북스', '문법', 22, '강', '#17845B'),
-      ppajak: book('빠작 중학 국어 비문학 독해 2', '동아출판', '비문학', 24, '회', '#D9622B'),
-      naesin: book('라온 2학기 기말 대비 프린트', '라온국어 자체 교재', '내신', 12, '회', '#7446C8', '학교별 교과서 반영'),
-      past: book('마더텅 수능기출 국어 문학', '마더텅', '기출', 40, '회', '#3A3A40'),
-      essay: book('생각을 여는 논술 노트', '라온국어 자체 교재', '작문', 16, '주', '#C93A2F'),
+      litSp: book('수능특강 문학', 'EBS', '문학', 30, '강', '#3A6EA5', '2027 수능 연계'),
+      readSp: book('수능특강 독서', 'EBS', '독서', 28, '강', '#2E8A99'),
+      m3b: book('매3비', '키출판사', '비문학', 36, '일', '#B8762E', '매일 3지문'),
+      m3m: book('매3문', '키출판사', '문학', 36, '일', '#7A5BA6'),
+      gram: book('떠먹는 국어문법', '쏠티북스', '문법', 22, '강', '#2F7D63'),
+      ppajak: book('빠작 중학 국어 비문학 독해 2', '동아출판', '비문학', 24, '회', '#9A7B4F'),
+      naesin: book('라온 2학기 기말 대비 프린트', '라온국어 자체 교재', '내신', 12, '회', '#5B6270', '학교별 교과서 반영'),
+      past: book('마더텅 수능기출 국어 문학', '마더텅', '기출', 40, '회', '#5B6270'),
+      essay: book('생각을 여는 논술 노트', '라온국어 자체 교재', '작문', 16, '주', '#B54A4A'),
     };
     const assign = (sid: number, tid: number, status: string, progress: number, note: string, started: number, logs: [number, number, string][] = []) => {
       const id = db.run(
@@ -310,7 +306,7 @@ export function seedDemo(db: Db, crypto: Crypto, today: string) {
       ).lastId;
       if (readBy) db.run('INSERT INTO feedback_reads (feedback_id, user_id, read_at) VALUES (?, ?, ?)', id, readBy, at);
     };
-    const tyUser = db.get<any>("SELECT id FROM users WHERE login_id = 'taeyun'")!.id;
+    const tyUser = db.get<any>("SELECT id FROM users WHERE login_id = '김태윤'")!.id;
 
     fb(s.taeyun, 'student', -1, '수업', '현대시 세 번째 시간', `태윤아, 오늘 「사평역에서」를 읽으면서 화자가 대합실 사람들을 바라보는 시선을 '거리를 둔 연민'이라고 정리한 거, 선생님도 메모해 둘 만큼 정확했어.
 
@@ -349,6 +345,25 @@ export function seedDemo(db: Db, crypto: Crypto, today: string) {
 
     fb(s.dohyun, 'student', -1, '시험', '실전 34회차', `도현아, 34회차 문학 전부 맞았다. 이제 독서 첫 지문에서 시간 쓰는 것만 줄이면 돼. 수능까지 남은 기간, 리듬 그대로 가자.`);
     fb(s.seoa, 'student', -7, '수업', '논술 6주차', `서아야, 이번 주 글은 주장은 분명한데 근거가 하나뿐이었어. 반대 의견을 먼저 인정하고 반박하는 문단을 하나 더 넣어 보자.`);
+
+    // ── 상담 신청 ──
+    const consult = (name: string, grade: string, phone: string, time: string, msg: string, hoursAgo: number, done = false) => {
+      const at = new Date(Date.now() - hoursAgo * 3600000).toISOString();
+      db.run(
+        'INSERT INTO consult_requests (student_name, grade, phone, preferred_time, message, status, created_at, handled_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        name,
+        grade,
+        phone,
+        time,
+        msg,
+        done ? 'done' : 'new',
+        at,
+        done ? at : null,
+      );
+    };
+    consult('한유나', '중3', '010-2741-5503', '평일 저녁 7시 이후', '고등학교 올라가기 전에 문학 기초를 잡고 싶어요. 레벨 테스트도 가능한가요?', 3);
+    consult('조민혁', '고1', '010-6618-0927', '토요일 오전', '', 27);
+    consult('배서진', '중2', '010-3359-4410', '', '형제가 함께 다닐 수 있는 반이 있는지 궁금합니다.', 96, true);
   });
 }
 

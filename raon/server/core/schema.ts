@@ -49,7 +49,6 @@ CREATE TABLE class_groups (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   color TEXT NOT NULL,
-  room TEXT NOT NULL DEFAULT '',
   memo TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
@@ -76,7 +75,6 @@ CREATE TABLE events (
   start_time TEXT,
   end_time TEXT,
   group_id INTEGER REFERENCES class_groups(id) ON DELETE CASCADE,
-  room TEXT NOT NULL DEFAULT '',
   memo TEXT NOT NULL DEFAULT '',
   no_makeup INTEGER NOT NULL DEFAULT 0,
   origin_date TEXT,
@@ -163,7 +161,23 @@ CREATE TABLE book_logs (
 );
 `;
 
-const MIGRATIONS = [V1];
+// 상담 신청: 로그인하지 않은 방문자가 남긴다
+const V2 = `
+CREATE TABLE consult_requests (
+  id INTEGER PRIMARY KEY,
+  student_name TEXT NOT NULL,
+  grade TEXT NOT NULL DEFAULT '',
+  phone TEXT NOT NULL,
+  preferred_time TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','done')),
+  created_at TEXT NOT NULL,
+  handled_at TEXT
+);
+CREATE INDEX consult_requests_status ON consult_requests(status, created_at);
+`;
+
+const MIGRATIONS = [V1, V2];
 
 export function migrate(db: Db) {
   db.exec('PRAGMA foreign_keys = ON');

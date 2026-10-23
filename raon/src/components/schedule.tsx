@@ -13,6 +13,12 @@ export function originText(s: CalSession): string {
   return s.origin ? `${dotDate(s.origin.date)} 수업분` : '';
 }
 
+/** 앞에 '보강' 같은 표시가 붙으니 제목 끝의 같은 말은 뺀다: '고2 문학·독서 보강' → '고2 문학·독서' */
+export function displayTitle(s: CalSession): string {
+  const label = EVENT_LABEL[s.kind];
+  return s.kind !== 'class' && s.title.endsWith(' ' + label) ? s.title.slice(0, -label.length - 1) : s.title;
+}
+
 export function kindTone(s: CalSession): string {
   if (s.cancelled) return 'cancel';
   return s.kind;
@@ -24,7 +30,7 @@ export function KindMark({ s }: { s: CalSession }) {
   return <span className={`kind kind-${s.kind}`}>{EVENT_LABEL[s.kind]}</span>;
 }
 
-/** 일정 한 줄: 시간 · 제목 · 강의실 */
+/** 일정 한 줄: 시간 · 제목 · 메모 (묶음 목록 안의 한 줄) */
 export function SessionLine({
   s,
   onClick,
@@ -40,29 +46,32 @@ export function SessionLine({
 }) {
   const Tag = onClick ? 'button' : 'div';
   return (
-    <Tag type={onClick ? 'button' : undefined} className={`sline sline-${kindTone(s)}${onClick ? ' is-click' : ''}`} onClick={onClick} style={{ ['--c' as string]: s.cancelled ? 'var(--ink-4)' : s.color }}>
-      <span className="sline-bar" />
+    <Tag type={onClick ? 'button' : undefined} className={`sline sline-${kindTone(s)}${onClick ? ' is-click' : ''}`} onClick={onClick}>
       <span className="sline-time">
         {showDate && <span className="sline-date">{dotDate(s.date)}</span>}
-        <span>{s.start ? timeRange(s.start, s.end) : '종일'}</span>
+        <span className="sline-start">{s.start ?? '종일'}</span>
+        {s.end && !showDate && <span className="sline-end">{s.end}</span>}
       </span>
+      <span className="sline-bar" style={{ ['--c' as string]: s.color }} />
       <span className="sline-main">
         <span className="sline-title">
           <KindMark s={s} />
-          <span className="t">{s.title}</span>
+          <span className="t">{displayTitle(s)}</span>
         </span>
-        <span className="sline-meta">{[s.room, originText(s), s.memo].filter(Boolean).join(' · ')}</span>
+        <span className="sline-meta">{[showDate ? timeRange(s.start, s.end) : '', originText(s), s.memo].filter(Boolean).join(' · ')}</span>
         {children}
       </span>
       {aside && <span className="sline-aside">{aside}</span>}
+      {onClick && <Chevron />}
     </Tag>
   );
 }
 
-function shortLabel(s: CalSession) {
-  if (s.kind === 'holiday') return s.title;
+/** 달력 칸 안의 한 줄. 펼친 달력은 칸이 넓으니 시각도 함께. */
+function shortLabel(s: CalSession, withTime: boolean) {
+  if (s.kind === 'holiday' || !withTime) return displayTitle(s);
   const t = s.start ? s.start.replace(/^0/, '') : '';
-  return `${t} ${s.title}`.trim();
+  return `${t} ${displayTitle(s)}`.trim();
 }
 
 function shiftMonth(month: string, n: number) {
@@ -71,27 +80,26 @@ function shiftMonth(month: string, n: number) {
   return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }
 
-/** 달 넘기기. 앞뒤로 넘길 때 탁상달력처럼 장이 넘어간다. */
+/** 달 넘기기. 앞뒤로 넘길 때 달력이 옆으로 밀려난다. */
 export function MonthNav({ month, onChange, today }: { month: string; onChange(m: string): void; today: string }) {
   const d = toDate(month);
-  const go = (m: string) => vt(() => onChange(m), m > month ? 'next' : 'prev');
+  const go = (m: string) => m !== month && vt(() => onChange(m), m > month ? 'next' : 'prev');
   return (
     <div className="month-nav">
-      <button type="button" className="icon-btn round" onClick={() => go(shiftMonth(month, -1))} aria-label="이전 달">
-        <Chevron dir="left" />
-      </button>
-      <h2 className="month-title" key={month}>
-        <span className="mo">{d.getUTCMonth() + 1}월</span>
-        <span className="yr">{d.getUTCFullYear()}</span>
+      <h2 className="month-title">
+        <b>{d.getUTCMonth() + 1}월</b> <span>{d.getUTCFullYear()}</span>
       </h2>
-      <button type="button" className="icon-btn round" onClick={() => go(shiftMonth(month, 1))} aria-label="다음 달">
-        <Chevron dir="right" />
-      </button>
-      {today.slice(0, 7) !== month.slice(0, 7) && (
-        <button type="button" className="chip-btn" onClick={() => go(today.slice(0, 8) + '01')}>
+      <div className="stepper-nav">
+        <button type="button" onClick={() => go(shiftMonth(month, -1))} aria-label="이전 달">
+          <Chevron dir="left" />
+        </button>
+        <button type="button" className="today-btn" disabled={today.slice(0, 7) === month.slice(0, 7)} onClick={() => go(today.slice(0, 8) + '01')}>
           오늘
         </button>
-      )}
+        <button type="button" onClick={() => go(shiftMonth(month, 1))} aria-label="다음 달">
+          <Chevron dir="right" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -147,7 +155,7 @@ export function MonthCalendar({
         ))}
       </div>
       <div className="cal-grid">
-        {visible.map((d, idx) => {
+        {visible.map((d) => {
           const list = byDate.get(d) ?? [];
           const holiday = list.find((s) => s.kind === 'holiday');
           const wd = weekday(d);
@@ -164,7 +172,6 @@ export function MonthCalendar({
               className={['cal-day', out && 'is-out', d === today && 'is-today', d === selected && 'is-selected', holiday && 'is-holiday', wd === 0 && 'sun', wd === 6 && 'sat']
                 .filter(Boolean)
                 .join(' ')}
-              style={{ ['--i' as string]: idx }}
               aria-label={`${dotDate(d)} 일정 ${list.length}개`}
             >
               <span className="cal-num">{Number(d.slice(8))}</span>
@@ -184,10 +191,11 @@ export function MonthCalendar({
                         : undefined
                     }
                   >
+                    <i />
                     {s.kind === 'makeup' && <b>보강</b>}
                     {s.kind === 'exam' && <b>시험</b>}
-                    <span className="cal-item-t">{shortLabel(s)}</span>
-                    {full && s.room && <span className="cal-item-room">{s.room}</span>}
+                    {s.cancelled && <b>휴강</b>}
+                    <span className="cal-item-t">{shortLabel(s, !!full)}</span>
                   </span>
                 ))}
                 {!full && items.length > limit && (
@@ -202,13 +210,13 @@ export function MonthCalendar({
                         : undefined
                     }
                   >
-                    +{items.length - limit}개 더
+                    {items.length - limit}개 더 보기
                   </span>
                 )}
               </span>
               <span className="cal-dots" aria-hidden="true">
-                {items.slice(0, 4).map((s) => (
-                  <i key={s.key} className={`cal-${kindTone(s)}`} style={{ background: s.cancelled ? 'transparent' : s.color, borderColor: s.color }} />
+                {items.slice(0, 3).map((s) => (
+                  <i key={s.key} className={`cal-${kindTone(s)}`} style={{ ['--c' as string]: s.color }} />
                 ))}
               </span>
             </div>
@@ -219,43 +227,20 @@ export function MonthCalendar({
   );
 }
 
-export function CalendarLegend() {
-  return (
-    <div className="legend">
-      <span>
-        <i className="lg-class" />
-        정규 수업
-      </span>
-      <span>
-        <i className="lg-makeup" />
-        보강
-      </span>
-      <span>
-        <i className="lg-exam" />
-        시험
-      </span>
-      <span>
-        <i className="lg-cancel" />
-        휴강
-      </span>
-    </div>
-  );
-}
-
 /** 이번 주 일곱 칸 띠 */
 export function WeekStrip({ days, sessions, today }: { days: string[]; sessions: CalSession[]; today: string }) {
   return (
     <div className="week-strip">
-      {days.map((d, i) => {
+      {days.map((d) => {
         const list = sessions.filter((s) => s.date === d && s.kind !== 'holiday');
         const wd = weekday(d);
         return (
-          <div key={d} className={'ws-day' + (d === today ? ' is-today' : '') + (wd === 0 ? ' sun' : wd === 6 ? ' sat' : '') + (list.length ? ' has' : '')} style={{ ['--i' as string]: i }}>
+          <div key={d} className={'ws-day' + (d === today ? ' is-today' : '') + (wd === 0 ? ' sun' : wd === 6 ? ' sat' : '') + (list.length ? ' has' : '')}>
             <span className="ws-w">{WEEKDAYS[wd]}</span>
             <span className="ws-n">{Number(d.slice(8))}</span>
             <span className="ws-marks">
-              {list.map((s) => (
-                <i key={s.key} className={`cal-${kindTone(s)}`} style={{ background: s.cancelled ? 'transparent' : s.color, borderColor: s.color }} />
+              {list.slice(0, 3).map((s) => (
+                <i key={s.key} className={`cal-${kindTone(s)}`} style={{ ['--c' as string]: s.color }} />
               ))}
             </span>
           </div>
@@ -350,7 +335,7 @@ export function WeekGrid({ start, sessions, today, onOpen }: { start: string; se
         <div className="wk-hours">
           {hours.map((h) => (
             <span key={h} style={{ top: (h - minH) * 60 * PX }}>
-              {h < 12 ? `오전 ${h}` : h === 12 ? '정오' : `${h - 12}시`}
+              {h < 12 ? `오전 ${h}시` : h === 12 ? '정오' : `오후 ${h - 12}시`}
             </span>
           ))}
         </div>
@@ -359,21 +344,20 @@ export function WeekGrid({ start, sessions, today, onOpen }: { start: string; se
             {hours.map((h) => (
               <i key={h} className="wk-line" style={{ top: (h - minH) * 60 * PX }} />
             ))}
-            {place(byDate.get(d) ?? [], minH * 60, PX).map((p, i) => (
+            {place(byDate.get(d) ?? [], minH * 60, PX).map((p) => (
               <button
                 key={p.s.key}
                 type="button"
                 className={`wk-ev cal-${kindTone(p.s)}`}
-                style={{ ['--c' as string]: p.s.color, ['--i' as string]: i, top: p.top, height: p.height, left: `calc(${(p.col / p.cols) * 100}% + 2px)`, width: `calc(${100 / p.cols}% - 4px)` } as CSSProperties}
+                style={{ ['--c' as string]: p.s.color, top: p.top, height: p.height, left: `calc(${(p.col / p.cols) * 100}% + 2px)`, width: `calc(${100 / p.cols}% - 4px)` } as CSSProperties}
                 onClick={() => onOpen?.(p.s)}
               >
                 <span className="wk-ev-t">
                   {p.s.kind !== 'class' && <b>{p.s.cancelled ? '휴강' : EVENT_LABEL[p.s.kind]}</b>}
-                  {p.s.title}
+                  {displayTitle(p.s)}
                 </span>
                 <span className="wk-ev-m">
                   {timeRange(p.s.start, p.s.end)}
-                  {p.s.room ? ` · ${p.s.room}` : ''}
                 </span>
               </button>
             ))}
@@ -404,14 +388,14 @@ export function MonthAgenda({ month, sessions, today, onOpen }: { month: string;
   if (!byDate.length) return <p className="agenda-empty">이 달에는 일정이 없습니다.</p>;
   return (
     <div className="agenda" ref={box}>
-      {byDate.map(([d, list], i) => (
-        <section key={d} className={'agenda-day' + (d === today ? ' is-today' : '') + (d < today ? ' is-past' : '')} style={{ ['--i' as string]: i }}>
+      {byDate.map(([d, list]) => (
+        <section key={d} className={'agenda-day' + (d === today ? ' is-today' : '') + (d < today ? ' is-past' : '')}>
           <h3 className="agenda-date">
             <span className="n">{Number(d.slice(8))}</span>
             <span className="w">{WEEKDAYS[weekday(d)]}요일</span>
             {d === today && <span className="today-pill">오늘</span>}
           </h3>
-          <div className="slist">
+          <div className="list">
             {list.map((s) => (
               <SessionLine key={s.key} s={s} onClick={onOpen ? () => onOpen(s) : undefined} aside={s.students.length > 1 ? `${s.students.length}명` : undefined} />
             ))}
@@ -488,24 +472,10 @@ export function ExpandedCalendar({
     <div className="calx" role="dialog" aria-modal="true" aria-label="펼친 달력" style={{ viewTransitionName: 'calendar' } as CSSProperties}>
       <header className="calx-bar">
         <div className="calx-title">
+          <h2 className="month-title">
+            <b>{label}</b> <span>{anchor.slice(0, 4)}</span>
+          </h2>
           {title && <span className="calx-who">{title}</span>}
-          <div className="month-nav">
-            <button type="button" className="icon-btn round" onClick={() => step(-1)} aria-label="이전">
-              <Chevron dir="left" />
-            </button>
-            <h2 className="month-title">
-              <span className="mo">{label}</span>
-              <span className="yr">{anchor.slice(0, 4)}</span>
-            </h2>
-            <button type="button" className="icon-btn round" onClick={() => step(1)} aria-label="다음">
-              <Chevron dir="right" />
-            </button>
-            {(view === 'week' ? weekStart !== startOfWeek(today) : month.slice(0, 7) !== today.slice(0, 7)) && (
-              <button type="button" className="chip-btn" onClick={() => vt(() => setAnchor(today), anchor < today ? 'next' : 'prev')}>
-                오늘
-              </button>
-            )}
-          </div>
         </div>
         <div className="calx-tools">
           <Segmented
@@ -519,8 +489,26 @@ export function ExpandedCalendar({
             ]}
           />
           {toolbar}
-          <button type="button" className="btn btn-line btn-sm calx-close" onClick={onClose}>
-            <ExpandIcon collapse /> 접기
+          <div className="stepper-nav">
+            <button type="button" onClick={() => step(-1)} aria-label="이전">
+              <Chevron dir="left" />
+            </button>
+            <button
+              type="button"
+              className="today-btn"
+              disabled={view === 'week' ? weekStart === startOfWeek(today) : month.slice(0, 7) === today.slice(0, 7)}
+              onClick={() => vt(() => setAnchor(today), anchor < today ? 'next' : 'prev')}
+            >
+              오늘
+            </button>
+            <button type="button" onClick={() => step(1)} aria-label="다음">
+              <Chevron dir="right" />
+            </button>
+          </div>
+          <button type="button" className="btn btn-secondary btn-sm calx-close" onClick={onClose}>
+            <span className="btn-in">
+              <ExpandIcon collapse /> 접기
+            </span>
           </button>
         </div>
       </header>
@@ -541,7 +529,6 @@ export function ExpandedCalendar({
           {view === 'list' && <MonthAgenda month={month} sessions={sessions} today={today} onOpen={onOpenSession} />}
         </div>
       </div>
-      <p className="calx-hint">← → 로 넘기기 · Esc 로 접기 · 날짜를 누르면 그 주 시간표</p>
     </div>,
     document.body,
   );
@@ -550,17 +537,16 @@ export function ExpandedCalendar({
 /** 일정 하나를 자세히: 시간·장소·메모, 그리고 필요하면 출석부 같은 내용 */
 export function SessionDetail({ s, children }: { s: CalSession; children?: ReactNode }) {
   return (
-    <div className="sdetail" style={{ ['--c' as string]: s.cancelled ? 'var(--ink-4)' : s.color }}>
+    <div className="sdetail">
       <div className="sdetail-top">
-        <span className="sdetail-chip" />
+        <span className="sdetail-bar" style={{ ['--c' as string]: s.cancelled ? 'var(--ink-4)' : s.color }} />
         <div>
-          <p className="sdetail-when">
-            {mdw(s.date)} · {timeRange(s.start, s.end)}
-          </p>
           <p className="sdetail-title">
-            <KindMark s={s} /> {s.title}
+            <KindMark s={s} /> {displayTitle(s)}
           </p>
-          <p className="sdetail-meta">{[s.room, originText(s)].filter(Boolean).join(' · ')}</p>
+          <p className="sdetail-when">{mdw(s.date)}</p>
+          <p className="sdetail-when">{timeRange(s.start, s.end)}</p>
+          {s.origin && <p className="sdetail-meta">{originText(s)}</p>}
         </div>
       </div>
       {s.memo && <p className="sdetail-memo">{s.memo}</p>}

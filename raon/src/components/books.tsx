@@ -1,28 +1,37 @@
 import type { ReactNode } from 'react';
 import type { StudentBook, Textbook } from '../../shared/types';
 import { dotDate } from '../../shared/date';
-import { Book3D } from './depth';
 
-/** 예전 이름 호환: 표지만 필요할 때도 입체 책으로 그린다 */
-export function BookCover({ book, size = 'md', progress }: { book: Pick<Textbook, 'title' | 'publisher' | 'color'> & { totalUnits?: number }; size?: 'sm' | 'md' | 'lg'; progress?: number }) {
-  return <Book3D book={book} size={size} progress={progress} />;
+type BookLike = Pick<Textbook, 'title' | 'publisher' | 'color'>;
+
+/** 표지: 교재 색 한 장에 제목만. 그림자도 아주 얕게. */
+export function BookCover({ book, size = 'md' }: { book: BookLike; size?: 'sm' | 'md' | 'lg' }) {
+  return (
+    <span className={`cover cover-${size}`} style={{ ['--bc' as string]: book.color }} aria-hidden="true">
+      <span className="cover-title">{book.title}</span>
+      {size !== 'sm' && <span className="cover-pub">{book.publisher}</span>}
+    </span>
+  );
 }
 
-/** 진도 막대: 지나온 곳은 브랜드 색으로 채우고, 끝에 책갈피 */
-export function ProgressRuler({ value, total, label = '강', color }: { value: number; total: number; label?: string; color?: string }) {
+/** 진도 막대 */
+export function ProgressBar({ value, total, label = '강' }: { value: number; total: number; label?: string }) {
   if (!total) {
     return (
-      <div className="ruler-text">
-        <b>{value}</b>
-        {label}까지
+      <div className="progress">
+        <span className="progress-top">
+          <span>
+            <b>{value}</b>
+            {label}까지
+          </span>
+        </span>
       </div>
     );
   }
   const pct = Math.min(100, Math.round((value / total) * 100));
-  const ticks = total <= 60 ? total : 0;
   return (
-    <div className="ruler" role="meter" aria-valuemin={0} aria-valuemax={total} aria-valuenow={value} aria-label={`${total}${label} 중 ${value}${label}`} style={{ ['--bc' as string]: color }}>
-      <div className="ruler-label">
+    <div className="progress" role="meter" aria-valuemin={0} aria-valuemax={total} aria-valuenow={value} aria-label={`${total}${label} 중 ${value}${label}`}>
+      <span className="progress-top">
         <span>
           <b>{value}</b>
           <span className="of">
@@ -32,14 +41,10 @@ export function ProgressRuler({ value, total, label = '강', color }: { value: n
           </span>
         </span>
         <span className="pct">{pct}%</span>
-      </div>
-      <div className="ruler-track">
-        <span className="ruler-fill" style={{ ['--w' as string]: pct / 100 }} />
-        {ticks > 0 &&
-          Array.from({ length: ticks - 1 }, (_, i) => (
-            <span key={i} className={'ruler-tick' + ((i + 1) % 5 === 0 ? ' major' : '')} style={{ left: `${((i + 1) / total) * 100}%` }} />
-          ))}
-      </div>
+      </span>
+      <span className="progress-track">
+        <span className="progress-fill" style={{ ['--w' as string]: pct / 100 }} />
+      </span>
     </div>
   );
 }
@@ -49,27 +54,21 @@ const STATUS_LABEL = { current: '진행 중', planned: '예정', done: '완료' 
 export function BookCard({ sb, children, compact }: { sb: StudentBook; children?: ReactNode; compact?: boolean }) {
   const t = sb.textbook;
   const last = sb.logs[0];
-  const p = t.totalUnits ? sb.progress / t.totalUnits : 0;
   return (
-    <article className={'book-card' + (compact ? ' is-compact' : '') + ` is-${sb.status}`} style={{ ['--bc' as string]: t.color }} data-tilt="4">
-      <span className="book-card-stage">
-        <Book3D book={t} size={compact ? 'sm' : 'md'} progress={p} />
-      </span>
+    <article className={'book' + (compact ? ' is-compact' : '') + ` is-${sb.status}`}>
+      <BookCover book={t} size={compact ? 'sm' : 'md'} />
       <div className="book-body">
-        <div className="book-top">
-          <span className="book-cat">
-            <i />
-            {t.category} · {STATUS_LABEL[sb.status]}
-          </span>
-          <h3 className="book-title">{t.title}</h3>
-          <span className="book-pub">{t.publisher}</span>
-        </div>
-        {sb.status !== 'planned' && <ProgressRuler value={sb.progress} total={t.totalUnits} label={t.unitLabel} color={t.color} />}
+        <p className="book-meta">
+          {t.category}
+          {sb.status !== 'current' && ` · ${STATUS_LABEL[sb.status]}`}
+        </p>
+        <h3 className="book-title">{t.title}</h3>
+        <p className="book-pub">{t.publisher}</p>
+        {sb.status !== 'planned' && <ProgressBar value={sb.progress} total={t.totalUnits} label={t.unitLabel} />}
         {sb.note && (
           <p className="book-note">
-            <span className="book-note-k">{sb.status === 'planned' ? '메모' : '최근 진도'}</span>
-            {last && sb.status !== 'planned' && <span className="book-note-d">{dotDate(last.date, false)}</span>}
-            <span className="book-note-t">{sb.note}</span>
+            {last && sb.status !== 'planned' && <span className="d">{dotDate(last.date, false)}</span>}
+            {sb.note}
           </p>
         )}
         {children}
@@ -82,8 +81,8 @@ export function BookLogList({ sb }: { sb: StudentBook }) {
   if (!sb.logs.length) return null;
   return (
     <ol className="book-logs">
-      {sb.logs.map((l, i) => (
-        <li key={l.id} style={{ ['--i' as string]: i }}>
+      {sb.logs.map((l) => (
+        <li key={l.id}>
           <span className="d">{dotDate(l.date)}</span>
           <span className="p">
             {l.progress}

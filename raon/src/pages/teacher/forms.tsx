@@ -36,7 +36,7 @@ export function EventSheet({ draft, onClose }: { draft: EventDraft | null; onClo
 
   useEffect(() => {
     if (!draft) return;
-    const d: EventDraft = { kind: 'makeup', date: todayIn(), start: '', end: '', studentIds: [], groupId: null, title: '', room: '', memo: '', ...draft };
+    const d: EventDraft = { kind: 'makeup', date: todayIn(), start: '', end: '', studentIds: [], groupId: null, title: '', memo: '', ...draft };
     setF(d);
     setTarget(d.groupId ? 'group' : d.studentIds?.length || d.kind === 'makeup' || d.kind === 'consult' ? 'students' : 'all');
   }, [draft]);
@@ -57,7 +57,6 @@ export function EventSheet({ draft, onClose }: { draft: EventDraft | null; onClo
       start: kind === 'holiday' || kind === 'cancel' ? null : f.start || null,
       end: kind === 'holiday' || kind === 'cancel' ? null : f.end || null,
       title: f.title,
-      room: f.room,
       memo: f.memo,
       groupId: effTarget === 'group' ? f.groupId ?? null : null,
       studentIds: effTarget === 'students' ? f.studentIds ?? [] : [],
@@ -96,14 +95,14 @@ export function EventSheet({ draft, onClose }: { draft: EventDraft | null; onClo
       footer={
         <>
           {draft.eventId && (
-            <Button variant="ghost" className="danger mr-auto" onClick={remove}>
+            <Button variant="danger" className="mr-auto" onClick={remove}>
               지우기
             </Button>
           )}
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="plain" onClick={onClose}>
             취소
           </Button>
-          <Button variant={kind === 'makeup' ? 'red' : 'primary'} type="submit" form="event-form" busy={busy}>
+          <Button variant="primary" type="submit" form="event-form" busy={busy}>
             저장
           </Button>
         </>
@@ -117,9 +116,16 @@ export function EventSheet({ draft, onClose }: { draft: EventDraft | null; onClo
           </p>
         )}
         {!draft.eventId && !draft.originText && (
-          <Field label="종류" wide>
-            <Segmented value={kind} onChange={(k) => set({ kind: k })} options={KIND_OPTIONS.map((k) => ({ value: k, label: EVENT_LABEL[k] }))} />
-          </Field>
+          <div className="field field-wide" role="radiogroup" aria-label="종류">
+            <span className="field-label">종류</span>
+            <div className="choice-grid">
+              {KIND_OPTIONS.map((k) => (
+                <button key={k} type="button" role="radio" aria-checked={kind === k} className={'choice' + (kind === k ? ' is-on' : '')} onClick={() => set({ kind: k })}>
+                  {EVENT_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         <div className="field-row">
           <Field label="날짜">
@@ -165,16 +171,9 @@ export function EventSheet({ draft, onClose }: { draft: EventDraft | null; onClo
           </Field>
         )}
 
-        <div className="field-row">
-          <Field label={kind === 'cancel' ? '사유' : '제목'} hint={kind === 'cancel' || kind === 'holiday' ? '학생·학부모 달력에 그대로 보입니다' : '비워 두면 자동으로 붙습니다'}>
-            <input value={f.title ?? ''} onChange={(e) => set({ title: e.target.value })} placeholder={kind === 'holiday' ? '예: 추석 연휴' : kind === 'cancel' ? '예: 학교 축제' : ''} />
-          </Field>
-          {kind !== 'holiday' && kind !== 'cancel' && (
-            <Field label="강의실">
-              <input value={f.room ?? ''} onChange={(e) => set({ room: e.target.value })} />
-            </Field>
-          )}
-        </div>
+        <Field label={kind === 'cancel' ? '사유' : '제목'} wide hint={kind === 'cancel' || kind === 'holiday' ? '학생·학부모 달력에 그대로 보입니다' : '비워 두면 자동으로 붙습니다'}>
+          <input value={f.title ?? ''} onChange={(e) => set({ title: e.target.value })} placeholder={kind === 'holiday' ? '예: 추석 연휴' : kind === 'cancel' ? '예: 학교 축제' : ''} />
+        </Field>
         <Field label="메모" wide hint="학생·학부모에게도 보입니다">
           <textarea rows={2} value={f.memo ?? ''} onChange={(e) => set({ memo: e.target.value })} />
         </Field>
@@ -220,7 +219,7 @@ export function FeedbackSheet({ open, studentId, onClose }: { open: boolean; stu
       width={860}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="plain" onClick={onClose}>
             취소
           </Button>
           <Button variant="primary" type="submit" form="fb-form" busy={busy}>
@@ -284,17 +283,14 @@ export function StudentSheet({ open, student, onClose, onSaved }: { open: boolea
     grade: student?.grade ?? '',
     phone: student?.phone ?? '',
     memo: student?.memo ?? '',
-    color: student?.color ?? COLORS[Math.floor(Math.random() * COLORS.length)],
     status: student?.status ?? 'active',
     groupIds: student?.groups.map((g) => g.id) ?? [],
     makeAccount: false,
-    loginId: '',
     password: '',
     makeParent: false,
     parentName: '',
     parentPhone: '',
     relation: '어머니',
-    parentLoginId: '',
     parentPassword: '',
   });
   const [f, setF] = useState(init);
@@ -315,19 +311,16 @@ export function StudentSheet({ open, student, onClose, onSaved }: { open: boolea
       grade: f.grade,
       phone: f.phone,
       memo: f.memo,
-      color: f.color,
       status: f.status,
       groupIds: f.groupIds,
     };
-    if (!student && f.makeAccount) body.account = { loginId: f.loginId, password: f.password };
-    if (!student && f.makeParent)
-      body.parents = [{ name: f.parentName, phone: f.parentPhone, relation: f.relation, loginId: f.parentLoginId, password: f.parentPassword }];
-    const r = await ui.run<StudentDetail>(
-      () => (student ? api.patch(`/students/${student.id}`, body) : api.post('/students', body)),
-      student ? '학생 정보를 고쳤습니다.' : `${f.name} 학생을 등록했습니다.`,
-    );
+    if (!student && f.makeAccount) body.account = { password: f.password };
+    if (!student && f.makeParent) body.parents = [{ name: f.parentName, phone: f.parentPhone, relation: f.relation, password: f.parentPassword }];
+    const r = await ui.run<StudentDetail>(() => (student ? api.patch(`/students/${student.id}`, body) : api.post('/students', body)));
     setBusy(false);
     if (r) {
+      const ids = [r.account?.loginId, ...r.parents.map((p) => p.loginId)].filter(Boolean);
+      ui.toast(student ? '학생 정보를 고쳤습니다.' : `${f.name} 학생을 등록했습니다.${ids.length ? ` 아이디: ${ids.join(', ')}` : ''}`);
       onClose();
       onSaved?.(r.id);
     }
@@ -341,7 +334,7 @@ export function StudentSheet({ open, student, onClose, onSaved }: { open: boolea
       width={680}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="plain" onClick={onClose}>
             취소
           </Button>
           <Button variant="primary" type="submit" form="student-form" busy={busy}>
@@ -392,9 +385,6 @@ export function StudentSheet({ open, student, onClose, onSaved }: { open: boolea
             {!groups.length && <span className="fine">아직 만든 반이 없습니다.</span>}
           </div>
         </Field>
-        <Field label="표시 색" wide>
-          <ColorPicker value={f.color} onChange={(c) => setF({ ...f, color: c })} />
-        </Field>
         <Field label="선생님 메모" wide hint="학생·학부모에게는 보이지 않습니다">
           <textarea rows={2} value={f.memo} onChange={set('memo')} />
         </Field>
@@ -407,10 +397,7 @@ export function StudentSheet({ open, student, onClose, onSaved }: { open: boolea
             </label>
             {f.makeAccount && (
               <div className="field-row sub-block">
-                <Field label="학생 아이디" hint="영문·숫자">
-                  <input value={f.loginId} onChange={set('loginId')} autoCapitalize="none" spellCheck={false} required />
-                </Field>
-                <Field label="처음 비밀번호" hint="6자 이상">
+                <Field label="처음 비밀번호" hint={`6자 이상. 아이디는 학생 이름${f.name ? `(${f.name})` : ''}입니다.`}>
                   <input value={f.password} onChange={set('password')} required minLength={6} />
                 </Field>
               </div>
@@ -422,7 +409,7 @@ export function StudentSheet({ open, student, onClose, onSaved }: { open: boolea
             {f.makeParent && (
               <div className="sub-block">
                 <div className="field-row">
-                  <Field label="학부모 이름">
+                  <Field label="학부모 이름" hint="로그인할 때 이 이름을 씁니다">
                     <input value={f.parentName} onChange={set('parentName')} required />
                   </Field>
                   <Field label="관계">
@@ -432,13 +419,10 @@ export function StudentSheet({ open, student, onClose, onSaved }: { open: boolea
                       <option>보호자</option>
                     </select>
                   </Field>
-                  <Field label="연락처">
-                    <input value={f.parentPhone} onChange={set('parentPhone')} inputMode="tel" />
-                  </Field>
                 </div>
                 <div className="field-row">
-                  <Field label="학부모 아이디">
-                    <input value={f.parentLoginId} onChange={set('parentLoginId')} autoCapitalize="none" spellCheck={false} required />
+                  <Field label="연락처">
+                    <input value={f.parentPhone} onChange={set('parentPhone')} inputMode="tel" />
                   </Field>
                   <Field label="처음 비밀번호" hint="6자 이상">
                     <input value={f.parentPassword} onChange={set('parentPassword')} required minLength={6} />
@@ -460,7 +444,6 @@ export function GroupSheet({ open, group, onClose }: { open: boolean; group?: Gr
   const students = useApi<StudentRow[]>(open ? '/students' : null).data ?? [];
   const init = () => ({
     name: group?.name ?? '',
-    room: group?.room ?? '',
     memo: group?.memo ?? '',
     color: group?.color ?? COLORS[0],
     slots: (group?.slots ?? [{ weekday: 1, start: '19:00', end: '21:00' }]) as GroupSlot[],
@@ -501,11 +484,11 @@ export function GroupSheet({ open, group, onClose }: { open: boolean; group?: Gr
       footer={
         <>
           {group && (
-            <Button variant="ghost" className="danger mr-auto" onClick={remove}>
+            <Button variant="danger" className="mr-auto" onClick={remove}>
               반 지우기
             </Button>
           )}
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="plain" onClick={onClose}>
             취소
           </Button>
           <Button variant="primary" type="submit" form="group-form" busy={busy}>
@@ -515,14 +498,9 @@ export function GroupSheet({ open, group, onClose }: { open: boolean; group?: Gr
       }
     >
       <form id="group-form" className="form" onSubmit={submit}>
-        <div className="field-row">
-          <Field label="반 이름">
-            <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="예: 고2 문학·독서" required />
-          </Field>
-          <Field label="강의실">
-            <input value={f.room} onChange={(e) => setF({ ...f, room: e.target.value })} />
-          </Field>
-        </div>
+        <Field label="반 이름" wide>
+          <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="예: 고2 문학·독서" required />
+        </Field>
         <Field label="정규 수업 시간" wide hint="매주 반복됩니다. 달력에 자동으로 표시돼요.">
           <SlotEditor slots={f.slots} onChange={(slots) => setF({ ...f, slots })} />
         </Field>
@@ -582,11 +560,11 @@ export function TextbookSheet({ open, book, onClose }: { open: boolean; book?: T
       footer={
         <>
           {book && (
-            <Button variant="ghost" className="danger mr-auto" onClick={remove}>
+            <Button variant="danger" className="mr-auto" onClick={remove}>
               지우기
             </Button>
           )}
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="plain" onClick={onClose}>
             취소
           </Button>
           <Button variant="primary" type="submit" form="book-form" busy={busy}>
@@ -675,7 +653,7 @@ export function AssignBookSheet({ open, studentId, textbookId, onClose }: { open
       width={600}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="plain" onClick={onClose}>
             취소
           </Button>
           <Button variant="primary" type="submit" form="assign-form" busy={busy}>
@@ -767,10 +745,10 @@ export function ProgressSheet({ sb, onClose }: { sb: StudentBook | null; onClose
       width={520}
       footer={
         <>
-          <Button variant="ghost" className="danger mr-auto" onClick={remove}>
+          <Button variant="danger" className="mr-auto" onClick={remove}>
             배정 취소
           </Button>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="plain" onClick={onClose}>
             닫기
           </Button>
           <Button variant="primary" type="submit" form="progress-form" busy={busy}>
