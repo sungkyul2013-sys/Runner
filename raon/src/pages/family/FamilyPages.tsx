@@ -4,7 +4,7 @@ import { useAuth } from '../../lib/auth';
 import { useApi } from '../../lib/hooks';
 import { api, qs } from '../../lib/api';
 import { useChild } from '../../components/Shell';
-import { Button, Chevron, Empty, ErrorNote, ExpandIcon, Loading, PageHead, SectionHead, Segmented, Sheet, Tag } from '../../components/ui';
+import { Button, Chevron, CountUp, Empty, ErrorNote, ExpandIcon, Loading, PageHead, SectionHead, Segmented, Sheet, Tag } from '../../components/ui';
 import { displayTitle, ExpandedCalendar, KindMark, MonthCalendar, MonthNav, SessionDetail, SessionLine, WeekStrip } from '../../components/schedule';
 import { vt } from '../../lib/motion';
 import { BookCard, BookLogList } from '../../components/books';
@@ -31,7 +31,7 @@ export function FamilyHomePage() {
 
       <div className="home-grid">
         <div className="home-col">
-          <section className="card next">
+          <section className="card next" data-tilt="3">
             <p className="next-label">다음 수업</p>
             {next ? (
               <>
@@ -141,15 +141,21 @@ export function AttendanceNumbers({ a }: { a: AttendanceSummary }) {
   return (
     <div className="numbers">
       <div>
-        <span className="n">{a.present}</span>
+        <span className="n">
+          <CountUp value={a.present} />
+        </span>
         <span className="k">출석</span>
       </div>
       <div>
-        <span className="n">{a.late}</span>
+        <span className="n">
+          <CountUp value={a.late} />
+        </span>
         <span className="k">지각</span>
       </div>
       <div className={a.absent ? 'is-warn' : ''}>
-        <span className="n">{a.absent}</span>
+        <span className="n">
+          <CountUp value={a.absent} />
+        </span>
         <span className="k">결석</span>
       </div>
     </div>

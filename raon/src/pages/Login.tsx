@@ -45,19 +45,23 @@ function AuthFrame({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function LoginPage() {
+/** 홈 화면 위로 떠오르는 로그인 창 */
+export function LoginSheet({ open, onClose, onConsult }: { open: boolean; onClose(): void; onConsult(): void }) {
   const { academy, setMe } = useAuth();
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [shake, setShake] = useState(0);
-  const [consult, setConsult] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (window.matchMedia('(hover: hover)').matches) nameRef.current?.focus();
-  }, []);
+    if (!open) return;
+    setError('');
+    setShake(0);
+    const t = setTimeout(() => window.matchMedia('(hover: hover)').matches && nameRef.current?.focus(), 80);
+    return () => clearTimeout(t);
+  }, [open]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -65,6 +69,7 @@ export function LoginPage() {
     setError('');
     try {
       const me = await api.post<Me>('/auth/login', { loginId: name.trim(), password });
+      document.body.classList.remove('no-scroll');
       vt(() => setMe(me), 'enter');
     } catch (err: any) {
       setError(err.message);
@@ -75,13 +80,13 @@ export function LoginPage() {
   };
 
   return (
-    <AuthFrame>
-      <form className="auth-form" onSubmit={submit}>
-        <span className="auth-mark">
-          <Mark scale={1.7} />
+    <Sheet open={open} onClose={onClose} title="" width={420} className="sheet-login">
+      <form className="login" onSubmit={submit}>
+        <span className="login-mark">
+          <Mark scale={1.6} />
         </span>
-        <h1 className="auth-title">{academy.name}에 로그인</h1>
-        <p className="auth-lead">수업 일정과 보강, 선생님 피드백, 교재 진도를 확인하세요.</p>
+        <h2 className="login-title">{academy.name}에 로그인</h2>
+        <p className="login-lead">이름과 비밀번호를 입력하세요.</p>
         <div className={'input-stack' + (error ? ' has-error' : '')} key={shake} data-shake={shake > 0 || undefined}>
           <FloatInput label="이름" value={name} onChange={setName} autoComplete="username" inputRef={nameRef} />
           <FloatInput label="비밀번호" type="password" value={password} onChange={setPassword} autoComplete="current-password" />
@@ -89,15 +94,10 @@ export function LoginPage() {
         <p className="form-error" role="alert">
           {error}
         </p>
-        <div className="auth-actions">
-          <Button type="submit" variant="primary" size="lg" busy={busy}>
-            로그인
-          </Button>
-          <Button size="lg" onClick={() => setConsult(true)}>
-            상담 신청
-          </Button>
-        </div>
-        <p className="auth-help">
+        <Button type="submit" variant="primary" size="lg" busy={busy} className="btn-block">
+          로그인
+        </Button>
+        <p className="login-help">
           비밀번호를 잊으셨다면 학원으로 연락해 주세요.
           {academy.phone && (
             <>
@@ -105,6 +105,12 @@ export function LoginPage() {
               <a href={`tel:${academy.phone}`}>{academy.phone}</a>
             </>
           )}
+        </p>
+        <p className="login-alt">
+          아직 라온국어 학생이 아니신가요?{' '}
+          <button type="button" className="link" onClick={onConsult}>
+            상담 신청
+          </button>
         </p>
         {DEMO && (
           <p className="auth-demo">
@@ -114,8 +120,7 @@ export function LoginPage() {
           </p>
         )}
       </form>
-      <ConsultSheet open={consult} onClose={() => setConsult(false)} />
-    </AuthFrame>
+    </Sheet>
   );
 }
 

@@ -3,7 +3,9 @@ import { createBrowserRouter, createMemoryRouter, Navigate, Outlet, RouterProvid
 import { AuthProvider, useAuth } from './lib/auth';
 import { UiProvider, Loading } from './components/ui';
 import { FamilyShell, TeacherShell } from './components/Shell';
-import { LoginPage, SetupPage } from './pages/Login';
+import { SetupPage } from './pages/Login';
+import { LandingPage } from './pages/Landing';
+import { installTilt } from './lib/motion';
 import { FamilyBooksPage, FamilyCalendarPage, FamilyFeedbackPage, FamilyHomePage } from './pages/family/FamilyPages';
 import { TodayPage } from './pages/teacher/TodayPage';
 import { TeacherCalendarPage } from './pages/teacher/CalendarPage';
@@ -13,6 +15,8 @@ import { TeacherFeedbackPage } from './pages/teacher/FeedbackPages';
 import { AccountPage, BooksPage, GroupsPage, SettingsPage } from './pages/teacher/MorePages';
 import { ConsultsPage } from './pages/teacher/ConsultsPage';
 import { todayIn } from '../shared/date';
+
+installTilt();
 
 /** 같은 주소라도 선생님과 학생·학부모에게 다른 화면을 보여 준다 */
 function ByRole({ teacher, family }: { teacher?: ReactNode; family?: ReactNode }) {
@@ -25,7 +29,7 @@ function Gate() {
   const { me, ready, needsSetup } = useAuth();
   let body: ReactNode;
   if (!ready) body = <Loading />;
-  else if (!me) body = needsSetup ? <SetupPage /> : <LoginPage />;
+  else if (!me) body = needsSetup ? <SetupPage /> : <LandingPage />;
   else if (me.role === 'teacher')
     body = (
       <TeacherShell today={todayIn()}>

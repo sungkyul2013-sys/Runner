@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi } from '../../lib/hooks';
-import { Button, Chevron, Collapse, Empty, ErrorNote, Loading, PageHead, Plus, SectionHead, Tag } from '../../components/ui';
+import { Button, Chevron, Collapse, CountUp, Empty, ErrorNote, Loading, PageHead, Plus, SectionHead, Tag } from '../../components/ui';
 import { displayTitle, KindMark, originText, SessionLine } from '../../components/schedule';
 import { Roster } from '../../components/attendance';
 import { readStamp } from '../../components/letters';
@@ -99,7 +99,9 @@ export function TodayPage() {
       <div className="figures">
         {figures.map((f) => (
           <Link viewTransition key={f.to} to={f.to} className={'figure' + (f.warn ? ' is-warn' : '')}>
-            <span className="n">{f.n}</span>
+            <span className="n">
+              <CountUp value={f.n} />
+            </span>
             <span className="k">{f.k}</span>
           </Link>
         ))}

@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useApi } from '../../lib/hooks';
 import { useAuth } from '../../lib/auth';
-import { Avatar, Button, Chevron, Empty, ErrorNote, Field, Loading, PageHead, Plus, SectionHead, Sheet, Tag, useUi } from '../../components/ui';
+import { Avatar, Button, Chevron, Empty, ErrorNote, Field, Loading, PageHead, Plus, SectionHead, Segmented, Sheet, Tag, useUi } from '../../components/ui';
+import { vt } from '../../lib/motion';
 import { BookCover, ProgressBar } from '../../components/books';
 import { slotText } from '../../components/pickers';
 import { readStamp } from '../../components/letters';
@@ -99,7 +100,8 @@ export function BooksPage() {
   const [editing, setEditing] = useState<Textbook | null | undefined>(undefined);
   const [assign, setAssign] = useState<number | null>(null);
   const [focus, setFocus] = useState<Textbook | null>(null);
-  const cats = useMemo(() => [...new Set((data ?? []).map((b) => b.category))], [data]);
+  const [cat, setCat] = useState('전체');
+  const cats = useMemo(() => [...new Set((data ?? []).map((b) => b.category))].sort(), [data]);
   if (error) return <ErrorNote message={error} onRetry={reload} />;
   if (!data) return <Loading />;
   return (
@@ -117,31 +119,32 @@ export function BooksPage() {
         }
       />
       {!data.length && <Empty title="등록한 교재가 없습니다." />}
-      {cats.map((c) => (
-        <section key={c} className="block">
-          <SectionHead title={c} count={data.filter((b) => b.category === c).length} />
-          <div className="shelf">
-            {data
-              .filter((b) => b.category === c)
-              .map((b) => (
-                <div key={b.id} className="shelf-item">
-                  <button type="button" className="shelf-cover" onClick={() => setFocus(b)} aria-label={`${b.title} 진도 보기`}>
-                    <BookCover book={b} size="lg" />
-                  </button>
-                  <b className="shelf-title">{b.title}</b>
-                  <span className="fine">
-                    {b.publisher}
-                    {b.totalUnits ? ` · ${b.totalUnits}${b.unitLabel}` : ''}
-                  </span>
-                  <span className="fine">{b.inUse ? `${b.inUse}명 진행 중` : '진행 중인 학생 없음'}</span>
-                  <button type="button" className="link small" onClick={() => setEditing(b)}>
-                    고치기
-                  </button>
-                </div>
-              ))}
-          </div>
-        </section>
-      ))}
+      {data.length > 0 && (
+        <div className="toolbar">
+          <Segmented size="sm" value={cat} onChange={(c) => vt(() => setCat(c), 'swap')} options={['전체', ...cats].map((c) => ({ value: c, label: c }))} />
+        </div>
+      )}
+      <div className="shelf swap-area">
+        {data
+          .filter((b) => cat === '전체' || b.category === cat)
+          .map((b) => (
+            <div key={b.id} className="shelf-item">
+              <button type="button" className="shelf-cover" onClick={() => setFocus(b)} aria-label={`${b.title} 진도 보기`}>
+                <BookCover book={b} size="lg" />
+              </button>
+              <span className="shelf-cat">{b.category}</span>
+              <b className="shelf-title">{b.title}</b>
+              <span className="fine">
+                {b.publisher}
+                {b.totalUnits ? ` · ${b.totalUnits}${b.unitLabel}` : ''}
+              </span>
+              <span className="fine">{b.inUse ? `${b.inUse}명 진행 중` : '진행 중인 학생 없음'}</span>
+              <button type="button" className="link small" onClick={() => setEditing(b)}>
+                고치기
+              </button>
+            </div>
+          ))}
+      </div>
       <TextbookSheet open={editing !== undefined} book={editing} onClose={() => setEditing(undefined)} />
       <AssignBookSheet open={assign !== null} textbookId={assign || undefined} onClose={() => setAssign(null)} />
       <BookStudentsSheet book={focus} onClose={() => setFocus(null)} onAssign={(id) => setAssign(id)} />

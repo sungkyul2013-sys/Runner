@@ -21,7 +21,7 @@ function ConsultCard({ c }: { c: ConsultRequest }) {
     if (yes) await ui.run(() => api.del(`/consults/${c.id}`), '상담 신청을 지웠습니다.');
   };
   return (
-    <article className={'consult' + (c.status === 'done' ? ' is-done' : '')}>
+    <article className={'consult' + (c.status === 'done' ? ' is-done' : '')} data-tilt="3">
       <header className="consult-head">
         <span className="consult-name">
           {c.status === 'new' && <span className="letter-dot" />}

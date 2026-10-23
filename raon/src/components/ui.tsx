@@ -13,17 +13,26 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { invalidate } from '../lib/hooks';
-import { reducedMotion } from '../lib/motion';
+import { reducedMotion, useCountUp } from '../lib/motion';
 
-// ── 브랜드: 높이가 다른 다섯 막대 (라온의 다섯 자모) ─────────
+// ── 브랜드: 라온의 다섯 자모(ㄹ·ㅏ·ㅇ·ㅗ·ㄴ)를 다섯 색 막대로 ─────────
+
+export const AREAS = [
+  { key: 'vocab', name: '어휘', jamo: 'ㄹ', color: '#e5483b' },
+  { key: 'read', name: '독서', jamo: 'ㅏ', color: '#f2a91e' },
+  { key: 'lit', name: '문학', jamo: 'ㅇ', color: '#2f6fde' },
+  { key: 'gram', name: '문법', jamo: 'ㅗ', color: '#1f9e6e' },
+  { key: 'write', name: '작문', jamo: 'ㄴ', color: '#8a56e2' },
+] as const;
 
 const BAR_H = [16, 11, 14, 8, 12];
 
-export function Mark({ scale = 1 }: { scale?: number }) {
+/** 다섯 색 막대. 처음 그려질 때 차례로 솟아오르고, 마우스를 올리면 출렁인다. */
+export function Mark({ scale = 1, intro = true }: { scale?: number; intro?: boolean }) {
   return (
-    <span className="mark" aria-hidden="true">
-      {BAR_H.map((h, i) => (
-        <i key={i} style={{ height: h * scale, width: 3 * scale }} />
+    <span className={'mark' + (intro ? ' is-intro' : '')} style={{ ['--s' as string]: scale }} aria-hidden="true">
+      {AREAS.map((a, i) => (
+        <i key={a.key} style={{ height: BAR_H[i] * scale, width: 5 * scale, background: a.color, ['--i' as string]: i }} />
       ))}
     </span>
   );
@@ -36,6 +45,11 @@ export function Brand({ name, scale = 1 }: { name: string; scale?: number }) {
       <span className="brand-name">{name}</span>
     </span>
   );
+}
+
+/** 큰 숫자를 0 에서부터 올라가며 보여 준다 */
+export function CountUp({ value }: { value: number }) {
+  return <>{useCountUp(value)}</>;
 }
 
 // ── 버튼 ───────────────────────────────────────────────
@@ -281,6 +295,7 @@ export function Sheet({
   footer,
   width = 560,
   vtName,
+  className = '',
 }: {
   open: boolean;
   onClose(): void;
@@ -289,6 +304,7 @@ export function Sheet({
   footer?: ReactNode;
   width?: number;
   vtName?: string;
+  className?: string;
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
@@ -298,7 +314,7 @@ export function Sheet({
   if (!shown) return null;
   return createPortal(
     <div className={'sheet-backdrop' + (closing ? ' is-closing' : '')} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panel} tabIndex={-1} style={{ ['--w' as string]: `${width}px`, viewTransitionName: vtName } as CSSProperties}>
+      <div className={'sheet ' + className} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panel} tabIndex={-1} style={{ ['--w' as string]: `${width}px`, viewTransitionName: vtName } as CSSProperties}>
         <span className="sheet-grabber" aria-hidden="true" />
         <div className="sheet-head">
           <h2 id={titleId}>{title}</h2>
