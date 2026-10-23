@@ -33,7 +33,7 @@ export function MakeupsPage() {
         title="보강"
         sub="결석하거나 휴강한 수업을 모아 두었습니다. 보강을 잡으면 학생·학부모 달력에 바로 보입니다."
         actions={
-          <Button variant="seal" onClick={() => setDraft({ kind: 'makeup', date: today })}>
+          <Button variant="red" onClick={() => setDraft({ kind: 'makeup', date: today })}>
             <Plus /> 보강 잡기
           </Button>
         }

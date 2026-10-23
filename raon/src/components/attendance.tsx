@@ -77,7 +77,7 @@ export function Roster({
                 {st.makeupEventId ? (
                   <span className="fine">보강 잡힘</span>
                 ) : (
-                  <button type="button" className="link seal" onClick={() => onMakeup(st)}>
+                  <button type="button" className="link red" onClick={() => onMakeup(st)}>
                     보강 잡기
                   </button>
                 )}

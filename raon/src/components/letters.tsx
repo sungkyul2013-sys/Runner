@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Feedback } from '../../shared/types';
 import { dotDate, md } from '../../shared/date';
 
@@ -27,6 +27,11 @@ export function Letter({
 }) {
   const [open, setOpen] = useState(!!defaultOpen);
   const unread = !f.readAt && f.readers === undefined;
+  useEffect(() => {
+    // 처음부터 펼쳐 보여 준 글은 읽은 것으로 표시
+    if (defaultOpen) onOpen?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const toggle = () => {
     if (!open) onOpen?.();
     setOpen(!open);

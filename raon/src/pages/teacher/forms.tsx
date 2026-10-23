@@ -103,7 +103,7 @@ export function EventSheet({ draft, onClose }: { draft: EventDraft | null; onClo
           <Button variant="ghost" onClick={onClose}>
             취소
           </Button>
-          <Button variant={kind === 'makeup' ? 'seal' : 'primary'} type="submit" form="event-form" busy={busy}>
+          <Button variant={kind === 'makeup' ? 'red' : 'primary'} type="submit" form="event-form" busy={busy}>
             저장
           </Button>
         </>

@@ -1,0 +1,8 @@
+/* 미리보기는 한 파일로 묶이므로 자주 쓰는 글자만 남긴 Pretendard 를 넣는다 */
+@font-face {
+  font-family: 'Pretendard Variable';
+  font-style: normal;
+  font-weight: 45 920;
+  font-display: swap;
+  src: url('./pretendard-subset.woff2') format('woff2-variations');
+}

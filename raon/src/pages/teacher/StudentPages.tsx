@@ -277,7 +277,7 @@ function StudentAttendanceTab({ s }: { s: StudentDetail }) {
             const p = mine(x);
             return (
               <li key={x.date + x.key} className={`is-${p.status}`}>
-                <SessionLine s={x} showDate aside={<Tag tone={p.status === 'absent' ? 'seal' : p.status === 'late' ? 'ochre' : 'plain'}>{ATTENDANCE_LABEL[p.status!]}</Tag>} />
+                <SessionLine s={x} showDate aside={<Tag tone={p.status === 'absent' ? 'red' : p.status === 'late' ? 'ochre' : 'plain'}>{ATTENDANCE_LABEL[p.status!]}</Tag>} />
               </li>
             );
           })}

@@ -12,37 +12,86 @@ import {
 import { createPortal } from 'react-dom';
 import { invalidate } from '../lib/hooks';
 
-// ── 낙관(도장) 로고 ─────────────────────────────────────
+// ── 로고: 원고지 칸에 쓴 학원 이름 ───────────────────────
 
-export function Seal({ size = 34, text = '라온' }: { size?: number; text?: string }) {
-  const [a, b] = [text.slice(0, 1), text.slice(1, 2)];
+export function Mark({ text, size = 26 }: { text: string; size?: number }) {
   return (
-    <svg className="seal" width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
-      <rect x="1" y="1" width="38" height="38" rx="5" fill="var(--seal)" />
-      <rect x="4.2" y="4.2" width="31.6" height="31.6" rx="2.5" fill="none" stroke="var(--seal-ink)" strokeWidth="1" opacity=".9" />
-      <text x="20" y="18.6" textAnchor="middle" className="seal-char">
-        {a}
-      </text>
-      <text x="20" y="32.4" textAnchor="middle" className="seal-char">
-        {b}
-      </text>
-    </svg>
+    <span className="mark" style={{ ['--m' as string]: `${size}px` }} aria-hidden="true">
+      {[...text].slice(0, 6).map((ch, i) => (
+        <span key={i} className="mark-cell">
+          {ch}
+        </span>
+      ))}
+    </span>
   );
 }
 
 export function Brand({ name, compact }: { name: string; compact?: boolean }) {
   return (
-    <span className={'brand' + (compact ? ' brand-compact' : '')}>
-      <Seal size={compact ? 28 : 34} text={name.slice(0, 2)} />
-      <span className="brand-name">{name}</span>
+    <span className={'brand' + (compact ? ' brand-compact' : '')} role="img" aria-label={name}>
+      <Mark text={name} size={compact ? 24 : 28} />
     </span>
+  );
+}
+
+/**
+ * 원고지에 옮겨 쓴 문장. 한 칸에 한 글자, 띄어쓰기도 한 칸.
+ * 문장 부호 뒤에는 칸을 비우지 않고, 줄 첫 칸에 오는 빈칸은 생략한다.
+ */
+export function Manuscript({ text, cols, circle }: { text: string; cols: number; circle?: string }) {
+  const cells: string[] = [' '];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === ' ' && /[,.]/.test(text[i - 1] ?? '')) continue;
+    cells.push(ch);
+  }
+  const rows: string[][] = [];
+  let row: string[] = [];
+  for (const c of cells) {
+    if (row.length === 0 && c === ' ' && rows.length > 0) continue;
+    row.push(c);
+    if (row.length === cols) {
+      rows.push(row);
+      row = [];
+    }
+  }
+  if (row.length) rows.push([...row, ...Array(cols - row.length).fill(' ')]);
+  // 빨간펜 동그라미를 칠 위치 (처음 나오는 곳 한 번)
+  let mark: { r: number; c: number; len: number } | null = null;
+  for (let ri = 0; circle && ri < rows.length && !mark; ri++) {
+    const at = rows[ri].join('').indexOf(circle);
+    if (at >= 0) mark = { r: ri, c: at, len: circle.length };
+  }
+  return (
+    <div className="ms" style={{ ['--cols' as string]: cols }} aria-label={text}>
+      {rows.map((r, ri) => (
+        <div className="ms-row" key={ri}>
+          {r.map((ch, ci) => (
+            <span key={ci} className="ms-cell">
+              {ch.trim()}
+            </span>
+          ))}
+          {mark?.r === ri && (
+            <svg
+              className="ms-circle"
+              style={{ left: `calc(${mark.c} * 100% / ${cols} - 6px)`, width: `calc(${mark.len} * 100% / ${cols} + 12px)` }}
+              viewBox="0 0 100 50"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path d="M8 27 C 6 9, 40 3, 62 5 C 88 7, 98 18, 94 32 C 89 46, 50 49, 26 45 C 8 42, 3 33, 9 21 C 13 14, 22 10, 30 8" />
+            </svg>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
 // ── 버튼 ───────────────────────────────────────────────
 
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'line' | 'ghost' | 'danger' | 'seal';
+  variant?: 'primary' | 'line' | 'ghost' | 'danger' | 'red';
   size?: 'sm' | 'md';
   busy?: boolean;
 };
@@ -164,7 +213,7 @@ export function Dot({ color, size = 8 }: { color: string; size?: number }) {
   return <span className="dot" style={{ background: color, width: size, height: size }} />;
 }
 
-export function Tag({ children, tone = 'plain' }: { children: ReactNode; tone?: 'plain' | 'seal' | 'ink' | 'ochre' | 'moss' | 'mute' }) {
+export function Tag({ children, tone = 'plain' }: { children: ReactNode; tone?: 'plain' | 'red' | 'green' | 'ink' | 'ochre' | 'moss' | 'mute' }) {
   return <span className={`tag tag-${tone}`}>{children}</span>;
 }
 

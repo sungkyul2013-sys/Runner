@@ -1,5 +1,5 @@
 import express, { type Request, type Response } from 'express';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openNodeDb } from './node/sqlite';
@@ -14,6 +14,9 @@ import { todayIn } from '../shared/date';
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_DIR = resolve(process.env.DATA_DIR || 'data');
 const PROD = process.env.NODE_ENV === 'production';
+// HTTPS 에서만 로그인 쿠키를 보낸다. 집에서 http 로 시험할 때는 COOKIE_SECURE=0
+const SECURE_COOKIE = process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === '1' : PROD;
+const BACKUP_DAYS = Number(process.env.BACKUP_DAYS ?? 14);
 const COOKIE = 'raon_session';
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -38,7 +41,7 @@ function readCookie(req: Request, name: string): string | undefined {
 
 function setCookie(res: Response, token: string | null) {
   const attrs = ['Path=/', 'HttpOnly', 'SameSite=Lax'];
-  if (PROD || process.env.COOKIE_SECURE === '1') attrs.push('Secure');
+  if (SECURE_COOKIE) attrs.push('Secure');
   if (token) attrs.push(`Max-Age=${30 * 86400}`);
   else attrs.push('Max-Age=0');
   res.append('Set-Cookie', `${COOKIE}=${token ? encodeURIComponent(token) : ''}; ${attrs.join('; ')}`);
@@ -113,6 +116,24 @@ if (clientDir) {
 
 // 오래된 로그인 세션 정리
 setInterval(() => db.run('DELETE FROM sessions WHERE expires_at < ?', new Date().toISOString()), 6 * 3600 * 1000).unref();
+
+// 하루 한 번 데이터 백업 (data/backups/raon-날짜.db, 최근 BACKUP_DAYS 개 보관)
+function backup() {
+  if (!BACKUP_DAYS) return;
+  const dir = join(DATA_DIR, 'backups');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `raon-${todayIn()}.db`);
+  if (existsSync(file)) return;
+  try {
+    db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+    const old = readdirSync(dir).filter((f) => /^raon-\d{4}-\d{2}-\d{2}\.db$/.test(f)).sort().slice(0, -BACKUP_DAYS);
+    for (const f of old) rmSync(join(dir, f));
+  } catch (e) {
+    console.error('[raon] 백업 실패', e);
+  }
+}
+backup();
+setInterval(backup, 3600 * 1000).unref();
 
 app.listen(PORT, () => {
   console.log(`[raon] http://localhost:${PORT} 에서 실행 중 (데이터: ${DATA_DIR})`);

@@ -1,4 +1,4 @@
-import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
 import { UiProvider, Loading } from './components/ui';
 import { FamilyShell, TeacherShell } from './components/Shell';
@@ -50,8 +50,8 @@ function Gate() {
   );
 }
 
-// 미리보기(데모) 빌드는 단일 파일이라 주소 대신 # 경로를 쓴다
-const Router = import.meta.env.MODE === 'demo' ? HashRouter : BrowserRouter;
+// 미리보기 빌드는 한 장짜리 페이지 안에서 돌기 때문에 주소창을 건드리지 않는다
+const Router = import.meta.env.MODE === 'demo' ? MemoryRouter : BrowserRouter;
 
 export function App({ banner }: { banner?: React.ReactNode }) {
   return (

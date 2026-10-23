@@ -83,7 +83,7 @@ export function TodayPage() {
             {data.pendingMakeups.length > 0 && (
               <>
                 {' · '}
-                <Link to="/makeups" className="seal-text">
+                <Link to="/makeups" className="red-text">
                   보강 대기 {data.pendingMakeups.length}건
                 </Link>
               </>

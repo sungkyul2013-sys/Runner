@@ -270,7 +270,7 @@ export function SettingsPage() {
               {teachers.map((t) => (
                 <li key={t.id}>
                   <span className="tn">
-                    {t.name} {t.isAdmin && <Tag tone="seal">원장</Tag>}
+                    {t.name} {t.isAdmin && <Tag tone="green">원장</Tag>}
                   </span>
                   <span className="mono fine">{t.loginId}</span>
                   <span className="fine">{t.lastLoginAt ? `${readStamp(t.lastLoginAt)} 접속` : '접속 기록 없음'}</span>

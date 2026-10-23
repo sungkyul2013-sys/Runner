@@ -141,7 +141,7 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
                           {s.kind === 'class' && s.cancelled && s.cancelEventId && (
                             <button
                               type="button"
-                              className="link seal"
+                              className="link red"
                               onClick={() =>
                                 setDraft({
                                   kind: 'makeup',

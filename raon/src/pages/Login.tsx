@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { Brand, Button, Field, Seal } from '../components/ui';
+import { Brand, Button, Field, Manuscript } from '../components/ui';
 import type { Me } from '../../shared/types';
 
 export function LoginPage() {
@@ -28,14 +28,8 @@ export function LoginPage() {
     <div className="auth">
       <section className="auth-art" aria-hidden="true">
         <div className="auth-art-inner">
-          <Seal size={64} text={academy.name.slice(0, 2)} />
-          <p className="auth-verse">
-            <span>읽는 일은</span>
-            <span>생각을 기르는 일,</span>
-            <span>쓰는 일은</span>
-            <span>생각을 다듬는 일.</span>
-          </p>
-          <p className="auth-foot">{[academy.name, academy.phone].filter(Boolean).join('  ·  ')}</p>
+          <Manuscript text="읽는 일은 생각을 기르는 일, 쓰는 일은 생각을 다듬는 일." cols={11} circle="생각" />
+          <p className="auth-foot">{[academy.name, academy.phone, academy.address].filter(Boolean).join('  ·  ')}</p>
         </div>
       </section>
       <section className="auth-form-wrap">
@@ -89,12 +83,7 @@ export function SetupPage() {
     <div className="auth">
       <section className="auth-art" aria-hidden="true">
         <div className="auth-art-inner">
-          <Seal size={64} text={form.academyName.slice(0, 2) || '라온'} />
-          <p className="auth-verse">
-            <span>처음 오셨군요.</span>
-            <span>원장 계정부터</span>
-            <span>만들어 볼까요.</span>
-          </p>
+          <Manuscript text={`${form.academyName || '라온국어'}의 첫 장을 엽니다.`} cols={11} />
         </div>
       </section>
       <section className="auth-form-wrap">

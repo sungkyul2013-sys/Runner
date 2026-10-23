@@ -40,7 +40,7 @@ export function FamilyHomePage() {
                   <span className="time">{koTime(next.start)}</span>
                 </span>
                 <span className="next-what">
-                  {next.kind === 'makeup' && <Tag tone="seal">보강</Tag>}
+                  {next.kind === 'makeup' && <Tag tone="red">보강</Tag>}
                   {next.kind === 'exam' && <Tag tone="ochre">시험</Tag>}
                   {next.title}
                 </span>
@@ -201,7 +201,7 @@ export function FamilyCalendarPage() {
 }
 
 function AttendanceNote({ status }: { status: 'present' | 'late' | 'absent' }) {
-  const map = { present: ['출석', 'moss'], late: ['지각', 'ochre'], absent: ['결석', 'seal'] } as const;
+  const map = { present: ['출석', 'moss'], late: ['지각', 'ochre'], absent: ['결석', 'red'] } as const;
   const [label, tone] = map[status];
   return (
     <span className="att-note">
