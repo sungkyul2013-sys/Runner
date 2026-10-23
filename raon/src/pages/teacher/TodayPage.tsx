@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi } from '../../lib/hooks';
-import { Button, Empty, ErrorNote, Loading, PageHead, Plus, SectionHead, Tag } from '../../components/ui';
+import { AREAS, Button, Empty, ErrorNote, Loading, PageHead, Plus, SectionHead, Tag } from '../../components/ui';
+import { CountUp } from '../../components/depth';
+import { rise } from '../../lib/motion';
 import { KindMark, originText, SessionLine } from '../../components/schedule';
 import { Roster } from '../../components/attendance';
 import { readStamp } from '../../components/letters';
@@ -83,7 +85,7 @@ export function TodayPage() {
             {data.pendingMakeups.length > 0 && (
               <>
                 {' · '}
-                <Link to="/makeups" className="red-text">
+                <Link viewTransition to="/makeups" className="red-text">
                   보강 대기 {data.pendingMakeups.length}건
                 </Link>
               </>
@@ -107,16 +109,16 @@ export function TodayPage() {
           <SectionHead title="오늘 수업" count={live.length} />
           {data.sessions.length ? (
             <ol className="timeline">
-              {data.sessions.map((s) => {
+              {data.sessions.map((s, idx) => {
                 const marked = s.students.filter((x) => x.status).length;
                 const isOpen = open === s.key;
                 return (
-                  <li key={s.key} className={'tl' + (s.key === nextKey ? ' is-next' : '') + (s.cancelled ? ' is-cancelled' : '') + ((s.end ?? '') < now && !s.cancelled ? ' is-past' : '')}>
+                  <li key={s.key} style={rise(idx + 2)} className={'tl rise' + (s.key === nextKey ? ' is-next' : '') + (s.cancelled ? ' is-cancelled' : '') + ((s.end ?? '') < now && !s.cancelled ? ' is-past' : '')}>
                     <span className="tl-time">
                       <span className="t">{s.start ? koTime(s.start).replace(/^오[전후] /, '') : '종일'}</span>
                       <span className="ap">{s.start ? koTime(s.start).slice(0, 2) : ''}</span>
                     </span>
-                    <div className="tl-card" style={{ ['--c' as string]: s.color }}>
+                    <div className="tl-card" style={{ ['--c' as string]: s.color }} data-tilt="2">
                       <button type="button" className="tl-head" onClick={() => setOpen(isOpen ? null : s.key)} aria-expanded={isOpen}>
                         <span className="tl-title">
                           <KindMark s={s} />
@@ -161,22 +163,23 @@ export function TodayPage() {
 
         <div className="today-side">
           <div className="figures">
-            <Link to="/students">
-              <span className="n">{data.counts.students}</span>
-              <span className="k">재원생</span>
-            </Link>
-            <Link to="/groups">
-              <span className="n">{data.counts.groups}</span>
-              <span className="k">반</span>
-            </Link>
-            <Link to="/feedback">
-              <span className="n">{data.counts.feedbackThisWeek}</span>
-              <span className="k">이번 주 피드백</span>
-            </Link>
+            {[
+              { to: '/students', n: data.counts.students, k: '재원생', c: AREAS[2].color },
+              { to: '/groups', n: data.counts.groups, k: '반', c: AREAS[3].color },
+              { to: '/makeups', n: data.pendingMakeups.length, k: '보강 대기', c: AREAS[0].color },
+              { to: '/feedback', n: data.counts.feedbackThisWeek, k: '이번 주 피드백', c: AREAS[4].color },
+            ].map((f, i) => (
+              <Link viewTransition key={f.to} to={f.to} className="figure rise" style={{ ...rise(i + 1), ['--c' as string]: f.c }} data-tilt="8">
+                <span className="n">
+                  <CountUp value={f.n} />
+                </span>
+                <span className="k">{f.k}</span>
+              </Link>
+            ))}
           </div>
 
           <section className="block">
-            <SectionHead title="보강 대기" count={data.pendingMakeups.length} action={<Link to="/makeups" className="link">보강 관리</Link>} />
+            <SectionHead title="보강 대기" count={data.pendingMakeups.length} action={<Link viewTransition to="/makeups" className="link">보강 관리</Link>} />
             {data.pendingMakeups.length ? (
               <div className="needs">
                 {data.pendingMakeups.slice(0, 6).map((n) => (
@@ -202,7 +205,7 @@ export function TodayPage() {
           </section>
 
           <section className="block">
-            <SectionHead title="최근 피드백" action={<Link to="/feedback" className="link">전체</Link>} />
+            <SectionHead title="최근 피드백" action={<Link viewTransition to="/feedback" className="link">전체</Link>} />
             <ul className="fb-mini">
               {data.recentFeedback.map((f) => (
                 <li key={f.id}>

@@ -160,7 +160,7 @@ export function TeacherFeedbackPage() {
           ))}
         </select>
         {studentId && (
-          <Link className="link" to={`/students/${studentId}?tab=feedback`}>
+          <Link viewTransition className="link" to={`/students/${studentId}?tab=feedback`}>
             학생 화면으로
           </Link>
         )}

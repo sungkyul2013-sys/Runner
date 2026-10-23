@@ -1,8 +1,9 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, type CSSProperties, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, qs } from '../../lib/api';
-import { useApi } from '../../lib/hooks';
-import { Button, Dot, Empty, ErrorNote, Field, Loading, Plus, SectionHead, Segmented, Sheet, Tag, useUi, Chevron } from '../../components/ui';
+import { peek, prefetch, useApi } from '../../lib/hooks';
+import { rise, vt } from '../../lib/motion';
+import { Button, Empty, ErrorNote, Field, Loading, Plus, SectionHead, Segmented, Sheet, Tabs, Tag, useUi, Chevron } from '../../components/ui';
 import { BookCard, BookLogList } from '../../components/books';
 import { SessionLine } from '../../components/schedule';
 import { readStamp } from '../../components/letters';
@@ -36,7 +37,7 @@ export function StudentsPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>학생</h1>
+          <h1 className="page-title">학생</h1>
           <p className="page-sub">
             재원 {count('active')}명{count('paused') ? ` · 휴원 ${count('paused')}명` : ''}
           </p>
@@ -73,11 +74,13 @@ export function StudentsPage() {
             <span>지금 교재</span>
             <span>계정</span>
           </div>
-          {list.map((s) => (
-            <Link key={s.id} to={`/students/${s.id}`} className="tr">
+          {list.map((s, i) => (
+            <Link viewTransition key={s.id} to={`/students/${s.id}`} className="tr rise" style={rise(i)} onPointerEnter={() => prefetch([`/students/${s.id}`])}>
               <span className="td-name">
-                <Dot color={s.color} />
-                {s.name}
+                <span className="avatar" style={{ background: s.color, viewTransitionName: `stu-av-${s.id}` } as CSSProperties} aria-hidden="true">
+                  {s.name.slice(0, 1)}
+                </span>
+                <span style={{ viewTransitionName: `stu-${s.id}` } as CSSProperties}>{s.name}</span>
                 {s.status !== 'active' && <Tag tone="mute">{STATUS_LABEL[s.status]}</Tag>}
               </span>
               <span className="td-mute">{[s.school, s.grade].filter(Boolean).join(' · ')}</span>
@@ -99,7 +102,7 @@ export function StudentsPage() {
           )}
         </Empty>
       )}
-      <StudentSheet open={adding} onClose={() => setAdding(false)} onSaved={(id) => nav(`/students/${id}`)} />
+      <StudentSheet open={adding} onClose={() => setAdding(false)} onSaved={(id) => nav(`/students/${id}`, { viewTransition: true })} />
     </div>
   );
 }
@@ -117,24 +120,29 @@ export function StudentDetailPage() {
   const id = Number(useParams().id);
   const [params, setParams] = useSearchParams();
   const tab = (params.get('tab') as Tab) || 'schedule';
-  const { data: s, error, reload } = useApi<StudentDetail>(`/students/${id}`);
+  const { data, error, reload } = useApi<StudentDetail>(`/students/${id}`);
   const [editing, setEditing] = useState(false);
   const [writing, setWriting] = useState(false);
+  // 목록에서 넘어오는 동안에는 목록에 있던 정보로 머리말을 먼저 그린다 (이름이 그대로 이어지도록)
+  const row = (peek<StudentRow[]>('/students') ?? []).find((r) => r.id === id);
+  const s = data ?? (row ? ({ ...row, account: null, parents: [] } as StudentDetail) : undefined);
 
   if (error) return <ErrorNote message={error} onRetry={reload} />;
   if (!s) return <Loading />;
 
   return (
     <div className="page page-wide">
-      <Link to="/students" className="back">
+      <Link viewTransition to="/students" className="back">
         <Chevron dir="left" /> 학생 목록
       </Link>
       <header className="page-head student-head">
         <div>
           <p className="eyebrow">{[s.school, s.grade].filter(Boolean).join(' · ') || '학생'}</p>
-          <h1>
-            <span className="name-mark" style={{ background: s.color }} />
-            {s.name}
+          <h1 className="student-name">
+            <span className="avatar lg" style={{ background: s.color, viewTransitionName: `stu-av-${s.id}` } as CSSProperties} aria-hidden="true">
+              {s.name.slice(0, 1)}
+            </span>
+            <span style={{ viewTransitionName: `stu-${s.id}` } as CSSProperties}>{s.name}</span>
             {s.status !== 'active' && <Tag tone="mute">{STATUS_LABEL[s.status]}</Tag>}
           </h1>
           <p className="page-sub">
@@ -149,19 +157,21 @@ export function StudentDetailPage() {
           </Button>
         </div>
       </header>
-      <nav className="tabs" role="tablist">
-        {TABS.map((t) => (
-          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'is-on' : ''} onClick={() => setParams({ tab: t.key }, { replace: true })}>
-            {t.label}
-          </button>
-        ))}
-      </nav>
-      {tab === 'schedule' && <ScheduleBoard studentId={s.id} compact />}
-      {tab === 'books' && <StudentBooksTab s={s} />}
-      {tab === 'feedback' && <StudentFeedbackTab s={s} onWrite={() => setWriting(true)} />}
-      {tab === 'attendance' && <StudentAttendanceTab s={s} />}
-      {tab === 'account' && <StudentAccountTab s={s} />}
-      <StudentSheet open={editing} student={s} onClose={() => setEditing(false)} />
+      <Tabs value={tab} tabs={TABS} onChange={(t) => vt(() => setParams({ tab: t }, { replace: true }), 'swap')} />
+      <div className="tab-panel" key={tab}>
+        {!data ? (
+          <Loading />
+        ) : (
+          <>
+            {tab === 'schedule' && <ScheduleBoard studentId={data.id} compact />}
+            {tab === 'books' && <StudentBooksTab s={data} />}
+            {tab === 'feedback' && <StudentFeedbackTab s={data} onWrite={() => setWriting(true)} />}
+            {tab === 'attendance' && <StudentAttendanceTab s={data} />}
+            {tab === 'account' && <StudentAccountTab s={data} />}
+          </>
+        )}
+      </div>
+      <StudentSheet open={editing} student={data} onClose={() => setEditing(false)} />
       <FeedbackSheet open={writing} studentId={s.id} onClose={() => setWriting(false)} />
     </div>
   );
@@ -298,7 +308,7 @@ function StudentAttendanceTab({ s }: { s: StudentDetail }) {
           <Empty title="밀린 보강이 없습니다." />
         )}
         <p className="fine">
-          <Link to="/makeups">보강 화면</Link>에서 일정을 잡을 수 있어요.
+          <Link viewTransition to="/makeups">보강 화면</Link>에서 일정을 잡을 수 있어요.
         </p>
         <SectionHead title="예정된 보강" count={upcoming.length} />
         <div className="slist">
@@ -329,7 +339,7 @@ function StudentAccountTab({ s }: { s: StudentDetail }) {
       ok: '완전히 지우기',
       danger: true,
     });
-    if (yes && (await ui.run(() => api.del(`/students/${s.id}`), '학생을 지웠습니다.'))) nav('/students');
+    if (yes && (await ui.run(() => api.del(`/students/${s.id}`), '학생을 지웠습니다.'))) nav('/students', { viewTransition: true });
   };
   const removeAccount = async () => {
     const yes = await ui.confirm({ title: '학생 계정을 지울까요?', body: '학생이 더 이상 로그인할 수 없습니다. 기록은 남습니다.', ok: '계정 지우기', danger: true });

@@ -4,7 +4,7 @@ import { loginIdTaken } from './auth';
 import { placeholders } from './db';
 import type { GroupRef, StudentDetail, StudentRow, StudentStatus } from '../../shared/types';
 
-export const PALETTE = ['#2B3F5C', '#B23A26', '#56684A', '#A87B2C', '#6E4A5E', '#2F6466', '#9A5B2E', '#59606B', '#6F6A35', '#A35D5D'];
+export const PALETTE = ['#2F6FDE', '#1F9E6E', '#8A56E2', '#F2A91E', '#E5483B', '#0A84A8', '#D9622B', '#5E5CE6', '#7A8A2C', '#C2457A'];
 
 const STATUSES: readonly StudentStatus[] = ['active', 'paused', 'left'];
 

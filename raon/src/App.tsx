@@ -1,5 +1,7 @@
-import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { useMemo, type ReactNode } from 'react';
+import { createBrowserRouter, createMemoryRouter, Navigate, Outlet, RouterProvider, type RouteObject } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
+import { installPointerEffects } from './lib/motion';
 import { UiProvider, Loading } from './components/ui';
 import { FamilyShell, TeacherShell } from './components/Shell';
 import { LoginPage, SetupPage } from './pages/Login';
@@ -12,56 +14,69 @@ import { TeacherFeedbackPage } from './pages/teacher/FeedbackPages';
 import { AccountPage, BooksPage, GroupsPage, SettingsPage } from './pages/teacher/MorePages';
 import { todayIn } from '../shared/date';
 
-function Gate() {
-  const { me, ready, needsSetup } = useAuth();
-  if (!ready) return <Loading />;
-  if (!me) return needsSetup ? <SetupPage /> : <LoginPage />;
+installPointerEffects();
 
-  if (me.role === 'teacher') {
-    return (
+/** 같은 주소라도 선생님과 학생·학부모에게 다른 화면을 보여 준다 */
+function ByRole({ teacher, family }: { teacher?: ReactNode; family?: ReactNode }) {
+  const { me } = useAuth();
+  const el = me?.role === 'teacher' ? teacher : family;
+  return <>{el ?? <Navigate to="/" replace />}</>;
+}
+
+function Gate({ banner }: { banner?: ReactNode }) {
+  const { me, ready, needsSetup } = useAuth();
+  let body: ReactNode;
+  if (!ready) body = <Loading />;
+  else if (!me) body = needsSetup ? <SetupPage /> : <LoginPage />;
+  else if (me.role === 'teacher')
+    body = (
       <TeacherShell today={todayIn()}>
-        <Routes>
-          <Route path="/" element={<TodayPage />} />
-          <Route path="/calendar" element={<TeacherCalendarPage />} />
-          <Route path="/students" element={<StudentsPage />} />
-          <Route path="/students/:id" element={<StudentDetailPage />} />
-          <Route path="/makeups" element={<MakeupsPage />} />
-          <Route path="/feedback" element={<TeacherFeedbackPage />} />
-          <Route path="/books" element={<BooksPage />} />
-          <Route path="/groups" element={<GroupsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Outlet />
       </TeacherShell>
     );
-  }
-
+  else
+    body = (
+      <FamilyShell>
+        <Outlet />
+      </FamilyShell>
+    );
   return (
-    <FamilyShell>
-      <Routes>
-        <Route path="/" element={<FamilyHomePage />} />
-        <Route path="/calendar" element={<FamilyCalendarPage />} />
-        <Route path="/feedback" element={<FamilyFeedbackPage />} />
-        <Route path="/books" element={<FamilyBooksPage />} />
-        <Route path="/account" element={<AccountPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </FamilyShell>
+    <>
+      {banner}
+      {body}
+    </>
   );
 }
 
-// 미리보기 빌드는 한 장짜리 페이지 안에서 돌기 때문에 주소창을 건드리지 않는다
-const Router = import.meta.env.MODE === 'demo' ? MemoryRouter : BrowserRouter;
+function routes(banner?: ReactNode): RouteObject[] {
+  return [
+    {
+      element: (
+        <AuthProvider>
+          <UiProvider>
+            <Gate banner={banner} />
+          </UiProvider>
+        </AuthProvider>
+      ),
+      children: [
+        { path: '/', element: <ByRole teacher={<TodayPage />} family={<FamilyHomePage />} /> },
+        { path: '/calendar', element: <ByRole teacher={<TeacherCalendarPage />} family={<FamilyCalendarPage />} /> },
+        { path: '/feedback', element: <ByRole teacher={<TeacherFeedbackPage />} family={<FamilyFeedbackPage />} /> },
+        { path: '/books', element: <ByRole teacher={<BooksPage />} family={<FamilyBooksPage />} /> },
+        { path: '/students', element: <ByRole teacher={<StudentsPage />} /> },
+        { path: '/students/:id', element: <ByRole teacher={<StudentDetailPage />} /> },
+        { path: '/makeups', element: <ByRole teacher={<MakeupsPage />} /> },
+        { path: '/groups', element: <ByRole teacher={<GroupsPage />} /> },
+        { path: '/settings', element: <ByRole teacher={<SettingsPage />} /> },
+        { path: '/account', element: <ByRole family={<AccountPage />} /> },
+        { path: '*', element: <Navigate to="/" replace /> },
+      ],
+    },
+  ];
+}
 
-export function App({ banner }: { banner?: React.ReactNode }) {
-  return (
-    <Router>
-      <AuthProvider>
-        <UiProvider>
-          {banner}
-          <Gate />
-        </UiProvider>
-      </AuthProvider>
-    </Router>
-  );
+export function App({ banner }: { banner?: ReactNode }) {
+  // 미리보기 빌드는 한 장짜리 페이지 안에서 돌기 때문에 주소창을 건드리지 않는다
+  const router = useMemo(() => (import.meta.env.MODE === 'demo' ? createMemoryRouter(routes(banner)) : createBrowserRouter(routes(banner))), [banner]);
+  return <RouterProvider router={router} />;
 }

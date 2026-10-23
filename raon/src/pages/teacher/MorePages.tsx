@@ -4,7 +4,8 @@ import { api } from '../../lib/api';
 import { useApi } from '../../lib/hooks';
 import { useAuth } from '../../lib/auth';
 import { Button, Empty, ErrorNote, Field, Loading, PageHead, Plus, SectionHead, Sheet, Tag, useUi } from '../../components/ui';
-import { BookCover, ProgressRuler } from '../../components/books';
+import { ProgressRuler } from '../../components/books';
+import { Book3D } from '../../components/depth';
 import { slotText } from '../../components/pickers';
 import { readStamp } from '../../components/letters';
 import { AssignBookSheet, GroupSheet, ProgressSheet, TextbookSheet } from './forms';
@@ -37,7 +38,7 @@ export function GroupsPage() {
       {data.length ? (
         <div className="group-grid">
           {data.map((g) => (
-            <button type="button" key={g.id} className="group-card" style={{ ['--c' as string]: g.color }} onClick={() => setEditing(g)}>
+            <button type="button" key={g.id} className="group-card" style={{ ['--c' as string]: g.color }} onClick={() => setEditing(g)} data-tilt="5">
               <span className="group-name">{g.name}</span>
               <span className="group-time">{slotText(g.slots) || '시간 미정'}</span>
               <span className="group-room">{g.room}</span>
@@ -45,7 +46,7 @@ export function GroupsPage() {
                 {g.members.length}명 · {g.members.map((m) => m.name).join(', ') || '학생 없음'}
               </span>
               <span className="group-links">
-                <Link to={`/calendar?view=g${g.id}`} onClick={(e) => e.stopPropagation()} className="link">
+                <Link viewTransition to={`/calendar?view=g${g.id}`} onClick={(e) => e.stopPropagation()} className="link">
                   달력
                 </Link>
               </span>
@@ -123,7 +124,7 @@ export function BooksPage() {
               .map((b) => (
                 <div key={b.id} className="shelf-item">
                   <button type="button" className="shelf-cover" onClick={() => setFocus(b)} aria-label={`${b.title} 진도 보기`}>
-                    <BookCover book={b} size="lg" />
+                    <Book3D book={b} size="lg" />
                   </button>
                   <div className="shelf-info">
                     <b>{b.title}</b>
@@ -181,7 +182,7 @@ function BookStudentsSheet({ book, onClose, onAssign }: { book: Textbook | null;
         <ul className="book-students">
           {data.map((sb) => (
             <li key={sb.id}>
-              <Link to={`/students/${sb.studentId}?tab=books`} className="bs-name" onClick={onClose}>
+              <Link viewTransition to={`/students/${sb.studentId}?tab=books`} className="bs-name" onClick={onClose}>
                 {sb.studentName}
               </Link>
               <span className="bs-status">

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, qs } from '../../lib/api';
-import { useApi } from '../../lib/hooks';
-import { Button, Empty, ErrorNote, Plus, useUi } from '../../components/ui';
-import { CalendarLegend, KindMark, MonthCalendar, MonthNav, originText } from '../../components/schedule';
+import { invalidate, useApi } from '../../lib/hooks';
+import { Button, Empty, ErrorNote, ExpandIcon, Plus, Sheet, useUi } from '../../components/ui';
+import { CalendarLegend, ExpandedCalendar, KindMark, MonthCalendar, MonthNav, originText, SessionDetail } from '../../components/schedule';
+import { vt } from '../../lib/motion';
 import { Roster } from '../../components/attendance';
 import { EventSheet, type EventDraft } from './forms';
 import { draftFromAbsence, draftOf } from './TodayPage';
@@ -19,6 +20,9 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
   const [selected, setSelected] = useState(today);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<EventDraft | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [detail, setDetail] = useState<CalSession | null>(null);
+  const expand = (on: boolean) => vt(() => setExpanded(on), on ? 'expand' : 'collapse');
   const filter = fixedStudent ? `s${fixedStudent}` : params.get('view') ?? '';
   const studentId = filter.startsWith('s') ? Number(filter.slice(1)) : null;
   const groupId = filter.startsWith('g') ? Number(filter.slice(1)) : null;
@@ -31,6 +35,35 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
   const day = sessions.filter((s) => s.date === selected);
   const replace = (next: CalSession) => setData(sessions.map((s) => (s.key === next.key && s.date === next.date ? next : s)));
   const student = students.find((s) => s.id === studentId);
+  const viewSelect = !fixedStudent && (
+    <select
+      className="view-select"
+      value={filter}
+      onChange={(e) => {
+        const v = e.target.value;
+        setParams(v ? { view: v } : {}, { replace: true });
+      }}
+      aria-label="보기"
+    >
+      <option value="">전체 일정</option>
+      <optgroup label="반별">
+        {groups.map((g) => (
+          <option key={g.id} value={`g${g.id}`}>
+            {g.name}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="학생별">
+        {students
+          .filter((s) => s.status !== 'left')
+          .map((s) => (
+            <option key={s.id} value={`s${s.id}`}>
+              {s.name} · {s.grade}
+            </option>
+          ))}
+      </optgroup>
+    </select>
+  );
 
   const cancelClass = async (s: CalSession) => {
     const yes = await ui.confirm({
@@ -57,43 +90,20 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
             setSelected(m.slice(0, 7) === today.slice(0, 7) ? today : m);
           }}
         />
-        {!fixedStudent && (
-          <select
-            className="view-select"
-            value={filter}
-            onChange={(e) => {
-              const v = e.target.value;
-              setParams(v ? { view: v } : {}, { replace: true });
-            }}
-            aria-label="보기"
-          >
-            <option value="">전체 일정</option>
-            <optgroup label="반별">
-              {groups.map((g) => (
-                <option key={g.id} value={`g${g.id}`}>
-                  {g.name}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="학생별">
-              {students
-                .filter((s) => s.status !== 'left')
-                .map((s) => (
-                  <option key={s.id} value={`s${s.id}`}>
-                    {s.name} · {s.grade}
-                  </option>
-                ))}
-            </optgroup>
-          </select>
-        )}
+        {viewSelect}
         <CalendarLegend />
-        <Button variant="primary" size="sm" onClick={() => setDraft({ kind: 'makeup', date: selected, studentIds: studentId ? [studentId] : [], groupId })}>
-          <Plus /> 일정 추가
-        </Button>
+        <div className="cal-toolbar-end">
+          <Button size="sm" onClick={() => expand(true)}>
+            <ExpandIcon /> 펼치기
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => setDraft({ kind: 'makeup', date: selected, studentIds: studentId ? [studentId] : [], groupId })}>
+            <Plus /> 일정 추가
+          </Button>
+        </div>
       </div>
       {student && !fixedStudent && (
         <p className="view-note">
-          <b>{student.name}</b> 학생의 일정만 보고 있습니다 · <Link to={`/students/${student.id}`}>학생 정보</Link> ·{' '}
+          <b>{student.name}</b> 학생의 일정만 보고 있습니다 · <Link viewTransition to={`/students/${student.id}`}>학생 정보</Link> ·{' '}
           <button type="button" className="link" onClick={() => setParams({}, { replace: true })}>
             전체 보기
           </button>
@@ -101,8 +111,8 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
       )}
       {error && <ErrorNote message={error} onRetry={reload} />}
       <div className="cal-layout">
-        <div className={'cal-wrap' + (data ? '' : ' is-loading')}>
-          <MonthCalendar month={month} sessions={sessions} today={today} selected={selected} onSelect={setSelected} />
+        <div className={'cal-wrap' + (data ? '' : ' is-loading')} style={{ viewTransitionName: expanded ? undefined : 'calendar' }}>
+          <MonthCalendar month={month} sessions={sessions} today={today} selected={selected} onSelect={setSelected} onMore={() => expand(true)} />
         </div>
         <aside className="day-panel">
           <p className="eyebrow">{relativeDay(selected, today) !== dotDate(selected) ? relativeDay(selected, today) : ' '}</p>
@@ -179,6 +189,50 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
           </Button>
         </aside>
       </div>
+      <ExpandedCalendar
+        open={expanded}
+        onClose={() => expand(false)}
+        initial={selected}
+        today={today}
+        query={{ studentId, groupId }}
+        title={student ? student.name : groupId ? groups.find((g) => g.id === groupId)?.name : '전체 일정'}
+        toolbar={viewSelect || undefined}
+        onOpenSession={setDetail}
+      />
+      <Sheet open={!!detail} onClose={() => setDetail(null)} title={detail?.title ?? ''} width={520}>
+        {detail && (
+          <SessionDetail s={detail}>
+            {detail.kind !== 'holiday' && (
+              <Roster
+                s={detail}
+                onChange={(n) => {
+                  setDetail(n);
+                  replace(n);
+                  invalidate();
+                }}
+                onMakeup={(st) => {
+                  setDetail(null);
+                  setDraft(draftFromAbsence(detail, st, today));
+                }}
+              />
+            )}
+            {detail.eventId && (
+              <div className="day-actions">
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => {
+                    setDetail(null);
+                    setDraft(draftOf(detail));
+                  }}
+                >
+                  일정 고치기
+                </button>
+              </div>
+            )}
+          </SessionDetail>
+        )}
+      </Sheet>
       <EventSheet draft={draft} onClose={() => setDraft(null)} />
     </div>
   );

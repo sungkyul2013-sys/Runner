@@ -4,23 +4,34 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ButtonHTMLAttributes,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { invalidate } from '../lib/hooks';
+import { lastPointer, reducedMotion } from '../lib/motion';
 
-// ── 로고: 원고지 칸에 쓴 학원 이름 ───────────────────────
+// ── 브랜드: 라온의 다섯 자모(ㄹ·ㅏ·ㅇ·ㅗ·ㄴ)를 다섯 색 막대로 ─────────
 
-export function Mark({ text, size = 26 }: { text: string; size?: number }) {
+export const AREAS = [
+  { key: 'vocab', name: '어휘', jamo: 'ㄹ', color: '#e5483b' },
+  { key: 'read', name: '독서', jamo: 'ㅏ', color: '#f2a91e' },
+  { key: 'lit', name: '문학', jamo: 'ㅇ', color: '#2f6fde' },
+  { key: 'gram', name: '문법', jamo: 'ㅗ', color: '#1f9e6e' },
+  { key: 'write', name: '작문', jamo: 'ㄴ', color: '#8a56e2' },
+] as const;
+
+const BAR_H = [16, 11, 14, 8, 12];
+
+export function Mark({ scale = 1, live }: { scale?: number; live?: boolean }) {
   return (
-    <span className="mark" style={{ ['--m' as string]: `${size}px` }} aria-hidden="true">
-      {[...text].slice(0, 6).map((ch, i) => (
-        <span key={i} className="mark-cell">
-          {ch}
-        </span>
+    <span className={'mark' + (live ? ' is-live' : '')} style={{ ['--s' as string]: scale }} aria-hidden="true">
+      {AREAS.map((a, i) => (
+        <i key={a.key} style={{ height: BAR_H[i] * scale, background: a.color, ['--i' as string]: i }} />
       ))}
     </span>
   );
@@ -28,63 +39,10 @@ export function Mark({ text, size = 26 }: { text: string; size?: number }) {
 
 export function Brand({ name, compact }: { name: string; compact?: boolean }) {
   return (
-    <span className={'brand' + (compact ? ' brand-compact' : '')} role="img" aria-label={name}>
-      <Mark text={name} size={compact ? 24 : 28} />
+    <span className={'brand' + (compact ? ' brand-compact' : '')}>
+      <Mark scale={compact ? 1 : 1.15} live />
+      <span className="brand-name">{name}</span>
     </span>
-  );
-}
-
-/**
- * 원고지에 옮겨 쓴 문장. 한 칸에 한 글자, 띄어쓰기도 한 칸.
- * 문장 부호 뒤에는 칸을 비우지 않고, 줄 첫 칸에 오는 빈칸은 생략한다.
- */
-export function Manuscript({ text, cols, circle }: { text: string; cols: number; circle?: string }) {
-  const cells: string[] = [' '];
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === ' ' && /[,.]/.test(text[i - 1] ?? '')) continue;
-    cells.push(ch);
-  }
-  const rows: string[][] = [];
-  let row: string[] = [];
-  for (const c of cells) {
-    if (row.length === 0 && c === ' ' && rows.length > 0) continue;
-    row.push(c);
-    if (row.length === cols) {
-      rows.push(row);
-      row = [];
-    }
-  }
-  if (row.length) rows.push([...row, ...Array(cols - row.length).fill(' ')]);
-  // 빨간펜 동그라미를 칠 위치 (처음 나오는 곳 한 번)
-  let mark: { r: number; c: number; len: number } | null = null;
-  for (let ri = 0; circle && ri < rows.length && !mark; ri++) {
-    const at = rows[ri].join('').indexOf(circle);
-    if (at >= 0) mark = { r: ri, c: at, len: circle.length };
-  }
-  return (
-    <div className="ms" style={{ ['--cols' as string]: cols }} aria-label={text}>
-      {rows.map((r, ri) => (
-        <div className="ms-row" key={ri}>
-          {r.map((ch, ci) => (
-            <span key={ci} className="ms-cell">
-              {ch.trim()}
-            </span>
-          ))}
-          {mark?.r === ri && (
-            <svg
-              className="ms-circle"
-              style={{ left: `calc(${mark.c} * 100% / ${cols} - 6px)`, width: `calc(${mark.len} * 100% / ${cols} + 12px)` }}
-              viewBox="0 0 100 50"
-              preserveAspectRatio="none"
-              aria-hidden="true"
-            >
-              <path d="M8 27 C 6 9, 40 3, 62 5 C 88 7, 98 18, 94 32 C 89 46, 50 49, 26 45 C 8 42, 3 33, 9 21 C 13 14, 22 10, 30 8" />
-            </svg>
-          )}
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -98,12 +56,7 @@ type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export function Button({ variant = 'line', size = 'md', busy, className = '', children, disabled, ...rest }: BtnProps) {
   return (
-    <button
-      type="button"
-      {...rest}
-      disabled={disabled || busy}
-      className={`btn btn-${variant} btn-${size}${busy ? ' is-busy' : ''} ${className}`}
-    >
+    <button type="button" {...rest} disabled={disabled || busy} className={`btn btn-${variant} btn-${size}${busy ? ' is-busy' : ''} ${className}`}>
       {children}
     </button>
   );
@@ -121,6 +74,33 @@ export function Field({ label, hint, children, wide }: { label: string; hint?: R
   );
 }
 
+/** 고른 칸 뒤로 둥근 표시가 미끄러져 따라가는 선택 버튼 묶음 */
+function useSlider(activeIndex: number, deps: unknown[]) {
+  const box = useRef<HTMLDivElement>(null);
+  const [style, setStyle] = useState<CSSProperties>({ opacity: 0 });
+  const first = useRef(true);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = box.current?.querySelectorAll<HTMLElement>('[data-slot]')[activeIndex];
+      if (!el) return setStyle({ opacity: 0 });
+      setStyle({
+        opacity: 1,
+        width: el.offsetWidth,
+        height: el.offsetHeight,
+        transform: `translate(${el.offsetLeft}px, ${el.offsetTop}px)`,
+        transition: first.current ? 'none' : undefined,
+      });
+      first.current = false;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (box.current) ro.observe(box.current);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndex, ...deps]);
+  return { box, style };
+}
+
 export function Segmented<T extends string | number>({
   value,
   options,
@@ -132,21 +112,32 @@ export function Segmented<T extends string | number>({
   onChange(v: NoInfer<T>): void;
   size?: 'sm' | 'md';
 }) {
+  const idx = options.findIndex((o) => o.value === value);
+  const { box, style } = useSlider(idx, [options.length]);
   return (
-    <div className={`seg seg-${size}`} role="radiogroup">
+    <div className={`seg seg-${size}`} role="radiogroup" ref={box}>
+      <span className="seg-thumb" style={style} aria-hidden="true" />
       {options.map((o) => (
-        <button
-          key={String(o.value)}
-          type="button"
-          role="radio"
-          aria-checked={o.value === value}
-          className={o.value === value ? 'is-on' : ''}
-          onClick={() => onChange(o.value)}
-        >
+        <button key={String(o.value)} data-slot type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? 'is-on' : ''} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
       ))}
     </div>
+  );
+}
+
+export function Tabs<T extends string>({ value, tabs, onChange }: { value: T; tabs: { key: NoInfer<T>; label: ReactNode }[]; onChange(v: NoInfer<T>): void }) {
+  const idx = tabs.findIndex((t) => t.key === value);
+  const { box, style } = useSlider(idx, [tabs.length]);
+  return (
+    <nav className="tabs" role="tablist" ref={box}>
+      <span className="tabs-ink" style={style} aria-hidden="true" />
+      {tabs.map((t) => (
+        <button key={t.key} data-slot type="button" role="tab" aria-selected={value === t.key} className={value === t.key ? 'is-on' : ''} onClick={() => onChange(t.key)}>
+          {t.label}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -170,7 +161,7 @@ export function PageHead({ title, sub, actions, eyebrow }: { title: ReactNode; s
     <header className="page-head">
       <div>
         {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-        <h1>{title}</h1>
+        <h1 className="page-title">{title}</h1>
         {sub && <p className="page-sub">{sub}</p>}
       </div>
       {actions && <div className="page-actions">{actions}</div>}
@@ -181,6 +172,7 @@ export function PageHead({ title, sub, actions, eyebrow }: { title: ReactNode; s
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="empty">
+      <Mark scale={0.8} />
       <p className="empty-title">{title}</p>
       {children && <div className="empty-body">{children}</div>}
     </div>
@@ -190,7 +182,7 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
 export function Loading({ label = '불러오는 중' }: { label?: string }) {
   return (
     <div className="loading" role="status">
-      <span className="loading-line" />
+      <Mark scale={1.3} live />
       <span>{label}</span>
     </div>
   );
@@ -213,11 +205,11 @@ export function Dot({ color, size = 8 }: { color: string; size?: number }) {
   return <span className="dot" style={{ background: color, width: size, height: size }} />;
 }
 
-export function Tag({ children, tone = 'plain' }: { children: ReactNode; tone?: 'plain' | 'red' | 'green' | 'ink' | 'ochre' | 'moss' | 'mute' }) {
+export function Tag({ children, tone = 'plain' }: { children: ReactNode; tone?: 'plain' | 'red' | 'green' | 'ink' | 'ochre' | 'moss' | 'mute' | 'blue' | 'purple' }) {
   return <span className={`tag tag-${tone}`}>{children}</span>;
 }
 
-// ── 시트(모달) ─────────────────────────────────────────
+// ── 시트(모달): 누른 자리에서 펼쳐지고, 닫을 때 그 자리로 접힌다 ──────
 
 export function Sheet({
   open,
@@ -226,6 +218,7 @@ export function Sheet({
   children,
   footer,
   width = 560,
+  vtName,
 }: {
   open: boolean;
   onClose(): void;
@@ -233,9 +226,40 @@ export function Sheet({
   children: ReactNode;
   footer?: ReactNode;
   width?: number;
+  vtName?: string;
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const origin = useRef({ x: lastPointer.x, y: lastPointer.y });
+
+  useEffect(() => {
+    if (open) {
+      origin.current = { x: lastPointer.x, y: lastPointer.y };
+      setShown(true);
+      setClosing(false);
+    } else if (shown) {
+      if (reducedMotion()) {
+        setShown(false);
+        return;
+      }
+      setClosing(true);
+      const t = setTimeout(() => {
+        setShown(false);
+        setClosing(false);
+      }, 240);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!shown || !panel.current) return;
+    const r = panel.current.getBoundingClientRect();
+    panel.current.style.transformOrigin = `${origin.current.x - r.left}px ${origin.current.y - r.top}px`;
+  }, [shown]);
+
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
@@ -243,7 +267,7 @@ export function Sheet({
     document.addEventListener('keydown', onKey);
     document.body.classList.add('no-scroll');
     requestAnimationFrame(() => {
-      const first = panel.current?.querySelector<HTMLElement>('input, textarea, select');
+      const first = panel.current?.querySelector<HTMLElement>('input:not([type=checkbox]), textarea, select');
       (first ?? panel.current)?.focus({ preventScroll: true });
     });
     return () => {
@@ -252,15 +276,24 @@ export function Sheet({
       prev?.focus?.({ preventScroll: true });
     };
   }, [open, onClose]);
-  if (!open) return null;
+
+  if (!shown) return null;
   return createPortal(
-    <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panel} tabIndex={-1} style={{ maxWidth: width }}>
+    <div className={'sheet-backdrop' + (closing ? ' is-closing' : '')} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        ref={panel}
+        tabIndex={-1}
+        style={{ maxWidth: width, viewTransitionName: vtName } as CSSProperties}
+      >
         <div className="sheet-head">
           <h2 id={titleId}>{title}</h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="닫기">
             <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-              <path d="M4 4l10 10M14 4L4 14" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M4 4l10 10M14 4L4 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
             </svg>
           </button>
         </div>
@@ -329,6 +362,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast toast-${t.tone}`}>
+            <span className="toast-dot" />
             {t.msg}
           </div>
         ))}
@@ -357,11 +391,11 @@ export function UiProvider({ children }: { children: ReactNode }) {
 
 // ── 작은 아이콘 (선 하나로 그린 것만) ────────────────────
 
-export function Chevron({ dir = 'right', size = 14 }: { dir?: 'left' | 'right' | 'down'; size?: number }) {
-  const d = dir === 'left' ? 'M9 3L5 7l4 4' : dir === 'right' ? 'M5 3l4 4-4 4' : 'M3 5l4 4 4-4';
+export function Chevron({ dir = 'right', size = 14 }: { dir?: 'left' | 'right' | 'down' | 'up'; size?: number }) {
+  const d = dir === 'left' ? 'M9 3L5 7l4 4' : dir === 'right' ? 'M5 3l4 4-4 4' : dir === 'down' ? 'M3 5l4 4 4-4' : 'M3 9l4-4 4 4';
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true" className="chev">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -369,7 +403,23 @@ export function Chevron({ dir = 'right', size = 14 }: { dir?: 'left' | 'right' |
 export function Plus({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true">
-      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** 네 모서리가 바깥으로 벌어지는 '펼치기' 아이콘 */
+export function ExpandIcon({ size = 14, collapse }: { size?: number; collapse?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+      <path
+        d={collapse ? 'M5 1v4H1M9 1v4h4M5 13V9H1M9 13V9h4' : 'M1 5V1h4M13 5V1H9M1 9v4h4M13 9v4H9'}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError } from './api';
+import { clearCache } from './hooks';
 import type { AcademyInfo, Me } from '../../shared/types';
 
 interface AuthState {
@@ -50,10 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await api.post('/auth/logout').catch(() => {});
+    clearCache();
     setMe(null);
   }, []);
 
   const set = useCallback((m: Me | null) => {
+    // 다른 계정으로 바뀌면 앞 사람의 데이터를 지운다
+    clearCache();
     setMe(m);
     if (m) {
       setAcademy(m.academy);

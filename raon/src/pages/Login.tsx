@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { Brand, Button, Field, Manuscript } from '../components/ui';
+import { Brand, Button, Field } from '../components/ui';
+import { Raon3D } from '../components/three/Raon3D';
 import type { Me } from '../../shared/types';
 
 export function LoginPage() {
@@ -26,17 +27,26 @@ export function LoginPage() {
 
   return (
     <div className="auth">
-      <section className="auth-art" aria-hidden="true">
+      <section className="auth-art">
         <div className="auth-art-inner">
-          <Manuscript text="읽는 일은 생각을 기르는 일, 쓰는 일은 생각을 다듬는 일." cols={11} circle="생각" />
-          <p className="auth-foot">{[academy.name, academy.phone, academy.address].filter(Boolean).join('  ·  ')}</p>
+          <p className="auth-kicker">
+            <Brand name={academy.name} compact />
+          </p>
+          <h2 className="auth-head">
+            생각을 <span className="grad-text">조립하는</span> 국어.
+          </h2>
+          <Raon3D />
+          <p className="auth-foot">{[academy.phone, academy.address].filter(Boolean).join('  ·  ')}</p>
         </div>
       </section>
       <section className="auth-form-wrap">
         <form className="auth-form" onSubmit={submit}>
-          <Brand name={academy.name} />
-          <h1>로그인</h1>
-          <p className="auth-lead">선생님께 받은 아이디와 비밀번호를 입력해 주세요.</p>
+          <h1>
+            반가워요.
+            <br />
+            로그인해 주세요.
+          </h1>
+          <p className="auth-lead">수업 일정, 보강, 선생님 피드백, 교재 진도를 한곳에서 봅니다.</p>
           <Field label="아이디">
             <input autoComplete="username" autoCapitalize="none" spellCheck={false} value={loginId} onChange={(e) => setLoginId(e.target.value)} required />
           </Field>
@@ -81,9 +91,15 @@ export function SetupPage() {
 
   return (
     <div className="auth">
-      <section className="auth-art" aria-hidden="true">
+      <section className="auth-art">
         <div className="auth-art-inner">
-          <Manuscript text={`${form.academyName || '라온국어'}의 첫 장을 엽니다.`} cols={11} />
+          <p className="auth-kicker">
+            <Brand name={form.academyName || '라온국어'} compact />
+          </p>
+          <h2 className="auth-head">
+            처음 오셨군요. <span className="grad-text">원장 계정</span>부터.
+          </h2>
+          <Raon3D labels={false} />
         </div>
       </section>
       <section className="auth-form-wrap">
