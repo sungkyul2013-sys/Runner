@@ -105,7 +105,7 @@ if (clientDir) {
       },
     }),
   );
-  app.get('/*path', (_req, res) => {
+  app.get('/{*path}', (_req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(join(clientDir, 'index.html'));
   });

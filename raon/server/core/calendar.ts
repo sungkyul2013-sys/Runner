@@ -5,6 +5,7 @@ import { placeholders } from './db';
 import { addDays, diffDays, eachDay, isDate, weekday } from '../../shared/date';
 import type { AttendanceStatus, CalSession, EventKind, MakeupNeed, MakeupOverview, RosterEntry } from '../../shared/types';
 import { EVENT_LABEL } from '../../shared/types';
+import { autoTitle } from '../../shared/titles';
 
 const EVENT_COLOR: Record<EventKind, string> = {
   makeup: '#B23A26',
@@ -133,7 +134,7 @@ export function buildSessions(ctx: Ctx, q: SessionQuery): CalSession[] {
       start: e.start_time,
       end: e.end_time,
       kind: e.kind,
-      title: e.title || (g ? `${g.name} ${EVENT_LABEL[e.kind as EventKind]}` : EVENT_LABEL[e.kind as EventKind]),
+      title: e.title || autoTitle(e.kind, g?.name ?? (e.kind === 'makeup' ? e.origin_label : null)),
       groupId: g?.id ?? null,
       groupName: g?.name ?? null,
       color: EVENT_COLOR[e.kind as EventKind],
