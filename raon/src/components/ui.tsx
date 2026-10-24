@@ -311,18 +311,55 @@ export function Sheet({
   const { shown, closing } = useModalLife(open, 260);
   useModalFocus(open, panel, onClose);
 
+  // 휴대폰에서는 손잡이나 머리를 잡고 아래로 끌어 닫는다
+  const drag = useRef<{ y0: number; t0: number; dy: number } | null>(null);
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = panel.current;
+    if (!el || !window.matchMedia('(max-width: 720px)').matches) return;
+    if ((e.target as HTMLElement).closest('button, a, input, textarea, select')) return;
+    drag.current = { y0: e.clientY, t0: performance.now(), dy: 0 };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    el.style.transition = 'none';
+  };
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    const el = panel.current;
+    if (!d || !el) return;
+    const raw = e.clientY - d.y0;
+    d.dy = raw > 0 ? raw : raw * 0.18;
+    el.style.transform = `translateY(${d.dy}px)`;
+  };
+  const onUp = () => {
+    const d = drag.current;
+    const el = panel.current;
+    drag.current = null;
+    if (!d || !el) return;
+    const v = d.dy / Math.max(1, performance.now() - d.t0);
+    if (d.dy > 110 || (v > 0.5 && d.dy > 24)) {
+      el.dataset.dragged = '1';
+      el.style.transition = 'transform 0.26s cubic-bezier(0.4, 0, 1, 1)';
+      el.style.transform = 'translateY(110%)';
+      onClose();
+    } else {
+      el.style.transition = 'transform 0.55s cubic-bezier(0.3, 1.32, 0.5, 1)';
+      el.style.transform = '';
+    }
+  };
+
   if (!shown) return null;
   return createPortal(
     <div className={'sheet-backdrop' + (closing ? ' is-closing' : '')} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={'sheet ' + className} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panel} tabIndex={-1} style={{ ['--w' as string]: `${width}px`, viewTransitionName: vtName } as CSSProperties}>
-        <span className="sheet-grabber" aria-hidden="true" />
-        <div className="sheet-head">
-          <h2 id={titleId}>{title}</h2>
-          <button type="button" className="close-btn" onClick={onClose} aria-label="닫기">
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          </button>
+        <div className="sheet-drag" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+          <span className="sheet-grabber" aria-hidden="true" />
+          <div className="sheet-head">
+            <h2 id={titleId}>{title}</h2>
+            <button type="button" className="close-btn" onClick={onClose} aria-label="닫기">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
         </div>
         <div className="sheet-body">{children}</div>
         {footer && <div className="sheet-foot">{footer}</div>}

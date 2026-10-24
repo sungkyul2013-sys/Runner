@@ -5,7 +5,7 @@ import { useApi } from '../../lib/hooks';
 import { api, qs } from '../../lib/api';
 import { useChild } from '../../components/Shell';
 import { Button, Chevron, CountUp, Empty, ErrorNote, ExpandIcon, Loading, PageHead, SectionHead, Segmented, Sheet, Tag } from '../../components/ui';
-import { displayTitle, ExpandedCalendar, KindMark, MonthCalendar, MonthNav, SessionDetail, SessionLine, WeekStrip } from '../../components/schedule';
+import { displayTitle, ExpandedCalendar, KindMark, MonthCalendar, MonthNav, SessionDetail, SessionLine, shiftMonth, WeekStrip } from '../../components/schedule';
 import { vt } from '../../lib/motion';
 import { BookCard, BookLogList } from '../../components/books';
 import { Letter } from '../../components/letters';
@@ -191,6 +191,11 @@ export function FamilyCalendarPage() {
   const count = (data ?? []).filter((s) => s.date.slice(0, 7) === month.slice(0, 7) && (s.kind === 'class' || s.kind === 'makeup') && !s.cancelled).length;
   const expand = (on: boolean) => vt(() => setExpanded(on), on ? 'expand' : 'collapse');
   const rel = relativeDay(selected, today);
+  const toMonth = (m: string) => {
+    setMonth(m);
+    setSelected(m.slice(0, 7) === today.slice(0, 7) ? today : m);
+  };
+  const swipe = (dir: 1 | -1) => vt(() => toMonth(shiftMonth(month, dir)), dir > 0 ? 'next' : 'prev');
 
   return (
     <div className="page page-wide">
@@ -215,7 +220,7 @@ export function FamilyCalendarPage() {
               setSelected(m.slice(0, 7) === today.slice(0, 7) ? today : m);
             }}
           />
-          <MonthCalendar month={month} sessions={data ?? []} today={today} selected={selected} onSelect={setSelected} onMore={() => expand(true)} />
+          <MonthCalendar month={month} sessions={data ?? []} today={today} selected={selected} onSelect={setSelected} onMore={() => expand(true)} onSwipe={swipe} />
         </div>
         <aside className="day-panel">
           <h2 className="day-title">

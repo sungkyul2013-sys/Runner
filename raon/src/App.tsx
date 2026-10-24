@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
-import { createBrowserRouter, createMemoryRouter, Navigate, Outlet, RouterProvider, type RouteObject } from 'react-router-dom';
+import { createBrowserRouter, createMemoryRouter, Navigate, Outlet, RouterProvider, ScrollRestoration, type RouteObject } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
 import { UiProvider, Loading } from './components/ui';
 import { FamilyShell, TeacherShell } from './components/Shell';
@@ -42,7 +42,12 @@ function Gate() {
         <Outlet />
       </FamilyShell>
     );
-  return <>{body}</>;
+  return (
+    <>
+      {body}
+      <ScrollRestoration />
+    </>
+  );
 }
 
 function routes(): RouteObject[] {

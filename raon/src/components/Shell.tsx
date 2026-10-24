@@ -99,6 +99,51 @@ const I = {
   ),
 };
 
+/**
+ * 큰 제목이 스크롤로 위에 가려지면, 위 막대의 로고 자리에 그 제목이 올라온다 (iOS 처럼).
+ * 화면이 바뀔 때마다 다시 찾는다.
+ */
+function useCollapsedTitle(dep: string) {
+  const [title, setTitle] = useState<string | null>(null);
+  useEffect(() => {
+    let raf = 0;
+    const check = () => {
+      raf = 0;
+      const h = document.querySelector<HTMLElement>('.main-in .page-title');
+      const bar = document.querySelector<HTMLElement>('.topbar, .globalnav');
+      if (!h || !bar) return setTitle(null);
+      setTitle(h.getBoundingClientRect().bottom < bar.getBoundingClientRect().bottom ? h.textContent : null);
+    };
+    const on = () => {
+      if (!raf) raf = requestAnimationFrame(check);
+    };
+    window.addEventListener('scroll', on, { passive: true });
+    const t = setTimeout(check, 400);
+    return () => {
+      window.removeEventListener('scroll', on);
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+    };
+  }, [dep]);
+  return title;
+}
+
+/** 로고와 페이지 제목이 위아래로 자리를 바꾸는 칸 */
+function BarSwap({ brand, title }: { brand: ReactNode; title: string | null }) {
+  const [last, setLast] = useState(title);
+  useEffect(() => {
+    if (title) setLast(title);
+  }, [title]);
+  return (
+    <span className={'bar-swap' + (title ? ' is-title' : '')}>
+      <span className="bar-brand">{brand}</span>
+      <span className="bar-title" aria-hidden={!title}>
+        {title ?? last}
+      </span>
+    </span>
+  );
+}
+
 /** 지금 있는 메뉴 뒤에 깔리는 표시. 화면이 바뀔 때 다음 메뉴로 미끄러져 간다. */
 function NavItemLink({ item, cls, pillName }: { item: NavItem; cls: string; pillName: string }) {
   return (
@@ -125,6 +170,7 @@ function TabBar({ items, more, moreOn }: { items: NavItem[]; more?: () => void; 
       ))}
       {more && (
         <button type="button" className={'tab' + (moreOn ? ' is-active' : '')} onClick={more}>
+          {moreOn && <span className="nav-pill" style={{ viewTransitionName: 'tab-pill' }} />}
           <span className="nav-ico" aria-hidden="true">
             {I.more}
           </span>
@@ -166,6 +212,7 @@ export function TeacherShell({ children, today }: { children: ReactNode; today: 
   const [more, setMore] = useState(false);
   const loc = useLocation();
   const dash = useApi<TeacherDashboard>('/dashboard').data;
+  const barTitle = useCollapsedTitle(loc.pathname + loc.search);
   useEffect(() => setMore(false), [loc.pathname]);
   useEffect(() => {
     // 자주 가는 화면 데이터를 미리 받아 두면 화면 전환이 끊기지 않는다
@@ -211,10 +258,10 @@ export function TeacherShell({ children, today }: { children: ReactNode; today: 
         </div>
       </aside>
       <header className="topbar">
-        <NavLink to="/" viewTransition>
-          <Brand name={academy.name} scale={0.9} />
+        <NavLink to="/" viewTransition className="topbar-home">
+          <BarSwap brand={<Brand name={academy.name} scale={0.9} />} title={barTitle} />
         </NavLink>
-        <span className="topbar-date">{mdw(today)}</span>
+        <span className={'topbar-date' + (barTitle ? ' is-hidden' : '')}>{mdw(today)}</span>
       </header>
       <main className="main">
         <div className="main-in">{children}</div>
@@ -253,6 +300,7 @@ export function FamilyShell({ children }: { children: ReactNode }) {
   const child = kids.find((k) => k.id === childId) ?? kids[0] ?? null;
   const [menu, setMenu] = useState(false);
   const loc = useLocation();
+  const barTitle = useCollapsedTitle(loc.pathname + (child?.id ?? ''));
   useEffect(() => setMenu(false), [loc.pathname]);
   useEffect(() => {
     if (!child) return;
@@ -269,7 +317,7 @@ export function FamilyShell({ children }: { children: ReactNode }) {
         <header className="globalnav">
           <div className="globalnav-in">
             <NavLink to="/" viewTransition className="gn-brand">
-              <Brand name={academy.name} scale={0.9} />
+              <BarSwap brand={<Brand name={academy.name} scale={0.9} />} title={barTitle} />
             </NavLink>
             <nav className="gn-links">
               {FAMILY_NAV.map((i) => (

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api, qs } from '../../lib/api';
 import { invalidate, useApi } from '../../lib/hooks';
 import { Button, Chevron, Collapse, Empty, ErrorNote, ExpandIcon, PageHead, Plus, Sheet, useUi } from '../../components/ui';
-import { displayTitle, ExpandedCalendar, KindMark, MonthCalendar, MonthNav, originText, SessionDetail } from '../../components/schedule';
+import { displayTitle, ExpandedCalendar, KindMark, MonthCalendar, MonthNav, originText, SessionDetail, shiftMonth } from '../../components/schedule';
 import { vt } from '../../lib/motion';
 import { Roster } from '../../components/attendance';
 import { EventSheet, type EventDraft } from './forms';
@@ -80,6 +80,12 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
   };
 
   const rel = relativeDay(selected, today);
+  const swipe = (dir: 1 | -1) =>
+    vt(() => {
+      const m = shiftMonth(month, dir);
+      setMonth(m);
+      setSelected(m.slice(0, 7) === today.slice(0, 7) ? today : m);
+    }, dir > 0 ? 'next' : 'prev');
 
   return (
     <div className={'board' + (compact ? ' is-compact' : '')}>
@@ -113,7 +119,7 @@ export function ScheduleBoard({ studentId: fixedStudent, compact }: { studentId?
               setSelected(m.slice(0, 7) === today.slice(0, 7) ? today : m);
             }}
           />
-          <MonthCalendar month={month} sessions={sessions} today={today} selected={selected} onSelect={setSelected} onMore={() => expand(true)} />
+          <MonthCalendar month={month} sessions={sessions} today={today} selected={selected} onSelect={setSelected} onMore={() => expand(true)} onSwipe={swipe} />
         </div>
         <aside className="day-panel">
           <h2 className="day-title">

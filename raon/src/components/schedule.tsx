@@ -74,7 +74,7 @@ function shortLabel(s: CalSession, withTime: boolean) {
   return `${t} ${displayTitle(s)}`.trim();
 }
 
-function shiftMonth(month: string, n: number) {
+export function shiftMonth(month: string, n: number) {
   const d = toDate(month);
   const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1));
   return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-01`;
@@ -126,6 +126,7 @@ export function MonthCalendar({
   onSelect,
   onOpen,
   onMore,
+  onSwipe,
   full,
   limit = 3,
 }: {
@@ -136,10 +137,13 @@ export function MonthCalendar({
   onSelect(date: string): void;
   onOpen?(s: CalSession): void;
   onMore?(date: string): void;
+  /** 손가락으로 옆으로 밀었을 때: 1 다음 달, -1 이전 달 */
+  onSwipe?(dir: 1 | -1): void;
   full?: boolean;
   limit?: number;
 }) {
   const days = useMemo(() => monthGrid(month), [month]);
+  const swipe = useRef<{ x: number; y: number } | null>(null);
   const byDate = useMemo(() => groupByDate(sessions), [sessions]);
   const mo = month.slice(0, 7);
   // 마지막 줄이 통째로 다음 달이면 숨긴다
@@ -154,7 +158,21 @@ export function MonthCalendar({
           </span>
         ))}
       </div>
-      <div className="cal-grid">
+      <div
+        className="cal-grid"
+        onPointerDown={(e) => {
+          if (e.pointerType === 'touch' && onSwipe) swipe.current = { x: e.clientX, y: e.clientY };
+        }}
+        onPointerUp={(e) => {
+          const s0 = swipe.current;
+          swipe.current = null;
+          if (!s0 || !onSwipe) return;
+          const dx = e.clientX - s0.x;
+          const dy = e.clientY - s0.y;
+          if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) onSwipe(dx < 0 ? 1 : -1);
+        }}
+        onPointerCancel={() => (swipe.current = null)}
+      >
         {visible.map((d) => {
           const list = byDate.get(d) ?? [];
           const holiday = list.find((s) => s.kind === 'holiday');
@@ -523,6 +541,7 @@ export function ExpandedCalendar({
               full
               onSelect={(d) => vt(() => (setAnchor(d), setView('week')), 'swap')}
               onOpen={onOpenSession}
+              onSwipe={step}
             />
           )}
           {view === 'week' && <WeekGrid start={weekStart} sessions={sessions} today={today} onOpen={onOpenSession} />}
