@@ -1,0 +1,417 @@
+/*
+ * guide.css - styles for the 아레나 가이드 (arena guide) screen (js/ui_guide.js).
+ * Mobile-first (360-430px portrait). Every class is prefixed with .guide-.
+ * Host variables are used with fallbacks: --ra-gold, --ra-blue, --ra-dark,
+ * --ra-purple, --ra-panel.
+ */
+
+/* ---------- root / layout ---------- */
+
+.guide-root {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px 28px;
+  color: #fff;
+  background: radial-gradient(circle at 50% 0%, var(--ra-blue, #1d5fd1) 0%, var(--ra-dark, #12203f) 75%);
+  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.guide-root *,
+.guide-root *::before,
+.guide-root *::after,
+.guide-zoom,
+.guide-zoom * {
+  box-sizing: border-box;
+}
+
+.guide-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+/* ---------- top bar / banner ---------- */
+
+.guide-top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.guide-banner {
+  padding: 12px 14px;
+  border: 3px solid #0b1430;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--ra-purple, #8b3fd9) 0%, #5a1fa0 100%);
+  box-shadow: 0 6px 0 #0b1430;
+  text-align: center;
+}
+
+.guide-title {
+  font-size: 24px;
+  font-weight: 900;
+  text-shadow: 0 2px 0 #0b1430;
+}
+
+.guide-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffe27a;
+}
+
+/* ---------- section card ---------- */
+
+.guide-section {
+  padding: 12px;
+  border: 3px solid #0b1430;
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--ra-panel, #2a4a8f) 0%, #1c3368 100%);
+  box-shadow: 0 6px 0 #0b1430;
+}
+
+.guide-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 19px;
+  font-weight: 900;
+  text-shadow: 0 2px 0 #0b1430;
+}
+
+.guide-h-icon {
+  font-size: 22px;
+}
+
+.guide-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+/* ---------- buttons ---------- */
+
+.guide-btn {
+  appearance: none;
+  align-self: flex-start;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 10px 16px;
+  border: 3px solid #0b1430;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffe066 0%, var(--ra-gold, #f7b500) 100%);
+  color: #3b2400;
+  font: inherit;
+  font-weight: 900;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #8a5a00;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+  touch-action: manipulation;
+}
+
+.guide-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #8a5a00;
+}
+
+/* ---------- placement diagram ---------- */
+
+.guide-diagram-btn {
+  appearance: none;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 4px solid var(--ra-gold, #f7b500);
+  border-radius: 16px;
+  background: #0b1430;
+  overflow: hidden;
+  cursor: zoom-in;
+  box-shadow: 0 5px 0 #8a5a00;
+  touch-action: manipulation;
+}
+
+.guide-diagram-btn[hidden] {
+  display: none;
+}
+
+.guide-diagram {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
+
+/* ---------- legend ---------- */
+
+.guide-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-legend-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(5, 10, 25, 0.35);
+}
+
+.guide-mark {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #0b1430;
+  border-radius: 50%;
+  background: var(--ra-gold, #f7b500);
+  color: #3b2400;
+  font-weight: 900;
+  font-size: 16px;
+}
+
+.guide-legend-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.guide-legend-name {
+  font-size: 15px;
+  font-weight: 900;
+  color: #ffe27a;
+}
+
+.guide-legend-desc {
+  font-size: 13px;
+  opacity: 0.95;
+}
+
+/* ---------- accordion (details / summary) ---------- */
+
+.guide-acc {
+  margin-top: 8px;
+  border: 2px solid #0b1430;
+  border-radius: 14px;
+  background: rgba(5, 10, 25, 0.3);
+  overflow: hidden;
+}
+
+.guide-acc:first-of-type {
+  margin-top: 0;
+}
+
+.guide-acc-sum {
+  position: relative;
+  display: block;
+  min-height: 48px;
+  padding: 12px 40px 12px 14px;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.guide-acc-sum::-webkit-details-marker {
+  display: none;
+}
+
+.guide-acc-sum::after {
+  content: "▾";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  margin-top: -12px;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--ra-gold, #f7b500);
+  color: #3b2400;
+  font-size: 15px;
+  transition: transform 0.15s ease;
+}
+
+.guide-acc[open] > .guide-acc-sum {
+  background: rgba(247, 181, 0, 0.18);
+}
+
+.guide-acc[open] > .guide-acc-sum::after {
+  transform: rotate(180deg);
+}
+
+.guide-acc-body {
+  margin: 0;
+  padding: 4px 14px 12px 30px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.guide-acc-body li {
+  margin: 6px 0 0;
+}
+
+.guide-acc-body li::marker {
+  color: var(--ra-gold, #f7b500);
+}
+
+/* ---------- cheat sheet table ---------- */
+
+.guide-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 2px solid #0b1430;
+  border-radius: 14px;
+  background: rgba(5, 10, 25, 0.3);
+}
+
+.guide-table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.guide-table th,
+.guide-table td {
+  padding: 8px 8px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(11, 20, 48, 0.8);
+}
+
+.guide-table th {
+  background: #0b1430;
+  color: #ffe27a;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.guide-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.guide-kind {
+  white-space: nowrap;
+  font-weight: 900;
+}
+
+.guide-gain {
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.guide-row-good .guide-kind,
+.guide-row-good .guide-gain {
+  color: #5cf08c;
+}
+
+.guide-row-bad .guide-kind,
+.guide-row-bad .guide-gain {
+  color: #ff8a8a;
+}
+
+.guide-why {
+  font-size: 12px;
+  opacity: 0.92;
+}
+
+/* ---------- bottom tip ---------- */
+
+.guide-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 3px solid #0b1430;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffe066 0%, var(--ra-gold, #f7b500) 100%);
+  color: #3b2400;
+  box-shadow: 0 6px 0 #8a5a00;
+}
+
+.guide-tip-icon {
+  flex-shrink: 0;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.guide-tip-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+/* ---------- full-screen zoom overlay ---------- */
+
+.guide-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(5, 10, 25, 0.92);
+  cursor: zoom-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.guide-zoom-img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100% - 48px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 4px solid var(--ra-gold, #f7b500);
+  border-radius: 16px;
+  box-shadow: 0 8px 0 #0b1430;
+}
+
+.guide-zoom-hint {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffe27a;
+}
+
+/* ---------- small phones ---------- */
+
+@media (max-width: 359px) {
+  .guide-root {
+    padding: 10px 12px 24px;
+  }
+
+  .guide-title {
+    font-size: 21px;
+  }
+
+  .guide-h {
+    font-size: 17px;
+  }
+}

@@ -156,6 +156,20 @@
     return 'assets/cards/' + art + '.png';
   }
 
+  // Arena banner shown at the top of the info modal (assets/arena/<art id>.jpg).
+  function arenaBanner(id) {
+    var art = id;
+    try {
+      if (RA.Mods && typeof RA.Mods.artOf === 'function') art = RA.Mods.artOf(id) || id;
+    } catch (e) { warn(e); }
+    var img = document.createElement('img');
+    img.className = 'deck-arena';
+    img.alt = '';
+    img.src = 'assets/arena/' + art + '.jpg';
+    img.onerror = function () { this.style.display = 'none'; };
+    return img;
+  }
+
   function isCustom(id) {
     try {
       return !!(RA.Mods && typeof RA.Mods.isCustom === 'function' && RA.Mods.isCustom(id));
@@ -404,6 +418,8 @@
     var def = cardDef(id);
     var box = el('div', 'deck-modal');
     var lv = data().settings.cardLevel;
+
+    box.appendChild(arenaBanner(id));
 
     var close = makeBtn('✕', 'deck-btn-x');
     close.setAttribute('aria-label', '닫기');

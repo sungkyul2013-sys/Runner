@@ -2,7 +2,8 @@
 // Builds a single self-contained play.html from index.html.
 //   - <link rel="stylesheet" href="..."> (local)  -> inline <style>
 //   - <script src="..."></script> (local)        -> inline <script>, original order kept
-//   - every PNG in assets/cards and assets/portraits -> base64 data URI in window.RA_ASSETS,
+//   - every PNG in assets/cards and assets/portraits, every JPG in assets/arena, and
+//     assets/guide_placement.jpg -> base64 data URI in window.RA_ASSETS,
 //     plus a patch that rewrites HTMLImageElement#src assignments of those paths to the data URI.
 // Missing referenced files are skipped with a warning (the browser would just 404 them).
 // Usage: node tools/build_standalone.mjs   (Node 18+, no dependencies)
@@ -14,7 +15,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'index.html');
 const OUT = path.join(ROOT, 'play.html');
-const IMAGE_DIRS = ['assets/cards', 'assets/portraits'];
+const IMAGE_DIRS = ['assets/cards', 'assets/portraits'];          // *.png
+const JPEG_DIRS = ['assets/arena'];                               // *.jpg
+const JPEG_FILES = ['assets/guide_placement.jpg'];                // single files
 
 const warnings = [];
 const stats = { styles: 0, scripts: 0, images: 0 };
@@ -58,6 +61,29 @@ function buildAssetBlock() {
       map[key] = 'data:image/png;base64,' + b64;
       stats.images++;
     }
+  }
+  for (const dir of JPEG_DIRS) {
+    const abs = path.join(ROOT, dir);
+    let files = [];
+    try { files = readdirSync(abs).filter((f) => /\.jpe?g$/i.test(f)).sort(); } catch (e) {
+      if (e.code === 'ENOENT') { warnings.push('missing image dir, skipped: ' + dir); continue; }
+      throw e;
+    }
+    for (const f of files) {
+      const key = dir + '/' + f;
+      const b64 = readFileSync(path.join(abs, f)).toString('base64');
+      map[key] = 'data:image/jpeg;base64,' + b64;
+      stats.images++;
+    }
+  }
+  for (const rel of JPEG_FILES) {
+    let buf;
+    try { buf = readFileSync(path.join(ROOT, rel)); } catch (e) {
+      if (e.code === 'ENOENT') { warnings.push('missing, skipped: ' + rel); continue; }
+      throw e;
+    }
+    map[rel] = 'data:image/jpeg;base64,' + buf.toString('base64');
+    stats.images++;
   }
   const lines = Object.keys(map).map((k) => '  ' + JSON.stringify(k) + ': ' + JSON.stringify(map[k]) + ',');
   const json = '{\n' + lines.join('\n') + '\n}';

@@ -94,3 +94,44 @@ body.in-battle #topbar,body.in-battle #nav{display:none}
 .res-crowns{display:flex;justify-content:center;gap:24px;font-size:22px;font-weight:900;margin:8px 0}
 .res-rew{background:#0a143099;border-radius:14px;padding:8px;margin:8px 0;font-weight:800;line-height:1.7}
 .modal h3{margin-bottom:10px}.modal .ra-btn{margin-top:8px}
+
+/* ===== v2 polish ===== */
+#app{background:radial-gradient(120% 60% at 50% 0%,#2a56b0 0%,#17306a 40%,#0b1530 100%)}
+#nav{border-radius:18px 18px 0 0;box-shadow:0 -6px 18px #0008;background:linear-gradient(#142a5a,#0b1838)}
+.nav-btn.active{box-shadow:0 -3px 14px #ffd84a44}
+.home-logo{background:linear-gradient(#fff6b0,#ffc21a 55%,#e88a00);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;filter:drop-shadow(0 3px 0 #6a3d00) drop-shadow(0 0 14px #ffb80066);font-size:38px}
+.home-arena{aspect-ratio:16/11;background:#12203f!important}
+.home-arena .ha-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .9s}
+.home-arena .ha-img.on{opacity:1}
+.home-arena .ha-shade{position:absolute;inset:0;background:linear-gradient(180deg,#0006 0%,transparent 30%,#000a 100%)}
+.home-arena .ha-card{position:absolute;left:12px;bottom:8px;right:12px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800}
+.home-arena .ha-card b{font-size:20px;text-shadow:0 2px 0 #000}.home-arena .ha-card i{margin-left:auto;font-style:normal;background:#a920c8;border:2px solid #fff;border-radius:12px;padding:1px 8px}
+.ra-btn{position:relative;overflow:hidden}
+.ra-btn.gold::after{content:"";position:absolute;top:0;bottom:0;width:40%;left:-60%;background:linear-gradient(100deg,transparent,#fff7,transparent);animation:shine 3.2s infinite}
+@keyframes shine{60%,100%{left:130%}}
+/* battle HUD v2 */
+.bt-top{background:linear-gradient(#0a1633,#0d1b3c);border-bottom:2px solid #29458a;gap:8px}
+.bt-pause{border:2px solid #fff3;box-shadow:0 3px 0 #12296a}
+.bt-crowns{background:#0008;padding:4px 8px;gap:2px;font-size:17px;border-radius:14px}
+.bt-crowns i{font-style:normal;filter:grayscale(1) brightness(.5);transition:.3s}
+.bt-crowns i.on{filter:none;text-shadow:0 0 10px #ffd84a}
+.bt-crowns i.pop{animation:crownpop .6s}
+@keyframes crownpop{30%{transform:scale(2) rotate(-12deg)}100%{transform:scale(1)}}
+.bt-timer{flex:none;min-width:96px;background:linear-gradient(#1a2c5c,#0d1838);border:2px solid #4a6ac8;border-radius:16px;padding:2px 10px 3px;box-shadow:inset 0 2px 6px #0008}
+.bt-timer.warn{border-color:#ff5a4a;animation:warn .5s infinite alternate}.bt-timer.warn #bt-time{color:#ff6a5a}
+@keyframes warn{to{box-shadow:0 0 16px #ff3a2a}}
+.bt-bottom{background:linear-gradient(#6b4524,#3a2410);box-shadow:0 -6px 16px #0009;border-top:4px solid #a87038}
+.bt-card{filter:drop-shadow(0 4px 4px #000a)}
+.bt-card:not(.no):not(.sel){animation:cardbreath 2.4s infinite alternate}
+@keyframes cardbreath{to{transform:translateY(-2px)}}
+.bt-elixir{height:20px;margin:10px 0 0 22px;border:2px solid #14041f;border-radius:12px;background:#240f3c;overflow:visible;box-shadow:inset 0 2px 5px #000a}
+.bt-elixir i{border-radius:10px;background:linear-gradient(#f9b6ff,#d63df0 45%,#a21cc0);box-shadow:inset 0 2px 0 #fff6}
+.bt-elixir .ticks{border-radius:10px}
+.bt-elixir b{left:-24px;top:-12px;width:36px;height:42px;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 35% 30%,#f9a0ff,#c02ee0 55%,#7a1196);border:3px solid #fff;border-radius:50% 50% 50% 50%/62% 62% 38% 38%;font-size:18px;z-index:2;text-shadow:0 2px 0 #3a0a50;box-shadow:0 3px 6px #000a}
+.bt-guide-btn{position:absolute;left:56px;top:-44px;width:38px;height:38px;border-radius:50%;background:#29458a;font-size:18px;border:2px solid #fff6}
+.bt-guide-btn.on{background:#f7b500;box-shadow:0 0 12px #ffd84a}
+.bt-ability{box-shadow:0 0 16px #ffd84a88;animation:cardbreath 1s infinite alternate}
+.confetti{position:absolute;top:-30px;font-size:26px;animation:fall 3s linear infinite;pointer-events:none}
+@keyframes fall{to{transform:translateY(110vh) rotate(540deg)}}
+.res-title{animation:pop .5s}
+.res-crowns span{font-size:26px;text-shadow:0 2px 0 #0008}

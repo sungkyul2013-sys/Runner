@@ -28,9 +28,9 @@
       if (!B.game) { UI.showScreen('home'); return; }
       root = r; root.innerHTML = '';
       const wrap = el('div'); wrap.id = 'battle-root';
-      wrap.innerHTML = '<div class="bt-top"><button class="bt-pause">⏸</button><div class="bt-crowns enemy">👑<span id="bt-ec">0</span></div><div class="bt-timer"><span id="bt-time">3:00</span><small id="bt-tag"></small></div><div class="bt-crowns you">👑<span id="bt-yc">0</span></div></div>' +
+      wrap.innerHTML = '<div class="bt-top"><button class="bt-pause">⏸</button><div class="bt-crowns enemy" id="bt-ec"><i>👑</i><i>👑</i><i>👑</i></div><div class="bt-timer"><span id="bt-time">3:00</span><small id="bt-tag"></small></div><div class="bt-crowns you" id="bt-yc"><i>👑</i><i>👑</i><i>👑</i></div></div>' +
         '<div id="arena-wrap"><canvas id="arena"></canvas></div>' +
-        '<div class="bt-bottom"><button class="bt-emote-btn">💬</button><div class="bt-emotes"></div><button class="bt-ability"></button>' +
+        '<div class="bt-bottom"><button class="bt-emote-btn">💬</button><button class="bt-guide-btn">📐</button><div class="bt-emotes"></div><button class="bt-ability"></button>' +
         '<div class="bt-hand"><div class="bt-next">다음<img alt=""></div><div class="bt-cards"></div></div>' +
         '<div class="bt-elixir"><i></i><div class="ticks"></div><b>5</b></div></div>';
       root.appendChild(wrap);
@@ -44,6 +44,7 @@
       }
       wrap.querySelector('.bt-pause').onclick = pauseMenu;
       hud.ab.onclick = () => { if (!paused && B.game.useAbility(0)) play('spell'); else play('error'); };
+      const gb = wrap.querySelector('.bt-guide-btn'); gb.onclick = () => { ui.guide = !ui.guide; gb.classList.toggle('on', !!ui.guide); play('click'); if (ui.guide) UI.toast('📐 배치 가이드: 4-3 / 3-3 건물 자리 · 카이팅 · 출발 지점'); };
       const eb = wrap.querySelector('.bt-emote-btn'); eb.onclick = () => { hud.emotes.classList.toggle('show'); };
       RA.Save.data.shop.emote.forEach((em) => { const b = el('button', '', em); b.onclick = () => { hud.emotes.classList.remove('show'); emote(em, 'you'); }; hud.emotes.appendChild(b); });
       canvas.addEventListener('pointermove', (e) => { if (!drag && sel != null && e.pointerType === 'mouse') setPreview(e); });
@@ -87,11 +88,12 @@
     if (!paused) g.update(dt);
     rend.draw(g, ui); updateHud(g);
   }
+  function setCrowns(box, n) { [...box.children].forEach((c, i) => { const on = i < n; if (on && !c.classList.contains('on')) { c.classList.add('on', 'pop'); setTimeout(() => c.classList.remove('pop'), 600); } else if (!on) c.classList.remove('on'); }); }
   function fmt(t) { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); }
   function updateHud(g) {
     hud.time.textContent = g.practice ? '∞' : fmt(g.timeLeft);
     hud.tag.textContent = g.phase === 'overtime' ? '연장전 · 엘릭서 ×3' : (!g.practice && (g.rules.doubleAlways || g.timeLeft <= 60)) ? '엘릭서 ×2' : (g.practice ? '연습' : '');
-    hud.ec.textContent = g.crowns[1]; hud.yc.textContent = g.crowns[0];
+    setCrowns(hud.ec, g.crowns[1]); setCrowns(hud.yc, g.crowns[0]); hud.time.parentNode.classList.toggle('warn', !g.practice && g.phase !== 'ended' && g.timeLeft <= 10);
     const free = g.practice || g.rules.infiniteElixir, ex = free ? g.rules.maxElixir : g.elixir[0];
     hud.fill.style.width = (ex / g.rules.maxElixir * 100) + '%'; hud.num.textContent = free ? '∞' : Math.floor(ex);
     const h = g.hands[0];
@@ -128,9 +130,9 @@
     const n = el('div'); n.dataset.sticky = '1';
     const why = { king: '킹 타워 파괴', time: '시간 종료', overtime: '연장전 승부', hp: '타워 체력 비교', draw: '무승부', surrender: '항복' }[r.reason] || '';
     n.innerHTML = '<div class="res-title ' + (win ? 'win' : 'lose') + '">' + (draw ? '무승부' : win ? '🏆 승리!' : '패배') + '</div><div style="color:#9fb4e4;font-size:13px">' + why + '</div>' +
-      '<div class="res-crowns"><span style="color:#ff7a6a">적 👑 ' + r.crowns[1] + '</span><span style="color:#6aa8ff">나 👑 ' + r.crowns[0] + '</span></div>' +
+      '<div class="res-crowns"><span style="color:#ff7a6a">적 ' + (r.crowns[1] ? '👑'.repeat(r.crowns[1]) : '–') + '</span><span style="color:#6aa8ff">나 ' + (r.crowns[0] ? '👑'.repeat(r.crowns[0]) : '–') + '</span></div>' +
       (B.opts.practice ? '' : '<div class="res-rew">🪙 +' + gold + '　💎 +' + gems + '　🏆 ' + (tr >= 0 ? '+' : '') + tr + '</div>');
-    const m = UI.modal(n); play(win ? 'win' : 'lose');
+    const m = UI.modal(n); play(win ? 'win' : 'lose'); if (win) for (let i = 0; i < 22; i++) { const s = el('span', 'confetti', ['✨', '🎉', '⭐', '👑', '🎊'][i % 5]); s.style.cssText = 'left:' + Math.random() * 100 + '%;animation-delay:' + Math.random() * 1.2 + 's;animation-duration:' + (2 + Math.random() * 1.5) + 's'; m.el.parentNode.appendChild(s); }
     const b1 = el('button', 'ra-btn gold', '🔁 다시 하기'); b1.onclick = () => { m.close(); B.stop(); setTimeout(() => B.start(B.opts), 30); };
     const b2 = el('button', 'ra-btn', '🏠 홈으로'); b2.onclick = () => { m.close(); B.stop(); };
     n.appendChild(b1); n.appendChild(b2);

@@ -4,8 +4,8 @@
   const RA = (window.RA = window.RA || {});
 
   RA.W = 18; RA.H = 32;              // arena size in tiles
-  RA.RIVER_Y = 16; RA.RIVER_HALF = 0.5;
-  RA.BRIDGES = [3.5, 14.5]; RA.BRIDGE_HW = 1.25;
+  RA.RIVER_Y = 16; RA.RIVER_HALF = 1.0;
+  RA.BRIDGES = [4, 14]; RA.BRIDGE_HW = 1.0;
 
   RA.lvlMul = (l) => Math.pow(1.1, (l || 11) - 11);
 
@@ -81,8 +81,8 @@
   RA.def = function (raw) { return Object.assign({}, DEFAULTS, raw); };
 
   RA.towerBase = {
-    princess: { hp: 3052, dmg: 109, hs: 0.8, range: 7.5, r: 1.4 },
-    king: { hp: 4824, dmg: 109, hs: 1.0, range: 7, r: 1.8 },
+    princess: { hp: 3052, dmg: 109, hs: 0.8, range: 7.5, r: 1.5 },
+    king: { hp: 4824, dmg: 109, hs: 1.0, range: 7, r: 2.0 },
   };
 
   RA.THEMES = [

@@ -63,7 +63,7 @@
           this.towers.push({ uid: UID++, kind: 'tower', tower: type, side, team, x, y: my(y), r: b.r, maxHp: b.hp * m * R.towerHp, hp: b.hp * m * R.towerHp,
             dmg: b.dmg * m * R.towerDmg, hs: b.hs, range: b.range, atkCd: 0.6, target: null, active: type === 'princess' || R.kingAwake, dead: false, flash: 0, atkT: 0, fly: false, lvl: this.lv(team) });
         };
-        mk('princess', 0, 3.5, 25.5); mk('princess', 1, 14.5, 25.5); mk('king', 2, 9, 29.5);
+        mk('princess', 0, 3.5, 23.5); mk('princess', 1, 14.5, 23.5); mk('king', 2, 9, 29);
       });
     }
     towerOf(team, type, side) { return this.towers.find((t) => t.team === team && t.tower === type && (type === 'king' || t.side === side)); }
@@ -73,7 +73,7 @@
     inTower(x, y) { return this.towers.some((t) => !t.dead && Math.abs(x - t.x) < t.r + 0.1 && Math.abs(y - t.y) < t.r + 0.1); }
     canDeploy(team, def, x, y) {
       if (x < 0.3 || x > W - 0.3 || y < 0.3 || y > H - 0.3) return false;
-      const own = team === 0 ? y >= RY + RH + 0.5 : y <= RY - RH - 0.5;
+      const own = team === 0 ? y >= RY + RH + 0.3 : y <= RY - RH - 0.3;
       if (def.type === 'spell') return def.spell.kind === 'log' ? own || this.rules.deployAnywhere : true;
       if (this.inTower(x, y)) return false;
       if (this.rules.deployAnywhere) return true;
@@ -437,7 +437,7 @@
     }
     cleanup() {
       for (const e of this.ents) if (e.dead && !e.removed) {
-        e.removed = true; this.fx.push({ k: 'puff', x: e.x, y: e.y, t: 0, dur: 0.5 }); this.sfx('death');
+        e.removed = true; this.fx.push({ k: 'puff', x: e.x, y: e.y, t: 0, dur: 0.5 }); if (e.kind === 'unit') this.fx.push({ k: 'ghost', x: e.x, y: e.y, art: e.art, r: e.r, team: e.team, fly: e.fly, t: 0, dur: 0.4 }); this.sfx('death');
         this.souls[0] = Math.min(10, this.souls[0] + 1); this.souls[1] = Math.min(10, this.souls[1] + 1);
         if (e.card.spawnOnDeath && !e.noDeath) { const sp = e.card.spawnOnDeath; formation(sp.count, 0.6).forEach((o) => { const u = this.spawnUnit(RA.Mods.card(sp.id), e.team, e.x + o[0], e.y + o[1]); u.deployT = 0.3; }); }
         this.hook('onDeath', e);

@@ -40,9 +40,10 @@
       const hero = el('div', 'home-hero', '<div class="home-logo">ROYALE ARENA' + (modOn ? '<span class="mod-on">MOD</span>' : '') + '</div><div class="home-sub">로얄 아레나 · 모든 카드 · 모든 아이템 무료</div>');
       root.appendChild(hero);
       const th = RA.THEMES.find((t) => t.id === d.shop.theme) || RA.THEMES[0];
-      const arena = el('div', 'home-arena'); arena.style.background = 'linear-gradient(180deg,' + th.a + ' 0 42%,' + th.river + ' 42% 58%,' + th.b + ' 58%)';
-      arena.innerHTML = '<div class="ha-tag">' + th.emoji + ' ' + th.name + '</div>';
-      deck.slice(0, 3).forEach((id, i) => { const im = new Image(); im.src = 'assets/cards/' + RA.Mods.artOf(id) + '.png'; im.style.cssText = 'position:absolute;bottom:-10px;width:30%;left:' + (8 + i * 29) + '%;transform:rotate(' + (i - 1) * 9 + 'deg);filter:drop-shadow(0 4px 6px #0009)'; arena.appendChild(im); });
+      const arena = el('div', 'home-arena'); const imgs = [el('img', 'ha-img on'), el('img', 'ha-img')]; imgs.forEach((im) => { im.alt = ''; arena.appendChild(im); });
+      arena.appendChild(el('div', 'ha-shade')); const tag = el('div', 'ha-tag', th.emoji + ' ' + th.name); arena.appendChild(tag); const lab = el('div', 'ha-card'); arena.appendChild(lab);
+      let hi = 0, cur = 0; const showHero = () => { const id = deck[hi++ % deck.length], nx = 1 - cur; imgs[nx].onload = () => { imgs[cur].classList.remove('on'); imgs[nx].classList.add('on'); cur = nx; }; imgs[nx].src = 'assets/arena/' + RA.Mods.artOf(id) + '.jpg'; const dd = RA.Mods.card(id); lab.innerHTML = '<b>' + RA.Mods.nameOf(id) + '</b><span style="color:' + RA.RARITY[dd.rarity].color + '">' + RA.RARITY[dd.rarity].name + '</span><i>💧' + dd.cost + '</i>'; };
+      showHero(); clearInterval(UI._hero); UI._hero = setInterval(() => { if (UI.current !== 'home') clearInterval(UI._hero); else showHero(); }, 3600);
       root.appendChild(arena);
       const avg = (deck.reduce((s, id) => s + RA.Mods.card(id).cost, 0) / 8).toFixed(1);
       const dk = el('div'); dk.innerHTML = '<div style="text-align:center;font-weight:800;font-size:13px;color:#9fb4e4">' + (d.deckNames[d.activeDeck] || '덱') + ' · 평균 💧' + avg + '</div>';
@@ -53,6 +54,7 @@
       const b2 = el('button', 'ra-btn small', '🎯 연습 모드<br><small>무한 엘릭서·무제한 시간</small>'); b2.onclick = () => UI.startBattle('practice');
       const b3 = el('button', 'ra-btn small purple', '🧩 Mod 모드<br><small>' + (modOn ? '활성 Mod 적용 중' : '규칙·카드 개조') + '</small>'); b3.onclick = () => { play('click'); UI.showScreen('mods'); };
       row.appendChild(b2); row.appendChild(b3); root.appendChild(row);
+      const bg = el('button', 'ra-btn small', '📘 아레나 가이드 · 배치 기준도'); bg.style.marginTop = '10px'; bg.onclick = () => { play('click'); UI.guideBack = 'home'; UI.showScreen('guide'); }; root.appendChild(bg);
       const st = el('div', 'home-stats', '<div><b>' + d.wins + '</b>승</div><div><b>' + d.losses + '</b>패</div><div><b>' + d.draws + '</b>무</div><div><b>' + d.crowns + '</b>👑</div><div><b>' + d.settings.cardLevel + '</b>카드 Lv</div>');
       root.appendChild(st);
     },
@@ -68,6 +70,7 @@
       const v = el('div', 'set-row', '<span>볼륨</span>'); const vr = el('input'); vr.type = 'range'; vr.min = 0; vr.max = 1; vr.step = 0.05; vr.value = s.volume; vr.oninput = () => { s.volume = +vr.value; RA.Audio.setVolume(s.volume); RA.Save.save(); }; v.appendChild(vr); root.appendChild(v);
       const l = el('div', 'set-row', '<span>카드 레벨 <b id="lv-read">' + s.cardLevel + '</b></span>'); const lr = el('input'); lr.type = 'range'; lr.min = 1; lr.max = 16; lr.step = 1; lr.value = s.cardLevel; lr.oninput = () => { s.cardLevel = +lr.value; $('#lv-read').textContent = s.cardLevel; RA.Save.save(); }; l.appendChild(lr); root.appendChild(l);
       const df = el('div', 'set-row', '<span>AI 난이도</span>'); const sel = el('select'); sel.style.cssText = 'padding:6px;border-radius:8px;font-weight:800'; Object.keys(RA.DIFFICULTY).forEach((k) => { const o = el('option', '', RA.DIFFICULTY[k].name); o.value = k; if (k === s.difficulty) o.selected = true; sel.appendChild(o); }); sel.onchange = () => { s.difficulty = sel.value; RA.Save.save(); }; df.appendChild(sel); root.appendChild(df);
+      const gd = el('button', 'ra-btn small', '📘 아레나 가이드'); gd.style.marginTop = '12px'; gd.onclick = () => { UI.guideBack = 'settings'; UI.showScreen('guide'); }; root.appendChild(gd);
       const rs = el('button', 'ra-btn red small', '🗑️ 모든 저장 데이터 초기화'); rs.style.marginTop = '14px'; rs.onclick = () => { if (confirm('덱·Mod·설정을 모두 초기화할까요?')) { RA.Save.reset(); UI.refreshCurrency(); UI.showScreen('home'); UI.toast('초기화 완료'); } }; root.appendChild(rs);
       root.appendChild(el('p', '', '<br><small style="color:#9fb4e4;line-height:1.6">로얄 아레나는 개인용 팬 메이드 프로젝트입니다. 카드 이미지는 사용자가 직접 제공한 파일을 사용하며, 상용 배포용이 아닙니다.<br>조작: 카드를 눌러 선택 후 아레나를 탭하거나, 카드를 아레나로 드래그하세요. 챔피언 능력은 전투 화면의 노란 버튼.</small>'));
     },

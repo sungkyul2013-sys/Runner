@@ -4,7 +4,7 @@
   const RA = (window.RA = window.RA || {});
   const W = RA.W, H = RA.H, RY = RA.RIVER_Y;
   const rnd = (a, b) => a + Math.random() * (b - a), clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const LANE_X = [3.5, 14.5];
+  const LANE_X = [4, 14];
 
   class AI {
     constructor(g, team, diff) {
@@ -72,7 +72,7 @@
         if (s > bs) { bs = s; best = o; }
       }
       if (!best || bs < -2) return false;
-      const d = best.def, tw = this.g.towerOf(this.team, 'princess', lane), ty = tw ? tw.y : (this.team === 1 ? 6.5 : 25.5);
+      const d = best.def, tw = this.g.towerOf(this.team, 'princess', lane), ty = tw ? tw.y : (this.team === 1 ? 8.5 : 23.5);
       if (d.type === 'spell') { return this.place(best, cx, cy + this.fwd * 0.4); }
       if (d.type === 'building') return this.place(best, lane === 0 ? 5 : 13, ty + this.fwd * 4.5);
       return this.place(best, cx * 0.4 + LANE_X[lane] * 0.6, ty + this.fwd * (air ? 1.0 : 2.2));
