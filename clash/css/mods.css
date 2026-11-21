@@ -1,0 +1,764 @@
+/*
+ * mods.css - styles for the MOD 모드 screen (js/ui_mods.js).
+ * Mobile-first (360-430px portrait), chunky game style. Every class is prefixed with .mods-.
+ * Host variables are used with fallbacks: --ra-gold, --ra-blue, --ra-dark,
+ * --ra-purple, --ra-panel.
+ */
+
+/* ---------- root / layout ---------- */
+
+.mods-root {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px 28px;
+  color: #fff;
+  background: radial-gradient(circle at 50% 0%, var(--ra-blue, #1d5fd1) 0%, var(--ra-dark, #12203f) 75%);
+  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  font-size: 15px;
+  line-height: 1.35;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mods-root *,
+.mods-root *::before,
+.mods-root *::after {
+  box-sizing: border-box;
+}
+
+.mods-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 520px;
+  margin: 0 auto;
+  min-width: 0;
+}
+
+.mods-body {
+  min-width: 0;
+}
+
+/* ---------- header banner ---------- */
+
+.mods-header {
+  padding: 10px 14px;
+  border: 3px solid #0b1430;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--ra-purple, #8b3fd9) 0%, #5a1fa0 100%);
+  box-shadow: 0 6px 0 #0b1430;
+}
+
+.mods-head-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mods-title {
+  font-size: 24px;
+  font-weight: 900;
+  text-shadow: 0 2px 0 #0b1430;
+}
+
+.mods-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.92;
+}
+
+.mods-chip {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  border: 3px solid #0b1430;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+}
+
+.mods-chip-on {
+  background: #3ddc84;
+  color: #0b2a14;
+}
+
+.mods-chip-off {
+  background: #5b6785;
+  color: #fff;
+}
+
+.mods-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ---------- buttons ---------- */
+
+.mods-btn {
+  appearance: none;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 10px 14px;
+  border: 3px solid #0b1430;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffe066 0%, var(--ra-gold, #f7b500) 100%);
+  color: #3b2400;
+  font: inherit;
+  font-weight: 900;
+  font-size: 15px;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow: 0 5px 0 #0b1430;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.06s, box-shadow 0.06s;
+}
+
+.mods-btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #0b1430;
+}
+
+.mods-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mods-btn-go {
+  background: linear-gradient(180deg, #5fb0ff 0%, var(--ra-blue, #1d5fd1) 100%);
+  color: #fff;
+  text-shadow: 0 2px 0 #0b1430;
+}
+
+.mods-btn-alt {
+  background: linear-gradient(180deg, #b57bff 0%, var(--ra-purple, #8b3fd9) 100%);
+  color: #fff;
+  text-shadow: 0 2px 0 #0b1430;
+}
+
+.mods-btn-danger {
+  background: linear-gradient(180deg, #ff7a7a 0%, #d62f2f 100%);
+  color: #fff;
+  text-shadow: 0 2px 0 #5a0b0b;
+}
+
+.mods-btn-small {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+.mods-btn:focus-visible,
+.mods-tab:focus-visible,
+.mods-pack:focus-visible,
+.mods-pill-switch:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+/* ---------- tab bar (horizontal scroll) ---------- */
+
+.mods-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 2px 8px;
+  scrollbar-width: none;
+}
+
+.mods-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.mods-tab {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 3px solid #0b1430;
+  border-radius: 14px;
+  background: #1c3368;
+  color: #dfe9ff;
+  font: inherit;
+  font-weight: 900;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #0b1430;
+}
+
+.mods-tab-on {
+  background: linear-gradient(180deg, #ffe066 0%, var(--ra-gold, #f7b500) 100%);
+  color: #3b2400;
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #0b1430;
+}
+
+/* ---------- panels ---------- */
+
+.mods-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 3px solid #0b1430;
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--ra-panel, #2a4a8f) 0%, #1c3368 100%);
+  box-shadow: 0 6px 0 #0b1430;
+}
+
+.mods-h {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 900;
+  text-shadow: 0 2px 0 #0b1430;
+}
+
+.mods-h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: #ffe27a;
+}
+
+.mods-note {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.92;
+}
+
+.mods-notice {
+  margin: 0;
+  padding: 10px 12px;
+  border: 2px dashed #ffe27a;
+  border-radius: 12px;
+  background: rgba(11, 20, 48, 0.5);
+  font-size: 13px;
+  font-weight: 700;
+  word-break: keep-all;
+}
+
+.mods-warn {
+  border-style: solid;
+  border-color: #ff7a7a;
+  color: #ffd6d6;
+}
+
+.mods-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- 1. mod packs ---------- */
+
+.mods-packs {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 480px) {
+  .mods-packs {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.mods-pack {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 3px solid #0b1430;
+  border-radius: 16px;
+  background: #162a57;
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #0b1430;
+}
+
+.mods-pack-on {
+  background: linear-gradient(180deg, #ffe066 0%, var(--ra-gold, #f7b500) 100%);
+  color: #3b2400;
+  box-shadow: 0 4px 0 #0b1430, inset 0 0 0 2px #fff3b0;
+}
+
+.mods-pack-emoji {
+  flex: 0 0 auto;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.mods-pack-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mods-pack-name {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.mods-pack-desc {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.mods-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 26px;
+  border: 3px solid #0b1430;
+  border-radius: 999px;
+  background: #3a4a70;
+}
+
+.mods-switch-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #0b1430;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+
+.mods-pack-on .mods-switch {
+  background: #3ddc84;
+}
+
+.mods-pack-on .mods-switch-knob {
+  left: 23px;
+}
+
+.mods-summary {
+  padding: 10px 12px;
+  border: 2px solid #0b1430;
+  border-radius: 14px;
+  background: rgba(11, 20, 48, 0.45);
+}
+
+.mods-summary-title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #ffe27a;
+}
+
+.mods-summary-text {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  word-break: keep-all;
+}
+
+/* ---------- 2. rules ---------- */
+
+.mods-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mods-rule {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 2px solid #0b1430;
+  border-radius: 14px;
+  background: #162a57;
+}
+
+.mods-rule-edited {
+  border-color: #ffe27a;
+  background: #2e3f7a;
+  box-shadow: inset 0 0 0 1px #ffe27a;
+}
+
+.mods-rule-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.mods-rule-val {
+  white-space: nowrap;
+  color: #ffe27a;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.mods-rule-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mods-range {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.mods-range::-webkit-slider-runnable-track {
+  height: 10px;
+  border: 2px solid #0b1430;
+  border-radius: 999px;
+  background: #0b1430;
+}
+
+.mods-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  margin-top: -6px;
+  border: 3px solid #0b1430;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffe066, var(--ra-gold, #f7b500));
+}
+
+.mods-range::-moz-range-track {
+  height: 10px;
+  border: 2px solid #0b1430;
+  border-radius: 999px;
+  background: #0b1430;
+}
+
+.mods-range::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  border: 3px solid #0b1430;
+  border-radius: 50%;
+  background: var(--ra-gold, #f7b500);
+}
+
+.mods-check {
+  position: relative;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  border: 3px solid #0b1430;
+  border-radius: 8px;
+  background: #0b1430;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.mods-check:checked {
+  background: #3ddc84;
+}
+
+.mods-check:checked::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  width: 7px;
+  height: 14px;
+  border: solid #0b2a14;
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
+}
+
+.mods-danger-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  border: 2px solid #ff7a7a;
+  border-radius: 14px;
+}
+
+.mods-danger-zone .mods-btn {
+  width: 100%;
+}
+
+/* ---------- 3. card editor ---------- */
+
+.mods-select {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 3px solid #0b1430;
+  border-radius: 14px;
+  background: #0b1430;
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.mods-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border: 2px solid #0b1430;
+  border-radius: 16px;
+  background: rgba(11, 20, 48, 0.45);
+}
+
+.mods-art {
+  flex: 0 0 auto;
+  width: 84px;
+  height: auto;
+  border: 2px solid #0b1430;
+  border-radius: 10px;
+  background: #0b1430;
+  object-fit: contain;
+}
+
+.mods-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mods-meta-name {
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.mods-meta-sub {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.mods-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 2px solid #0b1430;
+  border-radius: 999px;
+  background: #ffe27a;
+  color: #3b2400;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.mods-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mods-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mods-field-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffe27a;
+}
+
+.mods-input,
+.mods-input-text {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 3px solid #0b1430;
+  border-radius: 12px;
+  background: #fff;
+  color: #12203f;
+  font: inherit;
+  font-size: 16px; /* avoids iOS zoom-on-focus */
+  font-weight: 700;
+}
+
+.mods-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mods-flag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 2px solid #0b1430;
+  border-radius: 12px;
+  background: #162a57;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* ---------- 4. scripts ---------- */
+
+.mods-scripts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mods-script {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 2px solid #0b1430;
+  border-radius: 14px;
+  background: #162a57;
+}
+
+.mods-script-editing {
+  border-color: #ffe27a;
+}
+
+.mods-script-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mods-script-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.mods-pill-switch {
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 30px;
+  padding: 0;
+  border: 3px solid #0b1430;
+  border-radius: 999px;
+  background: #5b6785;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.mods-pill-on {
+  background: #3ddc84;
+}
+
+.mods-pill-text {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.mods-pill-on .mods-pill-text {
+  right: auto;
+  left: 8px;
+  color: #0b2a14;
+}
+
+.mods-pill-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #0b1430;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+
+.mods-pill-on .mods-pill-knob {
+  left: 36px;
+}
+
+.mods-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 2px dashed #ffe27a;
+  border-radius: 16px;
+}
+
+.mods-code,
+.mods-io {
+  width: 100%;
+  min-height: 180px;
+  max-width: 100%;
+  padding: 10px;
+  border: 3px solid #0b1430;
+  border-radius: 12px;
+  background: #0b1430;
+  color: #c9f7d4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+  resize: vertical;
+}
+
+.mods-io {
+  min-height: 240px;
+}
+
+.mods-help {
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.95;
+}
+
+.mods-help ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  word-break: break-word;
+}
+
+/* ---------- 5. import / export ---------- */
+
+.mods-file {
+  display: none;
+}
