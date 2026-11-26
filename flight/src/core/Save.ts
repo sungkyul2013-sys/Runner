@@ -12,6 +12,7 @@ export interface Settings {
   trees: number; // 0..1
   showFps: boolean;
   controlMode: ControlMode;
+  controlScale: number; // 0.7..1.2 on-screen control size
   swapSides: boolean;
   invertPitch: boolean;
   sensitivity: number; // 0.5..1.5
@@ -51,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   trees: isMobile ? 0.6 : 1,
   showFps: false,
   controlMode: isMobile ? 'split' : 'stick',
+  controlScale: 0.86,
   swapSides: false,
   invertPitch: false,
   sensitivity: 1,

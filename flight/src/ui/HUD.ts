@@ -145,7 +145,7 @@ export class HUD {
 
     // ---------- heading tape ----------
     {
-      const hy = portrait ? H * 0.135 : 46 * S + (small ? 30 : 34), hw = Math.min(W * (portrait ? 0.5 : 0.4), 380);
+      const hy = portrait ? H * 0.175 : 46 * S + (small ? 30 : 34), hw = Math.min(W * (portrait ? 0.5 : 0.4), 380);
       g.save(); g.beginPath(); g.rect(cx - hw / 2, hy - 20, hw, 40); g.clip();
       const hdg = d.hdg * RAD;
       for (let a = Math.floor(hdg / 5) * 5 - 40; a <= hdg + 40; a += 5) {
@@ -161,7 +161,7 @@ export class HUD {
       g.restore();
       g.beginPath(); g.moveTo(cx, hy + 12); g.lineTo(cx - 5, hy + 20); g.lineTo(cx + 5, hy + 20); g.closePath(); g.fill();
       g.textAlign = 'center';
-      g.strokeRect(cx - 22, hy - 34, 44, 18);
+      g.beginPath(); g.moveTo(cx - 22, hy - 17); g.lineTo(cx + 22, hy - 17); g.stroke();
       g.fillText(String(Math.round(((hdg % 360) + 360) % 360)).padStart(3, '0'), cx, hy - 25);
       if (d.ap.on && d.ap.hdg && !d.ap.app) {
         const x = cx + clamp(((d.ap.hdgT - hdg + 540) % 360) - 180, -40, 40) * (hw / 80);
@@ -259,7 +259,14 @@ export class HUD {
       const dtxt = t.dist > 1000 ? `${(t.dist / 1000).toFixed(1)}km` : `${Math.round(t.dist)}m`;
       if (onScreen) {
         const s = t.kind === 'ring' || t.kind === 'wp' ? 12 : 16;
-        if (t.kind === 'air') { g.strokeRect(sp.x - s, sp.y - s, s * 2, s * 2); }
+        if (t.kind === 'air') {
+          const c4 = s * 0.45;
+          g.beginPath();
+          for (const [ax, ay] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+            g.moveTo(sp.x + ax * s, sp.y + ay * s - ay * c4); g.lineTo(sp.x + ax * s, sp.y + ay * s); g.lineTo(sp.x + ax * s - ax * c4, sp.y + ay * s);
+          }
+          g.stroke();
+        }
         else if (t.kind === 'ring' || t.kind === 'wp') { g.beginPath(); g.moveTo(sp.x, sp.y - s); g.lineTo(sp.x + s, sp.y); g.lineTo(sp.x, sp.y + s); g.lineTo(sp.x - s, sp.y); g.closePath(); g.stroke(); }
         else { g.beginPath(); g.moveTo(sp.x - s, sp.y + s); g.lineTo(sp.x, sp.y - s); g.lineTo(sp.x + s, sp.y + s); g.closePath(); g.stroke(); }
         if (t.locked) { g.lineWidth = 2.5; g.beginPath(); g.arc(sp.x, sp.y, 26, 0, Math.PI * 2); g.stroke(); g.fillText('LOCK', sp.x, sp.y - 34); g.lineWidth = 1.6 * S; }
@@ -285,11 +292,17 @@ export class HUD {
 
     // ---------- objective / timer ----------
     g.textAlign = 'left'; g.font = `600 ${13 * S}px 'Noto Sans KR', sans-serif`;
-    const ox = (small ? 10 : 16), oy = small ? 52 : 60;
+    const ox = 16 + (small ? 0 : 6), oy = 28;
     if (d.objective) {
-      g.fillStyle = 'rgba(5,10,16,0.45)'; const tw = g.measureText(d.objective).width;
-      g.fillRect(ox - 6, oy - 12, tw + 20, 24); g.fillStyle = '#e9f1f8';
-      g.fillText('▸ ' + d.objective, ox, oy);
+      // objective as plain text on the scene, clipped so it never runs under the corner controls
+      const maxW = W - (portrait || compact ? 210 : 280) - ox;
+      let txt = d.objective;
+      while (txt.length > 4 && g.measureText(txt).width > maxW) txt = txt.slice(0, -2);
+      if (txt !== d.objective) txt = txt.trimEnd() + '…';
+      g.save(); g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 6;
+      g.fillStyle = '#ff4b3a'; g.fillRect(ox, oy - 7, 3, 14);
+      g.fillStyle = '#ece6dc'; g.fillText(txt, ox + 10, oy);
+      g.restore();
     }
     g.fillStyle = col;
     if (d.timer !== null) { g.font = `700 ${18 * S}px 'SA Mono', sans-serif`; const m = Math.floor(d.timer / 60), s = (d.timer % 60).toFixed(1); g.fillText(`${m}:${s.padStart(4, '0')}`, ox, oy + 24); }
@@ -345,11 +358,16 @@ export class HUD {
     }
     g.restore();
     g.beginPath(); g.moveTo(x, y - h / 2); g.lineTo(x, y + h / 2); g.stroke();
-    // readout box
-    const bw = 62, bh = 24;
-    const bx = side === 'left' ? x - bw - 8 : x + 8;
-    g.fillStyle = 'rgba(0,10,6,0.55)'; g.fillRect(bx, y - bh / 2, bw, bh); g.fillStyle = col;
-    g.strokeRect(bx, y - bh / 2, bw, bh);
+    // readout: arrow-head pointer aimed at the tape (no box)
+    const bw = 60, bh = 24;
+    const bx = side === 'left' ? x - bw - 10 : x + 10;
+    const tip = side === 'left' ? x - 2 : x + 2, back = side === 'left' ? bx : bx + bw, base = side === 'left' ? bx + bw : bx;
+    g.beginPath();
+    g.moveTo(back, y - bh / 2); g.lineTo(base, y - bh / 2); g.lineTo(tip, y); g.lineTo(base, y + bh / 2); g.lineTo(back, y + bh / 2);
+    g.fillStyle = 'rgba(0,8,6,0.5)'; g.fill();
+    g.beginPath(); g.moveTo(base, y - bh / 2); g.lineTo(tip, y); g.lineTo(base, y + bh / 2); g.stroke();
+    g.beginPath(); g.moveTo(back, y - bh / 2); g.lineTo(base, y - bh / 2); g.moveTo(back, y + bh / 2); g.lineTo(base, y + bh / 2); g.stroke();
+    g.fillStyle = col;
     g.font = `700 16px 'SA Mono', sans-serif`; g.textAlign = 'center';
     g.fillText(String(Math.round(v)), bx + bw / 2, y + 1);
     g.font = `600 11px 'SA Mono', sans-serif`;

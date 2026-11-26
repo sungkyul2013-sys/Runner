@@ -124,6 +124,7 @@ export class Input {
     const mode = settings.controlMode;
     const swap = settings.swapSides;
     this.root.dataset.mode = mode;
+    this.root.style.setProperty('--cs', String(settings.controlScale ?? 0.86));
 
     // ---- floating zones ----
     const zoneL = this.div('zone l'), zoneR = this.div('zone r');
@@ -224,7 +225,7 @@ export class Input {
 
     // ---- rudder ----
     const rud = this.div('rud');
-    if (settings.assist === 'beginner') rud.style.display = 'none';
+    if (settings.assist !== 'realistic') rud.style.display = 'none';
     rud.innerHTML = '<span>RUDDER</span><div class="tk"></div>';
     const tk = rud.querySelector('.tk') as HTMLElement;
     {
@@ -274,9 +275,10 @@ export class Input {
     const f: Floater = { el, th: el.querySelector('.th') as HTMLElement, kind, id: null, ox: 0, oy: 0, range: kind === 's' ? 70 : kind === 'v' ? 84 : 92 };
     const set = (dx: number, dy: number) => {
       let vx = 0, vy = 0;
-      if (f.kind === 'v') vy = clamp(dy / f.range, -1, 1);
-      else if (f.kind === 'h') vx = clamp(dx / f.range, -1, 1);
-      else { vx = dx / f.range; vy = dy / f.range; const m = Math.hypot(vx, vy); if (m > 1) { vx /= m; vy /= m; } }
+      const R = f.range * (settings.controlScale ?? 0.86);
+      if (f.kind === 'v') vy = clamp(dy / R, -1, 1);
+      else if (f.kind === 'h') vx = clamp(dx / R, -1, 1);
+      else { vx = dx / R; vy = dy / R; const m = Math.hypot(vx, vy); if (m > 1) { vx /= m; vy /= m; } }
       f.th.style.transform = `translate(${vx * f.range}px, ${vy * f.range}px)`;
       el.classList.toggle('hot', Math.max(Math.abs(vx), Math.abs(vy)) > 0.92);
       if (f.kind === 'v') this.touchAxes.pitch = vy;

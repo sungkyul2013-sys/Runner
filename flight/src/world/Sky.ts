@@ -1,8 +1,5 @@
 import * as THREE from 'three';
 import { Sky as SkyMesh } from 'three/examples/jsm/objects/Sky.js';
-import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
-import flare0Url from '../assets/lensflare0.png';
-import flare3Url from '../assets/lensflare3.png';
 import { clamp, smoothstep, lerp } from '../core/math';
 
 export interface WeatherState {
@@ -38,7 +35,6 @@ export class Sky {
   private envSky: SkyMesh;
   private envRT: THREE.WebGLRenderTarget | null = null;
   private lastEnvKey = '';
-  private flareHolder = new THREE.Object3D();
   hour = 10;
   weather: WeatherState = { ...WEATHER_PRESETS.clear.w };
   night = 0; // 0 day .. 1 full night
@@ -84,17 +80,6 @@ export class Sky {
     this.stars.renderOrder = -9;
     scene.add(this.stars);
 
-    // lens flare
-    const loader = new THREE.TextureLoader();
-    const t0 = loader.load(flare0Url), t3 = loader.load(flare3Url);
-    const lf = new Lensflare();
-    lf.addElement(new LensflareElement(t0, 600, 0, new THREE.Color(1, 0.95, 0.85)));
-    lf.addElement(new LensflareElement(t3, 60, 0.6, new THREE.Color(0.6, 0.8, 1)));
-    lf.addElement(new LensflareElement(t3, 70, 0.7, new THREE.Color(0.7, 1, 0.7)));
-    lf.addElement(new LensflareElement(t3, 120, 0.9, new THREE.Color(1, 0.8, 0.6)));
-    lf.addElement(new LensflareElement(t3, 70, 1.0, new THREE.Color(0.6, 0.7, 1)));
-    this.flareHolder.add(lf);
-    scene.add(this.flareHolder);
     this.setTime(this.hour);
   }
 
@@ -158,8 +143,6 @@ export class Sky {
     this.fog.density = base * Math.exp(-alt / (2200 + (1 - w.fog) * 2500));
     this.renderer.toneMappingExposure = lerp(0.55, 0.85, this.night) * lerp(1, 1.35, w.overcast * day);
 
-    this.flareHolder.position.copy(camera.position).addScaledVector(sd, 20000);
-    this.flareHolder.visible = el > -0.02 && w.overcast < 0.5;
 
     this.lightning = Math.max(0, this.lightning - dt * 4);
 

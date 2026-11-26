@@ -16,33 +16,81 @@ export interface Building {
 const STATE_W = 128;
 const FLOOR = 3.4;
 
+/** 4-style facade atlas (256px columns): 0 glass office · 1 Korean apartment · 2 commercial ribbon · 3 low-rise brick. */
 function facadeTextures() {
-  const W = 256, H = 512;
+  const T = 256, W = T * 4, H = 512, rows = 16, rh = H / rows;
   const c = document.createElement('canvas'), e = document.createElement('canvas');
   c.width = e.width = W; c.height = e.height = H;
   const g = c.getContext('2d')!, ge = e.getContext('2d')!;
   const r = mulberry32(11);
-  g.fillStyle = '#a8a8a8'; g.fillRect(0, 0, W, H);
   ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H);
-  const cols = 8, rows = 16, cw = W / cols, rh = H / rows;
-  for (let y = 0; y < rows; y++) {
-    // spandrel band
-    g.fillStyle = 'rgba(0,0,0,0.10)'; g.fillRect(0, y * rh + rh - 6, W, 6);
-    for (let x = 0; x < cols; x++) {
-      const v = 28 + r() * 26;
-      g.fillStyle = `rgb(${v},${v + 9},${v + 20})`;
-      g.fillRect(x * cw + 3, y * rh + 5, cw - 6, rh - 12);
-      g.fillStyle = 'rgba(255,255,255,0.16)'; g.fillRect(x * cw + 3, y * rh + 5, cw - 6, 2);
-      if (r() < 0.25) { g.fillStyle = 'rgba(230,225,210,0.55)'; g.fillRect(x * cw + 3, y * rh + 5 + (rh - 12) * 0.5 * r(), cw - 6, (rh - 12) * 0.5); } // blinds
-      if (r() < 0.4) {
-        const warm = r();
-        ge.fillStyle = warm < 0.72 ? `rgb(255,${185 + r() * 45},${105 + r() * 55})` : `rgb(${165 + r() * 40},${200 + r() * 35},255)`;
-        ge.fillRect(x * cw + 3, y * rh + 5, cw - 6, rh - 12);
+  const lit = (x: number, y: number, w: number, h: number, p: number) => {
+    if (r() > p) return;
+    const warm = r();
+    ge.fillStyle = warm < 0.7 ? `rgb(255,${185 + r() * 45},${105 + r() * 55})` : `rgb(${165 + r() * 40},${205 + r() * 30},255)`;
+    ge.fillRect(x, y, w, h);
+  };
+  // 0 — curtain-wall office: continuous glass, slim mullions, sky reflection gradient
+  {
+    const x0 = 0;
+    const grd = g.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, '#2c3d4e'); grd.addColorStop(0.5, '#1d2a37'); grd.addColorStop(1, '#2a3a48');
+    g.fillStyle = grd; g.fillRect(x0, 0, T, H);
+    for (let y = 0; y < rows; y++) {
+      g.fillStyle = 'rgba(160,190,215,0.10)'; g.fillRect(x0, y * rh, T, 3);
+      for (let x = 0; x < 8; x++) { g.fillStyle = `rgba(120,150,180,${0.04 + r() * 0.08})`; g.fillRect(x0 + x * 32 + 2, y * rh + 4, 28, rh - 6); lit(x0 + x * 32 + 2, y * rh + 4, 28, rh - 6, 0.45); }
+    }
+    g.fillStyle = 'rgba(200,215,230,0.35)';
+    for (let x = 0; x <= 8; x++) g.fillRect(x0 + x * 32 - 1, 0, 2, H);
+  }
+  // 1 — Korean apartment block: white walls, balcony bands, stair-core stripe
+  {
+    const x0 = T;
+    g.fillStyle = '#e8e4dc'; g.fillRect(x0, 0, T, H);
+    for (let y = 0; y < rows; y++) {
+      const yy = y * rh;
+      g.fillStyle = '#d4cfc6'; g.fillRect(x0, yy + rh - 5, T, 5); // slab edge
+      for (let x = 0; x < 4; x++) {
+        const bx = x0 + x * 64 + 6;
+        g.fillStyle = '#3a4550'; g.fillRect(bx, yy + 6, 44, rh - 14); // balcony glazing
+        g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(bx, yy + 6, 44, 2); g.fillRect(bx + 21, yy + 6, 2, rh - 14);
+        g.fillStyle = '#f3f1ec'; g.fillRect(bx - 2, yy + rh - 13, 48, 4); // railing
+        lit(bx, yy + 6, 44, rh - 14, 0.55);
+      }
+      g.fillStyle = '#c9c3b8'; g.fillRect(x0 + 54, yy, 8, rh); // stair core
+    }
+    g.fillStyle = 'rgba(70,120,160,0.35)'; g.fillRect(x0 + 120, 0, 6, H); // painted accent stripe
+  }
+  // 2 — commercial: tan cladding, long ribbon windows
+  {
+    const x0 = T * 2;
+    g.fillStyle = '#b7aa98'; g.fillRect(x0, 0, T, H);
+    for (let y = 0; y < rows; y++) {
+      const yy = y * rh;
+      g.fillStyle = '#263039'; g.fillRect(x0, yy + 8, T, rh - 16);
+      g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(x0, yy + 8, T, 2);
+      for (let x = 0; x < 6; x++) { g.fillStyle = '#9d907e'; g.fillRect(x0 + x * 43, yy + 8, 3, rh - 16); }
+      for (let x = 0; x < 6; x++) lit(x0 + x * 43 + 3, yy + 8, 40, rh - 16, 0.4);
+    }
+  }
+  // 3 — low-rise brick with small windows and AC units
+  {
+    const x0 = T * 3;
+    g.fillStyle = '#8a5a45'; g.fillRect(x0, 0, T, H);
+    for (let y = 0; y < H; y += 4) { g.fillStyle = `rgba(0,0,0,${0.04 + r() * 0.05})`; g.fillRect(x0, y, T, 1); }
+    for (let y = 0; y < rows; y++) {
+      const yy = y * rh;
+      for (let x = 0; x < 5; x++) {
+        const bx = x0 + x * 51 + 10;
+        g.fillStyle = '#e9e2d6'; g.fillRect(bx - 2, yy + 7, 30, rh - 12);
+        g.fillStyle = '#2f353b'; g.fillRect(bx, yy + 9, 26, rh - 16);
+        lit(bx, yy + 9, 26, rh - 16, 0.45);
+        if (r() < 0.3) { g.fillStyle = '#d8d8d4'; g.fillRect(bx + 4, yy + rh - 9, 16, 6); }
       }
     }
   }
   const t = new THREE.CanvasTexture(c), te = new THREE.CanvasTexture(e);
-  for (const k of [t, te]) { k.wrapS = k.wrapT = THREE.RepeatWrapping; k.colorSpace = THREE.SRGBColorSpace; k.anisotropy = 8; }
+  for (const k of [t, te]) { k.wrapS = k.wrapT = THREE.ClampToEdgeWrapping; k.colorSpace = THREE.SRGBColorSpace; k.anisotropy = 8; }
   return { t, te };
 }
 
@@ -173,7 +221,7 @@ export class City {
 
   /* ---------------- buildings (merged) ---------------- */
   private buildBuildings(data: ReturnType<typeof seoul>) {
-    const pos: number[] = [], nor: number[] = [], col: number[] = [], bid: number[] = [], base: number[] = [], glass: number[] = [];
+    const pos: number[] = [], nor: number[] = [], col: number[] = [], bid: number[] = [], base: number[] = [], glass: number[] = [], sty: number[] = [];
     const palette = {
       apt: [new THREE.Color(0.88, 0.86, 0.82), new THREE.Color(0.82, 0.8, 0.76), new THREE.Color(0.9, 0.88, 0.85)],
       office: [new THREE.Color(0.45, 0.55, 0.66), new THREE.Color(0.38, 0.47, 0.56), new THREE.Color(0.6, 0.65, 0.7), new THREE.Color(0.32, 0.38, 0.44)],
@@ -189,14 +237,15 @@ export class City {
       const tall = ob.h > 80;
       const k = hash01(id * 7, id * 13);
       const pal = ob.kind === 1 ? palette.apt : tall || ob.kind === 3 ? palette.office : palette.other;
-      const c = pal[Math.floor(k * pal.length)].clone().multiplyScalar(0.92 + hash01(id, 3) * 0.16);
+      const style = tall ? 0 : ob.kind === 1 ? 1 : ob.kind === 3 ? (k < 0.5 ? 0 : 2) : ob.h < 14 ? (k < 0.6 ? 3 : 2) : k < 0.35 ? 1 : k < 0.7 ? 2 : 3;
+      const c = (style === 1 || style === 3 ? new THREE.Color(1, 1, 1) : pal[Math.floor(k * pal.length)].clone()).multiplyScalar(0.9 + hash01(id, 3) * 0.16);
       let minx = 1e9, maxx = -1e9, minz = 1e9, maxz = -1e9;
       for (const [x, z] of r) { minx = Math.min(minx, x); maxx = Math.max(maxx, x); minz = Math.min(minz, z); maxz = Math.max(maxz, z); }
       const push = (x: number, y: number, z: number, nx: number, ny: number, nz: number, roof: number) => {
         pos.push(x, y, z); nor.push(nx, ny, nz);
         const cc = roof ? 0.55 : 1;
         col.push(c.r * cc, c.g * cc, c.b * cc);
-        bid.push(id); base.push(yb); glass.push(tall ? 1 : ob.kind === 3 ? 0.5 : 0);
+        bid.push(id); base.push(yb); glass.push(style === 0 ? 1 : 0); sty.push(style);
       };
       // walls
       for (let i = 0; i < r.length; i++) {
@@ -229,6 +278,7 @@ export class City {
     g.setAttribute('aBid', new THREE.Float32BufferAttribute(bid, 1));
     g.setAttribute('aBase', new THREE.Float32BufferAttribute(base, 1));
     g.setAttribute('aGlass', new THREE.Float32BufferAttribute(glass, 1));
+    g.setAttribute('aStyle', new THREE.Float32BufferAttribute(sty, 1));
     g.computeBoundingSphere();
 
     const { t, te } = facadeTextures();
@@ -239,7 +289,7 @@ export class City {
       sh.uniforms.uState = { value: st };
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', `#include <common>
-          attribute float aBid; attribute float aBase; attribute float aGlass;
+          attribute float aBid; attribute float aBase; attribute float aGlass; attribute float aStyle; varying float vStyle;
           uniform sampler2D uState;
           varying vec3 vBPos; varying vec3 vBN; varying float vGlass; varying float vH; varying float vDead; varying float vSeed;`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -249,31 +299,33 @@ export class City {
           vDead = stt.g;
           transformed.y = aBase + (transformed.y - aBase) * (1.0 - col * 0.96);
           transformed.x += sin(aBid * 12.7 + transformed.y * 0.05) * col * 2.0;
-          vGlass = aGlass; vH = transformed.y - aBase; vSeed = aBid;`)
+          vGlass = aGlass; vH = transformed.y - aBase; vSeed = aBid; vStyle = aStyle;`)
         .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
           vBPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vBN = normal;`);
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
-          uniform float uNight; varying vec3 vBPos; varying vec3 vBN; varying float vGlass; varying float vH; varying float vDead; varying float vSeed;
+          uniform float uNight; varying vec3 vBPos; varying vec3 vBN; varying float vGlass; varying float vH; varying float vDead; varying float vSeed; varying float vStyle;
           float bh(float n){ return fract(sin(n)*43758.5453); }`)
         .replace('#include <map_fragment>', `
           float roof = step(0.5, vBN.y);
           float u = dot(vBPos.xz, vec2(-vBN.z, vBN.x));
-          vec2 fuv = vec2(u / 32.0 + bh(vSeed) , vH / ${(FLOOR * 16).toFixed(1)});
-          vec4 fac = texture2D(map, fuv);
+          vec2 gg = vec2(u / 32.0 + bh(vSeed), vH / 54.4);
+          vec2 fuv = vec2((fract(gg.x) + floor(vStyle + 0.5)) * 0.25, fract(gg.y));
+          vec2 gdx = dFdx(gg) * vec2(0.25, 1.0), gdy = dFdy(gg) * vec2(0.25, 1.0);
+          vec4 fac = textureGrad(map, fuv, gdx, gdy);
           float glassy = vGlass;
-          vec3 wall = mix(fac.rgb * 1.7, mix(fac.rgb * 0.9, vec3(0.16,0.22,0.28), 0.55), glassy);
+          vec3 wall = mix(fac.rgb * 1.15, fac.rgb * 1.05, glassy);
           // ground floor shopfronts
           wall = mix(wall, vec3(0.08,0.09,0.1), step(vH, 4.2) * (1.0-roof) * 0.7);
           diffuseColor.rgb *= mix(wall, vec3(0.42,0.42,0.43), roof);
           diffuseColor.rgb *= mix(1.0, 0.18, vDead);`)
         .replace('#include <emissivemap_fragment>', `
-          vec3 em = texture2D(emissiveMap, fuv + vec2(floor(bh(vSeed*1.3)*8.0)/8.0, 0.0)).rgb;
+          vec3 em = textureGrad(emissiveMap, vec2(fuv.x, fract(fuv.y + floor(bh(vSeed*1.3)*8.0)/16.0)), gdx, gdy).rgb;
           float on = step(0.25, bh(vSeed * 3.1));
           totalEmissiveRadiance = em * uNight * 2.4 * (1.0 - roof) * step(4.2, vH) * on * (1.0 - vDead);
           totalEmissiveRadiance += vec3(1.0,0.45,0.15) * vDead * 0.25 * step(vH, 8.0) * (0.6 + 0.4*sin(vBPos.x*3.0 + vBPos.y));`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-          float win = step(fac.r, 0.3);
+          float win = step(fac.r, 0.28) * step(fac.b, 0.4);
           roughnessFactor = mix(roughnessFactor, 0.06, (1.0 - roof) * max(win * 0.8, glassy * 0.9));`)
         .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
           metalnessFactor = mix(metalnessFactor, 0.85, (1.0 - roof) * glassy * 0.8);`);

@@ -28,7 +28,7 @@ export interface UIHost {
 
 export const ICON: Record<string, string> = {
   back: '<svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg>',
-  play: '<svg viewBox="0 0 24 24"><path d="M6 3l15 9-15 9z"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></svg>',
   home: '<svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></svg>',
   flag: '<svg viewBox="0 0 24 24"><path d="M5 21V3m0 1h12l-2 4 2 4H5"/></svg>',
   globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>',
@@ -46,7 +46,8 @@ const RANKS: [number, string][] = [[0, 'Rookie'], [6, 'Wingman'], [16, 'Flight L
 const h = (html: string) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild as HTMLElement; };
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 const hh = (hr: number) => `${String(Math.floor(hr)).padStart(2, '0')}:${String(Math.round((hr % 1) * 60)).padStart(2, '0')}`;
-const starsHtml = (n: number, cls = 'stars') => `<span class="${cls}">${[0, 1, 2].map((k) => `<i class="${k < n ? 'on' : ''}"></i>`).join('')}</span>`;
+const starsHtml = (n: number) => `<span class="marks" title="${n}/3">${[0, 1, 2].map((k) => `<i class="${k < n ? 'on' : ''}"></i>`).join('')}</span>`;
+const sep = '<i>/</i>';
 const totalStars = () => Object.values(progress.stars).reduce((a, b) => a + b, 0);
 const rank = () => { const s = totalStars(); let r = RANKS[0][1]; for (const [k, n] of RANKS) if (s >= k) r = n; return r; };
 
@@ -103,6 +104,18 @@ export class Menus {
     setTimeout(fn, 240);
     setTimeout(() => w.classList.remove('go'), 720);
   }
+  /** White transition burst — a different motion per destination, then swap screens under it. */
+  private fx(kind: string, fn: () => void) {
+    const inner = kind === 'zig'
+      ? `<svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="-5,30 15,55 35,25 55,60 75,30 105,55"/><polyline points="-5,60 20,40 40,70 60,40 80,72 105,45"/><polyline points="-5,80 18,62 42,88 66,60 88,85 105,70"/></svg>`
+      : kind === 'shutter' ? '<i style="left:0"></i><i style="left:20%"></i><i style="left:40%"></i><i style="left:60%"></i><i style="left:80%"></i>'
+      : kind === 'flash' ? '' : '<i></i><i></i><i></i>';
+    const o = h(`<div class="fxo ${kind}">${inner}</div>`);
+    document.body.appendChild(o);
+    if (kind === 'sweep') o.querySelectorAll('i').forEach((i) => ((i as HTMLElement).style.left = '0'));
+    setTimeout(fn, kind === 'shutter' ? 250 : 220);
+    setTimeout(() => o.remove(), 700);
+  }
   private on(el: HTMLElement, sel: string, fn: (e: HTMLElement) => void) {
     el.querySelectorAll<HTMLElement>(sel).forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); this.host.ui(); fn(b); }));
   }
@@ -112,33 +125,20 @@ export class Menus {
       upd(); r.addEventListener('input', upd);
     });
   }
+  private who() {
+    return `<div class="who"><span class="st2">★ <b>${totalStars()}</b>/${MISSIONS.length * 3}</span><span class="hide-p">Pilot · <b>${rank()}</b></span></div>`;
+  }
   private top(title: string, sub: string, back = true) {
     return `<div class="top">
-      ${back ? `<button class="back" data-back>${ICON.back}BACK</button>` : ''}
+      ${back ? `<button class="back" data-back>${ICON.back}BACK</button><i class="divider"></i>` : ''}
       <div class="ttl"><div class="d">${title}</div><small>${sub}</small></div>
-      <div class="sp"></div>
-      <div class="chipstat hide-p">${ICON.star}<span class="m">${totalStars()}/${MISSIONS.length * 3}</span></div>
-      <div class="pilot"><div class="av">${rank()[0]}</div><div><div class="nm">Pilot</div><div class="rk">${rank().toUpperCase()}</div></div></div>
+      <div class="sp"></div>${this.who()}
     </div>`;
   }
-  private tabbar(active: Tab) {
-    const items: [Tab, string, string][] = [['home', '홈', ICON.home], ['campaign', '미션', ICON.flag], ['free', '자유비행', ICON.globe], ['hangar', '격납고', ICON.plane], ['settings', '설정', ICON.gear]];
-    return `<nav class="tabbar">${items.map(([k, n, ic]) => `<button data-tb="${k}" class="${k === active ? 'on' : ''}">${ic}${n}</button>`).join('')}</nav>`;
-  }
-  private bindTabbar(el: HTMLElement) {
-    this.on(el, '[data-tb]', (b) => {
-      const k = b.dataset.tb as Tab;
-      this.go(() => {
-        if (k === 'home') this.main();
-        else if (k === 'campaign') { this.missionTab = 'campaign'; this.missions(); }
-        else if (k === 'free') this.sandboxScreen();
-        else if (k === 'hangar') this.hangar();
-        else this.settingsScreen('main');
-      });
-    });
-  }
+  private tabbar(_active: Tab) { return ''; }
+  private bindTabbar(_el: HTMLElement) { /* navigation lives on the home screen + BACK */ }
   private tabsHtml(items: [string, string, string][], active: string) {
-    return `<div class="tabs">${items.map(([k, en, ko]) => `<button class="tab ${k === active ? 'on' : ''}" data-tab="${k}">${en}<small>${ko}</small></button>`).join('')}<i class="ul"></i></div>`;
+    return `<div class="tabs">${items.map(([k, en]) => `<button class="tab ${k === active ? 'on' : ''}" data-tab="${k}">${en}</button>`).join('')}<i class="ul"></i></div>`;
   }
   private placeUnderline(el: HTMLElement) {
     const tabs = el.querySelector<HTMLElement>('.tabs');
@@ -166,15 +166,13 @@ export class Menus {
     let el = this.screens.get('loading');
     if (!el) {
       el = this.screen('loading', `<div class="boot"><div class="scanl"></div>
-        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
         <div class="c"><div class="d lg">Sky Ace</div><div class="sub">HORIZON</div>
-        <div class="segbar">${'<i></i>'.repeat(24)}</div>
+        <div class="prog"><i></i></div>
         <div class="row2"><span class="tp"></span><span class="pc m">0%</span></div></div>
         <div class="legal">Map data © OpenStreetMap contributors (ODbL) · Fonts: Bebas Neue, Chakra Petch (OFL)</div></div>`);
       this.show('loading');
     }
-    const n = Math.round(p * 24);
-    el.querySelectorAll('.segbar i').forEach((s, i) => s.classList.toggle('on', i < n));
+    (el.querySelector('.prog i') as HTMLElement).style.transform = `scaleX(${p})`;
     (el.querySelector('.pc') as HTMLElement).textContent = `${Math.round(p * 100)}%`;
     (el.querySelector('.tp') as HTMLElement).textContent = tip;
   }
@@ -188,33 +186,41 @@ export class Menus {
     const spec = getSpec(this.selAc);
     const nm = this.nextMission();
     const idx = MISSIONS.filter((m) => m.cat === 'campaign').indexOf(nm) + 1;
-    const items: [string, string, string][] = [['campaign', 'Campaign', '캠페인 · 13 미션'], ['free', 'Free Flight', '자유 비행 · 샌드박스'], ['course', 'Challenges', '링 코스 · 챌린지'], ['hangar', 'Hangar', '격납고 · 6 기체'], ['settings', 'Settings', '설정']];
+    const items: [string, string, string][] = [['campaign', 'Campaign', '캠페인'], ['free', 'Free Flight', '자유 비행'], ['course', 'Challenges', '챌린지'], ['hangar', 'Hangar', '격납고']];
     const el = this.screen('main', `
       <div class="shade"></div>
-      <div class="top"><div class="logo"><b>SKY ACE</b><span>HORIZON</span></div><div class="sp"></div>
-        <div class="chipstat hide-p">${ICON.star}<span class="m">${totalStars()}/${MISSIONS.length * 3}</span></div>
-        <div class="pilot"><div class="av">${rank()[0]}</div><div><div class="nm">Pilot</div><div class="rk">${rank().toUpperCase()}</div></div></div></div>
-      <nav class="home-nav">${items.map(([k, en, ko], i) => `<button class="hn ${i === 0 ? 'sel' : ''}" data-a="${k}" style="animation-delay:${0.06 + i * 0.05}s"><span class="ix">0${i + 1}</span><span class="tx"><span class="d">${en}</span><span class="kr">${ko}</span></span></button>`).join('')}</nav>
-      <div class="home-ac"><div class="tag">Selected Aircraft</div><div class="d">${spec.name}</div><small>${spec.ko} · ${spec.role}</small></div>
-      <div class="feature cut"><i class="bar"></i>
-        <div class="tag">Continue · Mission ${String(idx).padStart(2, '0')}</div>
-        <div class="d">${CODENAME[nm.id]}</div>
-        <div class="k" style="font-size:15px;margin-bottom:6px">${nm.title}</div>
-        <p>${nm.briefing}</p>
-        <div class="meta"><span class="pill hot">${getSpec(nm.aircraft).name}</span><span class="pill">${WEATHER_PRESETS[nm.weather]?.name ?? 'RANDOM'}</span><span class="pill">${hh(nm.hour)}</span></div>
-        <button class="cta full" data-cont>${ICON.play}PLAY</button>
-      </div>
+      <div class="top"><div class="logo"><b>SKY ACE</b><span>HORIZON</span></div><div class="sp"></div>${this.who()}<button class="gear" data-a="settings" aria-label="설정">${ICON.gear}</button></div>
       <div class="home-stats">
         <div class="hs"><div class="m" data-count="${progress.flights}">0</div><span>FLIGHTS</span></div>
         <div class="hs"><div class="m" data-count="${progress.landings}">0</div><span>LANDINGS</span></div>
         <div class="hs"><div class="m" data-count="${progress.bestLanding}">0</div><span>BEST LANDING</span></div>
         <div class="hs"><div class="m" data-count="${progress.kills}">0</div><span>KILLS</span></div>
-        <div class="hs"><div class="m" data-count="${(progress.flightTime / 3600).toFixed(1)}" data-dec="1" data-suf="h">0</div><span>FLIGHT TIME</span></div>
       </div>
-      ${this.tabbar('home')}`);
+      <div class="home-ac"><div class="eyebrow">Aircraft</div><div class="d">${spec.name}</div></div>
+      <div class="home">
+        <div class="cont">
+          <div class="eyebrow"><b>Continue</b> · Mission ${String(idx).padStart(2, '0')}</div>
+          <div class="hero"><span class="ghost">${String(idx).padStart(2, '0')}</span><i class="slash"></i><i class="slash s2"></i><i class="slash s3"></i><div class="d">${CODENAME[nm.id]}</div><i class="speedrule"></i></div>
+          <div class="kt">${nm.title} — ${nm.sub}</div>
+          <div class="meta">${getSpec(nm.aircraft).name}${sep}${WEATHER_PRESETS[nm.weather]?.name ?? 'Random'}${sep}${hh(nm.hour)}</div>
+          <div class="launch">
+            <svg class="streaks" viewBox="0 0 600 120" preserveAspectRatio="none">${Array.from({ length: 9 }, (_, i) => `<line x1="${(i * 67) % 600}" y1="${12 + i * 12}" x2="${(i * 67) % 600 + 120 + (i % 3) * 60}" y2="${12 + i * 12}" style="animation-delay:${-i * 0.27}s"/>`).join('')}</svg>
+            <div class="chev">${'<i></i>'.repeat(6)}</div>
+            <button class="play" data-cont><span class="tri"><svg viewBox="0 0 24 24"><path d="M6 3l15 9-15 9z"/></svg></span><span class="lbl">PLAY</span><span class="sub">${getSpec(this.selAc).name}</span></button>
+          </div>
+          <div class="quick">
+            <button data-q="assist"><span>ASSIST</span><b>${({ beginner: '초보자', standard: '표준', realistic: '현실' } as Record<string, string>)[settings.assist]}</b></button>
+            <button data-q="control"><span>CONTROL</span><b>${({ split: '분리 조종', stick: '통합 스틱', tilt: '기울기' } as Record<string, string>)[settings.controlMode]}</b></button>
+            <button data-q="quality"><span>GRAPHICS</span><b>${settings.quality.toUpperCase()}</b></button>
+            <button data-q="sound"><span>SOUND</span><b>${settings.volume > 0 ? 'ON' : 'OFF'}</b></button>
+          </div>
+        </div>
+        <nav class="nav">${items.map(([k, en, ko], i) => `<button class="nv" data-a="${k}" style="animation-delay:${0.12 + i * 0.05}s"><span class="kr">${ko}</span><span class="d">${en}</span><span class="ix">0${i + 1}</span></button>`).join('')}</nav>
+      </div>`);
     this.on(el, '[data-a]', (b) => {
       const a = b.dataset.a!;
-      this.go(() => {
+      const kind = ({ campaign: 'sweep', free: 'burst', course: 'zig', hangar: 'shutter', settings: 'iris' } as Record<string, string>)[a] ?? 'flash';
+      this.fx(kind, () => {
         if (a === 'campaign') { this.missionTab = 'campaign'; this.missions(); }
         else if (a === 'course') { this.missionTab = 'course'; this.missions(); }
         else if (a === 'free') this.sandboxScreen();
@@ -222,8 +228,20 @@ export class Menus {
         else this.settingsScreen('main');
       });
     });
-    el.querySelectorAll<HTMLElement>('.hn').forEach((b) => b.addEventListener('pointerenter', () => { el.querySelectorAll('.hn').forEach((x) => x.classList.toggle('sel', x === b)); }));
-    this.on(el, '[data-cont]', () => this.go(() => this.briefing(nm)));
+    this.on(el, '[data-cont]', (b) => { b.classList.add('fire'); el.querySelector('.launch')?.classList.add('fire'); setTimeout(() => this.fx('flash', () => this.briefing(nm)), 260); });
+    this.on(el, '[data-q]', (b) => {
+      const q = b.dataset.q!;
+      const cyc = <T,>(arr: T[], v: T) => arr[(arr.indexOf(v) + 1) % arr.length];
+      if (q === 'assist') settings.assist = cyc(['beginner', 'standard', 'realistic'] as const, settings.assist) as typeof settings.assist;
+      if (q === 'control') settings.controlMode = cyc(['split', 'stick', 'tilt'] as const, settings.controlMode) as typeof settings.controlMode;
+      if (q === 'quality') settings.quality = cyc(['low', 'medium', 'high', 'ultra'] as const, settings.quality) as typeof settings.quality;
+      if (q === 'sound') settings.volume = settings.volume > 0 ? 0 : 0.8;
+      save();
+      this.host.applySettings(q === 'quality');
+      if (q === 'control' && settings.controlMode === 'tilt') this.host.requestTilt();
+      const lab: Record<string, string> = { assist: ({ beginner: '초보자', standard: '표준', realistic: '현실' } as Record<string, string>)[settings.assist], control: ({ split: '분리 조종', stick: '통합 스틱', tilt: '기울기' } as Record<string, string>)[settings.controlMode], quality: settings.quality.toUpperCase(), sound: settings.volume > 0 ? 'ON' : 'OFF' };
+      const bEl = b.querySelector('b')!; bEl.textContent = lab[q]; bEl.classList.remove('flip'); void bEl.offsetWidth; bEl.classList.add('flip');
+    });
     this.bindTabbar(el);
     this.countUp(el);
     this.host.setMenuScene('title');
@@ -235,18 +253,18 @@ export class Menus {
     const list = MISSIONS.filter((m) => m.cat === this.missionTab);
     const el = this.screen('missions', `
       <div class="shade full"></div>
-      ${this.top(this.missionTab === 'campaign' ? 'Campaign' : 'Challenges', this.missionTab === 'campaign' ? '캠페인 · 이착륙 훈련부터 실전까지' : '코스 & 챌린지')}
-      <div class="page">
+      ${this.top(this.missionTab === 'campaign' ? 'Campaign' : 'Challenges', this.missionTab === 'campaign' ? '이착륙 훈련부터 실전까지' : '코스 & 챌린지')}
+      <div class="page narrow" style="max-width:1100px">
         ${this.tabsHtml([['campaign', 'Campaign', '캠페인'], ['course', 'Courses', '링 코스'], ['challenge', 'Challenges', '챌린지']], this.missionTab)}
-        <div class="grid st">${list.map((m, i) => {
+        <div class="mlist st">${list.map((m, i) => {
           const st = progress.stars[m.id] ?? 0;
           const best = progress.best[m.id];
           const isScore = m.cat === 'challenge' && m.objectives.some((o) => o.type === 'land');
-          return `<button class="card cut" data-m="${m.id}"><i class="acc"></i><span class="wm">${String(i + 1).padStart(2, '0')}</span>
-            <div class="tag">${m.cat === 'campaign' ? `Mission ${String(i + 1).padStart(2, '0')}` : m.cat === 'course' ? 'Course' : 'Challenge'}</div>
-            <div class="d">${CODENAME[m.id] ?? m.title}</div><div class="kt">${m.title}</div><div class="sb">${m.sub}</div>
-            <div class="meta"><span class="pill hot">${getSpec(m.aircraft).name}</span><span class="pill">${WEATHER_PRESETS[m.weather]?.name ?? '무작위'}</span><span class="pill">${hh(m.hour)}</span>${best !== undefined ? `<span class="pill">BEST ${isScore ? best : fmtTime(best)}</span>` : ''}</div>
-            ${starsHtml(st)}${st >= 3 ? '<span class="done-badge">MASTERED</span>' : ''}</button>`;
+          return `<button class="mrow" data-m="${m.id}">
+            <span class="n">${String(i + 1).padStart(2, '0')}</span>
+            <span><span class="d">${CODENAME[m.id] ?? m.title}</span><span class="kt" style="display:block">${m.title}</span></span>
+            <span class="c3"><span class="sb" style="display:block">${m.sub}</span><span class="meta">${getSpec(m.aircraft).name}${sep}${WEATHER_PRESETS[m.weather]?.name ?? '무작위'}${sep}${hh(m.hour)}${best !== undefined ? `${sep}Best ${isScore ? best : fmtTime(best)}` : ''}</span></span>
+            <span class="r">${starsHtml(st)}<svg class="go" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></span></button>`;
         }).join('')}</div>
       </div>
       ${this.tabbar(this.missionTab === 'campaign' ? 'campaign' : 'campaign')}`);
@@ -266,21 +284,22 @@ export class Menus {
     const idx = MISSIONS.filter((x) => x.cat === m.cat).indexOf(m) + 1;
     const wind = m.wind ? `${String(Math.round(m.wind[0])).padStart(3, '0')}°/${Math.round(m.wind[1] * MS_TO_KT)}KT` : w ? `${Math.round(w.w.windSpeed * MS_TO_KT)}KT` : 'VAR';
     const el = this.screen('briefing', `
-      <div class="shade"></div>
+      <div class="shade r"></div>
       ${this.top('Briefing', m.sub)}
-      <div class="brief cut">
-        <div class="hd"><div class="tag">${m.cat === 'campaign' ? 'Mission' : m.cat === 'course' ? 'Course' : 'Challenge'} ${String(idx).padStart(2, '0')}</div>
-          <div class="d">${CODENAME[m.id] ?? m.title}</div><div class="k">${m.title}</div>${starsHtml(progress.stars[m.id] ?? 0)}</div>
-        <div class="bd st">
-          <div class="conds"><div><span>TIME</span><b>${hh(m.hour)}</b></div><div><span>WEATHER</span><b>${w?.name ?? 'RANDOM'}</b></div><div><span>WIND</span><b>${wind}</b></div></div>
+      <div class="brief">
+        <div class="sc st">
+          <div class="eyebrow"><b>${m.cat === 'campaign' ? 'Mission' : m.cat === 'course' ? 'Course' : 'Challenge'} ${String(idx).padStart(2, '0')}</b>${progress.stars[m.id] ? ` · ${starsHtml(progress.stars[m.id])}` : ''}</div>
+          <div class="d big">${CODENAME[m.id] ?? m.title}</div>
+          <div class="kt">${m.title}</div>
+          <div class="facts"><div><span>TIME</span><b>${hh(m.hour)}</b></div><div><span>WEATHER</span><b>${w?.name ?? 'RANDOM'}</b></div><div><span>WIND</span><b>${wind}</b></div></div>
           <p>${m.briefing}</p>
-          <div class="sec-h">Objectives</div>
-          ${m.objectives.map((o, i) => `<div class="obj"><span class="n">${i + 1}</span><span>${o.label}</span></div>`).join('')}
-          ${m.tips ? `<ul class="tips">${m.tips.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}
+          <div class="hdr2">Objectives</div>
+          <div>${m.objectives.map((o, i) => `<div class="obj"><span class="n">0${i + 1}</span><span>${o.label}</span></div>`).join('')}</div>
+          ${m.tips ? `<div class="hdr2">Notes</div><ul class="tips">${m.tips.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}
         </div>
         <div class="ft">
-          <div class="acsel">${choice.map((id) => `<button data-ac="${id}" class="${id === this.selAc ? 'on' : ''}">${getSpec(id).name}</button>`).join('')}</div>
-          <button class="cta full" data-go>${ICON.play}LAUNCH</button>
+          ${choice.length > 1 ? `<div class="choose">${choice.map((id) => `<button data-ac="${id}" class="${id === this.selAc ? 'on' : ''}">${getSpec(id).name}</button>`).join('')}</div>` : `<div class="meta">${getSpec(this.selAc).name}</div>`}
+          <button class="cta full" data-go>Launch ${ICON.play}</button>
         </div>
       </div>
       <div class="drag-hint hide-p">DRAG TO ROTATE</div>`);
@@ -297,10 +316,11 @@ export class Menus {
     const list = allowed ? AIRCRAFT.filter((a) => allowed.includes(a.id)) : AIRCRAFT;
     if (!list.find((a) => a.id === this.selAc)) this.selAc = list[0].id;
     const el = this.screen('hangar', `
+      <div class="shade lr"></div>
       ${this.top('Hangar', onPick ? '기체 선택' : '6종 기체 · 도색')}
       <div class="hg">
-        <div class="hg-list">${list.map((a, i) => `<button class="hgi cut cut-s" data-id="${a.id}" style="animation-delay:${i * 0.04}s"><div class="r">${a.role}</div><div class="d">${a.name}</div></button>`).join('')}</div>
-        <div class="hg-info cut"></div>
+        <div class="hg-list">${list.map((a, i) => `<button class="hgi" data-id="${a.id}" style="animation-delay:${i * 0.04}s"><div class="r">${a.role}</div><div class="d">${a.name}</div></button>`).join('')}</div>
+        <div class="hg-info"></div>
         <div class="drag-hint">DRAG TO ROTATE</div>
       </div>
       ${onPick ? '' : this.tabbar('hangar')}`);
@@ -308,14 +328,14 @@ export class Menus {
     const render = () => {
       const s = getSpec(this.selAc);
       el.querySelectorAll('.hgi').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.id === s.id));
-      const seg = (k: string, v: number, hot = false) => `<div class="seg10"><span>${k}</span><div class="s">${Array.from({ length: 10 }, (_, i) => `<i class="${i < Math.round(v / 10) ? 'on' : ''}${hot ? ' hi' : ''}" style="animation-delay:${i * 0.03}s"></i>`).join('')}</div><b>${v}</b></div>`;
-      info.innerHTML = `<div class="in"><div class="tag">${s.role}</div><div class="d big">${s.name}</div><div class="k" style="font-size:13px;color:var(--ash);margin-top:4px">${s.ko}</div>
+      const stat = (k: string, v: number, hot = false) => `<div class="statl"><span>${k}</span><span class="t"><i class="${hot ? 'hi' : ''}" style="transform:scaleX(${v / 100})"></i></span><b>${v}</b></div>`;
+      info.innerHTML = `<div class="in"><div class="eyebrow"><b>${s.role}</b></div><div class="d big">${s.name}</div>
         <p>${s.desc}</p>
-        ${seg('SPEED', s.stats.speed)}${seg('AGILITY', s.stats.agility)}${seg('ARMOR', s.stats.armor)}${seg('FIREPOWER', s.stats.firepower, true)}${seg('DIFFICULTY', 100 - s.stats.ease)}
-        <div class="specs">${this.specRows(s)}</div>
-        <div class="tag">Livery — ${s.liveries[this.selLiv % s.liveries.length].name}</div>
+        ${stat('SPEED', s.stats.speed)}${stat('AGILITY', s.stats.agility)}${stat('ARMOR', s.stats.armor)}${stat('FIREPOWER', s.stats.firepower, true)}${stat('HANDLING', s.stats.ease)}
+        <div class="dl">${this.specRows(s)}</div>
+        <div class="eyebrow">Livery · ${s.liveries[this.selLiv % s.liveries.length].name}</div>
         <div class="livs">${s.liveries.map((l, i) => `<button class="liv ${i === this.selLiv ? 'on' : ''}" data-l="${i}" title="${l.name}" style="background:linear-gradient(135deg,#${l.base.toString(16).padStart(6, '0')} 50%,#${l.accent.toString(16).padStart(6, '0')} 50%)"></button>`).join('')}</div></div>
-        <div class="ft"><button class="cta full" data-go>${onPick ? `${ICON.play}SELECT & LAUNCH` : 'SELECT'}</button></div>`;
+        <div class="ft"><button class="cta full" data-go>${onPick ? 'Select' : 'Confirm'} ${ICON.play}</button></div>`;
       this.on(info, '[data-l]', (b) => { this.selLiv = +b.dataset.l!; this.host.previewAircraft(this.selAc, this.selLiv); render(); });
       this.on(info, '[data-go]', () => {
         progress.selectedAircraft = this.selAc; progress.liveries[this.selAc] = this.selLiv; save();
@@ -340,45 +360,42 @@ export class Menus {
   /* ================= free flight ================= */
   sandboxScreen() {
     const c = this.sandbox;
-    const seg = (key: keyof SandboxCfg, opts: [string | number, string][]) => `<div class="segc" data-k="${key}">${opts.map(([v, n]) => `<button data-v="${v}" class="${String(c[key]) === String(v) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
-    const tog = (key: keyof SandboxCfg) => `<button class="tog ${c[key] ? 'on' : ''}" data-tog="${key}"></button>`;
+    const seg = (key: keyof SandboxCfg, opts: [string | number, string][]) => `<div class="opts" data-k="${key}">${opts.map(([v, n]) => `<button data-v="${v}" class="${String(c[key]) === String(v) ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+    const tog = (key: keyof SandboxCfg) => `<button class="tog ${c[key] ? 'on' : ''}" data-tog="${key}" aria-label="${key}"></button>`;
     const el = this.screen('sandbox', `
       <div class="shade full"></div>
       ${this.top('Free Flight', '샌드박스 — 세계를 직접 구성하세요')}
-      <div class="page"><div class="cols st">
+      <div class="page narrow" style="max-width:1000px"><div class="cols st">
         <div>
-          <div class="panel cut">
-            <div class="row"><div class="l">기체<small>${getSpec(c.aircraft).ko} · ${getSpec(c.aircraft).role}</small></div><button class="cta ghost sm" data-pick>${getSpec(c.aircraft).name} ▸</button></div>
-            <div class="row"><div class="l">출발 위치</div></div>
-            <div style="padding-bottom:12px">${seg('spawn', [['runway', '활주로'], ['air', '공중'], ['carrier', '항모 갑판'], ['catapult', '캐터펄트'], ['altiport', '산악 활주로'], ['city', '서울 상공'], ['canyon', '협곡'], ['mountain', '설산']])}</div>
+          <div class="sect"><h3>Aircraft</h3>
+            <div class="row"><div class="l">${getSpec(c.aircraft).name}<small>${getSpec(c.aircraft).ko} · ${getSpec(c.aircraft).role}</small></div><button class="link" data-pick>Change ${ICON.play}</button></div>
+            <div class="row stack"><div class="l">출발 위치</div>${seg('spawn', [['runway', '활주로'], ['air', '공중'], ['carrier', '항모 갑판'], ['catapult', '캐터펄트'], ['altiport', '산악 활주로'], ['city', '서울 상공'], ['canyon', '협곡'], ['mountain', '설산']])}</div>
           </div>
-          <div class="panel cut">
+          <div class="sect"><h3>World</h3>
             <div class="row"><div class="l">시각<small data-hv>${hh(c.hour)}</small></div><input type="range" min="0" max="23.9" step="0.1" value="${c.hour}" data-r="hour"></div>
-            <div class="row"><div class="l">날씨</div></div>
-            <div style="padding-bottom:12px">${seg('weather', Object.entries(WEATHER_PRESETS).map(([k, v]) => [k, v.name] as [string, string]))}</div>
+            <div class="row stack"><div class="l">날씨</div>${seg('weather', Object.entries(WEATHER_PRESETS).map(([k, v]) => [k, v.name] as [string, string]))}</div>
             <div class="row"><div class="l">풍속<small data-wv>${Math.round(c.windSpeed * MS_TO_KT)} KT</small></div><input type="range" min="0" max="25" step="0.5" value="${c.windSpeed}" data-r="windSpeed"></div>
             <div class="row"><div class="l">풍향<small data-dv>${Math.round(c.windDir)}°</small></div><input type="range" min="0" max="359" step="1" value="${c.windDir}" data-r="windDir"></div>
             <div class="row"><div class="l">난기류<small data-tv>${Math.round(c.turbulence * 100)}%</small></div><input type="range" min="0" max="1" step="0.05" value="${c.turbulence}" data-r="turbulence"></div>
           </div>
         </div>
         <div>
-          <div class="panel cut">
+          <div class="sect"><h3>Rules</h3>
             <div class="row"><div class="l">무적<small>충돌·피격에도 파손되지 않음</small></div>${tog('invincible')}</div>
             <div class="row"><div class="l">무한 연료</div>${tog('infFuel')}</div>
             <div class="row"><div class="l">무한 탄약</div>${tog('infAmmo')}</div>
           </div>
-          <div class="panel cut">
-            <div class="row"><div class="l">적 전투기</div>${seg('enemies', [[0, '0'], [1, '1'], [2, '2'], [4, '4'], [6, '6']])}</div>
+          <div class="sect"><h3>Traffic &amp; Threats</h3>
+            <div class="row"><div class="l">적 전투기</div>${seg('enemies', [[0, '없음'], [1, '1'], [2, '2'], [4, '4'], [6, '6']])}</div>
             <div class="row"><div class="l">지상 목표<small>북부 계곡 적 기지</small></div>${tog('ground')}</div>
             <div class="row"><div class="l">민항기 교통</div>${tog('traffic')}</div>
           </div>
-          <button class="cta full" data-go>${ICON.play}TAKE OFF</button>
+          <button class="cta full" data-go>Take Off ${ICON.play}</button>
         </div>
-      </div></div>
-      ${this.tabbar('free')}`);
+      </div></div>`);
     this.on(el, '[data-back]', () => this.go(() => this.main()));
     this.on(el, '[data-pick]', () => this.go(() => this.hangar((id, liv) => { c.aircraft = id; c.livery = liv; this.sandboxScreen(); })));
-    el.querySelectorAll<HTMLElement>('.segc[data-k] button').forEach((b) => b.addEventListener('click', () => {
+    el.querySelectorAll<HTMLElement>('.opts[data-k] button').forEach((b) => b.addEventListener('click', () => {
       const k = (b.parentElement as HTMLElement).dataset.k as keyof SandboxCfg;
       (c as unknown as Record<string, unknown>)[k] = typeof c[k] === 'number' ? +b.dataset.v! : b.dataset.v;
       b.parentElement!.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
@@ -402,24 +419,24 @@ export class Menus {
   /* ================= settings ================= */
   settingsScreen(from: 'main' | 'pause') {
     const s = settings;
-    const seg = <K extends keyof Settings>(key: K, opts: [Settings[K], string][]) => `<div class="segc" data-s="${String(key)}">${opts.map(([v, n]) => `<button data-v="${String(v)}" class="${s[key] === v ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+    const seg = <K extends keyof Settings>(key: K, opts: [Settings[K], string][]) => `<div class="opts" data-s="${String(key)}">${opts.map(([v, n]) => `<button data-v="${String(v)}" class="${s[key] === v ? 'on' : ''}">${n}</button>`).join('')}</div>`;
     const tog = (key: keyof Settings) => `<button class="tog ${s[key] ? 'on' : ''}" data-tog="${String(key)}"></button>`;
     const rng = (key: keyof Settings, min: number, max: number, step: number) => `<input type="range" min="${min}" max="${max}" step="${step}" value="${s[key]}" data-r="${String(key)}">`;
     const tabs: Record<string, string> = {
-      controls: `<div class="panel cut">
+      controls: `<div class="sect">
         <div class="row"><div class="l">조작 방식<small>분리형: 왼손 상하(피치) · 오른손 좌우(롤) — 엄지를 놓는 곳에 컨트롤 생성</small></div>${seg('controlMode', [['split', '분리형'], ['stick', '가상 스틱'], ['tilt', '기울기']])}</div>
         <div class="row"><div class="l">좌우 반전<small>왼손잡이 레이아웃</small></div>${tog('swapSides')}</div>
         <div class="row"><div class="l">피치 반전</div>${tog('invertPitch')}</div>
         <div class="row"><div class="l">감도</div>${rng('sensitivity', 0.5, 1.5, 0.05)}</div>
         <div class="row"><div class="l">햅틱 진동</div>${tog('vibration')}</div></div>`,
-      assist: `<div class="panel cut">
+      assist: `<div class="sect">
         <div class="row"><div class="l">비행 보조<small>초보: 자세 자동 복원·실속/지면 충돌 방지 · 표준: 플라이-바이-와이어 · 현실: 직접 조종 + 자동 트림</small></div>${seg('assist', [['beginner', '초보자'], ['standard', '표준'], ['realistic', '현실']])}</div>
         <div class="row"><div class="l">자동 러더<small>협조 선회</small></div>${tog('autoRudder')}</div>
         <div class="row"><div class="l">지상 주행 보조<small>중심선 유지 · 이륙 회전 보조</small></div>${tog('groundAssist')}</div>
         <div class="row"><div class="l">착륙 가이드<small>글라이드 경로 박스</small></div>${tog('landingAssist')}</div>
         <div class="row"><div class="l">단위</div>${seg('units', [['aviation', 'KT / FT'], ['metric', 'KM/H / M']])}</div>
         <div class="row"><div class="l">HUD 색상</div>${seg('hudColor', [['green', 'GREEN'], ['cyan', 'CYAN'], ['amber', 'AMBER']])}</div></div>`,
-      graphics: `<div class="panel cut">
+      graphics: `<div class="sect">
         <div class="row"><div class="l">품질 프리셋<small>${IS_MOBILE ? '모바일 감지 — 중간 권장' : '데스크톱'}</small></div>${seg('quality', [['low', 'LOW'], ['medium', 'MED'], ['high', 'HIGH'], ['ultra', 'ULTRA']])}</div>
         <div class="row"><div class="l">해상도 배율</div>${rng('resScale', 0.5, 1.25, 0.05)}</div>
         <div class="row"><div class="l">그림자</div>${tog('shadows')}</div>
@@ -427,23 +444,23 @@ export class Menus {
         <div class="row"><div class="l">구름</div>${tog('clouds')}</div>
         <div class="row"><div class="l">수목 밀도</div>${rng('trees', 0, 1, 0.1)}</div>
         <div class="row"><div class="l">FPS 표시</div>${tog('showFps')}</div></div>`,
-      audio: `<div class="panel cut">
+      audio: `<div class="sect">
         <div class="row"><div class="l">마스터</div>${rng('volume', 0, 1, 0.05)}</div>
         <div class="row"><div class="l">엔진</div>${rng('engineVol', 0, 1, 0.05)}</div>
         <div class="row"><div class="l">음성 콜아웃<small>Pull up · 고도 콜아웃</small></div>${tog('voice')}</div></div>
-        <div class="panel cut"><div class="row"><div class="l">진행 상황 초기화</div><button class="cta ghost sm" data-reset>RESET</button></div></div>`,
+        <div class="sect"><div class="row"><div class="l">진행 상황 초기화</div><button class="link" data-reset>Reset</button></div></div>`,
     };
     const el = this.screen('settings', `
       <div class="shade full"></div>
       ${this.top('Settings', '변경 사항은 자동 저장됩니다')}
-      <div class="page" style="max-width:860px">
+      <div class="page narrow">
         ${this.tabsHtml([['controls', 'Controls', '조작'], ['assist', 'Assist', '보조'], ['graphics', 'Graphics', '그래픽'], ['audio', 'Audio', '사운드']], this.settingsTab)}
         <div class="st">${tabs[this.settingsTab]}</div>
       </div>
       ${from === 'main' ? this.tabbar('settings') : ''}`);
     const gfx = ['quality', 'resScale', 'shadows', 'bloom', 'trees', 'clouds'];
     const apply = (k: string) => { save(); this.host.applySettings(gfx.includes(k)); };
-    el.querySelectorAll<HTMLElement>('.segc[data-s] button').forEach((b) => b.addEventListener('click', () => {
+    el.querySelectorAll<HTMLElement>('.opts[data-s] button').forEach((b) => b.addEventListener('click', () => {
       const k = (b.parentElement as HTMLElement).dataset.s as keyof Settings;
       (s as unknown as Record<string, unknown>)[k] = b.dataset.v;
       b.parentElement!.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
@@ -464,16 +481,15 @@ export class Menus {
   pause(objective = '') {
     const items: [string, string, string][] = [['resume', 'Resume', '계속하기'], ['restart', 'Restart', '다시 시작'], ['photo', 'Photo Mode', '포토 모드'], ['settings', 'Settings', '설정'], ['quit', 'Quit', '메인 메뉴']];
     const el = this.screen('pause', `<div class="pz">
-      <div class="l"><div class="tag">Paused</div><div class="d big">Paused</div>
-        <div class="list">${items.map(([k, en, ko], i) => `<button class="hn ${i === 0 ? 'sel' : ''}" data-a="${k}" style="animation-delay:${i * 0.05}s"><span class="ix">0${i + 1}</span><span class="tx"><span class="d">${en}</span><span class="kr">${ko}</span></span></button>`).join('')}</div></div>
+      <div class="l"><div class="eyebrow"><b>Flight</b> · Paused</div><div class="d big">Paused</div>
+        <div class="list">${items.map(([k, en, ko], i) => `<button class="nv" data-a="${k}" style="animation-delay:${i * 0.05}s"><span class="ix">0${i + 1}</span><span class="d">${en}</span><span class="kr">${ko}</span></button>`).join('')}</div></div>
       <div class="r st">
-        ${objective ? `<div class="sec-h">Objective</div><div class="obj" style="margin-bottom:18px"><span class="n">▶</span><span>${objective}</span></div>` : ''}
-        <div class="sec-h">Keyboard</div>
+        ${objective ? `<div class="hdr2">Objective</div><div class="obj" style="margin-bottom:18px"><span class="n">01</span><span>${objective}</span></div>` : ''}
+        <div class="hdr2">Keyboard</div>
         <div class="keys">${[['W/S', '피치'], ['A/D', '롤'], ['Q/E', '러더'], ['⇧/Ctrl', '스로틀'], ['N', '애프터버너'], ['G', '기어'], ['F/V', '플랩'], ['B', '브레이크'], ['Z', '에어브레이크'], ['H', '테일훅'], ['J', '캐터펄트'], ['Space', '기관포'], ['R', '미사일'], ['X', '플레어'], ['Tab', '목표 전환'], ['C', '시점'], ['T', '오토파일럿'], ['Y', '자동 착륙'], ['L', '조명'], ['K', '스모크'], ['U', 'HUD'], ['O', '포토'], ['I', '엔진 시동']].map(([k, v]) => `<div><b>${k}</b>${v}</div>`).join('')}</div>
-        <div class="sec-h" style="margin-top:18px">Gamepad</div>
+        <div class="hdr2" style="margin-top:22px">Gamepad</div>
         <div class="keys">${[['LS', '피치/롤'], ['RS', '러더'], ['RT/LT', '스로틀'], ['A', '기관포'], ['B', '미사일'], ['LB', '플레어'], ['RB', '기어'], ['Y', '시점']].map(([k, v]) => `<div><b>${k}</b>${v}</div>`).join('')}</div>
       </div></div>`);
-    el.querySelectorAll<HTMLElement>('.hn').forEach((b) => b.addEventListener('pointerenter', () => el.querySelectorAll('.hn').forEach((x) => x.classList.toggle('sel', x === b))));
     this.on(el, '[data-a]', (b) => {
       const a = b.dataset.a;
       if (a === 'resume') this.host.resume();
@@ -486,8 +502,8 @@ export class Menus {
   }
 
   photoUI() {
-    const el = this.screen('photo', `<div class="photo-ui"><button class="cta ghost sm" data-a="shot">${ICON.cam}&nbsp;SAVE</button><button class="cta sm" data-a="exit">BACK</button></div>
-      <div class="tipbox" style="bottom:auto;top:calc(16px + var(--sat))"><span class="m">PHOTO</span>드래그: 회전 · 휠/핀치: 줌 · 시뮬레이션 정지</div>`);
+    const el = this.screen('photo', `<div class="photo-ui"><button class="link" data-a="shot">Save Image</button><button class="link" data-a="exit">Back</button></div>
+      <div class="tipbox"><span class="m">PHOTO MODE</span>드래그: 회전 · 휠/핀치: 줌</div>`);
     this.on(el, '[data-a]', (b) => (b.dataset.a === 'shot' ? this.host.screenshot() : this.host.exitPhoto()));
     this.show('photo');
   }
@@ -498,17 +514,17 @@ export class Menus {
     const row = (k: string, v: string, i: number) => { const p = parse(v); return `<tr><td style="animation-delay:${0.5 + i * 0.06}s">${k}</td><td style="animation-delay:${0.5 + i * 0.06}s">${p ? `<span data-count="${p.n}" data-dec="${p.d}" data-suf="${p.s}">0</span>` : v}</td></tr>`; };
     const el = this.screen('results', `<div class="rs"><i class="lbx t"></i><i class="lbx b"></i>
       <div class="box">
-        <div class="tag">${r.title}</div>
-        <div class="big ${r.success ? 'ok' : 'no'}">${r.success ? 'Mission<br>Complete' : 'Mission<br>Failed'}</div>
+        <div class="eyebrow"><b>${r.success ? 'Debrief' : 'Mission Failed'}</b> · ${r.title}</div>
+        <div class="d big ${r.success ? '' : 'no'}">${r.success ? 'Mission<br>Complete' : 'Mission<br>Failed'}</div>
         <div class="why">${r.reason}</div>
-        ${r.success && r.missionId ? `<div class="bigstars">${[0, 1, 2].map((k) => `<i class="${k < r.stars ? 'on' : ''}" style="animation-delay:${0.45 + k * 0.22}s"></i>`).join('')}</div>` : ''}
-        ${lr ? `<div class="grid2"><div class="grade ${lr.grade}">${lr.grade}</div><div><div class="k" style="font-size:20px">${lr.title}</div><div class="dim" style="font-weight:700">LANDING SCORE <span class="m" style="color:var(--bone);font-size:24px" data-count="${lr.score}">0</span> / 100</div></div></div>
+        ${r.success && r.missionId ? `<div class="stars3">${[0, 1, 2].map((k) => `<i class="${k < r.stars ? 'on' : ''}" style="animation-delay:${0.45 + k * 0.2}s"></i>`).join('')}</div>` : ''}
+        ${lr ? `<div class="grade"><div class="g ${lr.grade}">${lr.grade}</div><div><div class="eyebrow">Landing</div><div style="font-weight:800;font-size:19px;margin:4px 0 2px">${lr.title}</div><div class="m" style="font-size:13px;color:var(--ash)"><span style="color:var(--bone);font-size:22px" data-count="${lr.score}">0</span> / 100</div></div></div>
           <table class="rtab">${lr.items.map((it, i) => `<tr><td style="animation-delay:${0.6 + i * 0.06}s">${it.label}</td><td style="animation-delay:${0.6 + i * 0.06}s;color:var(--ash)">${it.value}</td><td style="animation-delay:${0.6 + i * 0.06}s">${it.pts}/${it.max}<span class="barline"><i style="transform:scaleX(${it.pts / it.max})"></i></span></td></tr>`).join('')}${lr.bounced ? '<tr><td>바운스 감점</td><td></td><td style="color:var(--burn)">-15</td></tr>' : ''}</table>` : ''}
         <table class="rtab">${[['비행 시간', fmtTime(r.time)], ...r.rows].map(([k, v], i) => row(k, v, i)).join('')}</table>
-        <div class="btnrow">
-          <button class="cta" data-a="quit">CONTINUE</button>
-          <button class="cta ghost" data-a="restart">RETRY</button>
-          <button class="cta ghost" data-a="replay" ${r.canReplay ? '' : 'disabled style="opacity:.35"'}>REPLAY</button>
+        <div class="actions">
+          <button class="cta" data-a="quit">Continue ${ICON.play}</button>
+          <button class="link" data-a="restart">Retry</button>
+          <button class="link" data-a="replay" ${r.canReplay ? '' : 'disabled'}>Replay</button>
         </div></div></div>`);
     this.on(el, '[data-a]', (b) => {
       const a = b.dataset.a;
@@ -524,10 +540,10 @@ export class Menus {
   /** Angular banner (kill confirm / status). Legacy toast() maps here. */
   banner(title: string, sub = '', color = 'var(--burn)', ms = 1900) {
     this.bannerEl?.remove();
-    const el = h(`<div class="banner"><i class="a" style="background:${color}"></i><div class="t">${title}${sub ? `<small>${sub}</small>` : ''}</div></div>`);
+    const el = h(`<div class="banner"><div class="t">${title}</div><i class="a" style="background:${color}"></i>${sub ? `<small>${sub}</small>` : ''}</div>`);
     this.root.appendChild(el);
     this.bannerEl = el;
-    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, ms);
   }
   toast(text: string, color = 'var(--sky)', ms = 1700) {
     // split "TITLE — sub" style messages
@@ -551,12 +567,12 @@ export class Menus {
     if (!text) { this.tipEl?.remove(); this.tipEl = null; return; }
     if (this.tipEl && this.tipEl.dataset.t === text) return;
     this.tipEl?.remove();
-    this.tipEl = h(`<div class="tipbox" data-t="${text.replace(/"/g, '')}"><span class="m">TIP</span><span>${text}</span></div>`);
+    this.tipEl = h(`<div class="tipbox" data-t="${text.replace(/"/g, '')}"><span class="m">TIP</span>${text}</div>`);
     this.root.appendChild(this.tipEl);
   }
   toggleAP() {
     if (this.apEl) { this.apEl.remove(); this.apEl = null; return; }
-    this.apEl = h(`<div class="ap cut"><div class="hh">Autopilot</div>
+    this.apEl = h(`<div class="ap"><div class="hh">AUTOPILOT</div>
       <div class="r"><button class="md" data-c="ap">A/P</button><button class="md" data-c="app">APP</button><button class="md" data-c="off">OFF</button></div>
       <div class="r"><button class="md" data-c="alt">ALT</button><button class="pm" data-c="alt-">−</button><span class="v" data-v="alt"></span><button class="pm" data-c="alt+">+</button></div>
       <div class="r"><button class="md" data-c="hdg">HDG</button><button class="pm" data-c="hdg-">−</button><span class="v" data-v="hdg"></span><button class="pm" data-c="hdg+">+</button></div>
