@@ -100,7 +100,7 @@ export class Airport {
 
   constructor() {
     const asphaltMat = new THREE.MeshStandardMaterial({ map: this.asphalt, roughness: 0.88, metalness: 0, color: 0xb8b8b8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-    const markMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+    const markMat = new THREE.MeshStandardMaterial({ color: 0xcfcfcf, roughness: 0.75, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     const yellowMat = new THREE.MeshStandardMaterial({ color: 0xe8b800, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
 
     for (const rw of RUNWAYS) this.buildRunway(rw, asphaltMat, markMat);

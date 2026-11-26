@@ -34,8 +34,8 @@ function shade(x: number, z: number, h: number, ny: number, out: Float32Array, o
     // rock on steep slopes
     const rock = smoothstep(0.18, 0.42, slope + n2 * 0.06);
     if (rock > 0) {
-      const strata = 0.75 + 0.25 * Math.sin(h * 0.09 + n1 * 4);
-      _c.lerp(new THREE.Color(0.33 * strata, 0.3 * strata, 0.27 * strata), rock);
+      const strata = 0.88 + 0.12 * Math.sin(h * 0.05 + n1 * 4);
+      _c.lerp(new THREE.Color(0.3 * strata, 0.29 * strata, 0.28 * strata), rock);
       grass *= 1 - rock;
     }
     // snow line
@@ -96,7 +96,9 @@ export class Terrain {
           diffuseColor.rgb *= mix(1.0, mix(1.0, gl, 0.85), vGrass*near);
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*gd/vec3(0.32,0.4,0.18), vGrass*near*0.25*(1.0-smoothstep(60.0,400.0,dist)));
           // rock / snow micro detail
-          float rn = tn(vWPos.xz*0.11 + vWPos.y*0.05)*0.6 + tn(vWPos.xz*0.6)*0.4;
+          vec3 bw = abs(normalize(vWN)); bw = pow(bw, vec3(4.0)); bw /= (bw.x+bw.y+bw.z);
+          float rn = (tn(vWPos.zy*0.11)*0.6 + tn(vWPos.zy*0.55)*0.4)*bw.x + (tn(vWPos.xz*0.11)*0.6 + tn(vWPos.xz*0.6)*0.4)*bw.y + (tn(vWPos.xy*0.11)*0.6 + tn(vWPos.xy*0.55)*0.4)*bw.z;
+          rn = mix(rn, 0.5 + 0.5*sin(vWPos.y*0.35 + tn(vWPos.xz*0.02)*6.0), 0.1*(1.0-bw.y));
           diffuseColor.rgb *= mix(1.0, 0.78 + rn*0.4, (1.0-vGrass)*(1.0-smoothstep(1500.0,7000.0,dist)));
           // macro variation to kill repetition at distance
           float mv = tn(vWPos.xz*0.0012)*0.5 + tn(vWPos.xz*0.0047)*0.5;

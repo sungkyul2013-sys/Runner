@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { terrainHeight, CANYON_X, CITY, RUNWAYS, CARRIER } from '../world/WorldDef';
 import { DEG } from '../core/math';
+import { seoul } from '../world/SeoulData';
 
 export type StartType = 'runway' | 'air' | 'carrier' | 'altiport' | 'catapult';
 export interface StartDef { type: StartType; x?: number; z?: number; alt?: number; hdg?: number; speed?: number }
@@ -32,15 +33,19 @@ function canyonRings(): [number, number, number][] {
   return r;
 }
 function citySlalom(): [number, number, number][] {
-  const r: [number, number, number][] = [];
-  const x0 = CITY.cx - CITY.hx;
-  const roads = [3, 6, 9, 12, 15];
-  let k = 0;
-  for (let z = CITY.cz + CITY.hz - 200; z > CITY.cz - CITY.hz + 200; z -= 420) {
-    const i = roads[k++ % roads.length];
-    r.push([x0 + i * 140, CITY.elev + 70 + (k % 3) * 25, z]);
+  // fly the length of the widest/longest real avenue through the Gangnam/Songpa towers
+  const roads = seoul().roads.filter((r) => r.w >= 20);
+  let best = roads[0], bl = 0;
+  for (const r of roads) { let L = 0; for (let i = 1; i < r.pts.length; i++) L += Math.hypot(r.pts[i][0] - r.pts[i - 1][0], r.pts[i][1] - r.pts[i - 1][1]); if (L > bl) { bl = L; best = r; } }
+  const out: [number, number, number][] = [];
+  let acc = 0, next = 120, k = 0;
+  for (let i = 1; i < best.pts.length && out.length < 12; i++) {
+    const [x0, z0] = best.pts[i - 1], [x1, z1] = best.pts[i];
+    const L = Math.hypot(x1 - x0, z1 - z0);
+    while (next <= acc + L && out.length < 12) { const t = (next - acc) / L; out.push([x0 + (x1 - x0) * t, CITY.elev + 55 + (k++ % 3) * 18, z0 + (z1 - z0) * t]); next += 320; }
+    acc += L;
   }
-  return r;
+  return out;
 }
 function coastRings(): [number, number, number][] {
   const r: [number, number, number][] = [];
@@ -64,6 +69,13 @@ function mountainRings(): [number, number, number][] {
   return pts;
 }
 
+const SLALOM = citySlalom();
+const SLALOM_START: StartDef = (() => {
+  const [a, b] = [SLALOM[0], SLALOM[1]];
+  const dx = b[0] - a[0], dz = b[2] - a[2], L = Math.hypot(dx, dz) || 1;
+  const hdg = (Math.atan2(dx, -dz) * 180) / Math.PI;
+  return { type: 'air', x: a[0] - (dx / L) * 900, z: a[2] - (dz / L) * 900, alt: a[1] + 20, hdg: (hdg + 360) % 360, speed: 70 };
+})();
 const R0 = RUNWAYS[0];
 const FINAL = (km: number, alt: number): StartDef => ({ type: 'air', x: R0.cx, z: R0.cz + R0.length / 2 + km * 1000, alt: R0.elev + alt, hdg: 0 });
 
@@ -163,7 +175,7 @@ export const MISSIONS: MissionDef[] = [
   // ---- Courses ----
   { id: 'c1', title: '해안 링 레이스', sub: '남부 해안선 14링', cat: 'course', aircraft: 'vortex', choice: ['vortex', 'kestrel', 'strix', 'specter'], start: { type: 'air', x: -4400, z: 7000, alt: 120, hdg: 90, speed: 80 }, hour: 8, weather: 'clear', par: 150, objectives: [{ type: 'rings', rings: coastRings(), radius: 45, label: '해안 링 통과' }], briefing: '아침 햇살 속 해안을 따라 저공 비행.' },
   { id: 'c2', title: '협곡 타임어택', sub: '붉은 협곡', cat: 'course', aircraft: 'strix', choice: ['vortex', 'kestrel', 'strix', 'specter'], start: { type: 'air', x: CANYON_X - 400, z: 3600, alt: 420, hdg: 345, speed: 120 }, hour: 12, weather: 'clear', par: 110, objectives: [{ type: 'rings', rings: canyonRings(), radius: 40, label: '협곡 링 통과' }], briefing: '제트기로 협곡을 최고 속도로!' },
-  { id: 'c3', title: '도심 슬라럼', sub: '마천루 사이를 누벼라', cat: 'course', aircraft: 'vortex', choice: ['vortex', 'kestrel', 'strix'], start: { type: 'air', x: CITY.cx - CITY.hx + 420, z: CITY.cz + CITY.hz + 1200, alt: 140, hdg: 0, speed: 70 }, hour: 21, weather: 'clear', par: 120, objectives: [{ type: 'rings', rings: citySlalom(), radius: 38, label: '도심 링 통과' }], briefing: '야경 속 빌딩 숲 슬라럼.' },
+  { id: 'c3', title: '도심 슬라럼', sub: '마천루 사이를 누벼라', cat: 'course', aircraft: 'vortex', choice: ['vortex', 'kestrel', 'strix'], start: SLALOM_START, hour: 21, weather: 'clear', par: 120, objectives: [{ type: 'rings', rings: SLALOM, radius: 38, label: '테헤란로·올림픽로 링 통과' }], briefing: '실제 서울 강남·송파 상공. 롯데월드타워와 빌딩 숲 사이 야경 슬라럼.' },
   { id: 'c4', title: '알파인 서킷', sub: '설산 고개 넘기', cat: 'course', aircraft: 'strix', choice: ['vortex', 'kestrel', 'strix', 'specter', 'atlas'], start: { type: 'air', x: 4400, z: -9500, alt: 2600, hdg: 270, speed: 160 }, hour: 14, weather: 'scattered', par: 220, objectives: [{ type: 'rings', rings: mountainRings(), radius: 70, label: '산악 링 통과' }], briefing: '만년설 봉우리 사이를 비행합니다.' },
   // ---- Challenges ----
   { id: 'x1', title: '랜딩 챌린지', sub: '무작위 조건 · 점수 경쟁', cat: 'challenge', aircraft: 'kestrel', choice: ['kestrel', 'vortex', 'strix', 'specter', 'meridian', 'atlas'], start: { ...FINAL(4, 220), speed: 45 }, hour: 12, weather: 'random', par: 200, objectives: [{ type: 'land', where: 'main', label: '최고 점수의 착륙' }], briefing: '매번 바뀌는 시간·날씨·바람 속에서 최고의 착륙 점수에 도전!' },

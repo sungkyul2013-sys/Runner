@@ -57,9 +57,9 @@ export class CameraRig {
     const big = s.mass > 20000;
     const mat = new THREE.MeshStandardMaterial({ color: 0x1d2126, roughness: 0.75, metalness: 0.3 });
     const panelMat = new THREE.MeshStandardMaterial({ map: gaugeTexture(big || s.engine.type === 'jet' ? 'glass' : 'steam'), roughness: 0.5, emissive: 0xffffff, emissiveIntensity: 0.04 });
-    const w = big ? 1.6 : 0.95;
+    const w = big ? 1.6 : s.engine.type === 'jet' ? 0.62 : 0.95;
     const panel = new THREE.Mesh(new THREE.BoxGeometry(w, w * 0.25, 0.08), [mat, mat, mat, mat, panelMat, mat]);
-    panel.position.set(eye.x * (big ? 0 : 1) + (big ? 0.55 : 0.3) * Math.sign(-eye.x || 0), eye.y - 0.42, eye.z - 0.75);
+    panel.position.set(0, eye.y - (s.engine.type === 'jet' && !big ? 0.5 : 0.42), eye.z - 0.75);
     panel.position.x = big ? eye.x + 0.55 : eye.x * 0;
     panel.rotation.x = -0.25;
     const glare = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.05, 0.35), mat);
@@ -68,8 +68,8 @@ export class CameraRig {
     // canopy / windshield frame
     const frameMat = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.6, metalness: 0.5 });
     if (s.engine.type === 'jet' && !big) {
-      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.025, 6, 30, Math.PI), frameMat);
-      bow.position.set(0, eye.y - 0.25, eye.z - 0.65); bow.rotation.x = -0.6;
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.014, 6, 30, Math.PI), frameMat);
+      bow.position.set(0, eye.y - 0.3, eye.z - 1.05); bow.rotation.x = -0.95;
       const hudGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.2), new THREE.MeshBasicMaterial({ color: 0x88ffaa, transparent: true, opacity: 0.06, depthWrite: false }));
       hudGlass.position.set(0, eye.y - 0.08, eye.z - 0.62); hudGlass.rotation.x = -0.35;
       const hudFrame = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.02, 0.12), frameMat); hudFrame.position.set(0, eye.y - 0.19, eye.z - 0.6);
@@ -222,6 +222,12 @@ export class CameraRig {
     // never below ground
     const gh = Math.max(terrainHeight(cam.position.x, cam.position.z), 0) + 1.2;
     if (cam.position.y < gh && !this.inCockpit) cam.position.y = gh;
+    // keep the horizontal field of view in portrait so the world doesn't feel cramped
+    const aspect = cam.aspect;
+    if (aspect < 1.3) {
+      const hf = 2 * Math.atan(Math.tan((fov * Math.PI) / 360) * 1.6);
+      fov = Math.min(105, (2 * Math.atan(Math.tan(hf / 2) / aspect) * 180) / Math.PI);
+    }
     this.fov = damp(this.fov, fov, 4, dt);
     if (Math.abs(cam.fov - this.fov) > 0.01) { cam.fov = this.fov; cam.updateProjectionMatrix(); }
   }

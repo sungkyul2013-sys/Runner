@@ -91,7 +91,8 @@ export class Game implements UIHost {
     this.weapons.onKill = (t, by) => {
       if (by !== 'player') return;
       this.kills++; progress.kills++;
-      this.menus.toast(t.kind === 'air' ? `격추! ${t.name}` : `파괴! ${t.name}`, 'var(--am)', 1400);
+      this.menus.banner(t.kind === 'air' ? 'SPLASH' : 'DESTROYED', t.name, 'var(--burn)', 1500);
+      this.menus.feed(t.name, t.kind === 'air' ? 'KILL' : 'HIT');
       if (t.kind === 'air') this.audio.say('splash', 'Splash one', 2);
     };
     this.weapons.onHitPlayer = (dmg, at) => this.damagePlayer(dmg, at);
@@ -205,14 +206,16 @@ export class Game implements UIHost {
       ac.fm.rpm = 0.25; ac.fm.thr = 0.05;
       ac.animate(dt, null, this.world.sky.night, true);
       this.orbitT += dt * 0.12 - this.input.state.lookX; this.input.state.lookX = 0;
-      const s = ac.spec, R = Math.max(s.geom.length, s.geom.wing.span) * 0.85 + 5;
+      const portrait = innerHeight > innerWidth;
+      const s = ac.spec, R = (Math.max(s.geom.length, s.geom.wing.span) * 0.85 + 5) * (portrait ? 1.9 : 1);
       const c = this.r.camera;
-      const off = this.menuKind === 'briefing' ? -R * 0.35 : R * 0.18;
+      const off = portrait ? 0 : this.menuKind === 'briefing' ? -R * 0.35 : R * 0.18;
       const ctr = ac.fm.pos.clone().add(new THREE.Vector3(0, s.geom.radius * 0.6, 0));
       c.position.set(ctr.x + Math.cos(this.orbitT) * R, ctr.y + R * 0.22 + Math.sin(this.orbitT * 0.7) * R * 0.05, ctr.z + Math.sin(this.orbitT) * R);
       c.up.set(0, 1, 0);
       c.lookAt(ctr.clone().add(new THREE.Vector3(0, 0, 0)));
       c.position.addScaledVector(new THREE.Vector3(1, 0, 0).applyQuaternion(c.quaternion), off);
+      if (portrait) c.position.addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion), -R * (this.menuKind === 'briefing' ? 0.32 : 0.12));
       if (c.fov !== 42) { c.fov = 42; c.updateProjectionMatrix(); }
     }
     void ev;
@@ -315,12 +318,12 @@ export class Game implements UIHost {
     this.calloutAlt = 9999;
     this.menus.hideAll(); this.menus.closeAP(); this.menus.tip(null);
     this.input.show(true);
-    this.input.root.dataset.desktop = matchMedia('(pointer:fine)').matches ? 'hide' : '';
+    this.input.root.classList.toggle('desk', matchMedia('(pointer:fine)').matches);
     this.hud.visible = true;
     this.audio.menuMusic(false);
     this.audio.init();
     const p = this.player!;
-    this.input.setWeapons(p.spec.gun > 0 || p.spec.flares > 0);
+    this.input.setWeapons(p.spec.gun > 0);
     p.assist.level = settings.assist;
     p.assist.autoRudder = settings.autoRudder;
     p.assist.groundAssist = settings.groundAssist;
@@ -348,7 +351,8 @@ export class Game implements UIHost {
     this.commonStart();
     this.activateObjective();
     this.spawnTraffic(2);
-    this.menus.toast(def.title, 'var(--am)', 2200);
+    const idx = MISSIONS.filter((m) => m.cat === def.cat).indexOf(def) + 1;
+    this.menus.intro(`${def.cat === 'campaign' ? 'MISSION' : def.cat === 'course' ? 'COURSE' : 'CHALLENGE'} ${String(idx).padStart(2, '0')}`, this.menus.codename(def.id), def.title);
     if (def.tips?.length && settings.assist !== 'realistic') this.menus.tip(def.tips[0]);
   }
 
@@ -363,7 +367,7 @@ export class Game implements UIHost {
     for (let i = 0; i < cfg.enemies; i++) this.spawnEnemy('fighter', ac.fm.pos.x + (Math.random() - 0.5) * 8000, ac.fm.pos.z - 7000 - Math.random() * 4000, 1500 + Math.random() * 2000);
     if (cfg.ground) for (const [k, x, z] of GROUND_BASE) this.spawnGround(k, x, z);
     if (cfg.traffic) this.spawnTraffic(3);
-    this.menus.toast('자유 비행', 'var(--cy)');
+    this.menus.intro('FREE FLIGHT', ac.spec.name, `${ac.spec.ko} · 자유 비행`);
   }
 
   private spawnEnemy(role: 'fighter' | 'bomber' | 'drone' | 'traffic', x: number, z: number, alt: number, hdg?: number) {
@@ -702,11 +706,24 @@ export class Game implements UIHost {
     const red = clamp((-g - 2) / 2, 0, 1);
     this.r.grade.uniforms.uRedout.value = black > 0 ? black * 0.9 : -red * 0.8;
     this.updateAudio(dt);
+    this.pushControlStatus();
     this.drawHUD(dt);
     this.menus.updateAP();
     if (this.camNameT > 0) this.camNameT -= dt;
   }
   private protectMsg = '';
+
+  private pushControlStatus() {
+    const p = this.player!, fm = p.fm, s = p.spec;
+    this.input.setStatus({
+      weapons: s.gun > 0, gun: this.infAmmo ? 999 : p.gunAmmo, missiles: this.infAmmo ? 99 : p.missiles, flares: p.flares,
+      lock: this.lockTarget ? clamp(this.lockT / 1.2, 0, 1) : 0, locked: this.lockT >= 1.2,
+      retract: s.retract, gearDown: p.controls.gearDown, onGround: fm.onGround, lowSlow: fm.agl < 450 && fm.ias < s.vRef * 1.8,
+      hook: s.hook, hookDown: p.controls.hook, catapult: this.env.catapult && fm.onGround && !fm.catapulting,
+      flaps: p.controls.flaps > 0.01 ? `${Math.round(p.controls.flaps * 100)}%` : 'UP', hasFlaps: s.flapNotches.length > 1,
+      airbrake: p.controls.airbrake, hasAirbrake: s.brakeCD > 0, ap: p.assist.ap.on,
+    });
+  }
 
   private findCandidate(): Target | null {
     const p = this.player!;
@@ -855,9 +872,10 @@ export class Game implements UIHost {
     if (this.state !== 'flight') return;
     this.state = 'paused';
     this.input.show(false);
+    this.hud.clear();
     this.audio.silenceEngine();
     this.menus.closeAP();
-    this.menus.pause();
+    this.menus.pause(this.obj?.label ?? (this.sandbox ? '자유 비행' : ''));
   }
   resume() {
     if (!this.player) return;

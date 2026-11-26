@@ -12,7 +12,7 @@ const result = await build({
   format: 'iife',
   minify: true,
   target: 'es2020',
-  loader: { '.jpg': 'dataurl', '.png': 'dataurl' },
+  loader: { '.jpg': 'dataurl', '.png': 'dataurl', '.woff2': 'dataurl' },
   define: { 'import.meta.env': '{"DEV":false}' },
   write: false,
 });

@@ -20,7 +20,7 @@ export const RUNWAYS: RunwayDef[] = [
   { id: 'ALTI', name: '이글 피크 산악 활주로 RWY 36', cx: -1800, cz: -8200, elev: 820, length: 760, width: 26, heading: 0, lights: true, surface: 'asphalt' },
 ];
 export const CARRIER = { cx: -5200, cz: 7600, deck: 20, length: 330, width: 76, heading: 0 };
-export const CITY = { cx: 4300, cz: 0, hx: 2000, hz: 2400, elev: 18 };
+export const CITY = { cx: 4300, cz: 0, hx: 2480, hz: 1880, elev: 18 };
 export const LAKE = { cx: -4200, cz: -5200, r: 1100 };
 export const CANYON_X = 9000;
 
@@ -95,7 +95,7 @@ export function terrainHeight(x: number, z: number): number {
   {
     const d = rectDist(x, z, CITY.cx, CITY.cz, CITY.hx, CITY.hz);
     const k = 1 - smoothstep(0, 1400, d);
-    if (k > 0) h = lerp(h, CITY.elev + fbm(x * 0.0015, z * 0.0015, 2) * 4, k);
+    if (k > 0) h = lerp(h, CITY.elev - (d > 0 ? 0 : 0.3), k);
   }
   // Mountain altiport
   {

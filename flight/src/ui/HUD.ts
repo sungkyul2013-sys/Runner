@@ -24,6 +24,9 @@ export class HUD {
   private t = 0;
   visible = true;
   private w = 0; private h = 0;
+  private radarBottom = 160;
+  private radarRight = 120;
+  private radarMid = 100;
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -59,13 +62,15 @@ export class HUD {
     const altU = aviation ? d.alt * M_TO_FT : d.alt;
     const vsU = aviation ? d.vs * 196.85 : d.vs;
     const small = Math.min(W, H) < 500;
+    const compact = H < 540;
+    const portrait = W < H;
     const S = small ? 0.8 : 1;
     g.lineWidth = 1.6 * S;
     g.strokeStyle = col; g.fillStyle = col;
     g.shadowColor = 'rgba(0,0,0,0.7)'; g.shadowBlur = 4;
-    g.font = `600 ${13 * S}px Rajdhani, 'Noto Sans KR', sans-serif`;
+    g.font = `600 ${13 * S}px 'SA Mono', 'Noto Sans KR', sans-serif`;
     g.textBaseline = 'middle';
-    const cx = W / 2, cy = H * 0.46;
+    const cx = W / 2, cy = portrait ? H * 0.3 : H * 0.46;
 
     // ---------- pitch ladder (cockpit) ----------
     if (d.cockpit) {
@@ -120,11 +125,11 @@ export class HUD {
     }
 
     // ---------- speed & altitude tapes ----------
-    const tapeH = Math.min(H * 0.42, 300 * S), tx = Math.max(70, W * 0.2), ax = W - Math.max(70, W * 0.2);
+    const tapeH = portrait ? H * 0.16 : Math.min(H * (compact ? 0.36 : 0.42), 300 * S), tx = portrait ? W * 0.24 : compact ? W * 0.32 : Math.max(70, W * 0.2), ax = portrait ? W * 0.76 : compact ? W * 0.68 : W - Math.max(70, W * 0.2);
     this.tape(spdU, tx, cy, tapeH, 10, aviation ? 'KT' : 'KM/H', 'left', col, aviation ? d.vref * MS_TO_KT : d.vref * 3.6, aviation ? d.vstall * MS_TO_KT : d.vstall * 3.6);
     this.tape(altU, ax, cy, tapeH, aviation ? 100 : 50, aviation ? 'FT' : 'M', 'right', col);
     g.textAlign = 'left';
-    g.font = `600 ${12 * S}px Rajdhani, sans-serif`;
+    g.font = `600 ${12 * S}px 'SA Mono', sans-serif`;
     const lx = tx - 56 * S, ly = cy + tapeH / 2 + 18;
     g.fillText(`G ${d.g.toFixed(1)}`, lx, ly);
     g.fillText(`M ${d.mach.toFixed(2)}`, lx, ly + 15 * S);
@@ -140,7 +145,7 @@ export class HUD {
 
     // ---------- heading tape ----------
     {
-      const hy = 46 * S + (small ? 30 : 34), hw = Math.min(W * 0.4, 380);
+      const hy = portrait ? H * 0.135 : 46 * S + (small ? 30 : 34), hw = Math.min(W * (portrait ? 0.5 : 0.4), 380);
       g.save(); g.beginPath(); g.rect(cx - hw / 2, hy - 20, hw, 40); g.clip();
       const hdg = d.hdg * RAD;
       for (let a = Math.floor(hdg / 5) * 5 - 40; a <= hdg + 40; a += 5) {
@@ -165,8 +170,8 @@ export class HUD {
     }
 
     // ---------- attitude indicator (external views) ----------
-    if (!d.cockpit) {
-      const r = 34 * S, ix = cx, iy = H - (small ? 64 : 80) - 8;
+    if (!d.cockpit && !portrait) {
+      const r = 34 * S, ix = cx, iy = compact ? H - 70 : H - (small ? 64 : 80) - 8;
       g.save();
       g.beginPath(); g.arc(ix, iy, r, 0, Math.PI * 2); g.clip();
       g.translate(ix, iy); g.rotate(-d.roll);
@@ -182,8 +187,10 @@ export class HUD {
 
     // ---------- systems block (bottom-left) ----------
     {
-      const bx = small ? 96 : 110, by = H - (small ? 22 : 30);
-      g.textAlign = 'left'; g.font = `600 ${12 * S}px Rajdhani, sans-serif`;
+      const side = compact || portrait;
+      const bx = side ? this.radarRight + 18 : small ? 96 : 110, by = side ? this.radarMid + 26 * S : H - (small ? 22 : 30);
+      const cols = side ? 2 : 4;
+      g.textAlign = 'left'; g.font = `600 ${12 * S}px 'SA Mono', sans-serif`;
       const thrTxt = d.ab > 0.5 ? 'AB' : `${Math.round(d.thr * 100)}%`;
       const items: [string, string, boolean?][] = [
         ['THR', thrTxt, d.ab > 0.5],
@@ -195,7 +202,7 @@ export class HUD {
       if (d.airbrake > 0.1) items.push(['SPD BRK', 'EXT', true]);
       if (d.hook > 0.5) items.push(['HOOK', 'DOWN', true]);
       items.forEach(([k, v, hl], i) => {
-        const x = bx + (i % 4) * 66 * S, y = by - Math.floor(i / 4) * 16 * S - 14 * S;
+        const x = bx + (i % cols) * 60 * S, y = side ? by + Math.floor(i / cols) * 30 * S : by - Math.floor(i / 4) * 16 * S - 14 * S;
         g.fillStyle = hl ? '#ffc35c' : col;
         g.globalAlpha = 0.65; g.fillText(k, x, y - 8 * S); g.globalAlpha = 1;
         g.fillText(v, x, y + 4 * S);
@@ -203,7 +210,8 @@ export class HUD {
       g.fillStyle = col;
       if (d.hasWeapons) {
         g.textAlign = 'right';
-        g.fillText(`GUN ${d.gun}   MSL ${d.missiles}   FLR ${d.flares}`, W - (small ? 96 : 110), H - (small ? 34 : 44));
+        if (compact || portrait || matchMedia('(pointer:coarse)').matches) { /* counts live on the touch buttons */ }
+        else g.fillText(`GUN ${d.gun}   MSL ${d.missiles}   FLR ${d.flares}`, W - (small ? 96 : 110), H - (small ? 34 : 44));
       }
     }
 
@@ -256,7 +264,7 @@ export class HUD {
         else { g.beginPath(); g.moveTo(sp.x - s, sp.y + s); g.lineTo(sp.x, sp.y - s); g.lineTo(sp.x + s, sp.y + s); g.closePath(); g.stroke(); }
         if (t.locked) { g.lineWidth = 2.5; g.beginPath(); g.arc(sp.x, sp.y, 26, 0, Math.PI * 2); g.stroke(); g.fillText('LOCK', sp.x, sp.y - 34); g.lineWidth = 1.6 * S; }
         else if (t.locking) { g.beginPath(); g.arc(sp.x, sp.y, 40 - t.locking * 14, 0, Math.PI * 2 * t.locking); g.stroke(); }
-        g.textAlign = 'center'; g.font = `600 ${11 * S}px Rajdhani, 'Noto Sans KR', sans-serif`;
+        g.textAlign = 'center'; g.font = `600 ${11 * S}px 'SA Mono', 'Noto Sans KR', sans-serif`;
         g.fillText(`${t.label} ${dtxt}`, sp.x, sp.y + s + 10);
       } else {
         // edge arrow
@@ -284,11 +292,11 @@ export class HUD {
       g.fillText('▸ ' + d.objective, ox, oy);
     }
     g.fillStyle = col;
-    if (d.timer !== null) { g.font = `700 ${18 * S}px Rajdhani, sans-serif`; const m = Math.floor(d.timer / 60), s = (d.timer % 60).toFixed(1); g.fillText(`${m}:${s.padStart(4, '0')}`, ox, oy + 24); }
+    if (d.timer !== null) { g.font = `700 ${18 * S}px 'SA Mono', sans-serif`; const m = Math.floor(d.timer / 60), s = (d.timer % 60).toFixed(1); g.fillText(`${m}:${s.padStart(4, '0')}`, ox, oy + 24); }
     if (d.score) { g.font = `600 ${13 * S}px 'Noto Sans KR', sans-serif`; g.fillText(d.score, ox, oy + (d.timer !== null ? 46 : 24)); }
     // autopilot annunciator
     if (d.ap.on) {
-      g.font = `700 ${13 * S}px Rajdhani, sans-serif`; g.fillStyle = '#5dff8a'; g.textAlign = 'center';
+      g.font = `700 ${13 * S}px 'SA Mono', sans-serif`; g.fillStyle = '#5dff8a'; g.textAlign = 'center';
       const modes = [d.ap.app ? 'APP' : '', d.ap.alt ? `ALT ${Math.round(aviation ? d.ap.altT * M_TO_FT : d.ap.altT)}` : '', d.ap.hdg ? `HDG ${Math.round(d.ap.hdgT)}` : '', d.ap.spd ? `SPD ${Math.round(aviation ? d.ap.spdT * MS_TO_KT : d.ap.spdT * 3.6)}` : ''].filter(Boolean).join('  ');
       g.fillText(`AP  ${modes}`, cx, (small ? 46 : 52) + 52 * S);
       g.fillStyle = col;
@@ -298,7 +306,7 @@ export class HUD {
     g.textAlign = 'center';
     d.warnings.forEach((w, i) => {
       if (!flash) return;
-      g.font = `700 ${22 * S}px Rajdhani, 'Noto Sans KR', sans-serif`;
+      g.font = `700 ${22 * S}px 'SA Mono', 'Noto Sans KR', sans-serif`;
       const y = cy + H * 0.13 + i * 28 * S;
       const tw = g.measureText(w).width + 24;
       g.fillStyle = 'rgba(80,0,0,0.55)'; g.fillRect(cx - tw / 2, y - 14 * S, tw, 28 * S);
@@ -306,12 +314,12 @@ export class HUD {
       g.fillStyle = '#ff6b78'; g.fillText(w, cx, y);
     });
     d.cautions.forEach((w, i) => {
-      g.font = `700 ${15 * S}px Rajdhani, 'Noto Sans KR', sans-serif`;
+      g.font = `700 ${15 * S}px 'SA Mono', 'Noto Sans KR', sans-serif`;
       g.fillStyle = '#ffc35c'; g.fillText(w, cx, cy - H * 0.17 - i * 20 * S);
     });
-    if (d.protect) { g.font = `700 ${14 * S}px Rajdhani, sans-serif`; g.fillStyle = '#62e6ff'; g.fillText(d.protect, cx, cy + H * 0.09); }
+    if (d.protect) { g.font = `700 ${14 * S}px 'SA Mono', sans-serif`; g.fillStyle = '#62e6ff'; g.fillText(d.protect, cx, cy + H * 0.09); }
     g.fillStyle = col;
-    if (d.lockState === 3 && flash) { g.font = `700 ${24 * S}px Rajdhani, sans-serif`; g.fillStyle = '#ff4d5e'; g.fillText('⚠ MISSILE', cx, cy - H * 0.24); }
+    if (d.lockState === 3 && flash) { g.font = `700 ${24 * S}px 'SA Mono', sans-serif`; g.fillStyle = '#ff4d5e'; g.fillText('⚠ MISSILE', cx, cy - H * 0.24); }
     // camera name (brief)
     if (d.camName) { g.font = `600 ${12 * S}px 'Noto Sans KR', sans-serif`; g.fillStyle = 'rgba(233,241,248,0.75)'; g.textAlign = 'right'; g.fillText(d.camName, W - 16, small ? 52 : 60); }
   }
@@ -342,18 +350,20 @@ export class HUD {
     const bx = side === 'left' ? x - bw - 8 : x + 8;
     g.fillStyle = 'rgba(0,10,6,0.55)'; g.fillRect(bx, y - bh / 2, bw, bh); g.fillStyle = col;
     g.strokeRect(bx, y - bh / 2, bw, bh);
-    g.font = `700 16px Rajdhani, sans-serif`; g.textAlign = 'center';
+    g.font = `700 16px 'SA Mono', sans-serif`; g.textAlign = 'center';
     g.fillText(String(Math.round(v)), bx + bw / 2, y + 1);
-    g.font = `600 11px Rajdhani, sans-serif`;
+    g.font = `600 11px 'SA Mono', sans-serif`;
     g.fillText(unit, bx + bw / 2, y - bh / 2 - 9);
-    g.font = `600 13px Rajdhani, sans-serif`;
+    g.font = `600 13px 'SA Mono', sans-serif`;
   }
 
   private radar(d: HudData, col: string, S: number) {
     const g = this.g;
     const R = 58 * S;
-    const x = this.w - R - (this.w < 700 ? 12 : 22), y = this.h * 0.5 + (this.w < 700 ? 0 : 0) - R * 2.4;
-    const rx = x, ry = Math.max(R + 70, y);
+    const compact = this.h < 540 || this.w < this.h;
+    const rx = compact ? R + 12 : this.w - R - (this.w < 700 ? 12 : 22);
+    const ry = this.w < this.h ? this.h * 0.49 : compact ? R + (this.h < 420 ? 92 : 100) : Math.max(R + 70, this.h * 0.5 - R * 2.4);
+    this.radarBottom = ry + R; this.radarRight = rx + R; this.radarMid = ry - R;
     g.save();
     g.fillStyle = 'rgba(2,12,8,0.45)'; g.beginPath(); g.arc(rx, ry, R, 0, Math.PI * 2); g.fill();
     g.strokeStyle = col; g.globalAlpha = 0.5;
@@ -385,7 +395,7 @@ export class HUD {
     g.restore();
     g.fillStyle = col;
     g.beginPath(); g.moveTo(rx, ry - 6); g.lineTo(rx - 4, ry + 4); g.lineTo(rx + 4, ry + 4); g.closePath(); g.fill();
-    g.font = `600 ${10 * S}px Rajdhani, sans-serif`; g.textAlign = 'center';
+    g.font = `600 ${10 * S}px 'SA Mono', sans-serif`; g.textAlign = 'center';
     g.fillText('12 km', rx, ry + R + 10);
   }
 }
