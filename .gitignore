@@ -13,3 +13,4 @@ dist-ssr
 # Logs
 *.log
 npm-debug.log*
+flight/dist

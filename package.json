@@ -3,14 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "NeonDash — a 3D endless runner built with Vite, TypeScript and Three.js.",
+  "description": "NeonDash \u2014 a 3D endless runner built with Vite, TypeScript and Three.js.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "build:standalone": "node scripts/buildStandalone.mjs",
     "check:templates": "esbuild scripts/checkTemplates.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-templates.mjs --log-level=error && node node_modules/.cache/check-templates.mjs",
-    "check:meta": "esbuild scripts/checkMeta.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-meta.mjs --log-level=error && node node_modules/.cache/check-meta.mjs"
+    "check:meta": "esbuild scripts/checkMeta.ts --bundle --platform=node --format=esm '--define:import.meta.env={\"DEV\":false}' --outfile=node_modules/.cache/check-meta.mjs --log-level=error && node node_modules/.cache/check-meta.mjs",
+    "dev:flight": "vite flight",
+    "typecheck:flight": "tsc -p flight/tsconfig.json --noEmit",
+    "build:flight": "tsc -p flight/tsconfig.json --noEmit && node scripts/buildFlight.mjs"
   },
   "dependencies": {
     "gsap": "^3.12.5",
