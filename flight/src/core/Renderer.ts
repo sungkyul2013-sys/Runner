@@ -12,7 +12,7 @@ export interface QualityProfile {
 }
 export const QUALITY: Record<Quality, QualityProfile> = {
   low: { dpr: 1, shadow: 1024, smaa: false, terrainSplit: 1.5, clouds: 70, trees: 1800, far: 45000, bloomRes: 0.35 },
-  medium: { dpr: 1.5, shadow: 1024, smaa: false, terrainSplit: 1.9, clouds: 110, trees: 3000, far: 70000, bloomRes: 0.5 },
+  medium: { dpr: 1.3, shadow: 1024, smaa: false, terrainSplit: 1.9, clouds: 110, trees: 3000, far: 70000, bloomRes: 0.5 },
   high: { dpr: 2, shadow: 2048, smaa: true, terrainSplit: 2.5, clouds: 200, trees: 7000, far: 100000, bloomRes: 0.5 },
   ultra: { dpr: 2.5, shadow: 4096, smaa: true, terrainSplit: 3.2, clouds: 300, trees: 11000, far: 140000, bloomRes: 0.75 },
 };

@@ -160,7 +160,7 @@ export class Game implements UIHost {
     this.hud.visible = false; this.hud.clear();
     this.cam.cockpit.visible = false;
     if (kind === 'title') { this.world.sky.setTime(17.3); this.world.setWeather(WEATHER_PRESETS.scattered.w); }
-    else { this.world.sky.setTime(16.4); this.world.setWeather(WEATHER_PRESETS.clear.w); }
+    else { this.world.sky.setTime(14.6); this.world.setWeather({ ...WEATHER_PRESETS.clear.w, fog: 0 }); }
     this.previewAircraft(this.menus.selAc, this.menus.selLiv);
     if (kind === 'title') this.cam.setMode('cinematic');
   }
@@ -859,7 +859,7 @@ export class Game implements UIHost {
       objective = o.label;
       if (o.type === 'aero' && this.aero) objective = o.moves.map((m) => `${this.aero!.done.has(m) ? '✔' : '○'} ${MOVE_NAMES[m]}`).join('   ');
       if (o.type === 'destroy') { const n = this.weapons.targets.filter((t) => t.alive && t.team === 'enemy').length; objective += ` — 남은 목표 ${n}`; }
-    } else if (this.sandbox) objective = '자유 비행 — 일시정지 메뉴에서 종료';
+    }
     // lead pip
     let leadPip: THREE.Vector3 | null = null;
     if (this.lockTarget && p.spec.gun > 0) {
@@ -871,7 +871,7 @@ export class Game implements UIHost {
     const aligned = dev.dist > 0 && Math.abs(dev.loc) < dev.dist * 0.3 + 150 && dev.dist < 16000;
     const showIls = aligned && ((fm.gear > 0.5 && p.spec.retract) || p.assist.ap.app || o?.type === 'land' || (fm.gear > 0.5 && dev.dist < 6000 && fm.agl < 600));
     const data: HudData = {
-      cockpit: this.cam.inCockpit, ias: fm.ias, tas: fm.tas, alt: fm.pos.y, agl: fm.agl, vs: fm.vs, hdg: at.hdg, pitch: at.pitch, roll: at.roll, g: fm.gLoad, mach: fm.mach, aoa: fm.alpha,
+      cockpit: this.cam.inCockpit, hudless: this.cam.inCockpit && (p.spec.engine.type !== 'jet' || p.spec.mass > 20000), ias: fm.ias, tas: fm.tas, alt: fm.pos.y, agl: fm.agl, vs: fm.vs, hdg: at.hdg, pitch: at.pitch, roll: at.roll, g: fm.gLoad, mach: fm.mach, aoa: fm.alpha,
       thr: fm.thr, ab: fm.abOn, fuel: fm.fuel, fuelMax: p.spec.fuel, gear: fm.gear, flaps: fm.flaps, brake: p.controls.brake > 0.5 && fm.onGround, airbrake: fm.airbrake, hook: fm.hook, retract: p.spec.retract,
       fpm: null, vel: fm.vel, pos: fm.pos, fwd: at.f, warnings: w, cautions: c, protect: this.protectMsg,
       ap: p.assist.ap,

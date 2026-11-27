@@ -300,7 +300,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;bac
   .brief{top:calc(56px + var(--sat));width:min(400px,50vw)} .brief .d.big{font-size:44px} .brief p{margin:8px 0 10px}
   .pz .l .d.big{font-size:54px} .pz .nv .d{font-size:28px}
   .rs .big{font-size:52px} .grade .g{font-size:76px}
-  .banner{top:calc(20% + var(--sat))} .banner .t{font-size:32px}
+  .banner{top:calc(30% + var(--sat))} .banner .t{font-size:28px}
   .tipbox{top:calc(22% + var(--sat))}
 }
 @media (orientation:portrait){
@@ -311,7 +311,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;bac
   .home{grid-template-columns:1fr;gap:26px;bottom:calc(24px + var(--sab))}
   .cont .d{font-size:clamp(52px,16vw,76px)}
   .cont .cta{width:100%}
-  .launch{width:100%} .play{width:calc(100% - 22px);margin-left:6px} .launch .streaks{display:none} .launch .chev{left:auto;right:-6px;top:-18px;transform:scale(.6);transform-origin:right} .hero .speedrule{display:none} .hero .ghost{font-size:44vw;left:auto;right:-10px}
+  .launch{width:100%} .play{width:calc(100% - 22px);margin-left:6px} .launch .streaks{display:none} .launch .chev{left:auto;right:-6px;top:-18px;transform:scale(.6);transform-origin:right} .hero .speedrule{display:none} .hero .ghost{font-size:44vw;left:auto;right:-10px;-webkit-text-stroke-color:rgba(236,230,220,.09)} .play .sub{display:none} .play{height:58px}
   .quick button{padding-right:10px;margin-right:10px}
   .nav{flex-direction:row;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 0;border-top:1px solid var(--line);padding-top:14px}
   .nv{flex-direction:column;align-items:flex-start;gap:2px;width:50%;padding:6px 0}
@@ -335,7 +335,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;bac
   .drag-hint{display:none}
   .pz{grid-template-columns:1fr} .pz .r{display:none}
   .rs .box{margin:0 var(--gx);width:auto}
-  .banner{top:calc(13% + var(--sat))} .banner .t{font-size:34px}
+  .banner{top:calc(44% + var(--sat))} .banner .t{font-size:30px}
   .tipbox{top:calc(48% + var(--sat))}
   .intro .card2{bottom:calc(20% + var(--sab))}
   .ap{left:var(--gx);right:var(--gr);width:auto;top:calc(104px + var(--sat))}

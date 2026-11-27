@@ -25,7 +25,16 @@ export interface AircraftVisual {
 }
 
 /* ---------- textures ---------- */
+const liveryCache = new Map<string, THREE.Texture>();
 function liveryTexture(spec: AircraftSpec, lv: Livery): THREE.Texture {
+  const key = `${spec.id}:${lv.name}`;
+  const hit = liveryCache.get(key);
+  if (hit) return hit;
+  const tex = liveryTextureRaw(spec, lv);
+  liveryCache.set(key, tex);
+  return tex;
+}
+function liveryTextureRaw(spec: AircraftSpec, lv: Livery): THREE.Texture {
   const W = 1024, H = 512;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;

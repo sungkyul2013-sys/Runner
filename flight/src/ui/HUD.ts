@@ -5,7 +5,7 @@ import { clamp, RAD, MS_TO_KT, M_TO_FT, DEG } from '../core/math';
 
 export interface HudTarget { pos: THREE.Vector3; kind: 'air' | 'ground' | 'building' | 'ring' | 'wp' | 'friend'; label: string; locked?: boolean; locking?: number; dist: number }
 export interface HudData {
-  cockpit: boolean; ias: number; tas: number; alt: number; agl: number; vs: number; hdg: number; pitch: number; roll: number; g: number; mach: number; aoa: number;
+  cockpit: boolean; hudless?: boolean; ias: number; tas: number; alt: number; agl: number; vs: number; hdg: number; pitch: number; roll: number; g: number; mach: number; aoa: number;
   thr: number; ab: number; fuel: number; fuelMax: number; gear: number; flaps: number; brake: boolean; airbrake: number; hook: number; retract: boolean;
   fpm: THREE.Vector3 | null; vel: THREE.Vector3; pos: THREE.Vector3; fwd: THREE.Vector3;
   warnings: string[]; cautions: string[]; protect: string;
@@ -27,6 +27,7 @@ export class HUD {
   visible = true;
   private w = 0; private h = 0;
   private radarBottom = 160;
+  private touch = matchMedia('(pointer:coarse)').matches;
   private radarRight = 120;
   private radarMid = 100;
 
@@ -73,6 +74,7 @@ export class HUD {
     g.font = `600 ${13 * S}px 'SA Mono', 'Noto Sans KR', sans-serif`;
     g.textBaseline = 'middle';
     const cx = W / 2, cy = portrait ? H * 0.3 : H * 0.46;
+    if (d.hudless) { this.minimal(d, W, H, col, S); return; }
 
     // ---------- pitch ladder (cockpit) ----------
     if (d.cockpit) {
@@ -146,6 +148,7 @@ export class HUD {
     g.textAlign = 'left';
     g.font = `600 ${12 * S}px 'SA Mono', sans-serif`;
     const lx = tx - 56 * S, ly = cy + tapeH / 2 + 18;
+    if (!portrait) {
     g.fillText(`G ${d.g.toFixed(1)}`, lx, ly);
     g.fillText(`M ${d.mach.toFixed(2)}`, lx, ly + 15 * S);
     g.fillText(`α ${(d.aoa * RAD).toFixed(1)}°`, lx, ly + 30 * S);
@@ -156,6 +159,7 @@ export class HUD {
     if (wkt > 1) {
       const wfrom = (Math.atan2(-d.wind.x, d.wind.z) * RAD + 360) % 360;
       g.fillText(`W ${String(Math.round(wfrom)).padStart(3, '0')}°/${Math.round(wkt)}`, ax + 56 * S, ly + 30 * S);
+    }
     }
 
     // ---------- heading tape ----------
@@ -200,8 +204,8 @@ export class HUD {
       g.lineWidth = 1.6 * S; g.strokeStyle = col;
     }
 
-    // ---------- systems block (bottom-left) ----------
-    {
+    // ---------- systems block (desktop only — on touch the lever/buttons already show this) ----------
+    if (!this.touch) {
       const side = compact || portrait;
       const bx = side ? this.radarRight + 18 : small ? 96 : 110, by = side ? this.radarMid + 26 * S : H - (small ? 22 : 30);
       const cols = side ? 2 : 4;
@@ -352,6 +356,18 @@ export class HUD {
     if (d.camName) { g.font = `600 ${12 * S}px 'Noto Sans KR', sans-serif`; g.fillStyle = 'rgba(233,241,248,0.75)'; g.textAlign = 'right'; g.fillText(d.camName, W - 16, small ? 52 : 60); }
   }
 
+  /** Cockpit of an aircraft without a HUD: the panel shows the instruments; keep only warnings + objective. */
+  private minimal(d: HudData, W: number, H: number, col: string, S: number) {
+    const g = this.g;
+    g.textAlign = 'left'; g.font = `600 ${13 * S}px 'Noto Sans KR', sans-serif`;
+    if (d.objective) { g.fillStyle = '#ff4b3a'; g.fillRect(22, 21, 3, 14); g.fillStyle = '#ece6dc'; g.fillText(d.objective.slice(0, 40), 32, 28); }
+    g.textAlign = 'center';
+    const flash = Math.sin(this.t * 10) > -0.2;
+    d.warnings.forEach((w, i) => { if (!flash) return; g.font = `700 ${20 * S}px 'SA Mono', sans-serif`; g.fillStyle = '#ff6b78'; g.fillText(w, W / 2, H * 0.2 + i * 26 * S); });
+    d.cautions.slice(0, 2).forEach((w, i) => { g.font = `700 ${13 * S}px 'SA Mono', sans-serif`; g.fillStyle = '#ffc35c'; g.fillText(w, W / 2, H * 0.12 - i * 18 * S); });
+    void col;
+  }
+
   private tape(v: number, x: number, y: number, h: number, step: number, unit: string, side: 'left' | 'right', col: string, vref = 0, vstall = 0) {
     const g = this.g;
     const pxPer = h / (step * 12);
@@ -395,7 +411,7 @@ export class HUD {
     const R = 58 * S;
     const compact = this.h < 540 || this.w < this.h;
     const rx = compact ? R + 12 : this.w - R - (this.w < 700 ? 12 : 22);
-    const ry = this.w < this.h ? this.h * 0.49 : compact ? R + (this.h < 420 ? 92 : 100) : Math.max(R + 70, this.h * 0.5 - R * 2.4);
+    const ry = this.w < this.h ? this.h * 0.49 : compact ? R + (this.h < 420 ? 62 : 80) : Math.max(R + 70, this.h * 0.5 - R * 2.4);
     this.radarBottom = ry + R; this.radarRight = rx + R; this.radarMid = ry - R;
     g.save();
     g.fillStyle = 'rgba(2,12,8,0.45)'; g.beginPath(); g.arc(rx, ry, R, 0, Math.PI * 2); g.fill();

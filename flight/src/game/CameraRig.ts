@@ -94,10 +94,8 @@ export class CameraRig {
     thr.add(lever, knob); thr.position.set(e.x - (jet ? 0.3 : 0.4), e.y - 0.5, e.z - 0.05); this.cockpit.add(thr);
     // canopy / windshield frame
     if (jet) {
-      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.014, 6, 30, Math.PI), frame);
-      bow.position.set(0, e.y - 0.3, e.z - 1.05); bow.rotation.x = -0.95; this.cockpit.add(bow);
-      const rail = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.012, 6, 30, Math.PI), frame);
-      rail.position.set(0, e.y - 0.25, e.z + 0.25); rail.rotation.x = -1.35; this.cockpit.add(rail);
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.012, 6, 30, Math.PI), frame);
+      bow.position.set(0, e.y - 0.36, e.z - 1.2); bow.rotation.x = -1.15; this.cockpit.add(bow);
       const hud = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.18), new THREE.MeshBasicMaterial({ color: 0x88ffaa, transparent: true, opacity: 0.07, depthWrite: false }));
       hud.position.set(0, e.y - 0.1, e.z - 0.62); hud.rotation.x = -0.35; this.cockpit.add(hud);
       const stick = new THREE.Group(); stick.name = 'stick';
