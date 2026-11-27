@@ -596,6 +596,7 @@ export class Game implements UIHost {
         case 'pause': this.pauseGame(); return;
         case 'gear': if (p.spec.retract) { c.gearDown = !c.gearDown; this.audio.gearMotor(); this.menus.notice(c.gearDown ? '기어 DOWN' : '기어 UP'); if (!c.gearDown && p.fm.onGround) c.gearDown = true; } break;
         case 'flapsDown': p.cycleFlaps(1); this.menus.notice(`플랩 ${Math.round(c.flaps * 100)}%`); break;
+        case 'flapsCycle': if (p.flapIdx >= p.spec.flapNotches.length - 1) { p.flapIdx = 0; p.controls.flaps = 0; } else p.cycleFlaps(1); this.menus.notice(`플랩 ${Math.round(c.flaps * 100)}%`); break;
         case 'flapsUp': p.cycleFlaps(-1); this.menus.notice(`플랩 ${Math.round(c.flaps * 100)}%`); break;
         case 'airbrake': c.airbrake = !c.airbrake; break;
         case 'hook': if (p.spec.hook) { c.hook = !c.hook; this.menus.notice(c.hook ? '테일훅 DOWN' : '테일훅 UP'); if (!c.hook) p.fm.hooked = false; } break;
@@ -617,6 +618,9 @@ export class Game implements UIHost {
           break;
         case 'flare': if (p.flares > 0) { p.flares--; this.weapons.dropFlares(p.fm.pos, p.fm.vel); } break;
         case 'missile': this.fireMissile(); break;
+        case 'level': p.assist.levelT = 3; p.assist.disengage(); this.menus.notice('수평 보정'); break;
+        case 'pitchhold': p.assist.setPitchHold(!p.assist.pitchHold, p.fm); this.menus.notice(p.assist.pitchHold ? '상하 고정 ON' : '상하 고정 OFF'); break;
+        case 'restart': this.restart(); return;
         case 'bomb':
           if (p.bombs > 0 || this.infAmmo) {
             if (!this.infAmmo) p.bombs--;
@@ -656,6 +660,7 @@ export class Game implements UIHost {
     const c = p.controls;
     c.throttle = st.throttle;
     c.ab = st.ab;
+    c.reverse = st.reverse;
     c.brake = st.brake > 0 ? st.brake : fm.onGround && st.throttle < 0.05 && fm.tas < 1 && !this.env.catapult ? 1 : 0;
     // physics
     if (!fm.crashed) {
@@ -753,7 +758,7 @@ export class Game implements UIHost {
       retract: s.retract, gearDown: p.controls.gearDown, onGround: fm.onGround, lowSlow: fm.agl < 450 && fm.ias < s.vRef * 1.8,
       hook: s.hook, hookDown: p.controls.hook, catapult: this.env.catapult && fm.onGround && !fm.catapulting,
       flaps: p.controls.flaps > 0.01 ? `${Math.round(p.controls.flaps * 100)}%` : 'UP', hasFlaps: s.flapNotches.length > 1,
-      airbrake: p.controls.airbrake, hasAirbrake: s.brakeCD > 0, ap: p.assist.ap.on,
+      airbrake: p.controls.airbrake, hasAirbrake: s.brakeCD > 0, ap: p.assist.ap.on, app: p.assist.ap.app, pitchHold: p.assist.pitchHold,
     });
   }
 
@@ -1031,6 +1036,7 @@ export class Game implements UIHost {
     switch (cmd) {
       case 'ap': if (ap.on && !ap.app) a.disengage(); else a.engageAP(p.fm); break;
       case 'app': {
+        if (a.ap.app) { a.disengage(); this.menus.notice('자동 착륙 OFF'); break; }
         a.engageApproach(p.fm);
         const tgt = nearestApproach(p.fm.pos);
         if (tgt.carrier && p.spec.hook) p.controls.hook = true;

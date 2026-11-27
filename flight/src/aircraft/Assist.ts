@@ -51,6 +51,9 @@ export class Assist {
   private thrCmd = 0.5;
   trim = 0;
   gcasActive = false;
+  levelT = 0; // seconds of automatic wings-level + pitch-level
+  pitchHold = false; private holdVs = 0;
+  setPitchHold(on: boolean, fm: FlightModel) { this.pitchHold = on; this.holdVs = fm.vs; }
   level: AssistLevel = 'beginner';
   autoRudder = true;
   groundAssist = true;
@@ -125,6 +128,18 @@ export class Assist {
       if (gs < 1) this.disengage();
     }
 
+    // ---------- one-touch level / pitch hold ----------
+    if (!ground && nCmd === null && phiCmd === null) {
+      if (this.levelT > 0) {
+        this.levelT -= dt;
+        phiCmd = 0;
+        nCmd = 1 / Math.max(Math.cos(at.roll), 0.5) + clamp(-at.pitch * 1.6 - fm.vs * 0.02, -0.6, 0.9);
+        protect = 'LEVEL';
+      } else if (this.pitchHold && Math.abs(stick.pitch) < 0.12) {
+        nCmd = 1 / Math.max(Math.cos(at.roll), 0.5) + clamp((this.holdVs - fm.vs) * 0.06, -0.5, 0.6);
+        if (Math.abs(stick.roll) < 0.05 && this.level === 'beginner') phiCmd = null;
+      } else if (this.pitchHold) this.holdVs = fm.vs;
+    }
     // ---------- GCAS (beginner/standard) ----------
     this.gcasActive = false;
     const apr = nearestApproach(fm.pos), adv = ilsDeviation(fm, apr);

@@ -5,7 +5,7 @@ import { surfaceHeight, terrainNormal } from '../world/WorldDef';
 
 export interface SurfaceCmd { de: number; da: number; dr: number }
 export interface Controls {
-  throttle: number; ab: boolean; brake: number; flaps: number; gearDown: boolean; airbrake: boolean; hook: boolean; steer: number;
+  throttle: number; ab: boolean; brake: number; flaps: number; gearDown: boolean; airbrake: boolean; hook: boolean; steer: number; reverse?: number;
 }
 export type Part = 'engine' | 'wingL' | 'wingR' | 'tail' | 'gear' | 'fuselage';
 
@@ -247,6 +247,8 @@ export class FlightModel {
       T = lerp(dry, ab, this.abOn);
     }
     T *= engHealth;
+    // thrust reversers / reverse pitch — ground only
+    if ((c.reverse ?? 0) > 0.02 && this.onGround && run) T = -(s.engine.type === 'jet' ? s.engine.thrust : (s.engine.staticT ?? 0)) * 0.42 * (c.reverse ?? 0) * engHealth;
     this.thrust = T;
     F.z -= T;
 

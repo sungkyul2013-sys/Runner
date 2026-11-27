@@ -1,11 +1,11 @@
 import { settings } from './Save';
 import { clamp } from './math';
 
-export type InputEvent = 'bomb' | 'cockpit' | 'gear' | 'flapsUp' | 'flapsDown' | 'missile' | 'flare' | 'camera' | 'cameraPrev' | 'pause' | 'ap' | 'app' | 'hook' | 'airbrake' | 'lights' | 'hud' | 'smoke' | 'catapult' | 'lookReset' | 'photo' | 'target' | 'engine';
+export type InputEvent = 'flapsCycle' | 'level' | 'pitchhold' | 'restart' | 'bomb' | 'cockpit' | 'gear' | 'flapsUp' | 'flapsDown' | 'missile' | 'flare' | 'camera' | 'cameraPrev' | 'pause' | 'ap' | 'app' | 'hook' | 'airbrake' | 'lights' | 'hud' | 'smoke' | 'catapult' | 'lookReset' | 'photo' | 'target' | 'engine';
 
 export interface InputState {
   pitch: number; roll: number; yaw: number; throttle: number; steer: number;
-  ab: boolean; brake: number; fire: boolean;
+  ab: boolean; brake: number; fire: boolean; reverse: number;
   lookX: number; lookY: number; zoom: number; looking: boolean;
 }
 
@@ -13,7 +13,7 @@ export interface InputState {
 export interface ControlStatus {
   weapons: boolean; gun: number; missiles: number; flares: number; bombs: number; lock: number; locked: boolean;
   retract: boolean; gearDown: boolean; onGround: boolean; lowSlow: boolean; hook: boolean; hookDown: boolean; catapult: boolean;
-  flaps: string; hasFlaps: boolean; airbrake: boolean; hasAirbrake: boolean; ap: boolean;
+  flaps: string; hasFlaps: boolean; airbrake: boolean; hasAirbrake: boolean; ap: boolean; app?: boolean; pitchHold?: boolean;
 }
 
 const KEY_AXES: Record<string, [keyof InputState, number]> = {
@@ -57,7 +57,7 @@ interface Floater { el: HTMLElement; th: HTMLElement; kind: 'v' | 'h' | 's'; id:
 
 /** Unified input: keyboard, gamepad, touch (floating split / floating stick), device tilt. */
 export class Input {
-  state: InputState = { pitch: 0, roll: 0, yaw: 0, throttle: 0, steer: 0, ab: false, brake: 0, fire: false, lookX: 0, lookY: 0, zoom: 0, looking: false };
+  state: InputState = { pitch: 0, roll: 0, yaw: 0, throttle: 0, steer: 0, ab: false, brake: 0, fire: false, reverse: 0, lookX: 0, lookY: 0, zoom: 0, looking: false };
   private events = new Set<InputEvent>();
   private keys = new Set<string>();
   private kAxes = { pitch: 0, roll: 0, yaw: 0 };
@@ -144,7 +144,7 @@ export class Input {
     // ---- throttle lever with detents ----
     const thr = this.div('thr');
     thr.innerHTML = `<div class="rail"></div><div class="ab"></div><div class="fill"></div>
-      <div class="det" style="bottom:0"><span>IDLE</span></div><div class="det" style="bottom:86%"><span>MIL</span></div><div class="det" style="bottom:100%"><span>AB</span></div>
+<div class="rev"></div><div class="det" style="bottom:0"><span>REV</span></div><div class="det" style="bottom:12.3%"><span>IDLE</span></div><div class="det" style="bottom:87.7%"><span>MIL</span></div><div class="det" style="bottom:100%"><span>AB</span></div>
       <div class="kn">THR</div><div class="ro m">0%</div>`;
     this.thrEl = thr;
     {
@@ -154,8 +154,8 @@ export class Input {
         if (e.pointerId !== id) return;
         const hgt = thr.getBoundingClientRect().height;
         const before = this.lever;
-        this.lever = clamp(p0 + (y0 - e.clientY) / hgt, 0, 1);
-        if ((before < 0.86) !== (this.lever < 0.86) || (before > 0.02) !== (this.lever > 0.02)) this.buzz(14);
+        this.lever = clamp(p0 + ((y0 - e.clientY) / hgt) * 1.14, -0.14, 1);
+        if ((before < 0.86) !== (this.lever < 0.86) || (before > 0) !== (this.lever > 0)) this.buzz(14);
         this.applyLever();
       });
       const up = (e: PointerEvent) => { if (e.pointerId === id) id = null; };
@@ -185,8 +185,35 @@ export class Input {
     this.wpnEls.msl = rbtn(wpn, 'msl', 'lg', IC.msl, 'missile');
     this.wpnEls.gun = rbtn(wpn, 'gun', 'xl gun', IC.gun, undefined, (on) => (this.touchFire = on));
 
+    // ---- split mode: labelled quick bar (top) + system strip (bottom) ----
+    if (mode === 'split') {
+      this.root.classList.add('split');
+      const q = this.div('qbar');
+      const qb = (label: string, ev: InputEvent, key: string) => {
+        const b = document.createElement('button'); b.className = 'qb'; b.textContent = label;
+        b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.events.add(ev); this.buzz(); b.classList.remove('fx'); void b.offsetWidth; b.classList.add('fx'); });
+        q.appendChild(b); this.ctxEls[key] = b;
+      };
+      qb('수평 보정', 'level', 'q_level'); qb('상하 고정', 'pitchhold', 'q_hold'); qb('자동 착륙', 'app', 'q_app'); qb('재시작', 'restart', 'q_restart'); qb('설정', 'pause', 'q_menu');
+      const strip = this.div('strip');
+      const tile = (key: string, k: string, ev?: InputEvent, hold?: (on: boolean) => void, cls = '') => {
+        const b = document.createElement('button'); b.className = `tile ${cls}`;
+        b.innerHTML = `<span class="k">${k}</span><b></b>`;
+        b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); if (ev) this.events.add(ev); hold?.(true); b.classList.add('down'); this.buzz(); });
+        const up = () => { hold?.(false); b.classList.remove('down'); };
+        b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+        strip.appendChild(b); this.ctxEls[key] = b; return b;
+      };
+      tile('t_rudL', '러더', undefined, (on) => (this.touchAxes.yaw = on ? -1 : 0), 'arrow l').querySelector('b')!.textContent = '◀';
+      tile('t_gear', '기어', 'gear');
+      tile('t_flaps', '플랩', 'flapsCycle');
+      tile('t_air', '감속판', 'airbrake');
+      tile('t_brk', '제동', undefined, (on) => (this.touchBrake = on));
+      tile('t_rudR', '러더', undefined, (on) => (this.touchAxes.yaw = on ? 1 : 0), 'arrow r').querySelector('b')!.textContent = '▶';
+    }
     // ---- contextual systems ----
     const ctx = this.div('ctx');
+    if (mode === 'split') ctx.classList.add('slim');
     this.ctxEls.gear = rbtn(ctx, 'gear', 'sm', IC.gear, 'gear');
     const flp = document.createElement('div');
     flp.className = 'flp m';
@@ -209,10 +236,10 @@ export class Input {
       return b;
     };
     sq(IC.more, () => this.drawer.classList.toggle('open'));
-    sq(IC.ap, () => this.events.add('ap'), 'apbtn');
+    if (mode !== 'split') sq(IC.ap, () => this.events.add('ap'), 'apbtn');
     sq(IC.eye, () => this.events.add('cockpit'));
     sq(IC.cam, () => this.events.add('camera'));
-    sq(IC.pause, () => this.events.add('pause'));
+    if (mode !== 'split') sq(IC.pause, () => this.events.add('pause'));
     this.drawer = this.div('drawer');
     const dItem = (icon: string, label: string, ev: InputEvent) => {
       const b = document.createElement('button'); b.innerHTML = `${icon}${label}`;
@@ -310,24 +337,27 @@ export class Input {
   }
 
   private applyLever() {
-    const thr = Math.min(1, this.lever / 0.86);
+    const thr = clamp(this.lever / 0.86, 0, 1);
     this.state.throttle = thr;
+    this.state.reverse = this.lever < -0.02 ? Math.min(1, -this.lever / 0.12) : 0;
     this.state.ab = this.lever > 0.93;
     this.syncLever();
   }
   private syncLever() {
     if (!this.thrEl) return;
     const hgt = this.thrEl.getBoundingClientRect().height || 200;
-    (this.thrEl.querySelector('.kn') as HTMLElement).style.transform = `translateY(${(1 - this.lever) * hgt}px)`;
-    (this.thrEl.querySelector('.fill') as HTMLElement).style.transform = `scaleY(${this.lever})`;
-    (this.thrEl.querySelector('.ro') as HTMLElement).textContent = this.lever > 0.93 ? 'AB' : `${Math.round(Math.min(1, this.lever / 0.86) * 100)}%`;
+    const t = (this.lever + 0.14) / 1.14;
+    (this.thrEl.querySelector('.kn') as HTMLElement).style.transform = `translateY(${(1 - t) * hgt}px)`;
+    (this.thrEl.querySelector('.fill') as HTMLElement).style.transform = `scaleY(${t})`;
+    (this.thrEl.querySelector('.ro') as HTMLElement).textContent = this.lever > 0.93 ? 'AB' : this.lever < -0.02 ? 'REV' : `${Math.round(Math.min(1, this.lever / 0.86) * 100)}%`;
+    this.thrEl.classList.toggle('rev-on', this.lever < -0.02);
     this.thrEl.classList.toggle('ab-on', this.lever > 0.93);
   }
 
   setWeapons(on: boolean) { this.hasWeapons = on; this.lastStatus = ''; }
   /** Contextual visibility + live readouts (cheap: only touches the DOM when something changed). */
   setStatus(s: ControlStatus) {
-    const key = JSON.stringify([s.bombs, s.weapons, s.gun, s.missiles, s.flares, Math.round(s.lock * 10), s.locked, s.retract, s.gearDown, s.onGround, s.lowSlow, s.hook, s.hookDown, s.catapult, s.flaps, s.hasFlaps, s.airbrake, s.hasAirbrake, s.ap]);
+    const key = JSON.stringify([s.bombs, s.weapons, s.gun, s.missiles, s.flares, Math.round(s.lock * 10), s.locked, s.retract, s.gearDown, s.onGround, s.lowSlow, s.hook, s.hookDown, s.catapult, s.flaps, s.hasFlaps, s.airbrake, s.hasAirbrake, s.ap, s.app, s.pitchHold]);
     if (key === this.lastStatus) return;
     this.lastStatus = key;
     const vis = (k: string, v: boolean) => this.ctxEls[k]?.classList.toggle('hid', !v);
@@ -343,6 +373,14 @@ export class Input {
     this.ctxEls.apbtn?.classList.toggle('on', s.ap);
     const fl = this.ctxEls.flaps?.querySelector('span');
     if (fl) fl.textContent = s.flaps;
+    const setT = (key: string, v: string, on = false, dis = false) => { const el = this.ctxEls[key]; if (!el) return; const b = el.querySelector('b'); if (b) b.textContent = v; el.classList.toggle('on', on); el.classList.toggle('dis', dis); };
+    setT('t_gear', !s.retract ? '고정' : s.gearDown ? '내림' : '올림', s.gearDown, !s.retract);
+    setT('t_flaps', s.hasFlaps ? (s.flaps === 'UP' ? '올림' : s.flaps) : '—', s.flaps !== 'UP', !s.hasFlaps);
+    setT('t_air', s.hasAirbrake ? (s.airbrake ? '켜짐' : '꺼짐') : '—', s.airbrake, !s.hasAirbrake);
+    setT('t_brk', s.onGround ? '홀드' : '지상', false, !s.onGround);
+    this.ctxEls.q_app?.classList.toggle('on', !!s.app);
+    this.ctxEls.q_hold?.classList.toggle('on', !!s.pitchHold);
+    if (this.root.classList.contains('split')) { for (const k of ['gear', 'flaps', 'brk', 'air']) this.ctxEls[k]?.classList.add('hid'); }
     const shw = (el: HTMLElement | undefined, v: boolean) => { if (el) el.style.display = v ? '' : 'none'; };
     shw(this.wpnEls.gun, s.weapons); shw(this.wpnEls.msl, s.weapons); shw(this.wpnEls.flr, s.flares > 0); shw(this.wpnEls.bomb, s.bombs > 0);
     if (this.wpnEls.gun) {
@@ -376,7 +414,7 @@ export class Input {
     }
     let kbThr = false;
     if (k.has('ShiftLeft') || k.has('ShiftRight') || k.has('Equal') || k.has('PageUp')) { this.lever = Math.min(0.86, this.lever + dt * 0.5); kbThr = true; }
-    if (k.has('ControlLeft') || k.has('ControlRight') || k.has('Minus') || k.has('PageDown')) { this.lever = Math.max(0, this.lever - dt * 0.5); kbThr = true; }
+    if (k.has('ControlLeft') || k.has('ControlRight') || k.has('Minus') || k.has('PageDown')) { this.lever = Math.max(-0.14, this.lever - dt * 0.5); kbThr = true; }
     if (kbThr) this.applyLever();
     let ab = this.state.ab;
     if (k.has('Backquote') || k.has('KeyN')) ab = true;
@@ -392,7 +430,7 @@ export class Input {
       roll += dz(gp.axes[0] ?? 0); pitch += dz(gp.axes[1] ?? 0);
       yaw += dz(gp.axes[2] ?? 0);
       const rt = gp.buttons[7]?.value ?? 0, lt = gp.buttons[6]?.value ?? 0;
-      if (rt > 0.05 || lt > 0.05) { this.lever = clamp(this.lever + (rt - lt) * dt * 0.7, 0, 1); this.applyLever(); }
+      if (rt > 0.05 || lt > 0.05) { this.lever = clamp(this.lever + (rt - lt) * dt * 0.7, -0.14, 1); this.applyLever(); }
       if (gp.buttons[0]?.pressed) fire = true;
       if (gp.buttons[2]?.pressed) brake = 1;
       const edge = (i: number, ev: InputEvent) => { const p = gp.buttons[i]?.pressed; const key = `gp${i}`; if (p && !this.keys.has(key)) { this.events.add(ev); this.keys.add(key); } else if (!p) this.keys.delete(key); };
