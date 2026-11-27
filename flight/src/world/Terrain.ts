@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { terrainHeight, WORLD_HALF, CITY, AIRPORT, RUNWAYS } from './WorldDef';
+import { terrainHeight, WORLD_HALF, CITY, AIRPORT, RUNWAYS, climate } from './WorldDef';
 import { smoothstep, clamp, vnoise, fbm } from '../core/math';
 import grassUrl from '../assets/grass.jpg';
 
@@ -21,9 +21,16 @@ function shade(x: number, z: number, h: number, ny: number, out: Float32Array, o
     _c.setRGB(0.36, 0.33, 0.25).multiplyScalar(0.7 + n2 * 0.1);
     grass = 0;
   } else {
-    // base grass: lush ↔ dry
+    // base grass: lush ↔ dry, then large-scale climate (desert / tundra)
     const dry = smoothstep(-0.2, 0.6, n1);
     _c.setRGB(0.12 + dry * 0.16, 0.2 + dry * 0.08, 0.06 + dry * 0.02);
+    const cl = climate(x, z);
+    if (cl.dry > 0.01) {
+      const sand = new THREE.Color(0.66, 0.5, 0.33).lerp(new THREE.Color(0.58, 0.34, 0.2), smoothstep(-0.3, 0.5, n1));
+      _c.lerp(sand.multiplyScalar(0.9 + n2 * 0.12), cl.dry);
+      grass *= 1 - cl.dry;
+    }
+    if (cl.cold > 0.3) { _c.lerp(new THREE.Color(0.42, 0.44, 0.38), (cl.cold - 0.3) * 1.2); }
     _c.multiplyScalar(0.85 + n2 * 0.15);
     // alpine meadows darker
     const alp = smoothstep(500, 1100, h);

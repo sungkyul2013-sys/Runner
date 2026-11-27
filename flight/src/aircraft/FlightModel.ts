@@ -37,6 +37,7 @@ export class FlightModel {
   gearState: GearState[];
   hp: Record<Part, number> = { engine: 100, wingL: 100, wingR: 100, tail: 100, gear: 100, fuselage: 100 };
   crashed = false; crashReason = ''; ditched = false;
+  crashSpeed = 0; crashVs = 0;
   hooked = false; catapultDist = 0; catapulting = false;
   engineRunning = true;
   rpm = 0;
@@ -53,6 +54,8 @@ export class FlightModel {
   invincible = false;
   infiniteFuel = false;
   private groundT = 0;
+  /** pitch (rad) at which the tail touches with the mains compressed */
+  tailStrike = 0.25;
 
   constructor(spec: AircraftSpec) {
     this.spec = spec;
@@ -85,7 +88,13 @@ export class FlightModel {
       new THREE.Vector3(0, -G.radius * G.heightScale * 0.6, zT * 0.55),
       new THREE.Vector3(0, G.radius * 0.75 + G.vstab.h, G.vstab.z + G.vstab.root), new THREE.Vector3(0, G.radius * G.heightScale, 0),
     ];
-    for (const e of G.engines) if ('x' in e && Math.abs(e.x) > 0.5) this.bodyPts.push(new THREE.Vector3(e.x, e.y - e.r, e.z));
+    {
+      const main = spec.gear.filter((g) => Math.abs(g.p[0]) >= 0.1);
+      const my = Math.min(...main.map((g) => g.p[1])) + Math.max(...main.map((g) => g.travel)) * 0.7, mz = main.reduce((a, g) => a + g.p[2], 0) / Math.max(1, main.length);
+      const t = this.bodyPts[1];
+      if (t.z > mz) this.tailStrike = Math.atan2(t.y - my, t.z - mz);
+    }
+    for (const e of G.engines) if ('x' in e && Math.abs(e.x) > 0.5 && (e.kind !== 'jet' || e.pod)) this.bodyPts.push(new THREE.Vector3(e.x, e.y - e.r, e.z));
   }
 
   get mass() { return this.spec.mass + this.fuel + this.ammoMass; }
@@ -146,6 +155,7 @@ export class FlightModel {
     if (this.invincible && reason !== '추락') { /* invincible still crashes into terrain */ }
     this.crashed = true;
     this.crashReason = reason;
+    this.crashSpeed = this.vel.length(); this.crashVs = this.vel.y;
     this.onCrash(reason);
   }
 
@@ -318,8 +328,9 @@ export class FlightModel {
         this.onGearCollapse(i);
         continue;
       }
-      let N = this.gearK[i] * comp - this.gearC[i] * vn;
-      if (pen > g.travel) N += this.gearK[i] * 8 * (pen - g.travel) - this.gearC[i] * 2 * vn;
+      // oleo strut: soft compression damping, much stronger rebound damping; bottoming-out is inelastic
+      let N = this.gearK[i] * comp - this.gearC[i] * vn * (vn < 0 ? 1 : 2.4);
+      if (pen > g.travel) { N += this.gearK[i] * 6 * (pen - g.travel); if (vn < 0) N -= this.gearC[i] * 3 * vn; }
       N = Math.max(0, N);
       // tyre frame
       const steerSign = g.p[2] > 0 ? -1 : 1;
@@ -360,7 +371,8 @@ export class FlightModel {
       const vn = vc.dot(n);
       const impact = Math.max(-vn, 0);
       const speed = vc.length();
-      const fatal = i === 0 || i === 7 || i === 8 ? impact > 4 || speed > 45 : impact > 7 || (speed > 80 && impact > 4.5);
+      // tail / aft-belly scrapes (over-rotation) are survivable unless the whole aircraft is sinking hard
+      const fatal = i === 1 || i === 6 ? -this.vel.y > 6 : i === 0 || i === 7 || i === 8 ? impact > 4 || speed > 45 : impact > 7 || (speed > 80 && impact > 4.5);
       if (fatal) { this.crash(i === 2 || i === 3 ? '날개 충돌' : '지면 충돌'); return; }
       const N = Math.max(0, m * 60 * pen - m * 6 * vn);
       const vt = vc.clone().addScaledVector(n, -vn);
@@ -371,7 +383,7 @@ export class FlightModel {
       this.onGround = true;
       if (speed > 3) {
         this.onScrape(P, Math.min(1, speed / 40));
-        this.damage(i === 2 ? 'wingL' : i === 3 ? 'wingR' : i === 1 || i === 7 ? 'tail' : i >= 9 ? 'engine' : 'fuselage', dt * speed * 0.8);
+        this.damage(i === 2 ? 'wingL' : i === 3 ? 'wingR' : i === 1 || i === 7 ? 'tail' : i >= 9 ? 'engine' : 'fuselage', dt * speed * (i === 1 || i === 6 ? 0.25 : 0.6));
       }
     }
 

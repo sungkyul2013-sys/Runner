@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { terrainHeight, isFlatZone, CITY } from './WorldDef';
+import { terrainHeight, isFlatZone, CITY, climate } from './WorldDef';
 import { hash01, fbm, mulberry32 } from '../core/math';
 import { LightField } from './Airport';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -86,6 +86,7 @@ export class Scenery {
         if (isFlatZone(x, z)) continue;
         const h = terrainHeight(x, z);
         if (h < 4 || h > 1500) continue;
+        if (Math.abs(x) > 25000 || Math.abs(z) > 25000) { const cl = climate(x, z); if (cl.dry > 0.35 || pick > 1 - cl.cold * 0.8) continue; }
         const hx = terrainHeight(x + 4, z) - h, hz = terrainHeight(x, z + 4) - h;
         if (Math.hypot(hx, hz) > 3.4) continue;
         const type = h > 380 || forest > 0.72 ? 0 : hash01(i, j) < 0.35 ? 0 : 1;

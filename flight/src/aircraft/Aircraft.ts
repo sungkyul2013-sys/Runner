@@ -58,7 +58,7 @@ export class Aircraft {
   readonly assist = new Assist();
   readonly controls: Controls = { throttle: 0, ab: false, brake: 0, flaps: 0, gearDown: true, airbrake: false, hook: false, steer: 0 };
   flapIdx = 0;
-  gunAmmo: number; missiles: number; flares: number;
+  gunAmmo: number; missiles: number; flares: number; bombs: number;
   lightsOn = true;
   readonly group = new THREE.Group();
   private vortices: Ribbon[];
@@ -77,7 +77,7 @@ export class Aircraft {
     this.fm = new FlightModel(spec);
     this.vis = buildAircraft(spec, livery, team === 'player');
     this.group.add(this.vis.root);
-    this.gunAmmo = spec.gun; this.missiles = spec.missiles; this.flares = spec.flares;
+    this.gunAmmo = spec.gun; this.missiles = spec.missiles; this.flares = spec.flares; this.bombs = spec.bombs ?? 0;
     this.vortices = [new Ribbon(60, 1.6, 0.18, 2, new THREE.Color(0.95, 0.97, 1)), new Ribbon(60, 1.6, 0.18, 2, new THREE.Color(0.95, 0.97, 1))];
     this.contrails = [new Ribbon(90, 9, 1.2, 4, new THREE.Color(1, 1, 1)), new Ribbon(90, 9, 1.2, 4, new THREE.Color(1, 1, 1))];
     this.vis.root.traverse((o) => { if (o.name === 'missile') this.missileMeshes.push(o); });
@@ -95,7 +95,7 @@ export class Aircraft {
     this.controls.brake = onGround ? 1 : 0;
     this.controls.airbrake = false;
     this.controls.hook = false;
-    this.gunAmmo = this.spec.gun; this.missiles = this.spec.missiles; this.flares = this.spec.flares;
+    this.gunAmmo = this.spec.gun; this.missiles = this.spec.missiles; this.flares = this.spec.flares; this.bombs = this.spec.bombs ?? 0;
     this.missileMeshes.forEach((m) => (m.visible = true));
     this.vis.wingL.visible = this.vis.wingR.visible = this.vis.tail.visible = true;
     this.lostL = this.lostR = this.lostTail = false;

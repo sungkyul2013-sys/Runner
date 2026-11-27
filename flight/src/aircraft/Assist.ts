@@ -38,7 +38,8 @@ export function ilsDeviation(fm: FlightModel, ap: ApproachTarget) {
   const dirZ = Math.cos(ap.hdg * DEG) > 0 ? -1 : 1;
   const dist = (fm.pos.z - ap.tdz) * -dirZ; // positive before touchdown
   const loc = (fm.pos.x - ap.tdx) * -dirZ;
-  const pathAlt = ap.elev + Math.max(dist, 0) * Math.tan(ap.gs * DEG);
+  const cgH = -Math.min(...fm.spec.gear.map((g) => g.p[1])) + (ap.carrier ? 1.2 : 0.3); // wheels, not the CG, ride the glide path
+  const pathAlt = ap.elev + cgH + Math.max(dist, 0) * Math.tan(ap.gs * DEG);
   return { dist, loc, gs: fm.pos.y - pathAlt, pathAlt };
 }
 
@@ -126,7 +127,9 @@ export class Assist {
 
     // ---------- GCAS (beginner/standard) ----------
     this.gcasActive = false;
-    if (this.level !== 'realistic' && !ground && (fm.gear < 0.5 || fm.ias > s.vRef * 1.5) && !this.ap.app && fm.vs < -5) {
+    const apr = nearestApproach(fm.pos), adv = ilsDeviation(fm, apr);
+    const onApproach = adv.dist > -400 && adv.dist < 9000 && Math.abs(adv.loc) < 800;
+    if (this.level !== 'realistic' && !ground && fm.gear < 0.5 && !onApproach && !this.ap.app && fm.vs < -5 && stick.pitch < 0.3) {
       const tth = fm.agl / -fm.vs;
       const look = new THREE.Vector3().copy(fm.vel).multiplyScalar(4).add(fm.pos);
       const ahead = look.y - Math.max(terrainHeight(look.x, look.z), 0);
@@ -152,20 +155,22 @@ export class Assist {
       let n: number;
       if (nCmd !== null) n = nCmd;
       else if (lvl === 'beginner') {
-        n = 1 / Math.max(Math.cos(at.roll), 0.4) * Math.cos(at.pitch) + (stick.pitch > 0 ? stick.pitch * (Math.min(gMax, 6) - 1) * 0.75 : stick.pitch * (1 - Math.max(gMin, -1)) * 0.75);
+        n = 1 / Math.max(Math.cos(at.roll), 0.4) * Math.cos(at.pitch) + (stick.pitch > 0 ? stick.pitch * (Math.min(gMax, 6) - 1) * 0.95 : stick.pitch * (1 - Math.max(gMin, -1)) * 0.95);
       } else {
         n = stick.pitch >= 0 ? 1 + stick.pitch * (gMax - 1) : 1 + stick.pitch * (1 - gMin);
         if (Math.abs(stick.pitch) < 0.05) n = Math.cos(at.pitch) / Math.max(Math.cos(at.roll), 0.3);
       }
       // envelope protection
-      const aMax = s.alphaStall * (lvl === 'beginner' ? 0.82 : 0.95);
+      const landingCfg = fm.gear > 0.9 && fm.agl < 60 && fm.vs < -0.5 && fm.thr < 0.6;
+      const aMax = s.alphaStall * (landingCfg ? 0.97 : lvl === 'beginner' ? 0.82 : 0.95);
       if (fm.alpha > aMax * 0.85) { n = Math.min(n, fm.gLoad - (fm.alpha - aMax * 0.85) * 25); protect = protect || 'AOA LIMIT'; }
       if (lvl === 'beginner') {
         if (at.pitch > 30 * DEG && n > 1) n = Math.min(n, 1 + (35 * DEG - at.pitch) * 5);
         if (at.pitch < -30 * DEG && n < 1) n = Math.max(n, 1 - (at.pitch + 35 * DEG) * 5);
         const clMax = s.CL0 + s.CLa * s.alphaStall;
         const vsEff = s.vStall * Math.sqrt(clMax / (clMax + s.flapCL * fm.flaps));
-        if (fm.ias < vsEff * 1.08 && !ground && fm.agl > 8) { n = Math.min(n, 0.75); throttle = 1; protect = protect || 'STALL PROT'; }
+        const landingFlare = fm.gear > 0.9 && fm.vs < -0.3 && fm.thr < 0.6 && fm.agl < 250;
+        if (fm.ias < vsEff * 1.08 && !ground && fm.agl > 8 && !landingFlare) { n = Math.min(n, 0.75); if (fm.agl > 30 || fm.vs > -0.3) throttle = 1; protect = protect || 'STALL PROT'; }
       }
       n = clamp(n, gMin, gMax);
       const qCmd = ((n - Math.cos(at.pitch) * Math.cos(at.roll)) * G0) / V;
@@ -213,7 +218,7 @@ export class Assist {
       if (this.level !== 'realistic' && fm.ias > s.vR * 0.97 && stick.pitch > 0.15) this.rotateHold = true;
       if (fm.ias < s.vR * 0.8) this.rotateHold = false;
       if (this.rotateHold) {
-        const tgt = (s.engine.type === 'jet' ? 11 : 9) * DEG;
+        const tgt = Math.min((s.engine.type === 'jet' ? 11 : 9) * DEG, fm.tailStrike - 2.5 * DEG);
         de = clamp((tgt - at.pitch) * 3 - q * 1.5 + 0.15, -1, 1);
       }
       da = clamp(stick.roll * (this.level === 'beginner' ? 0.3 : 1) - at.roll * 2, -1, 1);

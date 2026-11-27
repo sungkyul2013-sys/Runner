@@ -113,6 +113,7 @@ export class City {
   private beacons: number[] = [];
   private t = 0;
   private waterMat: THREE.MeshStandardMaterial | null = null;
+  private bmesh: THREE.Mesh | null = null;
 
   constructor() {
     const data = seoul();
@@ -333,7 +334,8 @@ export class City {
     const mesh = new THREE.Mesh(g, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.frustumCulled = false;
+    mesh.frustumCulled = true;
+    this.bmesh = mesh;
     this.group.add(mesh);
   }
 
@@ -377,7 +379,8 @@ export class City {
     this.stateDirty = true;
   }
 
-  update(dt: number, night: number, fx: Effects) {
+  update(dt: number, night: number, fx: Effects, cam?: THREE.Vector3) {
+    if (cam) this.group.visible = Math.hypot(cam.x - CITY.cx, cam.z - CITY.cz) < 42000;
     this.t += dt;
     this.nightU.value = night;
     this.timeU.value = this.t;

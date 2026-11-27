@@ -50,47 +50,134 @@ export class CameraRig {
 
   constructor(private cam: THREE.PerspectiveCamera) {}
 
+  private panelCanvas: HTMLCanvasElement | null = null;
+  private panelTex: THREE.CanvasTexture | null = null;
+  private panelT = 0;
+  private glass = false;
+
+  /** Interior: live instrument panel, consoles, canopy frame, control column. All in aircraft-local space. */
   buildCockpit(ac: Aircraft) {
     this.cockpit.clear();
     const s = ac.spec;
-    const eye = new THREE.Vector3(...s.eye);
+    const e = new THREE.Vector3(...s.eye);
     const big = s.mass > 20000;
-    const mat = new THREE.MeshStandardMaterial({ color: 0x1d2126, roughness: 0.75, metalness: 0.3 });
-    const panelMat = new THREE.MeshStandardMaterial({ map: gaugeTexture(big || s.engine.type === 'jet' ? 'glass' : 'steam'), roughness: 0.5, emissive: 0xffffff, emissiveIntensity: 0.04 });
-    const w = big ? 1.6 : s.engine.type === 'jet' ? 0.62 : 0.95;
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(w, w * 0.25, 0.08), [mat, mat, mat, mat, panelMat, mat]);
-    panel.position.set(0, eye.y - (s.engine.type === 'jet' && !big ? 0.5 : 0.42), eye.z - 0.75);
-    panel.position.x = big ? eye.x + 0.55 : eye.x * 0;
-    panel.rotation.x = -0.25;
-    const glare = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.05, 0.35), mat);
-    glare.position.set(panel.position.x, panel.position.y + w * 0.14, panel.position.z - 0.1);
-    this.cockpit.add(panel, glare);
+    const jet = s.engine.type === 'jet' && !big;
+    this.glass = big || s.engine.type === 'jet';
+    const dark = new THREE.MeshStandardMaterial({ color: 0x1b1f24, roughness: 0.8, metalness: 0.2 });
+    const mid = new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 0.7, metalness: 0.3 });
+    const frame = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.55, metalness: 0.6 });
+    const c = document.createElement('canvas'); c.width = 1024; c.height = 384;
+    this.panelCanvas = c;
+    this.panelTex = new THREE.CanvasTexture(c); this.panelTex.colorSpace = THREE.SRGBColorSpace;
+    const pmat = new THREE.MeshStandardMaterial({ map: this.panelTex, emissiveMap: this.panelTex, emissive: 0xffffff, emissiveIntensity: 0.55, roughness: 0.4 });
+    const pw = big ? 1.7 : jet ? 0.78 : 1.05, ph = pw * 0.375;
+    const panelZ = e.z - (jet ? 0.72 : 0.8), panelY = e.y - (jet ? 0.42 : 0.36);
+    const px = big ? e.x + 0.62 : e.x * (s.geom.highWing ? 0.5 : 0);
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), pmat);
+    panel.position.set(px, panelY, panelZ); panel.rotation.x = -0.28;
+    const back = new THREE.Mesh(new THREE.BoxGeometry(pw + 0.06, ph + 0.06, 0.05), dark);
+    back.position.copy(panel.position).add(new THREE.Vector3(0, 0, -0.03)); back.rotation.x = -0.28;
+    const glare = new THREE.Mesh(new THREE.BoxGeometry(pw + 0.12, 0.05, 0.32), dark);
+    glare.position.set(px, panelY + ph * 0.55, panelZ - 0.12);
+    this.cockpit.add(panel, back, glare);
+    // side consoles + sills
+    for (const sd of [-1, 1]) {
+      const con = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.9), mid);
+      con.position.set(e.x + sd * (jet ? 0.32 : 0.42), e.y - 0.55, e.z + 0.05); this.cockpit.add(con);
+      const sill = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 1.6), frame);
+      sill.position.set(e.x + sd * (jet ? 0.42 : 0.55), e.y - 0.3, e.z - 0.2); this.cockpit.add(sill);
+    }
+    // throttle quadrant
+    const thr = new THREE.Group(); thr.name = 'thr';
+    const lever = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.16, 0.03), mid); lever.position.y = 0.08;
+    const knob = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 0.05), new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.6 })); knob.position.y = 0.17;
+    thr.add(lever, knob); thr.position.set(e.x - (jet ? 0.3 : 0.4), e.y - 0.5, e.z - 0.05); this.cockpit.add(thr);
     // canopy / windshield frame
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.6, metalness: 0.5 });
-    if (s.engine.type === 'jet' && !big) {
-      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.014, 6, 30, Math.PI), frameMat);
-      bow.position.set(0, eye.y - 0.3, eye.z - 1.05); bow.rotation.x = -0.95;
-      const hudGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.2), new THREE.MeshBasicMaterial({ color: 0x88ffaa, transparent: true, opacity: 0.06, depthWrite: false }));
-      hudGlass.position.set(0, eye.y - 0.08, eye.z - 0.62); hudGlass.rotation.x = -0.35;
-      const hudFrame = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.02, 0.12), frameMat); hudFrame.position.set(0, eye.y - 0.19, eye.z - 0.6);
-      this.cockpit.add(bow, hudGlass, hudFrame);
+    if (jet) {
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.014, 6, 30, Math.PI), frame);
+      bow.position.set(0, e.y - 0.3, e.z - 1.05); bow.rotation.x = -0.95; this.cockpit.add(bow);
+      const rail = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.012, 6, 30, Math.PI), frame);
+      rail.position.set(0, e.y - 0.25, e.z + 0.25); rail.rotation.x = -1.35; this.cockpit.add(rail);
+      const hud = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.18), new THREE.MeshBasicMaterial({ color: 0x88ffaa, transparent: true, opacity: 0.07, depthWrite: false }));
+      hud.position.set(0, e.y - 0.1, e.z - 0.62); hud.rotation.x = -0.35; this.cockpit.add(hud);
+      const stick = new THREE.Group(); stick.name = 'stick';
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.28, 8), mid); shaft.position.y = 0.14;
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.022, 0.1, 10), new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.7 })); grip.position.y = 0.31;
+      stick.add(shaft, grip); stick.position.set(0, e.y - 0.72, e.z - 0.3); this.cockpit.add(stick);
     } else {
       const pillarH = big ? 0.9 : 0.75;
       for (const sx of big ? [-0.75, 0.2, 1.2] : [-0.55, 0.55]) {
-        const p = new THREE.Mesh(new THREE.BoxGeometry(0.05, pillarH, 0.05), frameMat);
-        p.position.set(eye.x + sx + (big ? 0.3 : 0.3), eye.y - 0.05, eye.z - 0.85); p.rotation.x = -0.45; p.rotation.z = sx * 0.2;
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.04, pillarH, 0.04), frame);
+        p.position.set(e.x + sx + 0.3, e.y - 0.05, e.z - 0.85); p.rotation.x = -0.45; p.rotation.z = sx * 0.2;
         this.cockpit.add(p);
       }
-      const top = new THREE.Mesh(new THREE.BoxGeometry(big ? 2.4 : 1.4, 0.06, 0.4), frameMat);
-      top.position.set(eye.x + 0.3, eye.y + 0.32, eye.z - 0.55);
+      const top = new THREE.Mesh(new THREE.BoxGeometry(big ? 2.4 : 1.4, 0.05, 0.4), frame);
+      top.position.set(e.x + 0.3, e.y + 0.32, e.z - 0.55);
       this.cockpit.add(top);
-      if (!big) {
-        const yoke = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.018, 6, 20, Math.PI), frameMat);
-        yoke.position.set(eye.x, eye.y - 0.42, eye.z - 0.45); yoke.rotation.z = Math.PI; yoke.name = 'yoke';
-        this.cockpit.add(yoke);
-      }
+      const yoke = new THREE.Group(); yoke.name = 'yoke';
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.016, 6, 22, Math.PI), frame); wheel.rotation.z = Math.PI;
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 8), mid); col.rotation.x = Math.PI / 2; col.position.z = -0.15;
+      yoke.add(wheel, col); yoke.position.set(e.x, e.y - 0.4, e.z - 0.45);
+      this.cockpit.add(yoke);
     }
     this.cockpit.traverse((o) => { o.renderOrder = 20; });
+  }
+
+  /** Redraw the instrument panel (10 Hz). */
+  private drawPanel(ac: Aircraft) {
+    const c = this.panelCanvas; if (!c || !this.panelTex) return;
+    const g = c.getContext('2d')!;
+    const fm = ac.fm, at = fm.attitude();
+    const W = c.width, H = c.height;
+    g.fillStyle = '#121519'; g.fillRect(0, 0, W, H);
+    const kt = Math.round(fm.ias * 1.944), ft = Math.round(fm.pos.y * 3.281), hdg = Math.round((at.hdg * 180) / Math.PI);
+    const adi = (x: number, y: number, r: number) => {
+      g.save(); g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.clip();
+      g.translate(x, y); g.rotate(-at.roll);
+      const off = (at.pitch * 180 / Math.PI) * (r / 30);
+      g.fillStyle = '#2d6fb8'; g.fillRect(-r * 2, -r * 2 + off, r * 4, r * 2);
+      g.fillStyle = '#7a5230'; g.fillRect(-r * 2, off, r * 4, r * 2);
+      g.strokeStyle = '#fff'; g.lineWidth = 2;
+      for (let p = -20; p <= 20; p += 10) { if (!p) continue; const yy = off - p * (r / 30); g.beginPath(); g.moveTo(-r * 0.25, yy); g.lineTo(r * 0.25, yy); g.stroke(); }
+      g.beginPath(); g.moveTo(-r * 2, off); g.lineTo(r * 2, off); g.stroke();
+      g.restore();
+      g.strokeStyle = '#f2b53a'; g.lineWidth = 4; g.beginPath(); g.moveTo(x - r * 0.45, y); g.lineTo(x - r * 0.12, y); g.lineTo(x, y + r * 0.1); g.lineTo(x + r * 0.12, y); g.lineTo(x + r * 0.45, y); g.stroke();
+    };
+    const dial = (x: number, y: number, r: number, frac: number, label: string, val: string) => {
+      g.fillStyle = '#05070a'; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#59616d'; g.lineWidth = 3; g.stroke();
+      g.strokeStyle = '#ddd'; g.lineWidth = 2;
+      for (let i = 0; i < 20; i++) { const a = -Math.PI * 1.25 + (i / 19) * Math.PI * 1.5 * 1.66; const r0 = i % 5 ? r * 0.86 : r * 0.78; g.beginPath(); g.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0); g.lineTo(x + Math.cos(a) * r * 0.94, y + Math.sin(a) * r * 0.94); g.stroke(); }
+      const a = -Math.PI * 1.25 + Math.min(1, Math.max(0, frac)) * Math.PI * 2.5;
+      g.strokeStyle = '#fff'; g.lineWidth = 4; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * r * 0.78, y + Math.sin(a) * r * 0.78); g.stroke();
+      g.fillStyle = '#9aa'; g.font = `bold ${r * 0.2}px Arial`; g.textAlign = 'center'; g.fillText(label, x, y - r * 0.35);
+      g.fillStyle = '#fff'; g.font = `bold ${r * 0.26}px Arial`; g.fillText(val, x, y + r * 0.5);
+    };
+    if (this.glass) {
+      // primary flight display + nav display + engine page
+      const box = (x: number, w: number) => { g.fillStyle = '#04070a'; g.fillRect(x, 24, w, H - 48); g.strokeStyle = '#2b323b'; g.lineWidth = 6; g.strokeRect(x, 24, w, H - 48); };
+      box(20, 330); adi(185, H / 2, 120);
+      g.fillStyle = '#0ff'; g.font = 'bold 30px Arial'; g.textAlign = 'left'; g.fillText(`${kt}`, 36, 70); g.textAlign = 'right'; g.fillText(`${ft}`, 334, 70);
+      g.fillStyle = '#9f9'; g.font = 'bold 22px Arial'; g.textAlign = 'center'; g.fillText(`G ${fm.gLoad.toFixed(1)}  M ${fm.mach.toFixed(2)}`, 185, H - 44);
+      box(370, 300);
+      g.save(); g.translate(520, H / 2 + 30); g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 120, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+      for (let k = -60; k <= 60; k += 10) { const a = ((k - ((hdg % 10) + 10) % 10) - 90) * Math.PI / 180; g.beginPath(); g.moveTo(Math.cos(a) * 112, Math.sin(a) * 112); g.lineTo(Math.cos(a) * 120, Math.sin(a) * 120); g.stroke(); }
+      g.fillStyle = '#fff'; g.font = 'bold 34px Arial'; g.textAlign = 'center'; g.fillText(String(hdg).padStart(3, '0'), 0, -126);
+      g.fillStyle = '#f2b53a'; g.beginPath(); g.moveTo(0, -20); g.lineTo(-12, 14); g.lineTo(12, 14); g.closePath(); g.fill(); g.restore();
+      box(690, 314);
+      g.fillStyle = '#ddd'; g.font = 'bold 22px Arial'; g.textAlign = 'left';
+      const rows = [['THR', `${Math.round(fm.thr * 100)}%${fm.abOn > 0.5 ? ' AB' : ''}`], ['FUEL', `${Math.round(fm.fuel)} kg`], ['GEAR', fm.gear > 0.99 ? 'DOWN' : fm.gear < 0.01 ? 'UP' : '···'], ['FLAP', `${Math.round(fm.flaps * 100)}%`], ['VS', `${Math.round(fm.vs * 196.85)} fpm`], ['AOA', `${(fm.alpha * 57.3).toFixed(1)}°`]];
+      rows.forEach(([k, v], i) => { g.fillStyle = '#7d8794'; g.fillText(k, 712, 76 + i * 46); g.fillStyle = i === 2 && fm.gear > 0.99 ? '#3f6' : '#fff'; g.fillText(v, 812, 76 + i * 46); });
+      g.fillStyle = '#5c8'; g.fillRect(712, H - 58, 270 * fm.thr, 12);
+    } else {
+      const y = H / 2, r = 92;
+      dial(110, y, r, fm.ias / (ac.spec.vMax * 1.05), 'AIRSPEED', `${kt} KT`);
+      adi(320, y, r);
+      dial(530, y, r, (fm.pos.y % 3048) / 3048, 'ALT', `${ft} FT`);
+      dial(740, y, r, 0.5 + Math.max(-1, Math.min(1, fm.vs / 10)) * 0.5, 'VSI', `${Math.round(fm.vs * 196.85)}`);
+      dial(930, y, r * 0.8, fm.rpm, 'RPM', `${Math.round(fm.rpm * 2700)}`);
+    }
+    this.panelTex.needsUpdate = true;
   }
 
   shake(a: number) { this.shakeAmt = Math.min(2.5, this.shakeAmt + a); }
@@ -144,7 +231,13 @@ export class CameraRig {
         this.cockpit.visible = true;
         this.cockpit.position.copy(fm.pos); this.cockpit.quaternion.copy(fm.quat);
         const yoke = this.cockpit.getObjectByName('yoke');
-        if (yoke) { yoke.rotation.z = Math.PI - fm.da * 0.6; yoke.position.z = ac.spec.eye[2] - 0.45 + fm.de * 0.06; }
+        if (yoke) { yoke.rotation.z = -fm.da * 0.6; yoke.position.z = ac.spec.eye[2] - 0.45 + fm.de * 0.06; }
+        const stick = this.cockpit.getObjectByName('stick');
+        if (stick) { stick.rotation.x = fm.de * 0.25; stick.rotation.z = -fm.da * 0.25; }
+        const thrL = this.cockpit.getObjectByName('thr');
+        if (thrL) thrL.rotation.x = -0.6 + fm.thr * 1.0;
+        this.panelT -= dt;
+        if (this.panelT <= 0) { this.panelT = 0.1; this.drawPanel(ac); }
         this.headG = damp(this.headG, clamp(fm.gLoad - 1, -2, 8), 6, dt);
         const eye = new THREE.Vector3(ac.spec.eye[0], ac.spec.eye[1] - this.headG * 0.012, ac.spec.eye[2]);
         cam.position.copy(eye.applyQuaternion(fm.quat).add(fm.pos));

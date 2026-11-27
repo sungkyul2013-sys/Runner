@@ -1,7 +1,7 @@
 import { settings } from './Save';
 import { clamp } from './math';
 
-export type InputEvent = 'gear' | 'flapsUp' | 'flapsDown' | 'missile' | 'flare' | 'camera' | 'cameraPrev' | 'pause' | 'ap' | 'app' | 'hook' | 'airbrake' | 'lights' | 'hud' | 'smoke' | 'catapult' | 'lookReset' | 'photo' | 'target' | 'engine';
+export type InputEvent = 'bomb' | 'cockpit' | 'gear' | 'flapsUp' | 'flapsDown' | 'missile' | 'flare' | 'camera' | 'cameraPrev' | 'pause' | 'ap' | 'app' | 'hook' | 'airbrake' | 'lights' | 'hud' | 'smoke' | 'catapult' | 'lookReset' | 'photo' | 'target' | 'engine';
 
 export interface InputState {
   pitch: number; roll: number; yaw: number; throttle: number; steer: number;
@@ -11,7 +11,7 @@ export interface InputState {
 
 /** Live flight status pushed by the game so on-screen controls can be contextual. */
 export interface ControlStatus {
-  weapons: boolean; gun: number; missiles: number; flares: number; lock: number; locked: boolean;
+  weapons: boolean; gun: number; missiles: number; flares: number; bombs: number; lock: number; locked: boolean;
   retract: boolean; gearDown: boolean; onGround: boolean; lowSlow: boolean; hook: boolean; hookDown: boolean; catapult: boolean;
   flaps: string; hasFlaps: boolean; airbrake: boolean; hasAirbrake: boolean; ap: boolean;
 }
@@ -23,7 +23,7 @@ const KEY_AXES: Record<string, [keyof InputState, number]> = {
 };
 const KEY_EVENTS: Record<string, InputEvent> = {
   KeyG: 'gear', KeyF: 'flapsDown', KeyV: 'flapsUp', KeyR: 'missile', KeyX: 'flare', KeyC: 'camera', Escape: 'pause', KeyP: 'pause',
-  KeyT: 'ap', KeyY: 'app', KeyH: 'hook', KeyZ: 'airbrake', KeyL: 'lights', KeyU: 'hud', KeyK: 'smoke', KeyJ: 'catapult', KeyO: 'photo', Tab: 'target', KeyI: 'engine',
+  KeyT: 'ap', KeyY: 'app', KeyH: 'hook', KeyZ: 'airbrake', KeyL: 'lights', KeyU: 'hud', KeyK: 'smoke', KeyJ: 'catapult', KeyO: 'photo', Tab: 'target', KeyI: 'engine', KeyM: 'bomb', Digit2: 'cockpit',
 };
 
 const SVG = (d: string) => `<svg viewBox="0 0 24 24">${d}</svg>`;
@@ -48,6 +48,8 @@ const IC = {
   hud: SVG('<rect x="4" y="5" width="16" height="12"/><path d="M8 11h8M12 7v8"/>'),
   tgt: SVG('<path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><circle cx="12" cy="12" r="2"/>'),
   eng: SVG('<circle cx="12" cy="12" r="8"/><path d="M12 4v8l5 3"/>'),
+  bomb: SVG('<path d="M12 3v3M8 6h8l-1 3H9zM9 9c-2 2-2 8 3 12 5-4 5-10 3-12"/>'),
+  eye: SVG('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
   land: SVG('<path d="M2 20h20M4 14l6-1 5-6h2l-2 6 5 1v2l-16-1z"/>'),
 };
 
@@ -178,6 +180,7 @@ export class Input {
       parent.appendChild(b);
       return b;
     };
+    this.wpnEls.bomb = rbtn(wpn, 'bomb', 'md', IC.bomb, 'bomb');
     this.wpnEls.flr = rbtn(wpn, 'flr', 'md', IC.flr, 'flare');
     this.wpnEls.msl = rbtn(wpn, 'msl', 'lg', IC.msl, 'missile');
     this.wpnEls.gun = rbtn(wpn, 'gun', 'xl gun', IC.gun, undefined, (on) => (this.touchFire = on));
@@ -207,6 +210,7 @@ export class Input {
     };
     sq(IC.more, () => this.drawer.classList.toggle('open'));
     sq(IC.ap, () => this.events.add('ap'), 'apbtn');
+    sq(IC.eye, () => this.events.add('cockpit'));
     sq(IC.cam, () => this.events.add('camera'));
     sq(IC.pause, () => this.events.add('pause'));
     this.drawer = this.div('drawer');
@@ -272,7 +276,7 @@ export class Input {
       : [-1, -0.5, 0, 0.5, 1].map((t) => kind === 'v' ? `<i class="tick" style="top:${t * 84}px"></i>` : `<i class="tick" style="left:${t * 92}px"></i>`).join('');
     el.innerHTML = `<div class="trk"></div>${ticks}<div class="th"></div><div class="lbl">${kind === 'v' ? 'PITCH' : kind === 'h' ? 'ROLL' : 'STICK'}</div>`;
     this.root.appendChild(el);
-    const f: Floater = { el, th: el.querySelector('.th') as HTMLElement, kind, id: null, ox: 0, oy: 0, range: kind === 's' ? 70 : kind === 'v' ? 84 : 92 };
+    const f: Floater = { el, th: el.querySelector('.th') as HTMLElement, kind, id: null, ox: 0, oy: 0, range: kind === 's' ? 62 : kind === 'v' ? 72 : 80 };
     const set = (dx: number, dy: number) => {
       let vx = 0, vy = 0;
       const R = f.range * (settings.controlScale ?? 0.86);
@@ -320,13 +324,10 @@ export class Input {
     this.thrEl.classList.toggle('ab-on', this.lever > 0.93);
   }
 
-  setWeapons(on: boolean) {
-    this.hasWeapons = on;
-    for (const b of Object.values(this.wpnEls)) b.style.display = on ? '' : 'none';
-  }
+  setWeapons(on: boolean) { this.hasWeapons = on; this.lastStatus = ''; }
   /** Contextual visibility + live readouts (cheap: only touches the DOM when something changed). */
   setStatus(s: ControlStatus) {
-    const key = JSON.stringify([s.weapons, s.gun, s.missiles, s.flares, Math.round(s.lock * 10), s.locked, s.retract, s.gearDown, s.onGround, s.lowSlow, s.hook, s.hookDown, s.catapult, s.flaps, s.hasFlaps, s.airbrake, s.hasAirbrake, s.ap]);
+    const key = JSON.stringify([s.bombs, s.weapons, s.gun, s.missiles, s.flares, Math.round(s.lock * 10), s.locked, s.retract, s.gearDown, s.onGround, s.lowSlow, s.hook, s.hookDown, s.catapult, s.flaps, s.hasFlaps, s.airbrake, s.hasAirbrake, s.ap]);
     if (key === this.lastStatus) return;
     this.lastStatus = key;
     const vis = (k: string, v: boolean) => this.ctxEls[k]?.classList.toggle('hid', !v);
@@ -342,6 +343,8 @@ export class Input {
     this.ctxEls.apbtn?.classList.toggle('on', s.ap);
     const fl = this.ctxEls.flaps?.querySelector('span');
     if (fl) fl.textContent = s.flaps;
+    const shw = (el: HTMLElement | undefined, v: boolean) => { if (el) el.style.display = v ? '' : 'none'; };
+    shw(this.wpnEls.gun, s.weapons); shw(this.wpnEls.msl, s.weapons); shw(this.wpnEls.flr, s.flares > 0); shw(this.wpnEls.bomb, s.bombs > 0);
     if (this.wpnEls.gun) {
       (this.wpnEls.gun.querySelector('.q') as HTMLElement).textContent = String(s.gun);
       this.wpnEls.gun.classList.toggle('empty', s.gun <= 0);
@@ -350,7 +353,7 @@ export class Input {
       this.wpnEls.msl.classList.toggle('lock', s.locked);
       this.wpnEls.msl.classList.toggle('empty', s.missiles <= 0);
       (this.wpnEls.flr.querySelector('.q') as HTMLElement).textContent = String(s.flares);
-      this.wpnEls.flr.style.display = s.flares > 0 || this.hasWeapons ? (this.hasWeapons || s.flares > 0 ? '' : 'none') : 'none';
+      (this.wpnEls.bomb.querySelector('.q') as HTMLElement).textContent = String(s.bombs);
     }
   }
 

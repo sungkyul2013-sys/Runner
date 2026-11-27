@@ -11,10 +11,10 @@ export interface QualityProfile {
   dpr: number; shadow: number; smaa: boolean; terrainSplit: number; clouds: number; trees: number; far: number; bloomRes: number;
 }
 export const QUALITY: Record<Quality, QualityProfile> = {
-  low: { dpr: 1, shadow: 1024, smaa: false, terrainSplit: 1.5, clouds: 70, trees: 1800, far: 42000, bloomRes: 0.35 },
-  medium: { dpr: 1.5, shadow: 2048, smaa: false, terrainSplit: 2.0, clouds: 130, trees: 4000, far: 52000, bloomRes: 0.5 },
-  high: { dpr: 2, shadow: 2048, smaa: true, terrainSplit: 2.5, clouds: 200, trees: 7000, far: 60000, bloomRes: 0.5 },
-  ultra: { dpr: 2.5, shadow: 4096, smaa: true, terrainSplit: 3.2, clouds: 300, trees: 11000, far: 70000, bloomRes: 0.75 },
+  low: { dpr: 1, shadow: 1024, smaa: false, terrainSplit: 1.5, clouds: 70, trees: 1800, far: 45000, bloomRes: 0.35 },
+  medium: { dpr: 1.5, shadow: 1024, smaa: false, terrainSplit: 1.9, clouds: 110, trees: 3000, far: 70000, bloomRes: 0.5 },
+  high: { dpr: 2, shadow: 2048, smaa: true, terrainSplit: 2.5, clouds: 200, trees: 7000, far: 100000, bloomRes: 0.5 },
+  ultra: { dpr: 2.5, shadow: 4096, smaa: true, terrainSplit: 3.2, clouds: 300, trees: 11000, far: 140000, bloomRes: 0.75 },
 };
 
 const GradeShader = {
@@ -141,14 +141,16 @@ export class Renderer {
 
   /** Dynamic resolution: keeps mobile at a smooth frame rate. */
   adapt(dt: number) {
-    this.frameAvg = this.frameAvg * 0.95 + dt * 1000 * 0.05;
+    // gentle dynamic resolution: small steps, high floor, hysteresis — no sudden blur
+    this.frameAvg = this.frameAvg * 0.97 + Math.min(dt * 1000, 80) * 0.03;
     this.adaptT += dt;
-    if (this.adaptT < 1.5) return;
+    if (this.adaptT < 2.5) return;
     this.adaptT = 0;
     const cap = Math.min(devicePixelRatio || 1, this.profile.dpr) * settings.resScale;
+    const floor = Math.max(0.85, cap * 0.72);
     let pr = this.pixelRatio;
-    if (this.frameAvg > 24 && pr > 0.6) pr = Math.max(0.6, pr - 0.15);
-    else if (this.frameAvg < 15 && pr < cap) pr = Math.min(cap, pr + 0.1);
+    if (this.frameAvg > 34 && pr > floor) pr = Math.max(floor, pr - 0.05);
+    else if (this.frameAvg < 20 && pr < cap) pr = Math.min(cap, pr + 0.05);
     if (pr !== this.pixelRatio) { this.pixelRatio = pr; this.resize(); }
   }
 

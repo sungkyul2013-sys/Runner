@@ -7,7 +7,7 @@ import { Airport } from './Airport';
 import { City } from './City';
 import { Scenery } from './Scenery';
 import { Weather } from './Weather';
-import { settings } from '../core/Save';
+import { settings, IS_MOBILE } from '../core/Save';
 import type { QualityProfile } from '../core/Renderer';
 import type { Effects } from '../combat/Effects';
 
@@ -60,12 +60,12 @@ export class World {
     const w = this.sky.weather;
     this.sky.update(camera, focus, dt);
     const camPos = (camera as THREE.PerspectiveCamera).position;
-    this.terrain.update([camPos, focus], camPos.y, 4);
+    this.terrain.update([camPos, focus], camPos.y, IS_MOBILE ? 2.5 : 4);
     this.ocean.update(camPos, this.time, Math.min(1, w.windSpeed / 15));
     this.clouds.mesh.visible = settings.clouds;
     this.clouds.update(camPos, this.sky.sunDir, this.sky.sun.color, this.sky.horizonColor, this.sky.fog, w.cloudCover, w.overcast, this.sky.night, this.sky.lightning);
     this.airport.update(dt, camPos, this.sky.night, w.windDir, w.windSpeed);
-    this.city.update(dt, this.sky.night, fx);
+    this.city.update(dt, this.sky.night, fx, camPos);
     this.scenery.update(dt, focus, this.sky.night, settings.trees);
     this.weather.update(dt, camPos, viewerVel, w.rain, w.storm, this.sky);
   }

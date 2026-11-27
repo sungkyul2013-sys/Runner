@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import waterUrl from '../assets/waternormals.jpg';
 import { terrainHeight } from './WorldDef';
 
-const DEPTH_RES = 256, DEPTH_SPAN = 56000;
+const DEPTH_RES = 256, DEPTH_SPAN = 56000, FAR_SPAN = 524288;
 
 export class Ocean {
   readonly mesh: THREE.Mesh;
-  private uniforms = { uTime: { value: 0 }, uDepth: { value: null as THREE.Texture | null }, uRough: { value: 0 } };
+  private uniforms = { uTime: { value: 0 }, uDepth: { value: null as THREE.Texture | null }, uFar: { value: null as THREE.Texture | null }, uRough: { value: 0 } };
 
   constructor() {
     const nrm = new THREE.TextureLoader().load(waterUrl);
@@ -21,6 +21,18 @@ export class Ocean {
       data[k] = d; data[k + 1] = h > 0 ? 255 : 0; data[k + 2] = 0; data[k + 3] = 255;
     }
     const dt = new THREE.DataTexture(data, DEPTH_RES, DEPTH_RES, THREE.RGBAFormat);
+    // coarse continental-shelf map for the whole world (shallows + coast foam far from home)
+    const FR = 320;
+    const fdata = new Uint8Array(FR * FR * 4);
+    for (let j = 0; j < FR; j++) for (let i = 0; i < FR; i++) {
+      const x = (i / (FR - 1) - 0.5) * FAR_SPAN, z = (j / (FR - 1) - 0.5) * FAR_SPAN;
+      const h = terrainHeight(x, z);
+      const k = (j * FR + i) * 4;
+      fdata[k] = Math.min(255, Math.max(0, -h * 0.4)); fdata[k + 3] = 255;
+    }
+    const ft = new THREE.DataTexture(fdata, FR, FR, THREE.RGBAFormat);
+    ft.magFilter = THREE.LinearFilter; ft.minFilter = THREE.LinearFilter; ft.needsUpdate = true;
+    this.uniforms.uFar.value = ft;
     dt.magFilter = THREE.LinearFilter; dt.minFilter = THREE.LinearFilter; dt.needsUpdate = true;
     this.uniforms.uDepth.value = dt;
 
@@ -32,11 +44,12 @@ export class Ocean {
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos=(modelMatrix*vec4(transformed,1.0)).xyz;');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
-          varying vec3 vWPos; uniform float uTime; uniform sampler2D uDepth; uniform float uRough;`)
+          varying vec3 vWPos; uniform float uTime; uniform sampler2D uDepth; uniform sampler2D uFar; uniform float uRough;`)
         .replace('#include <color_fragment>', `#include <color_fragment>
           vec2 duv = vWPos.xz/${DEPTH_SPAN.toFixed(1)} + 0.5;
           vec4 dep = texture2D(uDepth, duv);
-          float depth = (duv.x<0.0||duv.x>1.0||duv.y<0.0||duv.y>1.0) ? 1.0 : dep.r;
+          vec2 fuv2 = vWPos.xz/524288.0 + 0.5;
+          float depth = (duv.x<0.0||duv.x>1.0||duv.y<0.0||duv.y>1.0) ? texture2D(uFar, fuv2).r : dep.r;
           vec3 shallow = vec3(0.06,0.42,0.42);
           vec3 deep = vec3(0.012,0.06,0.1);
           diffuseColor.rgb = mix(shallow, deep, smoothstep(0.0, 0.5, depth));
@@ -54,7 +67,7 @@ export class Ocean {
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(0.04, 0.22, smoothstep(1500.0, 20000.0, length(vWPos - cameraPosition))) + uRough*0.1;`);
     };
-    const g = new THREE.PlaneGeometry(140000, 140000, 1, 1);
+    const g = new THREE.PlaneGeometry(420000, 420000, 1, 1);
     g.rotateX(-Math.PI / 2);
     this.mesh = new THREE.Mesh(g, mat);
     this.mesh.receiveShadow = true;

@@ -26,7 +26,7 @@ export interface AircraftSpec {
   engine: { type: 'prop' | 'jet'; power?: number; staticT?: number; thrust: number; ab?: number; spool: number; count: number };
   gear: GearDef[]; retract: boolean; hook: boolean;
   vR: number; vRef: number; vStall: number; vMax: number; gMax: number; gMin: number;
-  gun: number; missiles: number; flares: number;
+  gun: number; missiles: number; flares: number; bombs?: number;
   eye: [number, number, number]; chase: number;
   geom: Geom;
   liveries: Livery[];
@@ -111,13 +111,13 @@ export const AIRCRAFT: AircraftSpec[] = [
     I: [75000, 85000, 13000],
     engine: { type: 'jet', thrust: 76000, ab: 127000, spool: 3.2, count: 1 },
     gear: [
-      { p: [0, -1.65, -4.6], travel: 0.3, steer: true, wheelR: 0.3, nose: true },
-      { p: [-1.2, -1.65, 0.6], travel: 0.28, brake: true, wheelR: 0.38 },
-      { p: [1.2, -1.65, 0.6], travel: 0.28, brake: true, wheelR: 0.38 },
+      { p: [0, -1.65, -4.6], travel: 0.42, steer: true, wheelR: 0.3, nose: true },
+      { p: [-1.2, -1.65, 0.6], travel: 0.42, brake: true, wheelR: 0.38 },
+      { p: [1.2, -1.65, 0.6], travel: 0.42, brake: true, wheelR: 0.38 },
     ],
     retract: true, hook: true,
     vR: 72, vRef: 70, vStall: 58, vMax: 600, gMax: 9, gMin: -3,
-    gun: 510, missiles: 6, flares: 40,
+    gun: 510, missiles: 6, flares: 40, bombs: 4,
     eye: [0, 0.78, -3.4], chase: 22,
     geom: {
       style: 'jet', length: 15, radius: 0.85, heightScale: 1.05, noseLen: 4.2, tailLen: 4.5, tailUp: 0.2,
@@ -142,13 +142,13 @@ export const AIRCRAFT: AircraftSpec[] = [
     I: [180000, 210000, 35000],
     engine: { type: 'jet', thrust: 2 * 116000, ab: 2 * 156000, spool: 3.6, count: 2 },
     gear: [
-      { p: [0, -1.85, -6.0], travel: 0.32, steer: true, wheelR: 0.34, nose: true },
-      { p: [-1.6, -1.85, 0.9], travel: 0.3, brake: true, wheelR: 0.45 },
-      { p: [1.6, -1.85, 0.9], travel: 0.3, brake: true, wheelR: 0.45 },
+      { p: [0, -1.85, -6.0], travel: 0.44, steer: true, wheelR: 0.34, nose: true },
+      { p: [-1.6, -1.85, 0.9], travel: 0.44, brake: true, wheelR: 0.45 },
+      { p: [1.6, -1.85, 0.9], travel: 0.44, brake: true, wheelR: 0.45 },
     ],
     retract: true, hook: true,
     vR: 70, vRef: 68, vStall: 55, vMax: 680, gMax: 9, gMin: -3,
-    gun: 480, missiles: 8, flares: 50,
+    gun: 480, missiles: 8, flares: 50, bombs: 4,
     eye: [0, 0.9, -5.1], chase: 26,
     geom: {
       style: 'stealth', length: 19, radius: 1.05, heightScale: 0.8, noseLen: 5.5, tailLen: 5, tailUp: 0.1,
@@ -210,7 +210,7 @@ export const AIRCRAFT: AircraftSpec[] = [
     ],
     retract: true, hook: false,
     vR: 55, vRef: 58, vStall: 46, vMax: 190, gMax: 3, gMin: -1,
-    gun: 0, missiles: 0, flares: 60,
+    gun: 0, missiles: 0, flares: 60, bombs: 12,
     eye: [-0.6, 1.9, -13.6], chase: 60,
     geom: {
       style: 'turboprop', length: 33, radius: 2.4, heightScale: 1.05, noseLen: 4.5, tailLen: 10, tailUp: 1.6,

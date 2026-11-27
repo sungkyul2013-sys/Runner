@@ -49,7 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shadows: true,
   bloom: true,
   clouds: true,
-  trees: isMobile ? 0.6 : 1,
+  trees: isMobile ? 0.5 : 1,
   showFps: false,
   controlMode: isMobile ? 'split' : 'stick',
   controlScale: 0.86,

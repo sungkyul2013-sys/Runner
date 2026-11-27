@@ -387,6 +387,10 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;bac
 .quick b{display:block;font-weight:800;font-size:13px;margin-top:3px;transition:color .2s}
 .quick button:hover b{color:var(--burn)}
 .quick b.flip{animation:in-up .3s var(--ease)}
+/* ---------- small system notice ---------- */
+.notice{position:absolute;left:50%;top:calc(70px + var(--sat));transform:translate(-50%,-6px);font-family:var(--fm);font-weight:700;font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--bone);text-shadow:0 1px 6px rgba(0,0,0,.9);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s var(--ease);white-space:nowrap}
+.notice.on{opacity:1;transform:translate(-50%,0)}
+@media (orientation:portrait){.notice{top:calc(22% + var(--sat))}}
 /* ---------- white transition effects, one per destination ---------- */
 .fxo{position:fixed;inset:0;z-index:45;pointer-events:none;overflow:hidden}
 .fxo i{position:absolute;background:#fff}

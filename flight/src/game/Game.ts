@@ -267,6 +267,7 @@ export class Game implements UIHost {
     this.env.catapult = false;
     switch (type) {
       case 'runway': { const r = RUNWAYS[0]; p.set(r.cx, r.elev - gy + 0.02, r.cz + r.length / 2 - 70); ground = true; hdg = 0; break; }
+      case 'far': { const r = RUNWAYS[2 + Math.floor(Math.random() * (RUNWAYS.length - 2))]; p.set(r.cx, r.elev - gy + 0.02, r.cz + r.length / 2 - 70); ground = true; hdg = 0; this.menus.notice(r.name); break; }
       case 'altiport': { const r = RUNWAYS[1]; p.set(r.cx, r.elev - gy + 0.02, r.cz + r.length / 2 - 40); ground = true; hdg = 0; break; }
       case 'carrier': p.set(CARRIER.cx + 12, CARRIER.deck - gy + 0.02, CARRIER.cz + 60); ground = true; hdg = 0; break;
       case 'catapult': p.set(CARRIER.cx - 8, CARRIER.deck - gy + 0.02, CARRIER.cz - CARRIER.length / 2 + 95); ground = true; hdg = 0; this.env.catapult = true; break;
@@ -316,6 +317,7 @@ export class Game implements UIHost {
     this.maxG = 1; this.maxSpd = 0; this.dist = 0;
     this.engineFailed = false;
     this.calloutAlt = 9999;
+    this.wreck = 0;
     this.menus.hideAll(); this.menus.closeAP(); this.menus.tip(null);
     this.input.show(true);
     this.input.root.classList.toggle('desk', matchMedia('(pointer:fine)').matches);
@@ -541,16 +543,38 @@ export class Game implements UIHost {
   private crash(reason: string) {
     const p = this.player;
     if (!p) return;
-    this.fx.explosion(p.fm.pos.clone(), 2.6, p.fm.vel);
-    this.fx.addFire(p.fm.pos.clone(), 2.5, 60);
-    p.vis.root.visible = false;
-    this.cam.shake(2);
-    this.audio.say('crash', 'Crash', 5);
-    this.menus.toast(`추락 — ${reason}`, 'var(--rd)', 2400);
+    const fm = p.fm;
+    const energy = fm.crashSpeed + Math.abs(fm.crashVs) * 3;
+    const water = reason.includes('바다');
+    if (energy > 95 || reason.includes('충돌') && fm.crashSpeed > 70) {
+      // high-energy impact: fireball + burning wreck
+      this.fx.explosion(fm.pos.clone(), 2.6, fm.vel);
+      this.fx.addFire(fm.pos.clone(), 2.5, 60);
+      p.vis.root.visible = false;
+      this.cam.shake(2);
+      this.audio.say('crash', 'Crash', 5);
+      this.menus.banner('CRASH', reason, 'var(--burn)', 2400);
+    } else {
+      // survivable crash: the airframe breaks but stays — smoke, sparks, maybe a small fire
+      p.vis.root.visible = true;
+      const g = Math.max(fm.groundH, 0);
+      fm.pos.y = Math.max(fm.pos.y, g + 0.6);
+      const at = fm.attitude();
+      fm.quat.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-at.pitch * 0.6 + 0.05, 0, (Math.random() - 0.5) * 0.4)));
+      p.vis.gear.forEach((gv) => (gv.root.visible = false));
+      if (energy > 55) { p.vis.wingL.visible = Math.random() < 0.5; this.fx.addFire(fm.pos.clone(), 0.8, 30); }
+      if (water) { for (let i = 0; i < 30; i++) this.fx.dust(fm.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 12, 0, (Math.random() - 0.5) * 12)), fm.vel, 1, true); }
+      else { this.fx.hitSparks(fm.pos.clone(), 20); for (let i = 0; i < 12; i++) this.fx.dust(fm.pos.clone(), fm.vel, 1); }
+      this.wreck = 8;
+      p.sync();
+      this.cam.shake(1);
+      this.audio.hit();
+      this.menus.banner(water ? 'DITCHED' : 'AIRFRAME DAMAGED', reason, 'var(--amber)', 2400);
+    }
     if (this.mission?.id === 'x3') this.finish(true, '');
-    else if (this.sandbox) this.finish(false, reason);
     else this.finish(false, reason);
   }
+  private wreck = 0;
 
   private damagePlayer(dmg: number, at: THREE.Vector3) {
     const p = this.player;
@@ -570,36 +594,44 @@ export class Game implements UIHost {
     for (const e of ev) {
       switch (e) {
         case 'pause': this.pauseGame(); return;
-        case 'gear': if (p.spec.retract) { c.gearDown = !c.gearDown; this.audio.gearMotor(); this.menus.toast(c.gearDown ? '기어 DOWN' : '기어 UP', 'var(--cy)', 900); if (!c.gearDown && p.fm.onGround) c.gearDown = true; } break;
-        case 'flapsDown': p.cycleFlaps(1); this.menus.toast(`플랩 ${Math.round(c.flaps * 100)}%`, 'var(--cy)', 800); break;
-        case 'flapsUp': p.cycleFlaps(-1); this.menus.toast(`플랩 ${Math.round(c.flaps * 100)}%`, 'var(--cy)', 800); break;
+        case 'gear': if (p.spec.retract) { c.gearDown = !c.gearDown; this.audio.gearMotor(); this.menus.notice(c.gearDown ? '기어 DOWN' : '기어 UP'); if (!c.gearDown && p.fm.onGround) c.gearDown = true; } break;
+        case 'flapsDown': p.cycleFlaps(1); this.menus.notice(`플랩 ${Math.round(c.flaps * 100)}%`); break;
+        case 'flapsUp': p.cycleFlaps(-1); this.menus.notice(`플랩 ${Math.round(c.flaps * 100)}%`); break;
         case 'airbrake': c.airbrake = !c.airbrake; break;
-        case 'hook': if (p.spec.hook) { c.hook = !c.hook; this.menus.toast(c.hook ? '테일훅 DOWN' : '테일훅 UP', 'var(--cy)', 900); if (!c.hook) p.fm.hooked = false; } break;
+        case 'hook': if (p.spec.hook) { c.hook = !c.hook; this.menus.notice(c.hook ? '테일훅 DOWN' : '테일훅 UP'); if (!c.hook) p.fm.hooked = false; } break;
         case 'camera': this.cam.next(1); this.camNameT = 1.6; break;
         case 'lights': p.lightsOn = !p.lightsOn; break;
         case 'hud': this.hud.visible = !this.hud.visible; break;
         case 'smoke': p.smokeOn = !p.smokeOn; break;
         case 'photo': this.photo(); return;
-        case 'engine': if (!p.fm.engineRunning && p.fm.hp.engine > 0 && !this.engineFailed) { p.fm.engineRunning = true; this.menus.toast('엔진 재시동', 'var(--gn)'); } break;
+        case 'engine': if (!p.fm.engineRunning && p.fm.hp.engine > 0 && !this.engineFailed) { p.fm.engineRunning = true; this.menus.notice('엔진 재시동'); } break;
         case 'ap': this.menus.toggleAP(); break;
         case 'app': this.apCmd('app'); break;
         case 'target': this.targetCycle++; this.lockT = 0; break;
         case 'catapult':
           if (this.env.catapult && p.fm.onGround && !p.fm.catapulting) {
-            if (p.fm.thr < 0.85) { this.menus.toast('스로틀을 최대로 올리세요', 'var(--am)'); break; }
+            if (p.fm.thr < 0.85) { this.menus.notice('스로틀을 최대로 올리세요'); break; }
             p.fm.catapulting = true; p.fm.catapultDist = 0; c.brake = 0;
             this.audio.catapult(); this.cam.shake(1.2); this.menus.toast('발진!', 'var(--am)');
           }
           break;
         case 'flare': if (p.flares > 0) { p.flares--; this.weapons.dropFlares(p.fm.pos, p.fm.vel); } break;
         case 'missile': this.fireMissile(); break;
+        case 'bomb':
+          if (p.bombs > 0 || this.infAmmo) {
+            if (!this.infAmmo) p.bombs--;
+            this.weapons.dropBomb(p.worldPoint(new THREE.Vector3(0, -p.spec.geom.radius * 1.2, 0)), p.fm.vel, 'player');
+            this.audio.click(); this.menus.notice(`BOMB AWAY · ${p.bombs}`);
+          } else this.menus.notice('NO BOMBS');
+          break;
+        case 'cockpit': this.cam.setMode(this.cam.mode === 'cockpit' ? 'chase' : 'cockpit'); this.camNameT = 1.4; break;
       }
     }
   }
 
   private fireMissile() {
     const p = this.player!;
-    if (p.missiles <= 0 && !this.infAmmo) { this.menus.toast('미사일 없음', 'var(--rd)', 800); return; }
+    if (p.missiles <= 0 && !this.infAmmo) { this.menus.notice('미사일 없음'); return; }
     const locked = this.lockT >= 1.2 ? this.lockTarget : null;
     const slot = p.spec.missiles - p.missiles;
     const mm = p.missileMeshes[slot % Math.max(1, p.missileMeshes.length)];
@@ -662,7 +694,7 @@ export class Game implements UIHost {
           this.weapons.fireGun(p.worldPoint(new THREE.Vector3(0.6, 0.2, -p.spec.geom.length * 0.42)), f, fm.vel, 'player', 0.0025);
           this.cam.shake(0.05);
         }
-        this.fx.flame(p.worldPoint(new THREE.Vector3(0.6, 0.2, -p.spec.geom.length * 0.45)), fm.vel, 0.5);
+        this.fx.muzzle(p.worldPoint(new THREE.Vector3(0.6, 0.2, -p.spec.geom.length * 0.47)), fm.vel, fm.attitude().f);
       }
       // lock-on
       const cand = this.findCandidate();
@@ -716,7 +748,7 @@ export class Game implements UIHost {
   private pushControlStatus() {
     const p = this.player!, fm = p.fm, s = p.spec;
     this.input.setStatus({
-      weapons: s.gun > 0, gun: this.infAmmo ? 999 : p.gunAmmo, missiles: this.infAmmo ? 99 : p.missiles, flares: p.flares,
+      bombs: p.bombs, weapons: s.gun > 0, gun: this.infAmmo ? 999 : p.gunAmmo, missiles: this.infAmmo ? 99 : p.missiles, flares: p.flares,
       lock: this.lockTarget ? clamp(this.lockT / 1.2, 0, 1) : 0, locked: this.lockT >= 1.2,
       retract: s.retract, gearDown: p.controls.gearDown, onGround: fm.onGround, lowSlow: fm.agl < 450 && fm.ias < s.vRef * 1.8,
       hook: s.hook, hookDown: p.controls.hook, catapult: this.env.catapult && fm.onGround && !fm.catapulting,
@@ -810,6 +842,12 @@ export class Game implements UIHost {
       if (n) targets.push({ pos: n.position, kind: 'ring', label: `RING ${this.rings.idx + 1}/${this.rings.meshes.length}`, dist: n.position.distanceTo(fm.pos) });
     }
     const o = this.obj;
+    // nearest airfield marker for long flights
+    if (o?.type !== 'land') {
+      let best = RUNWAYS[0], bd = Infinity;
+      for (const r of RUNWAYS) { const d = Math.hypot(r.cx - fm.pos.x, r.cz - fm.pos.z); if (d < bd) { bd = d; best = r; } }
+      if (bd > 3500) targets.push({ pos: new THREE.Vector3(best.cx, best.elev, best.cz), kind: 'friend', label: best.name, dist: bd });
+    }
     if (o?.type === 'reach') { const pp = new THREE.Vector3(o.x, fm.pos.y, o.z); targets.push({ pos: pp, kind: 'wp', label: 'WAYPOINT', dist: pp.distanceTo(fm.pos) }); }
     if (o?.type === 'land' && !fm.onGround) {
       const ap = nearestApproach(fm.pos);
@@ -840,6 +878,7 @@ export class Game implements UIHost {
       ils: showIls && !fm.onGround ? { dist: dev.dist, loc: dev.loc, gs: dev.gs, carrier: ap.carrier, pathAlt: dev.pathAlt, tdx: ap.tdx, tdz: ap.tdz, elev: ap.elev, hdgDeg: ap.hdg, gsDeg: ap.gs } : null,
       targets, objective, timer: this.mission ? this.missionT : null, score: this.kills ? `격추/파괴 ${this.kills}` : '',
       gun: this.infAmmo ? 999 : p.gunAmmo, missiles: this.infAmmo ? 99 : p.missiles, flares: p.flares, hasWeapons: p.spec.gun > 0, lockState: this.weapons.incomingToPlayer() < 4000 ? 3 : this.lockT >= 1.2 ? 2 : 0, leadPip,
+      ccip: p.bombs > 0 && !fm.onGround && fm.agl < 5000 ? Weapons.predictImpact(fm.pos, fm.vel) : null, bombs: p.bombs,
       hp: fm.hp, mode: settings.assist, units: settings.units, vref: p.spec.vRef, vstall: p.spec.vStall, wind: this.env.wind, paused: false, camName: this.camNameT > 0 ? CAM_NAMES[this.cam.mode] : '',
     };
     this.hud.draw(data, this.r.camera, dt);
@@ -862,7 +901,10 @@ export class Game implements UIHost {
       } else this.cam.update(dt, p, st.lookX, st.lookY, st.zoom, st.looking || this.state === 'photo');
       st.lookX = 0; st.lookY = 0; st.zoom = 0;
       this.world.update(0, this.r.camera, p.fm.pos, new THREE.Vector3(), this.fx);
-      if (this.state === 'results') this.fx.update(dt, this.world.sky.fog);
+      if (this.state === 'results') {
+        if (this.wreck > 0 && p.vis.root.visible) { this.wreck -= dt * 0.05; if (Math.random() < 0.5) this.fx.trailSmoke(p.fm.pos.clone().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(1, 3, 0), 0.8, 2); }
+        this.fx.update(dt, this.world.sky.fog);
+      }
     }
     this.audio.silenceEngine();
     this.audio.tone(0, 0);
@@ -994,7 +1036,7 @@ export class Game implements UIHost {
         if (tgt.carrier && p.spec.hook) p.controls.hook = true;
         if (p.spec.retract) p.controls.gearDown = true;
         if (p.spec.flapNotches.length > 1) { p.flapIdx = p.spec.flapNotches.length - 1; p.controls.flaps = p.spec.flapNotches[p.flapIdx]; }
-        this.menus.toast(`APP — ${tgt.carrier ? '항모' : tgt.rw?.name ?? ''} 자동 접근`, 'var(--gn)');
+        this.menus.notice(`APP · ${tgt.carrier ? '항모' : tgt.rw?.name ?? ''} 자동 접근`);
         break;
       }
       case 'off': a.disengage(); break;

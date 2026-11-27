@@ -369,7 +369,7 @@ export class Menus {
         <div>
           <div class="sect"><h3>Aircraft</h3>
             <div class="row"><div class="l">${getSpec(c.aircraft).name}<small>${getSpec(c.aircraft).ko} · ${getSpec(c.aircraft).role}</small></div><button class="link" data-pick>Change ${ICON.play}</button></div>
-            <div class="row stack"><div class="l">출발 위치</div>${seg('spawn', [['runway', '활주로'], ['air', '공중'], ['carrier', '항모 갑판'], ['catapult', '캐터펄트'], ['altiport', '산악 활주로'], ['city', '서울 상공'], ['canyon', '협곡'], ['mountain', '설산']])}</div>
+            <div class="row stack"><div class="l">출발 위치</div>${seg('spawn', [['runway', '활주로'], ['air', '공중'], ['carrier', '항모 갑판'], ['catapult', '캐터펄트'], ['altiport', '산악 활주로'], ['far', '원거리 공항'], ['city', '서울 상공'], ['canyon', '협곡'], ['mountain', '설산']])}</div>
           </div>
           <div class="sect"><h3>World</h3>
             <div class="row"><div class="l">시각<small data-hv>${hh(c.hour)}</small></div><input type="range" min="0" max="23.9" step="0.1" value="${c.hour}" data-r="hour"></div>
@@ -549,6 +549,15 @@ export class Menus {
     // split "TITLE — sub" style messages
     const [a, b] = text.split(' — ');
     this.banner(a, b ?? '', color, ms);
+  }
+  /** Small system notice (gear, flaps, autopilot…) — top centre, out of the way on phones. */
+  notice(text: string) {
+    let n = this.root.querySelector<HTMLElement>('.notice');
+    if (!n) { n = h('<div class="notice"></div>'); this.root.appendChild(n); }
+    n.textContent = text;
+    n.classList.remove('on'); void n.offsetWidth; n.classList.add('on');
+    clearTimeout((n as unknown as { _t: number })._t);
+    (n as unknown as { _t: number })._t = window.setTimeout(() => n!.classList.remove('on'), 1500);
   }
   feed(text: string, tag = 'KILL') {
     const el = h(`<div><b>${tag}</b>${text}</div>`);

@@ -109,12 +109,13 @@ export class Airport {
     const main = RUNWAYS[0];
     const tw = new QuadBatch(), tl = new QuadBatch();
     const y = main.elev + 0.04;
-    tw.add(main.cx + 168, main.cz - 1500, main.cx + 192, main.cz + 1500, y);
-    for (const zz of [-1480, -500, 500, 1480]) {
+    const HL = main.length / 2;
+    tw.add(main.cx + 168, main.cz - HL, main.cx + 192, main.cz + HL, y);
+    for (const zz of [-HL + 20, -HL / 3, HL / 3, HL - 20]) {
       tw.add(main.cx + 22, main.cz + zz - 12, main.cx + 192, main.cz + zz + 12, y);
       tl.add(main.cx + 30, main.cz + zz - 0.3, main.cx + 180, main.cz + zz + 0.3, y + 0.03);
     }
-    tl.add(main.cx + 179.7, main.cz - 1490, main.cx + 180.3, main.cz + 1490, y + 0.03);
+    tl.add(main.cx + 179.7, main.cz - HL + 10, main.cx + 180.3, main.cz + HL - 10, y + 0.03);
     tw.add(main.cx + 192, main.cz - 900, main.cx + 520, main.cz + 320, y);
     const twGeo = tw.geo();
     // world-scale UVs for asphalt
@@ -123,9 +124,23 @@ export class Airport {
     const twm = new THREE.Mesh(twGeo, asphaltMat); twm.receiveShadow = true;
     this.group.add(twm, new THREE.Mesh(tl.geo(), yellowMat));
     // taxiway blue edge lights
-    for (let z = -1500; z <= 1500; z += 50) { this.lights.add(main.cx + 166, y + 0.4, main.cz + z, 0.1, 0.3, 1); this.lights.add(main.cx + 194, y + 0.4, main.cz + z, 0.1, 0.3, 1); }
+    for (let z = -HL; z <= HL; z += 50) { this.lights.add(main.cx + 166, y + 0.4, main.cz + z, 0.1, 0.3, 1); this.lights.add(main.cx + 194, y + 0.4, main.cz + z, 0.1, 0.3, 1); }
 
     this.buildings(main.cx, main.cz, main.elev);
+    // facilities at the distant airfields: apron, tower, hangars, beacon
+    for (let i = 2; i < RUNWAYS.length; i++) {
+      const r = RUNWAYS[i];
+      const ap = new THREE.Mesh(new THREE.PlaneGeometry(260, 700), asphaltMat); ap.rotation.x = -Math.PI / 2; ap.position.set(r.cx + 190, r.elev + 0.04, r.cz); ap.receiveShadow = true;
+      const twr = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 30, 12), new THREE.MeshStandardMaterial({ color: 0xc9c6bf, roughness: 0.85 })); twr.position.set(r.cx + 330, r.elev + 15, r.cz + 200);
+      const cab = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 5, 5, 12), new THREE.MeshStandardMaterial({ color: 0x1b2a38, roughness: 0.08, metalness: 0.9 })); cab.position.set(r.cx + 330, r.elev + 32, r.cz + 200);
+      this.group.add(ap, twr, cab);
+      for (let k = 0; k < 3; k++) {
+        const hg = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 50, 20, 1, true, 0, Math.PI), new THREE.MeshStandardMaterial({ color: 0x8b95a0, roughness: 0.55, metalness: 0.6, side: THREE.DoubleSide }));
+        hg.rotation.z = Math.PI / 2; hg.rotation.y = Math.PI / 2; hg.position.set(r.cx + 300, r.elev, r.cz - 250 - k * 70); hg.castShadow = true;
+        this.group.add(hg);
+      }
+      this.beacons.push(this.lights.add(r.cx + 330, r.elev + 37, r.cz + 200, 1, 0.1, 0.05));
+    }
     this.windsock = this.makeWindsock(main.cx - 60, main.elev, main.cz + 1150);
     this.meatball = this.buildCarrier();
     this.lights.finish();

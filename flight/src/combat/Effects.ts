@@ -149,6 +149,8 @@ export class Effects {
   private ringMat: THREE.MeshBasicMaterial;
   private _v = new THREE.Vector3();
   private _p = new THREE.Vector3();
+  private scorchMesh: THREE.InstancedMesh;
+  private scorchN = 0;
   onShake: (amount: number, pos: THREE.Vector3) => void = () => {};
   onBoom: (pos: THREE.Vector3, size: number) => void = () => {};
 
@@ -161,10 +163,42 @@ export class Effects {
       this.group.add(l);
       this.flashes.push({ light: l, t: 0, max: 0 });
     }
+    {
+      const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d')!;
+      for (let i = 0; i < 14; i++) {
+        const x = 64 + (Math.random() - 0.5) * 30, y = 64 + (Math.random() - 0.5) * 30, r = 26 + Math.random() * 36;
+        const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(10,8,6,0.55)'); gr.addColorStop(1, 'rgba(10,8,6,0)');
+        g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+      }
+      const geo = new THREE.PlaneGeometry(1, 1); geo.rotateX(-Math.PI / 2);
+      this.scorchMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6, color: 0xffffff }), 160);
+      this.scorchMesh.count = 0; this.scorchMesh.frustumCulled = false;
+      this.group.add(this.scorchMesh);
+    }
     this.ringMat = new THREE.MeshBasicMaterial({ color: 0xfff0d0, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
   }
 
+  /** Dark burn mark on the ground at an impact. */
+  scorch(pos: THREE.Vector3, radius: number) {
+    const gh = Math.max(terrainHeight(pos.x, pos.z), 0);
+    if (pos.y - gh > radius * 1.5) return;
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(pos.x, gh + 0.35, pos.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6.28), new THREE.Vector3(radius * 2, 1, radius * 2));
+    this.scorchMesh.setMatrixAt(this.scorchN % 160, m);
+    this.scorchN++;
+    this.scorchMesh.count = Math.min(160, this.scorchN);
+    this.scorchMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Gun muzzle flash: short, bright, additive. */
+  muzzle(pos: THREE.Vector3, vel: THREE.Vector3, dir: THREE.Vector3) {
+    this._v.copy(vel).addScaledVector(dir, 40);
+    this.fire.emit(pos, this._v, 0.06, 2.4, 0.8, 1, 0.85, 0.45, 1, 0);
+    this._v.copy(vel).multiplyScalar(0.9);
+    this.smoke.emit(pos, this._v, 0.6, 0.6, 3, 0.7, 0.7, 0.7, 0.18, 2);
+  }
+
   explosion(pos: THREE.Vector3, size = 1, vel?: THREE.Vector3) {
+    this.scorch(pos, 6 * size);
     const v = this._v;
     const base = vel ? vel.clone().multiplyScalar(0.3) : new THREE.Vector3();
     const n = Math.floor(40 * Math.min(size, 3));
@@ -213,7 +247,8 @@ export class Effects {
       this.fire.emit(pos, this._v, 0.25 + Math.random() * 0.2, 0.6, 0.2, 1, 0.85, 0.5, 1, 1, -9.8);
     }
     this._v.set(0, 2, 0);
-    this.smoke.emit(pos, this._v, 1.2, 1.5, 6, 0.3, 0.3, 0.3, 0.5, 1);
+    this.smoke.emit(pos, this._v, 1.6, 2, 8, 0.32, 0.3, 0.28, 0.6, 1);
+    this.fire.emit(pos, this._v.set(0, 0, 0), 0.08, 3.5, 1, 1, 0.9, 0.6, 1, 0);
   }
 
   dust(pos: THREE.Vector3, vel: THREE.Vector3, strength: number, water = false) {
@@ -234,7 +269,7 @@ export class Effects {
   trailSmoke(pos: THREE.Vector3, vel: THREE.Vector3, dark: number, size = 1) {
     this._v.copy(vel).multiplyScalar(0.05);
     const c = 0.85 - dark * 0.7;
-    this.smoke.emit(pos, this._v, 2.5 + Math.random() * 2, 1.2 * size, 7 * size, c, c, c, 0.55 + dark * 0.3, 0.6, 0.8);
+    this.smoke.emit(pos, this._v, 3.5 + Math.random() * 2.5, 1.5 * size, 9 * size, c, c, c, 0.6 + dark * 0.3, 0.5, 0.8);
   }
 
   flame(pos: THREE.Vector3, vel: THREE.Vector3, size = 1) {
@@ -284,6 +319,7 @@ export class Effects {
   }
 
   clear() {
+    this.scorchN = 0; this.scorchMesh.count = 0;
     for (const d of this.debris) this.group.remove(d.mesh);
     this.debris.length = 0;
     this.fires.length = 0;

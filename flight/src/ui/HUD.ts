@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { settings } from '../core/Save';
+import { RUNWAYS } from '../world/WorldDef';
 import { clamp, RAD, MS_TO_KT, M_TO_FT, DEG } from '../core/math';
 
 export interface HudTarget { pos: THREE.Vector3; kind: 'air' | 'ground' | 'building' | 'ring' | 'wp' | 'friend'; label: string; locked?: boolean; locking?: number; dist: number }
@@ -12,6 +13,7 @@ export interface HudData {
   ils: { dist: number; loc: number; gs: number; carrier: boolean; pathAlt: number; tdx: number; tdz: number; elev: number; hdgDeg: number; gsDeg: number } | null;
   targets: HudTarget[]; objective: string; timer: number | null; score: string;
   gun: number; missiles: number; flares: number; hasWeapons: boolean; lockState: number; leadPip: THREE.Vector3 | null;
+  ccip: THREE.Vector3 | null; bombs: number;
   hp: Record<string, number>; mode: string; units: string; vref: number; vstall: number; wind: THREE.Vector3; paused: boolean; camName: string;
 }
 
@@ -124,6 +126,19 @@ export class HUD {
       if (!lp.behind) { g.beginPath(); g.arc(lp.x, lp.y, 14 * S, 0, Math.PI * 2); g.moveTo(lp.x + 2, lp.y); g.arc(lp.x, lp.y, 2, 0, Math.PI * 2); g.stroke(); }
     }
 
+    // ---------- CCIP bomb pipper ----------
+    if (d.ccip) {
+      const cp = this.project(d.ccip, cam);
+      if (!cp.behind && cp.y < H * 0.95) {
+        g.save(); g.strokeStyle = '#ffb23d'; g.fillStyle = '#ffb23d';
+        g.beginPath(); g.arc(cp.x, cp.y, 11 * S, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.arc(cp.x, cp.y, 2, 0, Math.PI * 2); g.fill();
+        const fp = this.project(d.pos.clone().addScaledVector(d.vel, 200), cam);
+        g.setLineDash([4, 5]); g.beginPath(); g.moveTo(fp.x, fp.y); g.lineTo(cp.x, cp.y - 11 * S); g.stroke(); g.setLineDash([]);
+        g.textAlign = 'left'; g.fillText(`CCIP · ${d.bombs}`, cp.x + 16, cp.y);
+        g.restore();
+      }
+    }
     // ---------- speed & altitude tapes ----------
     const tapeH = portrait ? H * 0.16 : Math.min(H * (compact ? 0.36 : 0.42), 300 * S), tx = portrait ? W * 0.24 : compact ? W * 0.32 : Math.max(70, W * 0.2), ax = portrait ? W * 0.76 : compact ? W * 0.68 : W - Math.max(70, W * 0.2);
     this.tape(spdU, tx, cy, tapeH, 10, aviation ? 'KT' : 'KM/H', 'left', col, aviation ? d.vref * MS_TO_KT : d.vref * 3.6, aviation ? d.vstall * MS_TO_KT : d.vstall * 3.6);
@@ -399,7 +414,7 @@ export class HUD {
     g.beginPath(); g.arc(rx, ry, R, 0, Math.PI * 2); g.clip();
     // runways
     g.strokeStyle = 'rgba(220,230,240,0.8)'; g.lineWidth = 2;
-    for (const rw of [[0, 1500, 0, -1500], [-1800, -7820, -1800, -8580]]) {
+    for (const rw of RUNWAYS.map((r) => [r.cx, r.cz + r.length / 2, r.cx, r.cz - r.length / 2])) {
       const a = map(new THREE.Vector3(rw[0], 0, rw[1])), b = map(new THREE.Vector3(rw[2], 0, rw[3]));
       g.beginPath(); g.moveTo(rx + a[0], ry + a[1]); g.lineTo(rx + b[0], ry + b[1]); g.stroke();
     }
