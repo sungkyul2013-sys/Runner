@@ -13,7 +13,7 @@ export interface InputState {
 export interface ControlStatus {
   weapons: boolean; gun: number; missiles: number; flares: number; bombs: number; lock: number; locked: boolean;
   retract: boolean; gearDown: boolean; onGround: boolean; lowSlow: boolean; hook: boolean; hookDown: boolean; catapult: boolean;
-  flaps: string; hasFlaps: boolean; airbrake: boolean; hasAirbrake: boolean; ap: boolean; app?: boolean; pitchHold?: boolean;
+  flaps: string; hasFlaps: boolean; airbrake: boolean; hasAirbrake: boolean; ap: boolean; app?: boolean; pitchHold?: boolean; gearPos?: number;
 }
 
 const KEY_AXES: Record<string, [keyof InputState, number]> = {
@@ -188,17 +188,30 @@ export class Input {
     this.root.classList.toggle('wl', !!rightKind && mode !== 'tilt');
     // ---- contextual systems ----
     const ctx = this.div('ctx');
-    this.ctxEls.gear = rbtn(ctx, 'gear', 'sm', IC.gear, 'gear');
-    const flp = document.createElement('div');
-    flp.className = 'flp m';
-    flp.innerHTML = '<button data-f="-">−</button><span>FLAP</span><button data-f="+">+</button>';
-    flp.querySelectorAll<HTMLElement>('button').forEach((b) => b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.events.add(b.dataset.f === '+' ? 'flapsDown' : 'flapsUp'); this.buzz(); }));
-    ctx.appendChild(flp);
-    this.ctxEls.flaps = flp;
-    this.ctxEls.brk = rbtn(ctx, 'brk', 'sm', IC.brk, undefined, (on) => (this.touchBrake = on));
-    this.ctxEls.air = rbtn(ctx, 'air', 'sm', IC.air, 'airbrake');
-    this.ctxEls.hook = rbtn(ctx, 'hook', 'sm', IC.hook, 'hook');
-    this.ctxEls.cat = rbtn(ctx, 'cat', 'sm', IC.cat, 'catapult');
+    // HUD-style text switches: show the live state, tap to change it
+    const tg = (key: string, label: string, ev?: InputEvent, hold?: (on: boolean) => void) => {
+      const b = document.createElement('button');
+      b.className = 'tg';
+      b.innerHTML = `<span class="k">${label}</span><b>—</b>`;
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (ev) this.events.add(ev);
+        hold?.(true);
+        b.classList.add('dn'); b.classList.remove('fx'); void b.offsetWidth; b.classList.add('fx');
+        this.buzz();
+      });
+      const up = () => { hold?.(false); b.classList.remove('dn'); };
+      b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+      ctx.appendChild(b);
+      this.ctxEls[key] = b;
+      return b;
+    };
+    tg('gear', 'GEAR', 'gear');
+    tg('flaps', 'FLAPS', 'flapsCycle');
+    tg('air', 'SPD BRK', 'airbrake');
+    tg('brk', 'BRAKE', undefined, (on) => (this.touchBrake = on));
+    tg('hook', 'HOOK', 'hook');
+    tg('cat', 'CATAPULT', 'catapult');
 
     // ---- system corner + drawer ----
     const sys = this.div('sys');
@@ -342,22 +355,30 @@ export class Input {
   setWeapons(on: boolean) { this.hasWeapons = on; this.lastStatus = ''; }
   /** Contextual visibility + live readouts (cheap: only touches the DOM when something changed). */
   setStatus(s: ControlStatus) {
-    const key = JSON.stringify([s.bombs, s.weapons, s.gun, s.missiles, s.flares, Math.round(s.lock * 10), s.locked, s.retract, s.gearDown, s.onGround, s.lowSlow, s.hook, s.hookDown, s.catapult, s.flaps, s.hasFlaps, s.airbrake, s.hasAirbrake, s.ap, s.app, s.pitchHold]);
+    const key = JSON.stringify([s.bombs, s.weapons, s.gun, s.missiles, s.flares, Math.round(s.lock * 10), s.locked, s.retract, s.gearDown, Math.round((s.gearPos ?? 0) * 20), s.onGround, s.lowSlow, s.hook, s.hookDown, s.catapult, s.flaps, s.hasFlaps, s.airbrake, s.hasAirbrake, s.ap, s.app, s.pitchHold]);
     if (key === this.lastStatus) return;
     this.lastStatus = key;
     const vis = (k: string, v: boolean) => this.ctxEls[k]?.classList.toggle('hid', !v);
-    vis('gear', s.retract && (s.lowSlow || !s.gearDown));
+    const put = (k: string, txt: string, state: '' | 'on' | 'mv' | 'warn') => {
+      const el = this.ctxEls[k]; if (!el) return;
+      const b = el.querySelector('b'); if (b && b.textContent !== txt) b.textContent = txt;
+      el.classList.toggle('on', state === 'on'); el.classList.toggle('mv', state === 'mv'); el.classList.toggle('warn', state === 'warn');
+    };
+    vis('gear', s.retract);
     vis('flaps', s.hasFlaps);
+    vis('air', s.hasAirbrake);
     vis('brk', s.onGround);
-    vis('air', s.hasAirbrake && !s.onGround);
     vis('hook', s.hook);
     vis('cat', s.catapult);
-    this.ctxEls.gear?.classList.toggle('act', s.gearDown);
-    this.ctxEls.hook?.classList.toggle('act', s.hookDown);
-    this.ctxEls.air?.classList.toggle('act', s.airbrake);
+    const gp = s.gearPos ?? (s.gearDown ? 1 : 0);
+    const moving = gp > 0.01 && gp < 0.99;
+    put('gear', moving ? 'TRANSIT' : gp >= 0.99 ? 'DOWN' : 'UP', moving ? 'mv' : gp >= 0.99 ? 'on' : s.lowSlow && !s.onGround ? 'warn' : '');
+    put('flaps', s.flaps, s.flaps === 'UP' ? '' : 'on');
+    put('air', s.airbrake ? 'OUT' : 'IN', s.airbrake ? 'mv' : '');
+    put('brk', 'HOLD', '');
+    put('hook', s.hookDown ? 'DOWN' : 'UP', s.hookDown ? 'on' : '');
+    put('cat', 'LAUNCH', 'mv');
     this.ctxEls.apbtn?.classList.toggle('on', s.ap);
-    const fl = this.ctxEls.flaps?.querySelector('span');
-    if (fl) fl.textContent = s.flaps;
     const shw = (el: HTMLElement | undefined, v: boolean) => { if (el) el.style.display = v ? '' : 'none'; };
     shw(this.wpnEls.gun, s.weapons); shw(this.wpnEls.msl, s.weapons); shw(this.wpnEls.flr, s.flares > 0); shw(this.wpnEls.bomb, s.bombs > 0);
     if (this.wpnEls.gun) {

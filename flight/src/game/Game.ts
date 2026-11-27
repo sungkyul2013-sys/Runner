@@ -245,6 +245,8 @@ export class Game implements UIHost {
     fm.onDamage = (part, amt) => { if (amt > 3) { this.dmgFlash = Math.min(0.8, this.dmgFlash + amt / 60); } void part; };
     fm.onCrash = (reason) => this.crash(reason);
     fm.onGearCollapse = () => { this.menus.toast('랜딩기어 파손!', 'var(--rd)'); this.audio.hit(); };
+    let hardT = -9;
+    fm.onHardLanding = (_i, sink) => { const now = performance.now(); if (now - hardT < 2000) return; hardT = now; this.menus.notice(`하드 랜딩 · ${Math.round(sink * 196.85)} fpm`); this.cam.shake(1); };
     fm.onHook = () => { this.landing.onWire(fm, this.world.airport.wiresZ); this.audio.hook(); this.menus.toast(`어레스팅 와이어 #${this.landing.wire} 캐치!`, 'var(--gn)'); };
     return ac;
   }
@@ -755,7 +757,7 @@ export class Game implements UIHost {
     this.input.setStatus({
       bombs: p.bombs, weapons: s.gun > 0, gun: this.infAmmo ? 999 : p.gunAmmo, missiles: this.infAmmo ? 99 : p.missiles, flares: p.flares,
       lock: this.lockTarget ? clamp(this.lockT / 1.2, 0, 1) : 0, locked: this.lockT >= 1.2,
-      retract: s.retract, gearDown: p.controls.gearDown, onGround: fm.onGround, lowSlow: fm.agl < 450 && fm.ias < s.vRef * 1.8,
+      retract: s.retract, gearDown: p.controls.gearDown, gearPos: fm.gear, onGround: fm.onGround, lowSlow: fm.agl < 450 && fm.ias < s.vRef * 1.8,
       hook: s.hook, hookDown: p.controls.hook, catapult: this.env.catapult && fm.onGround && !fm.catapulting,
       flaps: p.controls.flaps > 0.01 ? `${Math.round(p.controls.flaps * 100)}%` : 'UP', hasFlaps: s.flapNotches.length > 1,
       airbrake: p.controls.airbrake, hasAirbrake: s.brakeCD > 0, ap: p.assist.ap.on, app: p.assist.ap.app, pitchHold: p.assist.pitchHold,

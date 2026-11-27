@@ -30,6 +30,8 @@ export class FlightModel {
   ammoMass = 0;
   // actuator states
   thr = 0; abOn = 0; flaps = 0; gear = 1; airbrake = 0; hook = 0;
+  /** automatic ground spoilers: deploy on main-wheel contact at low throttle so the aircraft doesn't skip back into the air */
+  liftDump = 0; private wowT = 0;
   de = 0; da = 0; dr = 0;
   // outputs
   alpha = 0; beta = 0; tas = 0; ias = 0; mach = 0; qbar = 0; gLoad = 1; gLat = 0; stall = 0; rho = 1.225;
@@ -50,6 +52,7 @@ export class FlightModel {
   onDamage: (part: Part, amt: number) => void = () => {};
   onCrash: (reason: string) => void = () => {};
   onGearCollapse: (idx: number) => void = () => {};
+  onHardLanding: (idx: number, sink: number) => void = () => {};
   onHook: () => void = () => {};
   invincible = false;
   infiniteFuel = false;
@@ -128,7 +131,7 @@ export class FlightModel {
     this.omega.set(0, 0, 0);
     this.thr = onGround ? 0 : 0.7;
     this.gear = onGround || !this.spec.retract ? 1 : 0;
-    this.flaps = 0; this.airbrake = 0; this.abOn = 0;
+    this.flaps = 0; this.airbrake = 0; this.abOn = 0; this.liftDump = 0; this.wowT = 0;
     this.de = this.da = this.dr = 0;
     this.fuel = this.spec.fuel;
     this.crashed = false; this.ditched = false; this.crashReason = '';
@@ -179,6 +182,12 @@ export class FlightModel {
     if (s.retract && this.hp.gear > 0) this.gear += clamp((c.gearDown ? 1 : 0) - this.gear, -0.25 * dt, 0.25 * dt);
     this.airbrake += clamp((c.airbrake ? 1 : 0) - this.airbrake, -1.2 * dt, 1.2 * dt);
     this.hook += clamp((c.hook ? 1 : 0) - this.hook, -1 * dt, 1 * dt);
+    {
+      const mainWow = this.spec.gear.some((g, i) => !g.nose && this.prevContact[i]);
+      this.wowT = mainWow ? 0.8 : Math.max(0, this.wowT - dt);
+      const want = this.wowT > 0 && c.throttle < 0.35 && this.thr < 0.5 && !this.catapulting ? 1 : 0;
+      this.liftDump += clamp(want - this.liftDump, -1.5 * dt, 3 * dt);
+    }
 
     // ---------- air data ----------
     const atm = atmosphere(this.pos.y);
@@ -220,8 +229,9 @@ export class FlightModel {
     let CL = lerp(CLlin, CLfp, stallF) * (fL + fR) * 0.5;
     const CLspoil = this.spec.geom.style === 'airliner' ? this.airbrake * 0.35 : 0;
     CL -= CLspoil * Math.sign(CL);
+    CL *= 1 - this.liftDump * (s.engine.type === 'prop' ? 0.3 : 0.6);
     const wave = 0.065 * smoothstep(s.Mcrit, 1.03, M) * (M > 1.3 ? 0.75 : 1);
-    const CD = s.CD0 + s.k * CL * CL * (1 - stallF * 0.6) + stallF * 1.1 * Math.sin(a) ** 2 + s.gearCD * this.gear + s.flapCD * this.flaps + s.brakeCD * this.airbrake + wave + 0.6 * Math.sin(this.beta) ** 2 + (200 - this.hp.wingL - this.hp.wingR) * 0.0002;
+    const CD = s.CD0 + s.k * CL * CL * (1 - stallF * 0.6) + stallF * 1.1 * Math.sin(a) ** 2 + s.gearCD * this.gear + s.flapCD * this.flaps + s.brakeCD * this.airbrake + 0.05 * this.liftDump + wave + 0.6 * Math.sin(this.beta) ** 2 + (200 - this.hp.wingL - this.hp.wingR) * 0.0002;
     const CY = s.CYb * this.beta;
 
     // ---------- forces (body) ----------
@@ -321,14 +331,23 @@ export class FlightModel {
       this.onGround = true;
       const comp = Math.min(pen, g.travel);
       gs.compression = comp;
-      if (!this.prevContact[i]) this.onTouchdown(vn, i, this.tas);
-      // structural overload
-      const limit = s.hook ? 7.5 : s.mass > 20000 ? 4 : 3.6;
-      if (-vn > limit && !this.invincible) {
-        gs.hp = 0;
-        this.damage('gear', 40);
-        this.onGearCollapse(i);
-        continue;
+      if (!this.prevContact[i]) {
+        this.onTouchdown(vn, i, this.tas);
+        // structural check at the moment of contact. The strut's closing speed is mostly the aircraft's sink;
+        // pitch-rate slap (nose/tail wheel slamming down) only partly loads the gear because the oleo is already moving.
+        if (!this.invincible) {
+          const vT = this.vel.dot(n);
+          const sink = -(vT + (vn - vT) * 0.45);
+          const limit = s.hook ? 8 : s.mass > 20000 ? 4.6 : 5.2; // ≈ 900–1000 fpm (carrier gear ≈ 1550 fpm)
+          if (sink > limit * 1.45) gs.hp = 0;
+          else if (sink > limit) { gs.hp -= 40 + (sink / limit - 1) * 120; this.damage('gear', 8); this.onHardLanding(i, sink); }
+          if (gs.hp <= 0) {
+            gs.hp = 0;
+            this.damage('gear', 30);
+            this.onGearCollapse(i);
+            continue;
+          }
+        }
       }
       // oleo strut: soft compression damping, much stronger rebound damping; bottoming-out is inelastic
       let N = this.gearK[i] * comp - this.gearC[i] * vn * (vn < 0 ? 1 : 2.4);
@@ -374,7 +393,11 @@ export class FlightModel {
       const impact = Math.max(-vn, 0);
       const speed = vc.length();
       // tail / aft-belly scrapes (over-rotation) are survivable unless the whole aircraft is sinking hard
-      const fatal = i === 1 || i === 6 ? -this.vel.y > 6 : i === 0 || i === 7 || i === 8 ? impact > 4 || speed > 45 : impact > 7 || (speed > 80 && impact > 4.5);
+      // belly slides, nose-gear collapses and tail scrapes are survivable; only hard vertical impacts break the airframe
+      const fatal = i === 1 || i === 6 ? -this.vel.y > 6.5
+        : i === 2 || i === 3 ? impact > 7 || (speed > 80 && impact > 4.5)
+          : i === 0 || i === 4 || i === 5 ? impact > 9.5
+            : impact > 7;
       if (fatal) { this.crash(i === 2 || i === 3 ? '날개 충돌' : '지면 충돌'); return; }
       const N = Math.max(0, m * 60 * pen - m * 6 * vn);
       const vt = vc.clone().addScaledVector(n, -vn);
@@ -385,7 +408,7 @@ export class FlightModel {
       this.onGround = true;
       if (speed > 3) {
         this.onScrape(P, Math.min(1, speed / 40));
-        this.damage(i === 2 ? 'wingL' : i === 3 ? 'wingR' : i === 1 || i === 7 ? 'tail' : i >= 9 ? 'engine' : 'fuselage', dt * speed * (i === 1 || i === 6 ? 0.25 : 0.6));
+        this.damage(i === 2 ? 'wingL' : i === 3 ? 'wingR' : i === 1 || i === 7 ? 'tail' : i >= 9 ? 'engine' : 'fuselage', dt * speed * (i === 1 || i === 6 ? 0.25 : i === 0 || i === 4 || i === 5 ? 0.12 : 0.6));
       }
     }
 
