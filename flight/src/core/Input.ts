@@ -53,7 +53,7 @@ const IC = {
   land: SVG('<path d="M2 20h20M4 14l6-1 5-6h2l-2 6 5 1v2l-16-1z"/>'),
 };
 
-interface Floater { el: HTMLElement; th: HTMLElement; kind: 'v' | 'h' | 's'; id: number | null; ox: number; oy: number; range: number }
+interface Floater { el: HTMLElement; th: HTMLElement; kind: 'v' | 'h' | 's' | 'x'; id: number | null; ox: number; oy: number; range: number }
 
 /** Unified input: keyboard, gamepad, touch (floating split / floating stick), device tilt. */
 export class Input {
@@ -130,9 +130,9 @@ export class Input {
 
     // ---- floating zones ----
     const zoneL = this.div('zone l'), zoneR = this.div('zone r');
-    const leftKind: 'v' | 'h' | null = mode === 'split' ? (swap ? 'h' : 'v') : null;
-    const rightKind: 'v' | 'h' | 's' | null = mode === 'split' ? (swap ? 'v' : 'h') : mode === 'stick' ? 's' : null;
-    const hint = (z: HTMLElement, k: 'v' | 'h' | 's' | null) => { if (!k) return; z.innerHTML = `<div class="hint">${k === 'v' ? IC.pitch : k === 'h' ? IC.roll : IC.stick}<span>${k === 'v' ? 'PITCH' : k === 'h' ? 'ROLL' : 'STICK'}</span></div>`; };
+    const leftKind: 'x' | 's' | null = swap ? (mode === 'split' ? 'x' : mode === 'stick' ? 's' : null) : null;
+    const rightKind: 'x' | 's' | null = swap ? null : mode === 'split' ? 'x' : mode === 'stick' ? 's' : null;
+    const hint = (z: HTMLElement, k: 'x' | 's' | null) => { if (!k) { z.style.display = 'none'; return; } z.innerHTML = `<div class="hint">${k === 'x' ? IC.pitch + IC.roll : IC.stick}<span>${k === 'x' ? 'PITCH · ROLL' : 'STICK'}</span></div>`; };
     hint(zoneL, leftKind); hint(zoneR, rightKind);
     if (leftKind) this.floater(zoneL, leftKind);
     if (rightKind) this.floater(zoneR, rightKind);
@@ -144,7 +144,7 @@ export class Input {
     // ---- throttle lever with detents ----
     const thr = this.div('thr');
     thr.innerHTML = `<div class="rail"></div><div class="ab"></div><div class="fill"></div>
-<div class="rev"></div><div class="det" style="bottom:0"><span>REV</span></div><div class="det" style="bottom:12.3%"><span>IDLE</span></div><div class="det" style="bottom:87.7%"><span>MIL</span></div><div class="det" style="bottom:100%"><span>AB</span></div>
+<div class="det" style="bottom:0"><span>IDLE</span></div><div class="det" style="bottom:86%"><span>MIL</span></div><div class="det" style="bottom:100%"><span>AB</span></div>
       <div class="kn">THR</div><div class="ro m">0%</div>`;
     this.thrEl = thr;
     {
@@ -154,7 +154,7 @@ export class Input {
         if (e.pointerId !== id) return;
         const hgt = thr.getBoundingClientRect().height;
         const before = this.lever;
-        this.lever = clamp(p0 + ((y0 - e.clientY) / hgt) * 1.14, -0.14, 1);
+        this.lever = clamp(p0 + (y0 - e.clientY) / hgt, 0, 1);
         if ((before < 0.86) !== (this.lever < 0.86) || (before > 0) !== (this.lever > 0)) this.buzz(14);
         this.applyLever();
       });
@@ -185,35 +185,9 @@ export class Input {
     this.wpnEls.msl = rbtn(wpn, 'msl', 'lg', IC.msl, 'missile');
     this.wpnEls.gun = rbtn(wpn, 'gun', 'xl gun', IC.gun, undefined, (on) => (this.touchFire = on));
 
-    // ---- split mode: labelled quick bar (top) + system strip (bottom) ----
-    if (mode === 'split') {
-      this.root.classList.add('split');
-      const q = this.div('qbar');
-      const qb = (label: string, ev: InputEvent, key: string) => {
-        const b = document.createElement('button'); b.className = 'qb'; b.textContent = label;
-        b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.events.add(ev); this.buzz(); b.classList.remove('fx'); void b.offsetWidth; b.classList.add('fx'); });
-        q.appendChild(b); this.ctxEls[key] = b;
-      };
-      qb('수평 보정', 'level', 'q_level'); qb('상하 고정', 'pitchhold', 'q_hold'); qb('자동 착륙', 'app', 'q_app'); qb('재시작', 'restart', 'q_restart'); qb('설정', 'pause', 'q_menu');
-      const strip = this.div('strip');
-      const tile = (key: string, k: string, ev?: InputEvent, hold?: (on: boolean) => void, cls = '') => {
-        const b = document.createElement('button'); b.className = `tile ${cls}`;
-        b.innerHTML = `<span class="k">${k}</span><b></b>`;
-        b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); if (ev) this.events.add(ev); hold?.(true); b.classList.add('down'); this.buzz(); });
-        const up = () => { hold?.(false); b.classList.remove('down'); };
-        b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
-        strip.appendChild(b); this.ctxEls[key] = b; return b;
-      };
-      tile('t_rudL', '러더', undefined, (on) => (this.touchAxes.yaw = on ? -1 : 0), 'arrow l').querySelector('b')!.textContent = '◀';
-      tile('t_gear', '기어', 'gear');
-      tile('t_flaps', '플랩', 'flapsCycle');
-      tile('t_air', '감속판', 'airbrake');
-      tile('t_brk', '제동', undefined, (on) => (this.touchBrake = on));
-      tile('t_rudR', '러더', undefined, (on) => (this.touchAxes.yaw = on ? 1 : 0), 'arrow r').querySelector('b')!.textContent = '▶';
-    }
+    this.root.classList.toggle('wl', !!rightKind && mode !== 'tilt');
     // ---- contextual systems ----
     const ctx = this.div('ctx');
-    if (mode === 'split') ctx.classList.add('slim');
     this.ctxEls.gear = rbtn(ctx, 'gear', 'sm', IC.gear, 'gear');
     const flp = document.createElement('div');
     flp.className = 'flp m';
@@ -236,10 +210,10 @@ export class Input {
       return b;
     };
     sq(IC.more, () => this.drawer.classList.toggle('open'));
-    if (mode !== 'split') sq(IC.ap, () => this.events.add('ap'), 'apbtn');
+    sq(IC.ap, () => this.events.add('ap'), 'apbtn');
     sq(IC.eye, () => this.events.add('cockpit'));
     sq(IC.cam, () => this.events.add('camera'));
-    if (mode !== 'split') sq(IC.pause, () => this.events.add('pause'));
+    sq(IC.pause, () => this.events.add('pause'));
     this.drawer = this.div('drawer');
     const dItem = (icon: string, label: string, ev: InputEvent) => {
       const b = document.createElement('button'); b.innerHTML = `${icon}${label}`;
@@ -295,32 +269,43 @@ export class Input {
   }
 
   /** A control that spawns under the thumb wherever the zone is touched. */
-  private floater(zone: HTMLElement, kind: 'v' | 'h' | 's') {
+  private floater(zone: HTMLElement, kind: 'v' | 'h' | 's' | 'x') {
     const el = document.createElement('div');
     el.className = `fl ${kind}`;
     const ticks = kind === 's'
       ? [0, 90, 180, 270].map((a) => `<i class="tick" style="transform:rotate(${a}deg) translateY(-${88}px)"></i>`).join('')
-      : [-1, -0.5, 0, 0.5, 1].map((t) => kind === 'v' ? `<i class="tick" style="top:${t * 84}px"></i>` : `<i class="tick" style="left:${t * 92}px"></i>`).join('');
-    el.innerHTML = `<div class="trk"></div>${ticks}<div class="th"></div><div class="lbl">${kind === 'v' ? 'PITCH' : kind === 'h' ? 'ROLL' : 'STICK'}</div>`;
+      : kind === 'x'
+        ? [-1, -0.5, 0.5, 1].map((t) => `<i class="tick" style="top:${t * 78}px"></i><i class="tick hz" style="left:${t * 78}px"></i>`).join('')
+        : [-1, -0.5, 0, 0.5, 1].map((t) => kind === 'v' ? `<i class="tick" style="top:${t * 84}px"></i>` : `<i class="tick" style="left:${t * 92}px"></i>`).join('');
+    const trk = kind === 'x' ? '<div class="trk tv"></div><div class="trk th2"></div><div class="ax"><b class="ay"></b><b class="ar"></b></div>' : '<div class="trk"></div>';
+    el.innerHTML = `${trk}${ticks}<div class="th"></div><div class="lbl">${kind === 'v' ? 'PITCH' : kind === 'h' ? 'ROLL' : kind === 'x' ? 'PITCH · ROLL' : 'STICK'}</div>`;
     this.root.appendChild(el);
-    const f: Floater = { el, th: el.querySelector('.th') as HTMLElement, kind, id: null, ox: 0, oy: 0, range: kind === 's' ? 62 : kind === 'v' ? 72 : 80 };
+    const f: Floater = { el, th: el.querySelector('.th') as HTMLElement, kind, id: null, ox: 0, oy: 0, range: kind === 's' ? 62 : kind === 'v' || kind === 'x' ? 72 : 80 };
+    const ay = el.querySelector('.ay') as HTMLElement | null, ar = el.querySelector('.ar') as HTMLElement | null;
+    // Cross control: each axis is independent with its own small deadzone so a pure pitch pull never leaks roll.
+    const dz = (v: number) => { const a = Math.abs(v); return a < 0.1 ? 0 : Math.sign(v) * Math.min(1, (a - 0.1) / 0.9); };
     const set = (dx: number, dy: number) => {
       let vx = 0, vy = 0;
       const R = f.range * (settings.controlScale ?? 0.86);
       if (f.kind === 'v') vy = clamp(dy / R, -1, 1);
       else if (f.kind === 'h') vx = clamp(dx / R, -1, 1);
+      else if (f.kind === 'x') { vx = clamp(dx / R, -1, 1); vy = clamp(dy / R, -1, 1); }
       else { vx = dx / R; vy = dy / R; const m = Math.hypot(vx, vy); if (m > 1) { vx /= m; vy /= m; } }
       f.th.style.transform = `translate(${vx * f.range}px, ${vy * f.range}px)`;
       el.classList.toggle('hot', Math.max(Math.abs(vx), Math.abs(vy)) > 0.92);
       if (f.kind === 'v') this.touchAxes.pitch = vy;
       else if (f.kind === 'h') this.touchAxes.roll = vx;
-      else { this.touchAxes.roll = vx; this.touchAxes.pitch = vy; }
+      else if (f.kind === 'x') {
+        this.touchAxes.pitch = dz(vy); this.touchAxes.roll = dz(vx);
+        if (ay) ay.style.transform = `scaleY(${vy})`;
+        if (ar) ar.style.transform = `scaleX(${vx})`;
+      } else { this.touchAxes.roll = vx; this.touchAxes.pitch = vy; }
     };
     zone.addEventListener('pointerdown', (e) => {
       if (f.id !== null) return;
       e.preventDefault(); e.stopPropagation();
       f.id = e.pointerId; try { zone.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
-      const half = f.kind === 'v' ? [40, 120] : f.kind === 'h' ? [130, 40] : [100, 100];
+      const half = f.kind === 'v' ? [40, 120] : f.kind === 'h' ? [130, 40] : f.kind === 'x' ? [110, 110] : [100, 100];
       f.ox = clamp(e.clientX, half[0] + 8, innerWidth - half[0] - 8);
       f.oy = clamp(e.clientY, half[1] + 8, innerHeight - half[1] - 8);
       el.style.left = `${f.ox}px`; el.style.top = `${f.oy}px`;
@@ -346,7 +331,7 @@ export class Input {
   private syncLever() {
     if (!this.thrEl) return;
     const hgt = this.thrEl.getBoundingClientRect().height || 200;
-    const t = (this.lever + 0.14) / 1.14;
+    const t = this.lever;
     (this.thrEl.querySelector('.kn') as HTMLElement).style.transform = `translateY(${(1 - t) * hgt}px)`;
     (this.thrEl.querySelector('.fill') as HTMLElement).style.transform = `scaleY(${t})`;
     (this.thrEl.querySelector('.ro') as HTMLElement).textContent = this.lever > 0.93 ? 'AB' : this.lever < -0.02 ? 'REV' : `${Math.round(Math.min(1, this.lever / 0.86) * 100)}%`;
@@ -373,14 +358,6 @@ export class Input {
     this.ctxEls.apbtn?.classList.toggle('on', s.ap);
     const fl = this.ctxEls.flaps?.querySelector('span');
     if (fl) fl.textContent = s.flaps;
-    const setT = (key: string, v: string, on = false, dis = false) => { const el = this.ctxEls[key]; if (!el) return; const b = el.querySelector('b'); if (b) b.textContent = v; el.classList.toggle('on', on); el.classList.toggle('dis', dis); };
-    setT('t_gear', !s.retract ? '고정' : s.gearDown ? '내림' : '올림', s.gearDown, !s.retract);
-    setT('t_flaps', s.hasFlaps ? (s.flaps === 'UP' ? '올림' : s.flaps) : '—', s.flaps !== 'UP', !s.hasFlaps);
-    setT('t_air', s.hasAirbrake ? (s.airbrake ? '켜짐' : '꺼짐') : '—', s.airbrake, !s.hasAirbrake);
-    setT('t_brk', s.onGround ? '홀드' : '지상', false, !s.onGround);
-    this.ctxEls.q_app?.classList.toggle('on', !!s.app);
-    this.ctxEls.q_hold?.classList.toggle('on', !!s.pitchHold);
-    if (this.root.classList.contains('split')) { for (const k of ['gear', 'flaps', 'brk', 'air']) this.ctxEls[k]?.classList.add('hid'); }
     const shw = (el: HTMLElement | undefined, v: boolean) => { if (el) el.style.display = v ? '' : 'none'; };
     shw(this.wpnEls.gun, s.weapons); shw(this.wpnEls.msl, s.weapons); shw(this.wpnEls.flr, s.flares > 0); shw(this.wpnEls.bomb, s.bombs > 0);
     if (this.wpnEls.gun) {
@@ -414,7 +391,7 @@ export class Input {
     }
     let kbThr = false;
     if (k.has('ShiftLeft') || k.has('ShiftRight') || k.has('Equal') || k.has('PageUp')) { this.lever = Math.min(0.86, this.lever + dt * 0.5); kbThr = true; }
-    if (k.has('ControlLeft') || k.has('ControlRight') || k.has('Minus') || k.has('PageDown')) { this.lever = Math.max(-0.14, this.lever - dt * 0.5); kbThr = true; }
+    if (k.has('ControlLeft') || k.has('ControlRight') || k.has('Minus') || k.has('PageDown')) { this.lever = Math.max(0, this.lever - dt * 0.5); kbThr = true; }
     if (kbThr) this.applyLever();
     let ab = this.state.ab;
     if (k.has('Backquote') || k.has('KeyN')) ab = true;
@@ -430,7 +407,7 @@ export class Input {
       roll += dz(gp.axes[0] ?? 0); pitch += dz(gp.axes[1] ?? 0);
       yaw += dz(gp.axes[2] ?? 0);
       const rt = gp.buttons[7]?.value ?? 0, lt = gp.buttons[6]?.value ?? 0;
-      if (rt > 0.05 || lt > 0.05) { this.lever = clamp(this.lever + (rt - lt) * dt * 0.7, -0.14, 1); this.applyLever(); }
+      if (rt > 0.05 || lt > 0.05) { this.lever = clamp(this.lever + (rt - lt) * dt * 0.7, 0, 1); this.applyLever(); }
       if (gp.buttons[0]?.pressed) fire = true;
       if (gp.buttons[2]?.pressed) brake = 1;
       const edge = (i: number, ev: InputEvent) => { const p = gp.buttons[i]?.pressed; const key = `gp${i}`; if (p && !this.keys.has(key)) { this.events.add(ev); this.keys.add(key); } else if (!p) this.keys.delete(key); };

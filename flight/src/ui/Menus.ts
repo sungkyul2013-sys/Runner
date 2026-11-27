@@ -424,7 +424,7 @@ export class Menus {
     const rng = (key: keyof Settings, min: number, max: number, step: number) => `<input type="range" min="${min}" max="${max}" step="${step}" value="${s[key]}" data-r="${String(key)}">`;
     const tabs: Record<string, string> = {
       controls: `<div class="sect">
-        <div class="row"><div class="l">조작 방식<small>분리형: 왼손 상하(피치) · 오른손 좌우(롤) — 엄지를 놓는 곳에 컨트롤 생성</small></div>${seg('controlMode', [['split', '분리형'], ['stick', '가상 스틱'], ['tilt', '기울기']])}</div>
+        <div class="row"><div class="l">조작 방식<small>분리형: 오른손 십자 조종 — 상하는 피치, 좌우는 롤이 각각 독립 · 무장은 왼손 쪽</small></div>${seg('controlMode', [['split', '분리형'], ['stick', '가상 스틱'], ['tilt', '기울기']])}</div>
         <div class="row"><div class="l">좌우 반전<small>왼손잡이 레이아웃</small></div>${tog('swapSides')}</div>
         <div class="row"><div class="l">피치 반전</div>${tog('invertPitch')}</div>
         <div class="row"><div class="l">감도</div>${rng('sensitivity', 0.5, 1.5, 0.05)}</div>

@@ -148,7 +148,7 @@ export class HUD {
     g.textAlign = 'left';
     g.font = `600 ${12 * S}px 'SA Mono', sans-serif`;
     const lx = tx - 56 * S, ly = cy + tapeH / 2 + 18;
-    if (!portrait && !(this.touch && compact)) {
+    if (!portrait) {
     g.fillText(`G ${d.g.toFixed(1)}`, lx, ly);
     g.fillText(`M ${d.mach.toFixed(2)}`, lx, ly + 15 * S);
     g.fillText(`α ${(d.aoa * RAD).toFixed(1)}°`, lx, ly + 30 * S);
@@ -189,7 +189,7 @@ export class HUD {
     }
 
     // ---------- attitude indicator (external views) ----------
-    if (!d.cockpit && !portrait && !this.touch) {
+    if (!d.cockpit && !portrait) {
       const r = 34 * S, ix = cx, iy = compact ? H - 70 : H - (small ? 64 : 80) - 8;
       g.save();
       g.beginPath(); g.arc(ix, iy, r, 0, Math.PI * 2); g.clip();
@@ -411,7 +411,7 @@ export class HUD {
     const R = 58 * S;
     const compact = this.h < 540 || this.w < this.h;
     const rx = compact ? R + 12 : this.w - R - (this.w < 700 ? 12 : 22);
-    const ry = this.w < this.h ? this.h * 0.49 : compact ? R + (this.h < 420 ? 78 : 88) : Math.max(R + 70, this.h * 0.5 - R * 2.4);
+    const ry = this.w < this.h ? this.h * 0.49 : compact ? R + (this.h < 420 ? 62 : 80) : Math.max(R + 70, this.h * 0.5 - R * 2.4);
     this.radarBottom = ry + R; this.radarRight = rx + R; this.radarMid = ry - R;
     g.save();
     g.fillStyle = 'rgba(2,12,8,0.45)'; g.beginPath(); g.arc(rx, ry, R, 0, Math.PI * 2); g.fill();
