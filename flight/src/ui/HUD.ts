@@ -63,7 +63,6 @@ export class HUD {
     const aviation = settings.units === 'aviation';
     const spdU = aviation ? d.ias * MS_TO_KT : d.ias * 3.6;
     const altU = aviation ? d.alt * M_TO_FT : d.alt;
-    const vsU = aviation ? d.vs * 196.85 : d.vs;
     const small = Math.min(W, H) < 500;
     const compact = H < 540;
     const portrait = W < H;
@@ -153,13 +152,24 @@ export class HUD {
     g.fillText(`M ${d.mach.toFixed(2)}`, lx, ly + 15 * S);
     g.fillText(`α ${(d.aoa * RAD).toFixed(1)}°`, lx, ly + 30 * S);
     g.textAlign = 'right';
-    g.fillText(`VS ${vsU >= 0 ? '+' : ''}${Math.round(vsU)}`, ax + 56 * S, ly);
-    g.fillText(`R ${Math.round(aviation ? d.agl * M_TO_FT : d.agl)}`, ax + 56 * S, ly + 15 * S);
+    g.fillText(`R ${Math.round(aviation ? d.agl * M_TO_FT : d.agl)}`, ax + 56 * S, ly);
     const wkt = d.wind.length() * (aviation ? MS_TO_KT : 3.6);
     if (wkt > 1) {
       const wfrom = (Math.atan2(-d.wind.x, d.wind.z) * RAD + 360) % 360;
-      g.fillText(`W ${String(Math.round(wfrom)).padStart(3, '0')}°/${Math.round(wkt)}`, ax + 56 * S, ly + 30 * S);
+      g.fillText(`W ${String(Math.round(wfrom)).padStart(3, '0')}°/${Math.round(wkt)}`, ax + 56 * S, ly + 15 * S);
     }
+    }
+    // ---------- vertical speed (fpm) under the altitude readout ----------
+    {
+      const fpm = d.vs * 196.85, a = Math.abs(fpm);
+      const shown = a < 20 ? 0 : Math.round(fpm / 10) * 10;
+      const hard = fpm < -1000 && d.agl < 150;
+      const by = cy + 13, bh = 15;
+      g.fillStyle = 'rgba(0,8,6,0.55)'; g.fillRect(ax + 10, by, 60, bh);
+      g.font = `600 10px 'SA Mono', sans-serif`; g.textAlign = 'right';
+      g.fillStyle = hard ? '#ff6b58' : fpm < -700 && d.agl < 150 ? '#ffc35c' : col;
+      g.fillText(`${shown > 0 ? '▲' : shown < 0 ? '▼' : ''}${Math.abs(shown)} FPM`, ax + 67, by + bh / 2 + 0.5);
+      g.fillStyle = col;
     }
 
     // ---------- heading tape ----------
